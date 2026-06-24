@@ -4,11 +4,15 @@
 > schema, the **three brand re-bases** (`round`/`RND`→`game`/`GAM`, room `RMM`→`ROM`, player `USR`→`PLR`),
 > the type/policy discriminator (with classic exercised), linear scoring as the sole score (the bonus-tier
 > economy removed), and the reinitialization of the dev + test DBs. **This rung depends on no open fork —
-> it is build-grade now.** The four blind columns ship **present-but-inert** on the schema (golden writes
-> them in cm.3); the blind/golden **flow** is rung **cm.3** (its mechanics ride Arms V-7/V-8/V-10/V-11/V-12).
+> it is build-grade now.** The four blind columns + `cell_codes` + `payout_split` ship
+> **present-but-inert** on the schema (golden writes the blind columns in cm.3; a classic game snapshots
+> the full keyboard into `cell_codes` and carries the default `payout_split`/`top_k`); the blind/golden
+> **flow** is rung **cm.3** (its mechanics are all RULED — D-15/D-16).
 >
-> **Stage-2 (2026-06-24):** the Operator folded the `RMM`→`ROM` + `USR`→`PLR` re-bases INTO this rung
-> (were OUT in the first pass) and ruled the blind flow LIVE this scope. This body reflects both.
+> **Stage-2 (2026-06-24) + convergence (2026-06-25):** the Operator folded the `RMM`→`ROM` + `USR`→`PLR`
+> re-bases INTO this rung (were OUT in the first pass), ruled the blind flow LIVE this scope, then ruled
+> every open mechanic (D-15/D-16) — which added the `payout_split`/`cell_codes`/`cell_count` columns + the
+> `games_status` CHECK to this rung's fresh schema. This body reflects all three.
 >
 > **Source of truth:** this body is authoritative; `cm.1.stories.md` (acceptance) and `cm.1.llms.md`
 > (the build brief) derive from it. When a derived file disagrees, this body wins.
@@ -40,9 +44,10 @@ model; blind Golden (cm.3) lands additively on the same schema.
 **IN (this rung):**
 - The fresh Ecto schema (design §3): the **six** Postgres tables (design §0.2 — no `notifications`
   table; `NOT` is a Valkey lane), `rounds`→`games`/`GAM`, the type/policy columns, the four blind-mode
-  columns **present-but-nullable** (LIVE-but-inert for classic, so cm.3 needs no migration), `guesses`
-  **without** `tier`/`percentage`, `players` with `tg_chat_id`. One clean initial create-migration
-  (design §8).
+  columns **present-but-nullable** + `games.cell_codes` + `games.payout_split` (default `[40,25,15,12,8]`)
+  + `rooms.cell_count` + `rooms.payout_split` (LIVE-but-inert for classic, so cm.3 needs no migration),
+  `guesses` **without** `tier`/`percentage`, `players` with `tg_chat_id`. One clean initial create-migration
+  (design §8) with **both** the `games_type` and `games_status` CHECKs.
 - **The three brand re-bases** (design §0/§6): `round`→`game`/`RND`→`GAM` across code + the external wire
   (design §6 + Venus-1 brief §4); room `RMM`→`ROM` at the mint (`rooms.ex:18`); player `USR`→`PLR` at the
   mint (`wallet.ex:21`). The brand string at `generate!` + the cache `kind:` + the doc-prose tokens are
@@ -53,9 +58,10 @@ model; blind Golden (cm.3) lands additively on the same schema.
 - Classic live mode end-to-end (the as-built live flow on the renamed model).
 
 **OUT (later rungs):**
-- The blind/golden mode **flow** (feedback `none`, commit-reveal, sealed top-K, reduced set, the
-  `revealing`/`settling` states) — **cm.3** (the blind columns ship here *present*; the *flow* that writes
-  them is cm.3). cm.3 ships this scope (D-10); its mechanics ride Arms V-7/V-8/V-10/V-11/V-12.
+- The blind/golden mode **flow** (feedback `none`, commit-reveal, sealed top-K, the `cell_count` snapshot,
+  the `revealing`/`settling` states) — **cm.3** (the blind + `cell_codes` + `payout_split` columns ship
+  here *present*; the *flow* that writes them for golden is cm.3). cm.3 ships this scope (D-10); its
+  mechanics are all RULED (D-15/D-16): V-7/V-8/V-13/V-14/V-15/V-16a.
 - The `BNK` bank + rake, `RMP` membership + anonymized leaderboard, `SES` sessions / verified `initData`,
   commerce, growth, analytics — cm.4+ (named in the roadmap).
 - The `roadmap.md` / `game_rules.md` tier-text `[RECONCILE]` (a follow-up after the build).
@@ -67,9 +73,12 @@ model; blind Golden (cm.3) lands additively on the same schema.
 - **D1 — the fresh schema, one clean initial create.** The **six** Postgres tables per design §3 (§0.2:
   no `notifications` table), collapsed from the two existing migrations into one `create`-only migration
   (design §8). The `games` table carries the type/policy columns + the four blind-mode columns
-  **nullable** (LIVE-but-inert for classic). `guesses` has **no** `tier`/`percentage`. Indexes:
-  `games(room)`, `guesses(game, player)`, `transactions(player, inserted_at)`, `players(tg_chat_id)`. The
-  `games_type` CHECK ships in this create. → Story R-1, R-5.
+  **nullable** (`top_k` default `5`) + `cell_codes` (`text[]`) + `payout_split` (`int[]`, default
+  `[40,25,15,12,8]`); `rooms` carries `cell_count` (nullable) + `payout_split` (default `[40,25,15,12,8]`).
+  `guesses` has **no** `tier`/`percentage`. Indexes: `games(room)`, `guesses(game, player)`,
+  `transactions(player, inserted_at)`, `players(tg_chat_id)`. **Both** the `games_type`
+  (`type IN ('classic','golden')`) and `games_status` (the seven canon words, design §3.8.5) CHECKs ship in
+  this create. → Story R-1, R-5.
 - **D2 — the three brand re-bases.** (a) the `GAM` game entity: `round`→`game` / `RND`→`GAM` across the
   code surfaces (design §6) and the external wire (routes `/games`, topic/channel `game:`, the `game:`
   keys, `:no_game`). (b) room `RMM`→`ROM`: `generate!("ROM")` at `rooms.ex:18` + the doc-prose at
@@ -77,11 +86,13 @@ model; blind Golden (cm.3) lands additively on the same schema.
   `wallet.ex:19` / `game.ex:6`. The token-class discipline (design §6 note + Venus-1 brief §4): rename
   only the entity/api/wire/brand tokens; leave `Kernel.round/1`, `Math.round`, and English "round". The
   schema module names (`Room`/`Player`) stay (not brand-coupled). → Story R-1, R-2, R-6.
-- **D3 — the type/policy discriminator + the CHECK.** `games.type` (+ `rooms.type`) + the four policy
-  columns (`feedback`/`scoring`/`settlement`/`economy`), snapshotted from the room's type at
-  `start_game`; the `games_type` CHECK (`type IN ('classic','golden')`). Classic defaults:
+- **D3 — the type/policy discriminator + the CHECKs.** `games.type` (+ `rooms.type`) + the four policy
+  columns (`feedback`/`scoring`/`settlement`/`economy`) + `payout_split` + `top_k`, snapshotted from the
+  room at `start_game`; the `cell_codes` snapshot (`Enum.take_random(EMS.codes, rooms.cell_count)`, or the
+  full set when null); the `games_type` CHECK + the `games_status` CHECK. Classic defaults:
   `type="classic"`, `feedback="score"`, `scoring="linear"`, `settlement="live"`,
-  `economy="winner_take_all"`. → Story R-2.
+  `economy="winner_take_all"`, `top_k=5`, `payout_split=[40,25,15,12,8]`, `cell_count=null`
+  (→ `cell_codes` = the full EMS set). → Story R-2.
 - **D4 — linear scoring is the sole score; the bonus-tier economy removed.** Drop `guesses.tier` +
   `guesses.percentage`; remove the Valkey bonus layer (`cm:{game}:ptier`/`bonus`/`tierfirst`),
   `Board.record/4`→`record/3`, `Board.firsts/2`, the `scored` event's `tier`/`first` fields; the
@@ -131,9 +142,12 @@ wire), and nowhere else. A blind `s/round/game/` is forbidden (it corrupts `Kern
 - **INV-7 — no broken caller + privacy.** No caller of a renamed symbol is left at the old name (the
   compile gate proves it); no player-facing view selects `secret`; no view returns another player's
   guesses.
-- **INV-8 — blind columns present, inert.** The four blind-mode columns (`commitment`, `nonce`,
-  `revealed_ms`, `top_k`) exist on `games` and are **`NULL` for every classic game** — present so cm.3
-  needs no migration, inert until cm.3 wires them.
+- **INV-8 — blind/golden columns present, inert for classic.** The blind-mode columns exist on `games`
+  and are **`NULL` for every classic game**: `commitment`, `nonce`, `revealed_ms` (golden-only). `top_k`
+  (default `5`) and `payout_split` (default `[40,25,15,12,8]`) carry their defaults and are read by **no**
+  classic path (no sealed settlement); `cell_codes` holds the **full** EMS set for a classic game
+  (`cell_count` null). All present so cm.3 needs no migration; the golden-only columns inert until cm.3
+  wires them.
 
 ---
 
@@ -151,8 +165,11 @@ wire), and nowhere else. A blind `s/round/game/` is forbidden (it corrupts `Kern
    - while `Kernel.round`/`round(` survives in `scoring.ex`/`economy.ex` (the BIF) — the grep is carved to
      spare it (the brand grep is word-boundaried `\bRND\b`, not a substring; the entity grep targets the
      symbols, not `round(`).
-4. The `games_type` CHECK is present (a migration assertion or a rejected-insert test exercises INV-2).
-5. The four blind-mode columns exist and are `NULL` for a created classic game (INV-8).
+4. The `games_type` CHECK **and** the `games_status` CHECK are present (a migration assertion or a
+   rejected-insert test exercises INV-2 — a `type` or `status` outside the bounded set is rejected).
+5. The blind/golden columns exist with the right inert state for a created classic game (INV-8):
+   `commitment`/`nonce`/`revealed_ms` `NULL`; `top_k` `5`; `payout_split` `[40,25,15,12,8]`; `cell_codes`
+   = the full EMS set.
 
 4'. The dev + test DBs are reinitialized clean from the one migration (design §8) — `MIX_ENV=test mix
    ecto.drop && ecto.create && ecto.migrate` comes up green; the migration's `up` then `down` is proven

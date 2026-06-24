@@ -19,12 +19,14 @@ is reinitialized cleanly rather than migrated.*
 - **Given** the one clean initial create-migration (design §8) and a fresh `codemojex_dev`.
 - **When** `TMPDIR=/tmp mix ecto.drop && mix ecto.create && mix ecto.migrate` runs.
 - **Then** the DB comes up with: `games` (the type/policy columns + the four **nullable** blind-mode
-  columns + `secret`), `rooms.game` (not `round`) + `rooms.type`, `guesses` **without** `tier`/`percentage`,
-  `players.tg_chat_id`, and the indexes `games(room)` / `guesses(game, player)` /
-  `transactions(player, inserted_at)` / `players(tg_chat_id)`.
+  columns + `secret` + `cell_codes` + `payout_split` default `[40,25,15,12,8]` + `top_k` default `5`),
+  `rooms.game` (not `round`) + `rooms.type` + `rooms.payout_split` + `rooms.cell_count`, `guesses`
+  **without** `tier`/`percentage`, `players.tg_chat_id`, the indexes `games(room)` / `guesses(game, player)`
+  / `transactions(player, inserted_at)` / `players(tg_chat_id)`, and **both** the `games_type` +
+  `games_status` CHECKs.
 - **And** the `--include valkey` suite is green against the fresh schema.
 - **Invariants:** INV-6 (no data migration / no rebrand step); INV-8 (the blind columns exist, `NULL` for
-  classic).
+  classic; `cell_codes` the full set, `payout_split`/`top_k` defaulted).
 
 ---
 
@@ -67,11 +69,12 @@ the entity's name.*
   CHECK.
 - **When** a classic room starts a game.
 - **Then** the game records `type="classic"`, `feedback="score"`, `scoring="linear"`,
-  `settlement="live"`, `economy="winner_take_all"`, snapshotted from the room at start and immutable for
-  the game's life.
-- **And** an attempt to write a `type` outside `{classic, golden}` is **rejected** by the CHECK (a LOUD
-  failure, exercised by a rejected-insert).
-- **Invariants:** INV-2 (the CHECK rejects an unknown type).
+  `settlement="live"`, `economy="winner_take_all"`, `top_k=5`, `payout_split=[40,25,15,12,8]`, and
+  `cell_codes` = the full EMS set (`cell_count` null) — snapshotted from the room at start and immutable
+  for the game's life.
+- **And** an attempt to write a `type` outside `{classic, golden}` (or a `status` outside the seven canon
+  words) is **rejected** by the CHECK (a LOUD failure, exercised by a rejected-insert).
+- **Invariants:** INV-2 (the `games_type` + `games_status` CHECKs reject an out-of-set value).
 
 ---
 
@@ -103,11 +106,15 @@ the entity's name.*
 *As the engine, the blind-mode columns exist on `games` and are populated for a golden game, so the
 sealed mode runs from this rung — `NULL` for classic, set for golden.*
 
-- **Given** the fresh schema with `commitment`, `nonce`, `revealed_ms`, `top_k` on `games` (nullable).
+- **Given** the fresh schema with `commitment`, `nonce`, `revealed_ms` (nullable), `top_k` (default `5`),
+  `payout_split` (default `[40,25,15,12,8]`), `cell_codes` on `games`.
 - **When** a **classic** game is created / a **golden** game is created.
-- **Then** classic: all four columns `NULL`, no classic path reads them. Golden: `commitment` + `nonce`
-  set at open (`revealed_ms` null until close, `top_k` set from the room's policy).
-- **Invariants:** INV-8 (the blind columns exist, `NULL` for classic, set for golden).
+- **Then** classic: `commitment`/`nonce`/`revealed_ms` `NULL` (no classic path reads them), `top_k`/
+  `payout_split` defaulted, `cell_codes` the full EMS set. Golden: `commitment` + `nonce` set at open
+  (`revealed_ms` null until close), `top_k` + `payout_split` snapshotted from the room's policy, `cell_codes`
+  = `Enum.take_random(EMS.codes, room.cell_count)` (the reduced keyboard).
+- **Invariants:** INV-8 (the blind columns `NULL` for classic, set for golden; `cell_codes`/`payout_split`
+  snapshotted at start).
 
 ---
 
@@ -163,10 +170,10 @@ no per-guess signal leaks and the result is provably fair.*
 - **Then (in-flight):** the view carries `:commitment` + `:state` but **never** `:secret` or `:nonce`; the
   per-guess `"scored"` push **does not fire** (the `ScoreWorker` suppresses it for `feedback="none"`); the
   channel carries state + timer only.
-- **And (at reveal):** **one** sealed push (e.g. `"revealed"`, shape per the V-13 ruling) exposes the
+- **And (at reveal):** **one fat `revealed` push** (V-13, ruled) exposes the
   `secret`+`nonce`+`commitment`+the final board+the top-K payouts+the terminal state — the **first and
-  only** results the blind client receives; the exposed commitment recomputes (`hash(secret,nonce) ==
-  commitment`).
+  only** results the blind client receives; the exposed commitment recomputes (`SHA-256(secret ‖ nonce) ==
+  commitment`, lowercase hex, V-14).
 - **Invariants:** INV-9 (the privacy line — the `secret` AND the commitment **preimage** never cross the
   wire pre-reveal; the commitment **hash** may); INV-8 (the blind columns drive the flow).
 

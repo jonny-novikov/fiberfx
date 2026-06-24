@@ -245,6 +245,46 @@ GROUNDING GAPS held out (flagged, NOT invented — consistent with D-9): top-K p
 
 The CLIENT-PROTOCOL forks (Venus surfaces, does NOT decide): (a) the reveal event NAME/shape — one fat "revealed" event vs separate "reveal"+"settled" events; (b) whether the commitment rides the game_view from open or a separate "committed" push on transition to open; (c) the blind board push membership shape (id vs alias) pending RMP. Framed as V-13.
 
+### T-18
+
+SYNTHESIS: both architects landed; consolidating the Arm slate for the Operator ruling
+
+Both Stage-1 architects reported BUILD-GRADE; the dual-architect boundary held (disjoint files, no sibling reads). Venus (identity/token/wire, Y-3): brief +§10/11/12/13, design.md reconciled forward to GAM/ROM/PLR, cm.1.stories/llms extended; Arms V-11/12/13. VenusPG (relational/fairness, Y-4): game-model.design.md extended (blind columns LIVE + the 3 brand re-bases), cm.1.md extended to the 3 brands, cm.3.md NEW (224 lines, the blind-Golden body); Arms V-14/15/16 + re-raised V-7/V-8.
+
+TWO disk-grounded corrections to fold (both falsify earlier assumptions — VenusPG verified against the migrations + config, L-5):
+- SIX Postgres tables, not seven: NO notifications table (NOT is a Valkey lane). The collapsed create = players/transactions/emoji_sets/rooms/games/guesses + the games_type CHECK. A Mars building a 7th notifications table would invent surface. [Corrects the Director T-12 7th-table note.]
+- DB names: config/dev.exs → codemojex_dev, config/test.exs → codemojex_test; runtime.exs reads DATABASE_URL. The codemoji_game name (Director psql -l) is NOT the Ecto config target. SAFETY: ecto.drop/reinit targets codemojex_dev + codemojex_test ONLY; Mars resolves the EFFECTIVE config; the Director confirms the exact drop target with the Operator before the destructive op. A pre-existing codemoji_game DB is NOT dropped.
+
+GROUND TRUTH confirmed (Venus T-13): the room/player re-base is BRAND-ONLY (rooms.ex:18 mints RMM, wallet.ex:21 mints USR; zero ROM/PLR in code). ~5 line edits; the WORDS room/player survive (95+175 identifier hits). Acceptance grep is over the 3-letter TOKEN (\bRMM\b/\bUSR\b), not the word.
+
+CONSOLIDATED 8-ARM SLATE for the Operator AskUserQuestion:
+- PRODUCT/MONEY (Operator-shaping): V-15 sealed top-K payout (K + curve); V-16a reduced emoji-set size; V-16b anonymized leaderboard ship-now vs defer.
+- ENGINEERING (architect-converged, strong RECOMMENDs, bundled as a slate): V-7 linear scoring both modes (already the Operator HARD constraint); V-14 commitment SHA-256(secret‖nonce) hex; V-13 one fat reveal event; V-8 full canon status words + CHECK + classic terminal; V-11 keep room/player wire words; V-12 keep FK column names.
+- V-9 (regulatory seam): stays Arm A — a non-blocking launch-gate seam; does not shape the schema; recorded, not a build fork. V-6 already ruled B (full blind) by the Operator.
+
+cm.1 settled core is build-grade NOW, depends on NONE of the Arms; the Arms gate ONLY the cm.3 blind flow — ruling all now so Mars builds cm.1+cm.3 in one pass.
+
+FLAGGED for Director-verify: the DERIVED cm.1 triad (stories/llms, Venus) vs the authoritative cm.1.md body (VenusPG) were authored independently (no sibling reads) — cross-check for drift before/at the Mars build (Mars builds from cm.1.llms.md, which must match cm.1.md).
+
+### T-19
+
+T-CV1 — EMS seed grounded in the MEASURED sprite sheets (V-16a)
+sips on the two real assets under docs/codemojex/emoji-sets/ (base + @2x retina, 2x = exactly 2× base, no extra rows):
+- 01-emoji-set.png: 720 × 1080 (base) / 1440 × 2160 (@2x). cell_size 144 (EmojiSet default, emoji_set.ex:39) → cols = 720÷144 = 5, rows = 1080÷144 = 7.5 → NOT integer.
+- 02-emoji-set.png: 720 × 1512 (base) / 1440 × 3024 (@2x). cols = 720÷144 = 5, rows = 1512÷144 = 10.5 → NOT integer.
+FINDING (F-CV1): at cell_size 144 the height is NOT an integer multiple — the sheets are NOT a 144px grid. 720÷5 = 144 (cols clean at 5). For integer rows the cell must divide BOTH dims: gcd(720,1080)=360, gcd(720,1512)=72. cell_size 120 → 01: 6×9=54 cells; 02: 6×12.6 no. cell_size 72 → 01: 10×15=150; 02: 10×21=210 (both integer). cell_size 360 → 01: 2×3=6; 02: 2×4.2 no.
+ONLY cell_size 72 yields integer rows for BOTH sheets (01: cols 10 rows 15; 02: cols 10 rows 21). cell_size 144 is the code DEFAULT but does NOT fit these specific assets. Per the no-invent + "specify the grid from the MEASURED dims" instruction, the EMS seed MUST state cell_size 72 (the measured-true divisor), NOT blindly 144. codes = all_cells(cols, rows) (every cell, the full room keyboard; cell_count null = classic). This is a real surface fork to surface, not decide: cell_size 72-vs-144 changes the cell count 10×15 vs 5×7.5. Recommending cell_size 72 (the only value consistent with BOTH measured sheets); flagging for Director/Operator ratification.
+
+### T-20
+
+T-CV2 — Convergence ground truth: the rulings to fold (D-15/D-16) + the supersession deltas vs the pre-ruling design
+The Operator rulings D-15 (PRODUCT/SCOPE) + D-16 (ENGINEERING SLATE) are read from the ledger tail. The design files (codemojex.game-model.design.md, cm.1.md, cm.3.md) were authored against the V-14/V-15/V-16 RECOMMENDED Arms; three rulings DIVERGE from those recommendations and must be folded as supersessions, not echoes:
+1. V-15 PAYOUT — design assumed "a graduated decreasing share, w_i=(K-i+1)/sum" (a DERIVED curve). RULING: top_k DEFAULT 5 + a CONFIGURABLE payout_split = an ordered integer weight array on the room policy, DEFAULT [40,25,15,12,8] (sums 100), SNAPSHOTTED to the game at start. So the split is a STORED ARRAY (games.payout_split + rooms.payout_split), not a computed formula. New columns: games.top_k (int, default 5), games.payout_split (int[]), rooms.payout_split (int[] policy default).
+2. V-16a REDUCED SET — design assumed "a 24-cell EMS row, mechanism = a smaller EMS, NOT a games.symbols column". RULING SUPERSEDES (explicitly "supersedes the architect's fixed-24-cell recommendation"): mechanism = a room config cell_count (N, nullable; null = full room cell set = classic) + the game snapshots a RANDOMIZED N-cell subset of the room's codes (Enum.take_random(room_codes, N)) STORED ON THE GAME. So NEW columns: rooms.cell_count (int, nullable) + games.cell_codes (text[], the snapshotted keyboard). The EMS stays the FULL room keyboard; the narrowing moves to the game snapshot. The secret draws its 6 from the game's snapshotted subset (EmojiSet.secret over the game keyboard).
+3. V-8 STATE TERMINAL — sub-ruling resolved: full 7-word set {scheduled,open,active,revealing,settling,settled,voided} CHECK-bounded; classic terminal = "settled" (unified, the as-built "closed"→"settled"); golden {open→revealing→settling→settled}; voided = abort.
+Folded as-is (matched the recommendation): V-14 SHA-256(secret‖nonce) lowercase hex; V-7 one linear fn; V-13 one fat revealed event; V-11 keep wire words; V-12 keep FK columns; V-16b defer alias (board push {player_id,score}, wire accepts {alias,score} later).
+COUNT CONFIRMED: SIX Postgres tables (players/transactions/emoji_sets/rooms/games/guesses) — NO notifications table (NOT is a Valkey lane), per L-4/Y-4. The collapsed initial migration carries all six + the games_type CHECK + the new columns.
+
 ## {codemojex-game-rename-learnings} Learnings
 
 ### L-1 — Plan-map drift found (counts + the ROM/ROM grounding split)
@@ -397,6 +437,101 @@ LOCKED (grounds the acceptance + bounds Mars's edit):
 - ACCEPTANCE: `/usr/bin/grep -rnoE '\bRMM\b|\bUSR\b' lib test` → 0 (the 3-letter TOKEN, which lives ONLY at those 5 sites), explicitly NOT a grep over the word room/player (175 player + 95 room class-4 hits that MUST survive). Docs: `\bRMM\b|\bRND\b` → 0 in docs/codemojex (player rows in design.md flip to PLR; a residual account-sense USR in specs.md is CORRECT — specs.md:9-11 names USR the auth account distinct from the PLR persona).
 - This CLOSES the D-4 "ROM↔ROM / USR↔PLR drift is out of scope" note: T-12 brought it into scope; after this rung there is NO surviving code↔canon brand drift.
 Cited: T-13 (mint ground truth), T-14 (the class breakdown), T-15 (the wire posture), L-4 (the surprise). The three Arms the Director rules: V-11 (wire words — RECOMMEND keep), V-12 (FK column name — RECOMMEND keep `player`), V-13 (the blind reveal-event shape — RECOMMEND one fat "revealed").
+
+### D-12 — VenusPG Stage-2 data-model extension folded into the design + the cm.1/cm.3 spec bodies (continues Y-2; D-1..D-10 + V-1..V-10 FROZEN, append-only)
+
+The Y-2 build-grade model + the prior-pass cm.1 triad are EXTENDED on the two D-10 axes, plus two ground-truth corrections (L-4). Folded (the design body is authoritative; the spec bodies derive):
+
+A. BLIND COLUMNS LIVE (V-6 → Arm B). The four games columns (commitment/nonce/revealed_ms/top_k) ship WRITTEN by the golden flow, not "present-but-NULL for a future rung". design §3.5 carries a written-when/read-when table; §3.8 reframed "this scope ships them"; §5.1 NEW (the blind keyspace — same cm:{game}:* keys, the live push suppressed by feedback=none, the board read withheld until revealed_ms). The blind flow is cm.3 (the columns ship present in cm.1).
+
+B. THREE BRAND RE-BASES (was one). RND→GAM + RMM→ROM + USR→PLR, all at the MINT (the brand string at generate! + the cache kind: + the doc-prose tokens — the schema MODULE names Room/Player are NOT brand-coupled and stay). Mint sites on disk: rooms.ex:18 RMM→ROM, rooms.ex:60 RND→GAM, wallet.ex:21 USR→PLR, tables.ex:59 kind RND→GAM. Counts lib+test: RND=6, RMM=2, USR=3. Acceptance widens to 0 RND+RMM+USR in lib+test (+ 0 RMM+RND in docs/codemojex). design §0/§2/§3.1/§3.4/§4/§6.1/§6.3/§6.8/§11 + cm.1.md §2/§3/§5/§6/§7 all reflect it; INV-1 widened to "exactly three brands change".
+
+C. SIX POSTGRES TABLES (was "seven"). No notifications table in either migration (NOT = a Valkey lane). design §0.2 + §2 + §8.1 corrected; cm.1.md D1 corrected. The collapsed initial create = players/transactions/emoji_sets/rooms/games/guesses + the games_type CHECK.
+
+D. DB NAMES = codemojex_dev / codemojex_test (config/dev.exs:14 / config/test.exs:19); runtime.exs reads DATABASE_URL (no literal prod DB name). The prompt's `codemoji_game` is FALSIFIED by disk (L-4). The reinit targets codemojex_dev + codemojex_test ONLY; no *_snapshot DB exists in config.
+
+E. FIVE OPEN BLIND-MECHANIC ARMS framed (V-14/V-15/V-16 this turn + V-7 scoring-unification + V-8 state-machine re-raised LIVE) — the commitment scheme (default byte-pinned SHA-256), the top-K split curve (default fixed top_k graduated), the reduced-set size + the anonymized alias (default 24-cell EMS, defer alias to RMP). Each is an OPEN MECHANIC the canon leaves to rule (cited), NOT invented surface. The Director rules them via AskUserQuestion before the cm.3 build leg; cm.3.md carries each [RULE]-marked with its cited-canon default.
+
+F. cm.3.md AUTHORED (NEW). The blind-Golden spec body (G1 feedback-none+privacy, G2 commit-reveal, G3 sealed top-K, G4 revealing/settling states, G5 reduced set; INV-5 sealed-exactly-once-idempotent, INV-9 privacy+binding, INV-10 no-new-table, INV-11 wallet-floor). Its stories+brief derive once the §8 Arms are ruled.
+
+BOUNDARY HELD: edits ONLY under docs/codemojex/ (game-model.design.md + specs/cm.1.md + specs/cm.3.md). No production code edited. No git. The disjoint-from-Venus boundary held: the brief + design.md + cm.1.stories.md/cm.1.llms.md were NOT edited by VenusPG (cm.1.md was VenusPG's own prior deliverable, not Venus's — confirmed by the "Authored by Venus-PG" provenance + the untracked `?? specs/` state). NOTE for the Director: cm.1.stories.md + cm.1.llms.md (the derived founding-rung triad) still reflect the ONE-brand scope — they need a re-derive to the three-brand body (a Venus or a follow-up VenusPG task; flagged, not done — the BODY is authoritative + extended, the derived files lag).
+
+### D-13 — The blind/sealed Golden WIRE contract (Venus's surface; the privacy line as the hard invariant INV-9)
+
+LOCKED (the wire half of V-6 Arm B; VenusPG owns the COLUMNS, Venus owns how they appear on the wire — they meet at games.feedback/settlement):
+- B-1 NO per-guess feedback: ScoreWorker.handle/1 branches on the game's feedback policy; a golden game (feedback="none") stores the GES + counts the attempt but SUPPRESSES the :scored PubSub broadcast + the Events.publish "scored". Classic (feedback="score") unchanged. (specs.md:40/45/90)
+- B-2 commitment PUBLISHED, preimage SEALED: game_view/1 carries :commitment + :state for a golden game, NEVER :secret/:nonce while revealed_ms is null. (specs.md:53-54)
+- B-3 ONE sealed reveal push at close: a new PubSub event on the per-game topic (shape per the V-13 ruling — RECOMMEND one fat "revealed" carrying secret+nonce+commitment+board+top-K payouts+terminal state) → a new channel push; the FIRST and ONLY results a blind client gets; the exposed commitment recomputes hash(secret,nonce)==commitment. (specs.md:47/55/89-90)
+- B-4 state+timer only in-flight: the channel carries state transitions + the timer for a golden game, no scores; join returns the game_view (state+timer+commitment, no secret/nonce/results). (specs.md:36/89-90)
+- INV-9 THE PRIVACY LINE (Operator-locked): the secret AND the commitment PREIMAGE (secret+nonce) never cross the wire pre-reveal; the commitment HASH itself is public by design (it binds the server). The G6 gate must EXERCISE this: a present golden game RUNS the suppression + the reveal with a positive proof (in-flight no secret/nonce + no per-guess push; at-reveal the binding holds); a golden game absent under the test's opt-in is a LOUD failure, never a silent pass.
+- GAPS held out (NOT invented, per D-9): top-K pays from the game's prize_pool (BNK bank out of scope); the anonymized leaderboard alias needs RMP membership (out of scope) — the board push uses {player_id, score}, the wire shape accepts {alias, score} with alias defaulting to the id. These land with their deferred systems.
+Cited: T-16 (the as-built channel/view/ScoreWorker grounding), brief §11, the specs.md §43-90 clauses. The acceptance: brief §11.5 (the privacy story, exercised) + cm.1.stories.md S-9.
+
+### D-14 — The four-file extension contract (what Venus authored + the dual-architect boundary held)
+
+LOCKED (the disjoint Venus surface; VenusPG's NEW edits to cm.1.md + codemojex.game-model.design.md were NOT read — the dual-architect rule held):
+1. codemojex-game-rename.brief.md — EXTENDED with §10 (the RMM→ROM + USR→PLR brand-only re-bases, every file:line, the V-11 wire-words Arm + V-12 FK-column Arm), §11 (the blind/sealed wire surface, the four B-1..B-4 rules each grounded, the V-13 reveal-shape Arm, the §11.5 exercised privacy acceptance), §12 (the unified residual-grep acceptance for all three brands + the docs), §13 (the extended stories R-5/R-6/R-7 + the full build-order DAG). The header now states the brand-vs-word law up front.
+2. codemojex.design.md — RECONCILED forward to GAM/ROM/PLR (0 legacy brand tokens, 0 entity-round prose), with the D-5 tier-removal + the V-6 blind-mode reflected in the mirror prose and flagged with scoped [RECONCILE] markers that point the deep MODEL reconcile to VenusPG's codemojex.game-model.design.md + specs/cm.1.md (Venus reconciles the RENAME; VenusPG owns the MODEL).
+3. specs/cm.1.stories.md — S-6 reconciled (blind columns inert→LIVE this rung); ADDED S-7 (room re-base), S-8 (player re-base + the docs-USR note), S-9 (the blind wire flow); Coverage + Liveness extended for D6/D7/D8 + INV-9.
+4. specs/cm.1.llms.md — ADDED R6/R7 (the brand re-bases, brand-only), R8 (the blind wire B-1..B-4), A-5/A-6 agent stories, the unified §5 acceptance gate (the 3-brand grep + the privacy-line exercise + the ≥100 loop + the docs grep); the footer notes the Venus-PG(core)+Venus(axis) dual authorship + the three Director-ruled forks.
+
+BOUNDARY HELD: edited ONLY under docs/codemojex/. Did NOT edit cm.1.md or codemojex.game-model.design.md (VenusPG's). Did NOT read VenusPG's new edits to those two files. No production code touched. No git. The FROZEN ledger history (T-1..T-12, D-1..D-10, V-1..V-10, Y-1..Y-2) untouched — appended only (T-13..T-17, L-4, V-11..V-13, D-11..D-13, Y-3 next).
+FORKS FOR THE DIRECTOR (rule before the blind build via AskUserQuestion, all RECOMMEND Arm A): V-11 room/player wire words (keep), V-12 the FK column name transactions.player/guesses.player (keep `player`), V-13 the blind reveal-event shape (one fat "revealed").
+
+### D-15
+
+Operator Arm rulings — PRODUCT/SCOPE (AskUserQuestion answers, 2026-06-25)
+
+- V-15 PAYOUT: games.top_k DEFAULT 5; a CONFIGURABLE payout_split (an ordered integer weight array on the room policy, default [40,25,15,12,8]=100, snapshotted to the game at start). Sealed settlement ranks every guess linearly (V-7) + pays the top-5 per the split from the game's OWN prize_pool (BNK deferred). [Operator: "Top-5, configurable split."]
+- V-16a REDUCED SET (mechanism REFINED + REAL assets supplied — supersedes the architect's fixed-24-cell recommendation): add a room config cell_count (N, nullable; null = the full room cell set = classic today). At game start the game snapshots a RANDOMIZED N-cell subset of the room's `codes` (Enum.take_random(room_codes, N)) as its keyboard, stored on the game; the secret draws its 6 from THAT subset. Golden: N reduced (room-configured); classic: N null. Grounds on emoji_set.ex (codes = the room keyboard subset; EmojiSet.secret = take_random 6; cell_size default 144). Seed the EMS rows from the 2 REAL sprite sheets docs/codemojex/emoji-sets/{01,02}-emoji-set.png (+ @2x retina); grid cols/rows/cell_size MEASURED from the PNGs (no manifest exists). [Operator: "configurable cell set in room then randomized to game with N-cell set" + supplied the assets.]
+- V-16b ANON BOARD: DEFER the anonymized alias to the RMP membership rung; the board push carries {player_id, score}; the wire shape accepts {alias, score} for later. [Operator: defer — recommended.]
+
+### D-16
+
+Operator Arm rulings — ENGINEERING SLATE ACCEPTED (AskUserQuestion "Accept all six", 2026-06-25)
+
+- V-7: ONE linear scoring function both modes (the Operator HARD constraint; architecture.md:59 "exact-match" rejected).
+- V-14: provably-fair commit-reveal = SHA-256(secret ‖ nonce), lowercase hex; the commitment published at game start; the preimage (secret + nonce) server-side until reveal (HMAC + per-cell rejected — unpublishable / leaks structure).
+- V-13: ONE fat `revealed` event at close (secret + nonce + commitment + board + top-K + state) + the commitment on game_view from open + golden per-guess pushes suppressed in-flight.
+- V-8: the full canon status set {scheduled, open, active, revealing, settling, settled, voided}, CHECK-bounded; classic {open→settled} terminal "settled"; golden {open→revealing→settling→settled}; voided = the abort path.
+- V-11: KEEP the room/player WIRE words (/rooms, /players, player:, :no_player) — no canon word to flip to; flipping would be invention.
+- V-12: KEEP the FK column names transactions.player / guesses.player — the re-base moves the id VALUE, not the column NAME; the D-3 fresh schema makes the keep zero-cost.
+
+Unchanged: V-6 ruled B (the FULL blind/sealed/commit-reveal Golden, prior Operator ruling); V-9 stays Arm A (a non-blocking launch-gate config seam — does not shape the schema, not a build fork). All design Arms are now ruled; the cm.3 blind build is unblocked.
+
+### D-17
+
+D-CV1 — The convergence fold contract: the new schema delta + the supersessions (folds D-15/D-16 into the design + cm.1 + cm.3)
+The Operator rulings introduce schema/mechanism changes the pre-ruling design did not carry. The fold lands these LOCKED contracts:
+
+NEW/CHANGED COLUMNS (the six-table collapsed initial migration carries all):
+- games.top_k integer NOT NULL DEFAULT 5 (was nullable; ruling fixes default 5). Classic: 5 (inert — no sealed pass reads it). Golden: snapshotted from rooms.top_k or the default.
+- games.payout_split {array,integer} NOT NULL DEFAULT '{40,25,15,12,8}' — NEW. The ordered weight array snapshotted to the game at start; the sealed settlement pays rank i its weight share of prize_pool. Sums need not be 100 (the split normalizes over the present weights), but the default sums 100.
+- rooms.payout_split {array,integer} NOT NULL DEFAULT '{40,25,15,12,8}' — NEW. The room policy default, snapshotted to the game.
+- rooms.cell_count integer NULL — NEW. N = the game keyboard size; NULL = the full room cell set (= classic today). Golden rooms set N; classic rooms leave NULL.
+- games.cell_codes {array,string} NOT NULL — NEW. The game's snapshotted keyboard: at start, Enum.take_random(room_codes, N) when rooms.cell_count=N, else the full EMS codes (room_codes) when NULL. The secret draws its 6 from games.cell_codes (NOT from the room EMS directly). This SUPERSEDES the design §3.8.4 "a smaller EMS row" mechanism entirely — the EMS stays the full room keyboard; the narrowing is a per-game randomized snapshot.
+
+SUPERSESSIONS (the design files currently carry the pre-ruling recommendation; the fold overwrites):
+1. §3.8.2 / §10.2 V-11-Arm / cm.3 G3: payout = the STORED payout_split array (NOT a computed monotone w_i=(K-i+1)/sum curve). economy.ex top_k_split/2 reads games.payout_split + the ranked best points, pays each rank its weight share of effective_pool.
+2. §3.8.4 / §10.2 reduced-set Arm / cm.3 G5: the reduced set = rooms.cell_count + games.cell_codes (a randomized per-game N-cell snapshot of the room's codes), NOT a smaller EMS row. EmojiSet.secret draws from games.cell_codes. The EMS row stays the full keyboard. The §3.8.6 "no new games column" line is FALSE for the reduced set now (games.cell_codes IS the new column); corrected in the fold.
+3. §3.8.5 / §10.2 V-8 / cm.3 G4: status CHECK-bounded over the full 7 words {scheduled,open,active,revealing,settling,settled,voided}; classic terminal = "settled" (the as-built "closed"→"settled"); golden {open→revealing→settling→settled}; voided = abort.
+4. V-16b alias: board push carries {player_id, score}; the wire shape accepts {alias, score} for the later RMP rung. (Matches the prior defer recommendation; no schema change.)
+
+FOLDED AS-IS (matched the recommendation — flip [RULE]-pending → RULED): V-14 SHA-256(secret‖nonce) lowercase hex commit-reveal; V-7 one linear scoring fn; V-13 ONE fat `revealed` event (secret+nonce+commitment+board+top-K+state) + commitment on game_view from open + golden per-guess pushes suppressed; V-11 keep wire words; V-12 keep FK columns.
+
+NOTE the V-number aliasing the design uses INTERNALLY (§10.2: V-7..V-12) maps to the LEDGER V-numbers: design-internal "V-7 scoring"=ledger V-7; "V-8 state"=ledger V-8; "the commitment-scheme Arm"=ledger V-14; "the payout-curve Arm"=ledger V-15; "the reduced-set Arm"=ledger V-16(a). The fold cites the LEDGER V-numbers (the authority per the design's own footnote) and removes the [RULE]-pending framing (every Arm is ruled).
+
+### D-18
+
+D-CV2 — The EMS seed grounded in the MEASURED sprite sheets (folds V-16a's asset-grounding directive)
+Two real assets under docs/codemojex/emoji-sets/ (base + @2x retina, measured via sips). @2x = exactly 2× base in BOTH dims (no extra rows on retina), so the grid is the base dims.
+- 01-emoji-set.png: 720 × 1080 base / 1440 × 2160 @2x.
+- 02-emoji-set.png: 720 × 1512 base / 1440 × 3024 @2x.
+DERIVATION: EmojiSet addresses cells XXYY at (-x*cell_size, -y*cell_size); cols = width÷cell_size, rows = height÷cell_size; both MUST be integers. cell_size 144 (the emoji_set.ex:39 DEFAULT) gives 01: 5 × 7.5 and 02: 5 × 10.5 — NON-integer rows → 144 does NOT fit these assets. The only cell_size dividing BOTH sheets' width AND height into integers: cell_size 72 (gcd-consistent) → 01: cols 10, rows 15 (150 cells); 02: cols 10, rows 21 (210 cells). (120 fits 01 but not 02; 360 fits neither's height.)
+THE EMS SEED (2 rows, grounded in the MEASURED dims, cell_size 72 — the measured-true divisor, NOT the blind code default 144):
+- EMS-1: name "emoji-set-01", cols 10, rows 15, cell_size 72, sprite_url "/emoji-sets/01-emoji-set.png" (the served path; @2x via srcset/retina-2x), codes = all_cells(10,15) = 150 row-major XXYY cells (the full room keyboard).
+- EMS-2: name "emoji-set-02", cols 10, rows 21, cell_size 72, sprite_url "/emoji-sets/02-emoji-set.png", codes = all_cells(10,21) = 210 cells.
+The reduced set is NOT a smaller EMS (D-CV1 supersession 2) — these EMS rows are the FULL keyboards; rooms.cell_count + games.cell_codes do the per-game narrowing (e.g. a golden room with cell_count 24 snapshots Enum.take_random(150-or-210 codes, 24)). cell_size 72 is a SURFACE FORK surfaced to the Director (the code default is 144; the measured assets demand 72) — recommending 72 (the only value consistent with both sheets). If the Operator intends a different cell grid (e.g. the assets are to be re-exported at 144), that is a one-line ruling; the seed states the measured-true 72 with the fork flagged.
 
 ## {codemojex-game-rename-alternatives} Alternatives
 
@@ -603,3 +738,48 @@ Reinitialization (Arm V-4=A): collapse the 2 migrations into one clean initial c
 Four Arms need Operator approval (V-1..V-4, recommendations each); one "as described" gap recorded (L-2: the launch type set is {classic,golden} — the only types described on disk; Golden's description is itself split between as-built boost-only and forward blind-mode). Canon-drift [RECONCILE] flagged: roadmap B7.4.2/B7.3 + game_rules.md still teach the removed tiers — a follow-up canon reconcile owed.
 
 Stories R-1..R-6 (Given/When/Then, INV-1..INV-7) are the build's acceptance. Ledger: T-8, D-4/D-5, V-4/V-5/V-6, L-2.
+
+### Y-3 — Venus final report (the IDENTITY/TOKEN/WIRE/CODE-SURFACE axis), BUILD-GRADE pending 3 Director-ruled forks
+
+VERDICT: the extension axis is BUILD-GRADE — every claim grounded to a real file:line or a specs.md § (re-found on disk this turn); three forks await the Director's AskUserQuestion before the blind build, all with a RECOMMENDED Arm.
+
+FILES EXTENDED (4, all under docs/codemojex/, disjoint from VenusPG):
+- codemojex-game-rename.brief.md — +§10 (RMM→ROM + USR→PLR, brand-only, every file:line) +§11 (blind/sealed wire, B-1..B-4) +§12 (unified residual grep) +§13 (extended stories + DAG). Header now states the brand-vs-word law.
+- codemojex.design.md — reconciled forward to GAM/ROM/PLR (0 legacy brand tokens, 0 entity-round prose), D-5 tier-removal + V-6 blind reflected, deep MODEL reconcile flagged to VenusPG's docs via [RECONCILE].
+- specs/cm.1.stories.md — S-6 reconciled inert→LIVE; +S-7/S-8/S-9; Coverage+Liveness for D6/D7/D8 + INV-9.
+- specs/cm.1.llms.md — +R6/R7/R8 +A-5/A-6 + unified §5 gate (3-brand grep + privacy-line exercise + ≥100 loop + docs grep); footer notes dual authorship.
+
+KEY GROUND TRUTH (T-13): the T-12 directive is CORRECT, the prior brief/design.md were STALE on the room brand. rooms.ex:18 mints "RMM" (0 "ROM" in code); wallet.ex:21 mints "USR" (0 "PLR"). The room/player re-base is BRAND-ONLY — 5 line-edits (rooms.ex:14,18 + game.ex:6, wallet.ex:19,21), the words room/player stay everywhere. This CLOSES the D-4 out-of-scope drift note.
+
+ARMS FRAMED (3, all RECOMMEND Arm A):
+- V-11 — room/player WIRE words: keep /players //rooms /player: /:no_player (no canon word to flip TO; flip only the brand id-prefix). Arm B (flip for symmetry) REJECTED on no-invent.
+- V-12 — the FK COLUMN names transactions.player/guesses.player: keep `player` (the brand moves the id VALUE, not the column NAME; D-3 fresh schema = no migration cost either way). VenusPG also owns the column; expected convergence on keep.
+- V-13 — the blind REVEAL-event shape: one fat "revealed" event (secret+nonce+commitment+board+top-K+state) at close + the commitment on game_view from open + the per-guess push suppressed in-flight. Arm B (separate reveal+settled) heavier; Arm C (poll) REJECTED (drops the mandated channel).
+
+BLOCKING: none for the spec. The blind BUILD is blocked until the Director rules V-11/V-12/V-13 (the brief/stories/llms carry all three as RECOMMENDED Arms ready to ratify). The migration is D-3 (one fresh collapsed initial create, no data migration) — VenusPG's relational shape.
+
+DUAL-ARCHITECT BOUNDARY HELD: did NOT read VenusPG's new cm.1.md / codemojex.game-model.design.md edits; did NOT edit them. No production code. No git. FROZEN history untouched.
+
+### Y-4 — VenusPG Stage-2 data-model extension COMPLETE (BUILD-GRADE for cm.1; cm.3 contracts authored, 5 Arms to rule)
+
+VERDICT: build-grade. The data model + the founding-rung body (cm.1) are build-ready and depend on no open fork; the blind-Golden body (cm.3) is authored with its 5 open mechanics framed as Arms (each cited, [RULE]-marked with a cited-canon default) for the Director to rule via AskUserQuestion before the cm.3 build leg. No production code edited; no git.
+
+FILES (edited ONLY under docs/codemojex/ — disjoint from Venus):
+• docs/codemojex/codemojex.game-model.design.md — EXTENDED: §0 (3 brand re-bases incl. RMM→ROM/USR→PLR), §0.1 (V-6 Arm B + the brand-rebase row), §0.2 NEW (the two ground-truth corrections), §2 (six tables, ROM/PLR rows), §3.1/§3.4 (brand headers + mint-site source), §3.5 (the four blind columns LIVE + a written-when/read-when table), §3.8 (this-scope-ships-blind + Arms V-10/11/12 reframe), §3.8.6 (USR→PLR), §4 (the brand-contract table → GAM/ROM/PLR + the 3-mint prose), §5 NEW §5.1 (the blind keyspace), §6.1/§6.3/§6.6/§6.8 (the 3 mints + the blind open/close branches + the privacy widening), §8.1 (six-table collapse), §9 (R-1 the 3 re-bases, R-4 blind/sealed, R-7 NEW commit-reveal+privacy, coverage + the cm.1/cm.3 split), §10.2 (V-7/V-8 LIVE + the 3 new blind-mechanic Arms), §10.3/§11 (boundary brands), §12 (the ladder: cm.1 3-brands + cm.3 builds-this-scope, cm.2 folded; §12.3 cm.1 extended; §12.4 NEW cm.3 triad).
+• docs/codemojex/specs/cm.1.md — EXTENDED: the founding-rung body widened to the 3 brand re-bases + the six-table + the dev/test DB names + the two residual-greps (RND/RMM/USR + the entity/bonus tokens) + the migration up/down gate. (My own prior-pass deliverable, NOT Venus's — confirmed by the "Authored by Venus-PG" provenance + the untracked `?? specs/` state.)
+• docs/codemojex/specs/cm.3.md — NEW (224 lines): the blind-Golden spec body. G1 feedback-none+privacy · G2 commit-reveal · G3 sealed top-K · G4 revealing/settling states · G5 reduced set; INV-5 sealed-exactly-once-idempotent · INV-9 privacy+binding · INV-10 no-new-table · INV-11 wallet-floor; the gate's privacy/fairness/idempotency probes (each self-liveness); §8 the 5 Arm-rulings table.
+
+THE 5 ARMS THE DIRECTOR RULES (with the Operator) before the cm.3 build (ledger V-n is the authority):
+1. COMMITMENT SCHEME (V-14) → RECOMMEND byte-pinned SHA-256 over a canonical encoding of secret‖nonce, lowercase hex (the deliverable is the pinned encoding so the client recomputes; HMAC rejected — unpublishable; per-cell rejected — leaks structure).
+2. TOP-K SPLIT CURVE (V-15) → RECOMMEND a fixed top_k + a graduated decreasing share per rank (winner-take-all rejected — makes top_k vestigial; fraction-of-field rejected — couples prize to turnout).
+3. REDUCED-SET SIZE + ANONYMIZED ALIAS (V-16) → RECOMMEND a 24-cell EMS row (mechanism: a smaller EMS, NOT a games.symbols column) + DEFER the anonymized alias to the RMP rung (the reveal-gated privacy already secures the blind contest).
+4. SCORING UNIFICATION (V-7, re-raised LIVE) → RECOMMEND one linear function both modes (the Operator's HARD constraint + roadmap B7.4.1; architecture.md:59's "exact-match" is the rejected arm).
+5. STATE-MACHINE SHAPE (V-8) → RECOMMEND the full canon set as text words; sub-rulings: CHECK-bound the 7 words? classic terminal = settled (unified) or closed (as-built)?
+
+TWO GROUND-TRUTH CORRECTIONS (L-4 — the reconcile caught both):
+(a) SIX Postgres tables, not seven — no notifications table in either migration (NOT = a Valkey lane); the collapsed create is players/transactions/emoji_sets/rooms/games/guesses.
+(b) DB names = codemojex_dev / codemojex_test (config/dev.exs:14 / config/test.exs:19); runtime.exs reads DATABASE_URL — the prompt's `codemoji_game` is FALSIFIED by disk; no *_snapshot DB exists in config. The reinit targets codemojex_dev + codemojex_test ONLY.
+
+ONE FLAGGED FOLLOW-UP (not a blocker, for the Director): cm.1.stories.md + cm.1.llms.md (the DERIVED founding-rung triad) still reflect the ONE-brand scope — they need a re-derive to the now-three-brand cm.1.md body. The BODY is authoritative + extended; the derived files lag (a Venus or a follow-up VenusPG task). cm.3.stories.md + cm.3.llms.md are intentionally NOT authored yet (they derive after the 5 Arms are ruled, so their contracts are fixed not guessed).
+
+GROUNDING: every table/column/policy/blind-mechanic cites a real schema/migration/canon-line; the mint sites re-found on disk (rooms.ex:18/60, wallet.ex:21, tables.ex:59); the three flagged gaps (BNK/RMP/SES) designed-around, never invented; the five open mechanics are Arms to rule, not surface invented. Ledger: T-15, V-14/V-15/V-16, L-5, D-12, this Y-3.

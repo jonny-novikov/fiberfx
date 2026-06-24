@@ -18,16 +18,20 @@
 > (the open Arms). The product canon is `codemojex.architecture.md` ("Provably-fair secret", "Data flow —
 > a Golden Room", "Anonymization") / `codemojex.specs.md:36,46–56` / `codemojex.roadmap.md` B7.1.3/B7.4.1.
 >
-> **Builds on cm.1.** cm.1 is the founding core (the fresh schema **with the four blind columns present**,
-> the three brand re-bases, classic live mode). cm.3 depends on cm.1 being shipped; it touches only the
-> golden path.
+> **Builds on cm.1.** cm.1 is the founding core (the fresh schema **with the four blind columns +
+> `cell_codes` + `payout_split` present**, the three brand re-bases, classic live mode). cm.3 depends on
+> cm.1 being shipped; it touches only the golden path. The schema columns this rung writes
+> (`commitment`/`nonce`/`revealed_ms`/`top_k`/`cell_codes`/`payout_split`) are all landed by cm.1 — cm.3
+> adds **no** table and **no** migration (INV-10).
 >
-> **`[RULE]`-pending: the open mechanics.** Five mechanics the canon leaves genuinely open are framed as
-> Arms (design §10.2): the **commitment scheme** (V-10-Arm), the **top-K split curve** (V-11-Arm), the
-> **reduced-set size + the anonymized-leaderboard treatment** (V-12-Arm), **scoring unification** (V-7),
-> and the **state-machine shape + CHECK** (V-8). Each deliverable carries the **recommended Arm as its
-> default** and is marked `[RULE]` so the Director's `AskUserQuestion` closes it before the build leg.
-> These are open *mechanics* to rule, not invented surface — every one cites a canon line.
+> **All mechanics are RULED (D-15/D-16, 2026-06-25).** The mechanics the canon left open are settled by the
+> Operator (design §10.2): the **commitment scheme** = SHA-256(secret ‖ nonce) lowercase hex (V-14); the
+> **top-K payout** = `top_k` DEFAULT 5 + a stored `payout_split` weight array (V-15); the **reduced set** =
+> room `cell_count` + a per-game randomized `games.cell_codes` snapshot (V-16a); the **anonymized alias** =
+> deferred to `RMP` (V-16b); **scoring unification** = one linear function (V-7); the **state machine** =
+> the CHECK-bounded 7 words, classic terminal `settled` (V-8); the **reveal event** = one fat `revealed`
+> (V-13). Each deliverable below states the ruled mechanic as a contract — **no `[RULE]`-pending fork
+> remains**; the stories + brief derive directly.
 >
 > **Framing discipline (propagate):** no gendered pronouns for agents; no perceptual or interior-state
 > verbs (sees / wants / notices); no first-person narration. State surfaces as contracts.
@@ -52,27 +56,33 @@ data model or the scoring math.
 **IN (this rung):**
 - **Feedback `none` + the privacy withholding** (design §3.8.1, §5.1): a golden game stores `points`
   server-side but emits **no** `scored` push and returns **no** score from any player-facing read until
-  `revealed_ms` is set. The `view.ex` privacy module branches on `feedback`/`revealed_ms`.
-- **Commit-reveal** (design §3.8.3): at open compute + store `commitment = H(secret ‖ nonce)`, keep
-  `secret`+`nonce` server-side sealed; at close set `revealed_ms` and expose `secret`/`nonce`/`commitment`
-  so a player recomputes + verifies. The commitment **scheme** is the V-10-Arm ruling (default byte-pinned
-  SHA-256).
+  `revealed_ms` is set. The `view.ex` privacy module branches on `feedback`/`revealed_ms`. The
+  `game_view` carries the `commitment` from open. At close, **one fat `revealed` event** (V-13) — not a
+  stream of per-guess pushes.
+- **Commit-reveal** (design §3.8.3): at open compute + store **`commitment = SHA-256(secret ‖ nonce)`,
+  lowercase hex** (V-14), keep `secret`+`nonce` server-side sealed; at close set `revealed_ms` and expose
+  `secret`/`nonce`/`commitment` so a player recomputes + verifies. The byte-pinned encoding is documented
+  (G2).
 - **Sealed top-K settlement** (design §3.8.2): at the timer close, inside the same `cm:{game}:closed`
-  `SET NX` one-shot — reveal, rank by best linear `points`, pay the top `top_k` from
-  `Economy.effective_pool/3` (boosted by `gold_multiplier`) as `TXN` deposits through the wallet, then
-  `settled`. The **split curve** is the V-11-Arm ruling (default fixed `top_k`, graduated).
+  `SET NX` one-shot — reveal, rank by best linear `points`, pay the top `top_k` (DEFAULT 5) from
+  `Economy.effective_pool/3` (boosted by `gold_multiplier`), **rank `i` taking its weight share
+  `payout_split[i] / Σ payout_split`** (the stored `games.payout_split` array, V-15) as `TXN` deposits
+  through the wallet, then `settled`.
 - **The `revealing`/`settling` states** (design §3.8.5): the golden path `open → revealing → settling →
-  settled`; `voided` the abort. The state-machine **shape + CHECK** is V-8.
-- **The reduced emoji set** (design §3.8.4): a golden room points at a smaller `EMS`. The **size** is the
-  V-12-Arm ruling (default a 24-cell `EMS`); the mechanism is a smaller `EMS` row, **not** a per-game
-  subset column.
+  settled`; `voided` the abort. The state column is **CHECK-bounded** over the seven canon words (V-8),
+  shipped by cm.1; classic terminal is `settled`.
+- **The reduced emoji set** (design §3.8.4): a golden room sets **`rooms.cell_count`** (`N`); at start the
+  game snapshots **`games.cell_codes = Enum.take_random(room_codes, N)`** and the secret draws from that
+  (V-16a). The narrowing is a per-game randomized snapshot, **not** a smaller `EMS` row (the EMS stays the
+  full keyboard).
 
 **OUT (later rungs / flagged gaps — design §3.8.6):**
 - **The `BNK` bank + the rake.** The top-K pays from the game's own `prize_pool` (as-built); no bank, no
   rake column. The bank lands with its system.
-- **The anonymized leaderboard alias.** Needs `RMP` membership (absent). Until `RMP`, a golden leaderboard
-  ranks by `PLR` like classic — and the reveal-gated privacy (no score until reveal) already secures the
-  blind contest without the alias (V-12-Arm, sub-recommendation: defer).
+- **The anonymized leaderboard alias.** Needs `RMP` membership (absent) — RULED **deferred to `RMP`**
+  (V-16b). Until `RMP`, a golden leaderboard ranks by `PLR` like classic; the board push carries
+  `{player_id, score}` and the wire shape is authored to accept `{alias, score}` later (no wire break when
+  `RMP` lands). The reveal-gated privacy (no score until reveal) already secures the blind contest.
 - **The `SES` session / verified `initData`** + the **regulatory eligibility seam** (design §Arm V-9) —
   the gating is a join-time predicate + a launch-gate/legal decision, not a `games` column; a permissive
   default ships, the policy values are deferred.
@@ -81,37 +91,45 @@ data model or the scoring math.
 
 ## 3. Deliverables (each traced to a story §`cm.3.stories.md` and an invariant §5)
 
-- **G1 — feedback `none` + the privacy withholding.** For `feedback="none"` before `revealed_ms`: the
-  scoring worker stores `points` (charged, enqueued, persisted) but emits **no** `scored` PubSub push;
-  `view.ex` `game_view/1` returns `status`+timer with **no** `totals.best`/`best_pct` score, `my_history/3`
-  returns `emojis`+`at_ms` **without** `points`, and the leaderboard returns **no** score. After
-  `revealed_ms`, the golden reads return the score like classic. A policy branch on `feedback`/
-  `revealed_ms` inside `view.ex` — not a new view. (design §3.8.1, §5.1) → Story R-7.
-- **G2 — commit-reveal.** At `start_game` for a golden game: draw `nonce`, compute `commitment =
-  H(secret ‖ nonce)` `[RULE: V-10-Arm — the hash + encoding; default byte-pinned SHA-256 over a canonical
-  UTF-8 encoding of the secret codes joined by a record separator, then ‖ nonce, lowercase hex]`, store
-  all four blind columns (`commitment`, `nonce`, `top_k`), keep `secret`+`nonce` server-side. At the
-  `revealing` transition: set `revealed_ms`, expose `secret`/`nonce`/`commitment`. The encoding is
-  **byte-pinned + documented** so the client recomputes identically. (design §3.8.3) → Story R-7.
-- **G3 — sealed top-K settlement.** At the timer close (golden never closes on a perfect crack — there is
-  no per-guess signal): inside the `cm:{game}:closed` `SET NX` one-shot, reveal, rank players by best
-  linear `points`, compute `Economy.effective_pool/3`, pay the **top `top_k`** `[RULE: V-11-Arm — the
-  split curve; default a fixed top_k with a graduated decreasing share per rank]` as `TXN` deposits
+- **G1 — feedback `none` + the privacy withholding + the one fat reveal.** For `feedback="none"` before
+  `revealed_ms`: the scoring worker stores `points` (charged, enqueued, persisted) but emits **no**
+  `scored` PubSub push; `view.ex` `game_view/1` returns `status`+timer + the published `commitment` with
+  **no** `totals.best`/`best_pct` score, `my_history/3` returns `emojis`+`at_ms` **without** `points`, and
+  the leaderboard returns **no** score. At close the golden path emits **one fat `revealed` event** (V-13)
+  carrying `secret`+`nonce`+`commitment`+board+top-K payouts+terminal `status` — the first and only results
+  the blind client receives. After `revealed_ms`, the golden reads return the score like classic. A policy
+  branch on `feedback`/`revealed_ms` inside `view.ex` — not a new view. (design §3.8.1, §5.1, §6.6) →
+  Story R-7.
+- **G2 — commit-reveal (SHA-256, V-14).** At `start_game` for a golden game: draw `nonce`, compute
+  **`commitment = SHA-256(secret ‖ nonce)`, lowercase hex** — over a canonical UTF-8 encoding of the six
+  secret codes joined by a record separator, then `‖ nonce` (`:crypto.hash(:sha256, …)`, zero new
+  dependency); store `commitment`+`nonce`, keep `secret`+`nonce` server-side. At the `revealing`
+  transition: set `revealed_ms`, expose `secret`/`nonce`/`commitment`. **The byte layout is pinned +
+  documented** (the encoding is the deliverable) so a client in any language recomputes it identically.
+  (design §3.8.3) → Story R-7.
+- **G3 — sealed top-K settlement (stored `payout_split`, V-15).** At the timer close (golden never closes
+  on a perfect crack — there is no per-guess signal): inside the `cm:{game}:closed` `SET NX` one-shot,
+  reveal, rank players by best linear `points`, compute `Economy.effective_pool/3`, pay the **top `top_k`**
+  (DEFAULT 5) — **rank `i` taking its share `payout_split[i] / Σ payout_split`** of the effective pool (the
+  stored `games.payout_split` weight array, a new pure `economy.ex` `top_k_split/2`) — as `TXN` deposits
   through `Codemojex.Wallet` (the Postgres-floor law: money moves only through the wallet in a
-  transaction), record nothing to a rake (no `BNK`), move to `settled`. (design §3.8.2) → Story R-4.
-- **G4 — the `revealing`/`settling` states.** The golden lifecycle `open → revealing → settling →
-  settled`; `voided` the abort `[RULE: V-8 — bound status with a CHECK over the canon's 7 words, or leave
-  it free text; and classic's terminal word (settled vs closed)]`. The `status` column already exists
-  (cm.1); cm.3 writes the two new words at the transitions. (design §3.8.5) → Story R-4.
-- **G5 — the reduced emoji set.** A golden room points at a smaller `EMS` `[RULE: V-12-Arm — the size;
-  default a 24-cell EMS row]`. The mechanism is an `EMS` row with a smaller `codes` array (the as-built
-  `EmojiSet` supports it), **not** a per-game `games.symbols` column. (design §3.8.4) → Story R-4.
+  transaction), record nothing to a rake (no `BNK`), move to `settled`. When fewer than `top_k` players
+  guessed, the share normalizes over the present ranks. (design §3.8.2) → Story R-4.
+- **G4 — the `revealing`/`settling` states (CHECK-bounded, V-8).** The golden lifecycle `open → revealing
+  → settling → settled`; `voided` the abort. The `status` column + its `games_status` CHECK (the seven
+  canon words; classic terminal `settled`) already ship in cm.1; cm.3 writes the two new words
+  (`revealing`, `settling`) at the transitions. (design §3.8.5) → Story R-4.
+- **G5 — the reduced emoji set (room `cell_count` + per-game snapshot, V-16a).** A golden room sets
+  **`rooms.cell_count`** (`N`, e.g. `24`); at `start_game` the game snapshots **`games.cell_codes =
+  Enum.take_random(EMS.codes, N)`** (or the full set when `cell_count` is null), and the secret draws its
+  six from `cell_codes` (`EmojiSet.secret`). The narrowing is a per-game randomized snapshot, **not** a
+  smaller `EMS` row and **not** a per-game `games.symbols` column. Both columns ship in cm.1. (design
+  §3.8.4) → Story R-4.
 
-> **Scoring unification (V-7) underpins G1/G3.** Blind settlement scores every guess with the **same
-> linear distance** engine `Scoring.score/2` and ranks by best total — `[RULE: V-7 — linear (the
-> Operator's HARD constraint + roadmap B7.4.1) vs architecture.md:59's "exact-match"; default linear]`.
-> The default is the only reading consistent with the linear-score constraint; surfaced because
-> `architecture.md` genuinely says "exact-match".
+> **Scoring unification (V-7, RULED) underpins G1/G3.** Blind settlement scores every guess with the
+> **same linear distance** engine `Scoring.score/2` and ranks by best total — **one linear function for
+> both modes** (the Operator's HARD constraint + `roadmap.md` B7.4.1); `architecture.md:59`'s "exact-match"
+> is the rejected arm. Blind adds **no** second scoring implementation.
 
 ---
 
@@ -122,22 +140,28 @@ data model or the scoring math.
   the as-built `view.ex` privacy module (the branch point).
 - **Commit-reveal:** `architecture.md` "Provably-fair secret" (hash commitment over secret+nonce →
   hiding + binding); `specs.md:53–56` (publish the commitment at open, sealed server-side, reveal +
-  verify at close). The hash is the canon's "lean instantiation" (the scheme is V-10-Arm).
+  verify at close). The hash is the canon's "lean instantiation", ruled **SHA-256(secret ‖ nonce)
+  lowercase hex** (V-14) — `:crypto.hash(:sha256, …)`, an OTP primitive, zero new dependency.
 - **Sealed top-K:** `architecture.md` "Data flow — a Golden Room" (*"one settlement pass scores every GES
   against the revealed secret, ranks, pays the top K … the game moves to settled"*); `specs.md:47` (close
   on timer, one pass, pay top K); the as-built `rooms.ex` `close_round`/`do_close` (the `SET NX` one-shot)
-  + `economy.ex` `effective_pool/3` + `Codemojex.Wallet.deposit_prize`.
+  + `economy.ex` `effective_pool/3` + `Codemojex.Wallet.deposit_prize`. The split is the stored
+  `games.payout_split` weight array, `top_k` default 5 (V-15).
 - **The state machine:** `specs.md:36` (`scheduled→open→active→revealing→settling→settled→voided`); the
-  as-built `open|closed` is the degenerate cm.1 ships.
+  as-built `open|closed` is the degenerate cm.1 ships; the seven words are CHECK-bounded, classic terminal
+  `settled` (V-8).
 - **The reduced set:** `specs.md:46` ("18 or 24 cells"); `architecture.md:14` ("a reduced symbol set");
-  the as-built `EmojiSet` (arbitrary `codes`).
+  the as-built `EmojiSet` (arbitrary `codes`) + `EmojiSet.secret` (`Enum.take_random(codes, 6)`,
+  `emoji_set.ex:64`). The mechanism is `rooms.cell_count` + the per-game `games.cell_codes` snapshot
+  (V-16a); the EMS seed is the two real sprite sheets (design §3.3.1).
 - **The scoring engine:** the as-built `scoring.ex` `Scoring.score/2` (`points(d)=100-20*d` summed to
-  600); `roadmap.md` B7.4.1 (blind scores on the same linear scale).
-- **The four blind columns:** cm.1 (the schema lands them present; design §3.5).
+  600); `roadmap.md` B7.4.1 (blind scores on the same linear scale). One linear function, both modes (V-7).
+- **The blind/reduced/split columns:** cm.1 (the schema lands `commitment`/`nonce`/`revealed_ms`/`top_k` +
+  `cell_codes` + `payout_split` present; design §3.5).
 
 **The master grounding:** every mechanic cites design §3.8 → the canon line; the three flagged gaps
-(`BNK`/`RMP`/`SES`, design §3.8.6) are designed-around, never invented; the five open mechanics are Arms
-to rule (each cites the canon line that leaves it open), never guessed surface.
+(`BNK`/`RMP`/`SES`, design §3.8.6) are designed-around, never invented; every mechanic the canon left open
+is now RULED (D-15/D-16, design §10.2), each citing the canon line it grounds in — no guessed surface.
 
 ---
 
@@ -151,12 +175,13 @@ to rule (each cites the canon line that leaves it open), never guessed surface.
   `nonce`); **no score** (`points`, `best`, leaderboard) crosses the wire for a golden game before
   `revealed_ms`; the revealed secret **recomputes** to the stored `commitment` (the server is bound to the
   secret it fixed at open). The privacy gate is `feedback`/`revealed_ms`, not a per-call opt-in.
-- **INV-10 — no new table, no migration.** cm.3 writes the four blind columns cm.1 landed; it adds **no**
-  Postgres table and **no** migration (the schema already carries the columns + the `status` word).
+- **INV-10 — no new table, no migration.** cm.3 writes the blind + `cell_codes` + `payout_split` columns
+  cm.1 landed; it adds **no** Postgres table and **no** migration (the schema already carries the columns
+  + the CHECK-bounded `status` word).
 - **INV-11 — the wallet floor.** Every top-K prize is a `TXN` through `Codemojex.Wallet` in a transaction
   (the non-negative CHECK + the append-only ledger); the pool is the game's own `prize_pool` (no `BNK`).
 - **INV-3 (inherited) — linear purity.** `Scoring.score/2` stays the sole linear engine for both modes
-  (the V-7 default); blind adds **no** second scoring implementation.
+  (V-7, one linear function); blind adds **no** second scoring implementation.
 
 ---
 
@@ -171,8 +196,8 @@ to rule (each cites the canon line that leaves it open), never guessed surface.
    query selects `secret`/`nonce`. A present golden game that leaks any score before `revealed_ms` is a
    **LOUD failure**, never a silent pass.
 4. **The fairness probe (INV-9 binding).** A test computes the commitment at open, runs to reveal, and
-   asserts the revealed `H(secret ‖ nonce)` **equals** the stored `commitment` (byte-for-byte, the pinned
-   encoding) — the provably-fair contract.
+   asserts the revealed `SHA-256(secret ‖ nonce)` (lowercase hex, the pinned encoding) **equals** the
+   stored `commitment` byte-for-byte — the provably-fair contract.
 5. **The idempotency probe (INV-5).** The sealed settlement pass is run twice (or the close raced); the
    payouts are **identical** and the wallet ledger shows each prize **once** (the `SET NX` one-shot + the
    pure split).
@@ -193,32 +218,35 @@ to rule (each cites the canon line that leaves it open), never guessed surface.
   `PLR`); no `SES` session / verified `initData`; no regulatory column (the V-9 seam is a join-time
   predicate + a launch-gate decision, permissive default).
 - No new Postgres table, no migration (INV-10 — cm.1's schema already carries the columns).
-- No second scoring implementation (INV-3 — the linear engine is the sole scorer; V-7 default).
+- No second scoring implementation (INV-3 — the linear engine is the sole scorer; V-7, one linear function).
 - No change to classic's live flow (cm.1) — cm.3 branches the golden path only.
 - No `git`; the Director commits by pathspec. Per-app testing only (the codemojex app dir).
   `TMPDIR=/tmp` for all `mix`.
 
 ---
 
-## 8. The Arm rulings this rung waits on (the Director's `AskUserQuestion`, design §10.2)
+## 8. The Arm rulings (RULED — D-15/D-16, 2026-06-25; design §10.2)
 
-The body's `[RULE]` markers correspond to these forks; the stories + brief re-derive once they are ruled:
+Every mechanic the canon left open is now ruled. The body states each as a contract (above); the stories +
+brief derive directly. The table records the ruling + the ledger V-number (the authority):
 
-| Arm | Deliverable | Default (RECOMMEND) |
+| Arm | Deliverable | RULED |
 |---|---|---|
-| **V-7** scoring unification | G1/G3 (the rank key) | linear distance for both modes (the Operator's HARD constraint + roadmap B7.4.1) |
-| **V-8** state-machine shape | G4 | the full canon set as text words; sub-rulings: CHECK-bound? classic terminal word? |
-| **V-10-Arm** commitment scheme | G2 | byte-pinned SHA-256 over a canonical encoding of `secret ‖ nonce`, lowercase hex |
-| **V-11-Arm** top-K split curve | G3 | a fixed `top_k` with a graduated decreasing share per rank |
-| **V-12-Arm** reduced-set size + alias | G5 | a 24-cell `EMS` row; defer the anonymized alias to the `RMP` rung |
+| **V-7** scoring unification | G1/G3 (the rank key) | ONE linear distance function, both modes (the Operator's HARD constraint + roadmap B7.4.1); `architecture.md:59`'s exact-match rejected |
+| **V-8** state-machine shape | G4 | the full canon set, CHECK-bounded (`games_status`); classic terminal `settled`; golden `open→revealing→settling→settled` |
+| **V-13** reveal event | G1 | ONE fat `revealed` event at close (secret+nonce+commitment+board+top-K+state); commitment on `game_view` from open; golden per-guess pushes suppressed |
+| **V-14** commitment scheme | G2 | SHA-256(secret ‖ nonce), lowercase hex, byte-pinned encoding; HMAC + per-cell rejected |
+| **V-15** top-K payout | G3 | `top_k` DEFAULT 5 + a stored `payout_split` weight array (default `[40,25,15,12,8]`); rank `i` takes `split[i]/Σsplit` of `effective_pool` |
+| **V-16a** reduced set | G5 | room `cell_count` (N, nullable) + a per-game randomized `games.cell_codes` snapshot; the secret draws from the snapshot; the EMS stays the full keyboard |
+| **V-16b** anonymized alias | §2 OUT | DEFER to the `RMP` rung; the board push carries `{player_id, score}`, the wire accepts `{alias, score}` later |
 
-Each is an open *mechanic* the canon leaves to rule (cited in §4), not invented surface. cm.3 builds once
-they are ruled and the stories + brief re-derive to the rulings.
+Each ruling grounds in the canon line cited in §4 — no invented surface, no open fork. The cm.3 stories +
+brief derive from this body.
 
 ---
 
-*Authored by Venus-PG (architect), Stage-2. The blind flow is grounded entirely on disk — every mechanic
-cites design §3.8 → a canon line; the three flagged gaps (`BNK`/`RMP`/`SES`) are designed-around, never
-invented; the five open mechanics are Arms to rule, each `[RULE]`-marked with its cited-canon default. No
-production code was edited. cm.3 builds on cm.1's shipped schema once the §8 Arms are ruled. The Director
-ratifies; the Operator accepts.*
+*Authored by Venus-PG (architect), Stage-2 + Stage-2 convergence (2026-06-25). The blind flow is grounded
+entirely on disk — every mechanic cites design §3.8 → a canon line; the EMS seed is measured (design
+§3.3.1); the three flagged gaps (`BNK`/`RMP`/`SES`) are designed-around, never invented; **every mechanic
+is RULED (D-15/D-16) — no `[RULE]`-pending fork remains**. No production code was edited. cm.3 builds on
+cm.1's shipped schema. The Director ratifies; the Operator accepts.*

@@ -31,19 +31,24 @@
 
 - **R1 (D1 → S-1, INV-6/INV-8).** Author **one clean initial create-migration** (collapse the two
   existing migrations) reflecting design §3: `create table(:games)` with the type/policy columns + the
-  four blind-mode columns **nullable** + `secret` + the timer/fee/golden props; `rooms` with `game` (not
-  `round`) + `type`; `guesses` **without** `tier`/`percentage`; `players` with `tg_chat_id`; the four
-  indexes; the `games_type` CHECK. Per design §8 the Operator authorized rewriting the two migration
-  files into one (a fresh machine permits it).
+  four blind-mode columns **nullable** (`top_k` default `5`) + `cell_codes` (`text[]`) + `payout_split`
+  (`int[]`, default `[40,25,15,12,8]`) + `secret` + the timer/fee/golden props; `rooms` with `game` (not
+  `round`) + `type` + `cell_count` (nullable) + `payout_split` (default `[40,25,15,12,8]`); `guesses`
+  **without** `tier`/`percentage`; `players` with `tg_chat_id`; the four indexes; **both** the `games_type`
+  and `games_status` CHECKs (design §3.5/§3.8.5). Per design §8 the Operator authorized rewriting the two
+  migration files into one (a fresh machine permits it).
 - **R2 (D2 → S-2/S-3, INV-1/INV-7).** Rename `round`→`game` / `RND`→`GAM` across the code surfaces
   (design §6) and the external wire (routes `/games`, topic/channel `game:`, the `game:` keys,
   `:no_game`). Honor the token classes (Venus-1 brief §4): rename entity/api/wire tokens; **leave**
   `Kernel.round/1`, `Math.round`, English "round". Compile-gate after the API rename to catch a missed
   caller early.
 - **R3 (D3 → S-4, INV-2).** Add `games.type` + `rooms.type` + the four policy columns
-  (`feedback`/`scoring`/`settlement`/`economy`); snapshot them onto the game at `start_game` from the
-  room's type (a type→policy lookup in code; classic defaults per `cm.1.md` §3 D3); add the `games_type`
-  CHECK (`type IN ('classic','golden')`).
+  (`feedback`/`scoring`/`settlement`/`economy`) + `payout_split` + `top_k` (games) + `payout_split` +
+  `cell_count` (rooms); snapshot the policies + `payout_split` + `top_k` onto the game at `start_game` from
+  the room, **and snapshot `cell_codes`** (`Enum.take_random(EMS.codes, room.cell_count)`, or the full set
+  when null) with the secret drawn from `cell_codes` (a type→policy lookup in code; classic defaults per
+  `cm.1.md` §3 D3); add the `games_type` CHECK (`type IN ('classic','golden')`) **and** the `games_status`
+  CHECK (the seven canon words).
 - **R4 (D4 → S-5, INV-3/INV-4/INV-5).** Remove the bonus-tier economy: drop `guesses.tier` +
   `guesses.percentage` (schema + `cast`); `Board.record/4`→`record/3` (drop `tier`); remove
   `claim_tier`, the tier-claim loop, the `ptier`/`bonus`/`tierfirst` hashes, `firsts/2`, and
@@ -93,15 +98,17 @@
 > schema.
 
 1. **Schemas** (`lib/codemojex/schemas/`): rename `round.ex`→`game.ex` (`Schemas.Round`→`Schemas.Game`,
-   `schema "rounds"`→`"games"`), **add** the type/policy + blind-mode columns to `Game` + the `cast`
-   list; `room.ex` `:round`→`:game` + `cast`, **add** `:type`; `guess.ex` `:round`→`:game` +
-   `cast`/`validate_required`, **remove** `:tier`/`:percentage`.
+   `schema "rounds"`→`"games"`), **add** the type/policy + blind-mode columns + `cell_codes` +
+   `payout_split` to `Game` + the `cast` list; `room.ex` `:round`→`:game` + `cast`, **add** `:type`,
+   `:payout_split`, `:cell_count`; `guess.ex` `:round`→`:game` + `cast`/`validate_required`, **remove**
+   `:tier`/`:percentage`.
 2. **Store + cache + tables** (`store.ex`, `tables.ex`): the `Round`→`Game` alias + the round CRUD →
    game CRUD; `@cache :cm_rounds`→`:cm_games`, `fetch_round`/`put_round`→`fetch_game`/`put_game`;
    `@rounds`→`@games`, `kind: "RND"`→`"GAM"`, `&load_round/1`→`&load_game/1`, the TTL key
    `:rounds_cache_ttl_ms`→`:games_cache_ttl_ms`, the moduledoc bullet.
 3. **The game lifecycle** (`rooms.ex`): `start_round/3`→`start_game/3`, `generate!("RND")`→`("GAM")`,
-   **snapshot the type + the four policies** at start; `close_round/1`→`close_game/1`, `close_if_expired`,
+   **snapshot the type + the four policies + `payout_split` + `top_k` + `cell_codes`** at start (the
+   secret drawn from `cell_codes`); `close_round/1`→`close_game/1`, `close_if_expired`,
    `:no_round`→`:no_game`; the `effective_pool`/`winner_take_all` close path **unchanged**.
 4. **Compile-gate** (`TMPDIR=/tmp mix compile --warnings-as-errors`) — catch a missed caller.
 5. **The score authority + board + view** (`game.ex`, `board.ex`, `view.ex`): R4's bonus-economy removal
@@ -132,9 +139,10 @@ a default in `tables.ex`).
 
 - **A-1 — the schema + the migration.** *Directive:* author the one clean initial create (R1) +
   rename/extend the schemas (R2 schema half + R3 columns + R4 column drops). *Acceptance:* `mix
-  ecto.migrate` brings up `games`/`rooms.game`/`guesses`-without-tier/`players.tg_chat_id` + the indexes +
-  the `games_type` CHECK; a created classic game has the four blind columns `NULL`. *Invariant:* INV-2,
-  INV-6, INV-8.
+  ecto.migrate` brings up `games`/`rooms.game`/`guesses`-without-tier/`players.tg_chat_id` + the new
+  `cell_codes`/`payout_split`/`cell_count` columns + the indexes + **both** the `games_type` and
+  `games_status` CHECKs; a created classic game has `commitment`/`nonce`/`revealed_ms` `NULL`, `top_k` `5`,
+  `payout_split` `[40,25,15,12,8]`, `cell_codes` the full EMS set. *Invariant:* INV-2, INV-6, INV-8.
 - **A-2 — the rename, atomically.** *Directive:* rename `round`→`game`/`RND`→`GAM` across code + wire
   (R2), snapshot the type/policies at start (R3). *Acceptance:* compile clean; `generate!("GAM")` mints a
   `GAM…` id; `GET /games/:id` returns the view; a client on `game:<id>` receives `scored`; the
@@ -150,10 +158,12 @@ a default in `tables.ex`).
   *Acceptance:* `generate!("ROM")` / `generate!("PLR")` mint `ROM…`/`PLR…` ids; `/usr/bin/grep -rnoE
   '\bRMM\b|\bUSR\b' lib test` → 0; compile clean; `--include valkey` green. *Invariant:* INV-1 (the words
   `room`/`player` byte-unchanged — schema modules/tables/columns/routes/keys/atoms).
-- **A-6 — the blind/sealed Golden wire.** *Directive:* R8 (B-1..B-4) over VenusPG's blind schema, to the
-  V-13-ruled reveal shape. *Acceptance:* the privacy story (brief §11.5) is green and **exercises** all
-  three checks (in-flight no `:secret`/`:nonce` + no per-guess push; at-reveal the commitment recomputes);
-  `--include valkey` green. *Invariant:* INV-8, INV-9 (the privacy line — preimage sealed pre-reveal).
+- **A-6 — the blind/sealed Golden wire.** *Directive:* R8 (B-1..B-4) over VenusPG's blind schema, emitting
+  the **one fat `revealed` event** at close (V-13, ruled — secret+nonce+commitment+board+top-K+state) and
+  carrying the `commitment` on `game_view` from open. *Acceptance:* the privacy story (brief §11.5) is
+  green and **exercises** all three checks (in-flight no `:secret`/`:nonce` + no per-guess push; at-reveal
+  the commitment recomputes `SHA-256(secret ‖ nonce)`, V-14); `--include valkey` green. *Invariant:* INV-8,
+  INV-9 (the privacy line — preimage sealed pre-reveal).
 
 ---
 
@@ -180,7 +190,8 @@ a default in `tables.ex`).
 ---
 
 *Authored by Venus-PG (the classic core, R1–R5) + extended by Venus (the T-12 axis: R6/R7 brand re-bases
-+ R8 the blind/sealed wire, deriving from `codemojex-game-rename.brief.md` §§10–13). The settled core has
-no open fork; the extension axis carries three forks the Director rules before the blind build (V-11 wire
-words, V-12 the FK column name, V-13 the reveal-event shape — all RECOMMENDED Arm A, brief §§10.3/10.4/11.3).
-Mars builds; the Director ratifies; the Operator accepts. No production code edited in authoring this brief.*
++ R8 the blind/sealed wire, deriving from `codemojex-game-rename.brief.md` §§10–13) + converged 2026-06-25
+(the D-15/D-16 rulings folded — the `payout_split`/`cell_codes`/`cell_count` columns + the `games_status`
+CHECK + the ruled blind mechanics). The settled core has no open fork; the extension axis's forks are now
+all RULED (V-11 keep wire words, V-12 keep the FK column name, V-13 one fat `revealed` event — D-16). Mars
+builds; the Director ratifies; the Operator accepts. No production code edited in authoring this brief.*

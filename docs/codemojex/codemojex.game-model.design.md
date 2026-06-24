@@ -3,27 +3,40 @@
 <show-structure depth="2"/>
 
 > **The design-phase deliverable for the `codemojex-game-rename` rung — REDIRECTED + OPERATOR-RULED +
-> BUILD-EXTENDED (Stage 2, 2026-06-24).** The Operator turned a token `round`→`game` rename into a
-> from-scratch **model redesign** for a multi-game-type engine, ruled the design-intent forks
-> (blind/sealed Golden **specified + built now**, tiers **removed entirely**, launch set **{classic,
-> golden}** with a spec-driven rung ladder, §12), then **extended the build scope** (D-10): the
-> blind-mode columns go **LIVE this rung** (V-6 → Arm B — no longer present-but-deferred), and **two
-> additional brand re-bases** land beside `round`→`game`: room `RMM`→`ROM` and player `USR`→`PLR`. This
-> document is the architectural design of the new Ecto model and the code surfaces it wires into. It is
-> authored by Venus-PG (architect), grounded entirely on disk; it edits no production code. **The settled
-> core (§3/§6/§8) AND the blind-mode flow (§3.8) are now both in the build scope** — the founding rung
-> (cm.1, §12) lands the schema + the three brand re-bases + classic mode; the blind-Golden rung (cm.3)
-> lands the blind flow on the same schema. **The blind mechanics that the canon leaves genuinely open
-> (the commitment scheme, the top-K split curve, the reduced-set size, the anonymized alias, the
-> state-machine CHECK) are FRAMED as Arms V-7..V-12 (§10) for the Director to rule with the Operator** —
-> they are open *mechanics*, not invented surface. The Director ratifies; the Operator accepts.
+> BUILD-EXTENDED (Stage 2, 2026-06-24) + CONVERGED (Stage-2 convergence, 2026-06-25).** The Operator
+> turned a token `round`→`game` rename into a from-scratch **model redesign** for a multi-game-type
+> engine, ruled the design-intent forks (blind/sealed Golden **specified + built now**, tiers **removed
+> entirely**, launch set **{classic, golden}** with a spec-driven rung ladder, §12), then **extended the
+> build scope** (D-10): the blind-mode columns go **LIVE this rung** (V-6 → Arm B — no longer
+> present-but-deferred), and **two additional brand re-bases** land beside `round`→`game`: room
+> `RMM`→`ROM` and player `USR`→`PLR`. **Every open Arm is now RULED** (ledger D-15/D-16, 2026-06-25):
+> this document folds those rulings — the schema, the mechanics, and the spec ladder are build-grade with
+> **no surviving `[RULE]`-pending fork**. This document is the architectural design of the new Ecto model
+> and the code surfaces it wires into. It is authored by Venus-PG (architect), grounded entirely on disk;
+> it edits no production code. **The settled core (§3/§6/§8) AND the blind-mode flow (§3.8) are both in
+> the build scope** — the founding rung (cm.1, §12) lands the schema + the three brand re-bases + classic
+> mode; the blind-Golden rung (cm.3) lands the blind flow on the same schema.
+>
+> **Stage-2 convergence delta (what the D-15/D-16 rulings changed — read §0.3):** (1) the sealed payout is
+> a **stored `payout_split` weight array** (`games.payout_split` / `rooms.payout_split`, default
+> `[40,25,15,12,8]`) snapshotted to the game, with `games.top_k` defaulting **5** — *not* a computed
+> rank-weight curve (§3.8.2); (2) the reduced set is a **room `cell_count` (N, nullable) + a per-game
+> randomized `games.cell_codes` snapshot** (`Enum.take_random(room_codes, N)`), *not* a smaller `EMS` row
+> (§3.8.4) — the EMS stays the full keyboard; (3) `status` is **CHECK-bounded** over the seven canon words,
+> classic terminal `settled` (§3.8.5); (4) the commitment is **SHA-256(secret ‖ nonce) lowercase hex**, the
+> reveal is **one fat `revealed` event**, scoring is **one linear function**, the wire words + FK columns
+> **stay** — all folded from `[RULE]`-pending to RULED (§10.1). The **EMS seed is now grounded in the two
+> real sprite sheets** measured on disk (§3.3.1): cell grid **`cols × rows × cell_size`** derived from the
+> measured PNG dimensions.
 >
 > **Stage-2 extension delta (what changed from the first pass — read §0.2):** (1) three brand re-bases,
 > not one (`RMM`→`ROM`, `USR`→`PLR` join `RND`→`GAM`); (2) the four blind columns are LIVE, not inert;
 > (3) two **ground-truth corrections** the Stage-2 reconcile caught — the model stands up **SIX Postgres
 > tables**, not seven (no `notifications` table exists in either migration; `NOT` is a Valkey bus lane),
 > and the dev/test DB names are **`codemojex_dev`/`codemojex_test`** (`config/dev.exs:14` /
-> `config/test.exs:19`), NOT `codemoji_game`.
+> `config/test.exs:19`), NOT `codemoji_game`. **The convergence (§0.3) adds the ruled payout/reduced-set
+> columns** (`games.payout_split` / `games.cell_codes` / `rooms.payout_split` / `rooms.cell_count`) so the
+> collapsed initial migration's `games`/`rooms` shape is final.
 >
 > **Framing discipline (propagate):** in this document and in any prose Mars writes — no gendered
 > pronouns for agents; no perceptual or interior-state verbs (sees / wants / notices); no
@@ -67,10 +80,12 @@ The Operator directive, decoded into HARD constraints the model honors without r
 > mint; the schema **module names** (`Codemojex.Schemas.Room`, `…Player`) are **not** brand-coupled and
 > may stay (only the `round`→`game` entity module renames; §6.1).
 
-### 0.1 The ruled design-intent forks (folded in 2026-06-24 — do not re-litigate)
+### 0.1 The ruled forks (folded 2026-06-24 + 2026-06-25 — do not re-litigate)
 
-The Operator + the Director ruled the open forks from the first design pass. These are now **settled**;
-the design realizes them:
+The Operator + the Director ruled the design-intent forks (first pass, 2026-06-24) **and** the
+blind-mechanic Arms the LIVE build forced (D-15/D-16, 2026-06-25). **All are now settled**; the design
+realizes them. The first block is the design-intent set; the rows below the `Scoring.score/2` line are the
+mechanic Arms D-15/D-16 closed (each cross-referenced to the §-local mechanic + the ledger V-number):
 
 | Fork | Ruling | Effect in this model |
 |---|---|---|
@@ -82,20 +97,21 @@ the design realizes them:
 | **Multi-type shape** (V-1) | **Arm A + the `games_type` CHECK** (Director-ratified) | §3.5: one `games` table + a `type` discriminator + typed policy columns; `type IN ('classic','golden')` CHECK ships. |
 | **Migration** (V-4) | **Arm A** (Director-ratified) | §8: collapse the two migrations into one clean initial create. |
 | **`Scoring.score/2` return** (§7) | **`percentage` computed-not-stored; `tier` fn + key removed** (Director-ratified) | §7: zero stored `percentage`; the live `pct` recomputed for the channel/lobby; `tier/1` gone. |
+| **Scoring unification** (V-7) | **ONE linear scoring function, both modes** (Operator HARD constraint, D-16) | §3.8.2: blind settlement scores every `GES` with the same linear distance + ranks by best total; `architecture.md:59`'s "exact-match" rejected. |
+| **State machine** (V-8) | **Full 7-word set, CHECK-bounded; classic terminal `settled`** (D-16) | §3.8.5: `status IN {scheduled,open,active,revealing,settling,settled,voided}` CHECK; classic `open→settled`; golden `open→revealing→settling→settled`; `voided` the abort. |
+| **Commitment scheme** (V-14) | **SHA-256(secret ‖ nonce), lowercase hex** (D-16) | §3.8.3: commitment published at open; the preimage (`secret`+`nonce`) server-side until reveal; HMAC + per-cell rejected. |
+| **Reveal event** (V-13) | **ONE fat `revealed` event** (D-16) | §3.8.1/§5.1/§6.6: `revealed` at close (secret+nonce+commitment+board+top-K+state); commitment on `game_view` from open; golden per-guess pushes suppressed in-flight. |
+| **Top-K payout** (V-15) | **`top_k` DEFAULT 5 + a configurable `payout_split` weight array** (D-15) | §3.8.2: `games.payout_split` / `rooms.payout_split` (default `[40,25,15,12,8]`) snapshotted to the game; sealed settlement pays the top-5 each rank its weight share of `prize_pool`. |
+| **Reduced set** (V-16a) | **room `cell_count` (N, nullable) + per-game randomized `games.cell_codes` snapshot** (D-15) | §3.8.4: at start the game snapshots `Enum.take_random(room_codes, N)` (null = the full set = classic); the secret draws its 6 from `games.cell_codes`. The EMS stays the full keyboard. |
+| **Anonymized alias** (V-16b) | **DEFER to the `RMP` rung** (D-15) | §3.8.6: the board push carries `{player_id, score}`; the wire shape accepts `{alias, score}` for the later `RMP` rung; the reveal-gated privacy already secures the blind contest. |
+| **Wire words / FK columns** (V-11/V-12) | **KEEP** (D-16) | §4/§6.7/§6.8: `/rooms` `/players` `player:` `:no_player`; `transactions.player` / `guesses.player` — the re-base moves the id VALUE, not the column/word NAME. |
+| **Regulatory gating** (V-9) | **A config SEAM, a launch-gate decision — NOT schema-shaping** (D-16) | §10.2/Arm V-9: a join-time eligibility predicate + a permissive default; no `games` column; the policy values are a launch checklist item. |
 
-**Still open — the Arms the blind LIVE build forces (§10/V-7..V-12).** Because the blind flow ships this
-rung (not a future one), these are **live forks the Director rules with the Operator before the cm.3
-build**, not deferred questions. The schema does **not** depend on any of them (the four blind columns +
-the policy switch carry the flow regardless), so cm.1 is unblocked; cm.3 waits on the rulings:
-- **V-7** scoring unification — linear (the Operator's HARD constraint) vs `architecture.md:59`'s
-  exact-match wording.
-- **V-8** the state-machine shape + its sub-rulings (CHECK-bound the 7 words? classic terminal word?).
-- **V-9** the regulatory-gating seam (a seam, not schema-shaping).
-- **V-10** the commitment scheme — the exact hash + what is committed (§3.8.3).
-- **V-11** the sealed top-K payout curve — K fixed or % of players; winner-take-all vs graduated split
-  (§3.8.2).
-- **V-12** the reduced emoji-set size + the anonymized-leaderboard treatment given `RMP` is deferred
-  (§3.8.4 / §3.8.6).
+**Every open Arm is now RULED (D-15/D-16, 2026-06-25) — there is no surviving `[RULE]`-pending fork.** The
+schema columns the rulings introduce (`games.payout_split` / `games.cell_codes` / `rooms.payout_split` /
+`rooms.cell_count`, and `games.top_k` defaulting `5`) are folded into §3.5/§3.4; the blind mechanics are
+folded into §3.8 (the recommendation language replaced by the ruling). cm.1 (the settled core) and cm.3
+(the blind flow) are both build-grade.
 
 ### 0.2 The Stage-2 ground-truth corrections (the reconcile caught these — design now agrees with disk)
 
@@ -113,6 +129,45 @@ The Stage-2 reconcile re-probed every load-bearing fact on disk. Two corrections
    `config/runtime.exs` reads `DATABASE_URL` for `:prod` (no literal DB name). The reinit (§8) targets
    `codemojex_dev` + `codemojex_test` **only**. No `*_snapshot` DB appears in any config — it is not a
    disk fact, so it is not named as a thing-to-avoid here (no such DB to untouch).
+
+### 0.3 The Stage-2 convergence corrections (the D-15/D-16 rulings fold the open mechanics)
+
+The Operator ruled the open Arms (ledger D-15 PRODUCT/SCOPE + D-16 ENGINEERING SLATE, 2026-06-25). Three
+rulings **refine the mechanism** beyond the architect's recommendation and so add or change schema columns;
+the rest match the recommendation and only flip `[RULE]`-pending → RULED. The corrections to the model:
+
+1. **The sealed payout is a stored weight array, not a computed curve (V-15).** The first pass recommended
+   a *derived* monotone rank-weight split (`w_i = (K-i+1)/Σ`). The Operator ruled **`games.top_k` DEFAULT
+   `5`** + a **configurable `payout_split`** — an ordered integer weight array on the room policy
+   (`rooms.payout_split`, default `[40,25,15,12,8]` summing 100) **snapshotted to the game**
+   (`games.payout_split`). The sealed settlement ranks every guess linearly + pays the top-`top_k`, each
+   rank `i` its weight share `payout_split[i] / Σ payout_split` of the game's own `prize_pool`. **NEW
+   columns:** `games.top_k` (default `5`, was nullable), `games.payout_split` (`int[]`),
+   `rooms.payout_split` (`int[]` policy default). (§3.4 / §3.5 / §3.8.2.)
+2. **The reduced set is a room `cell_count` + a per-game randomized snapshot, not a smaller `EMS` row
+   (V-16a).** The first pass recommended *a 24-cell `EMS` row* (the reduction on the `EMS`). The Operator's
+   ruling **supersedes** it: a room config **`cell_count`** (`N`, nullable; `null` = the full room cell set
+   = classic today) + at game start the game snapshots a **randomized `N`-cell subset** of the room's
+   `codes` (`Enum.take_random(room_codes, N)`) stored on the game as **`games.cell_codes`**; the secret
+   draws its six from **that** subset (`EmojiSet.secret` over the game keyboard). The `EMS` stays the
+   **full** room keyboard; the narrowing moves to the per-game snapshot. **NEW columns:** `rooms.cell_count`
+   (`int`, nullable), `games.cell_codes` (`text[]`). (§3.4 / §3.5 / §3.8.4.) The EMS seed is grounded in
+   the two real sprite sheets (§3.3.1).
+3. **`status` is CHECK-bounded; classic terminal `settled` (V-8).** The full seven canon words
+   `{scheduled, open, active, revealing, settling, settled, voided}` ship as a **CHECK-bounded** column;
+   classic `open → settled` (the as-built `closed` maps to `settled`); golden `open → revealing → settling
+   → settled`; `voided` the abort. (§3.5 / §3.8.5.)
+
+The rulings that **match the recommendation** (folded `[RULE]`-pending → RULED, no schema change): V-14
+SHA-256(secret ‖ nonce) lowercase hex commit-reveal (§3.8.3); V-13 one fat `revealed` event (§3.8.1/§5.1);
+V-7 one linear scoring function for both modes (§3.8.2); V-16b defer the anonymized alias to `RMP`
+(§3.8.6); V-11 keep the room/player wire words; V-12 keep the FK column names (§4/§6).
+
+> **Note on the V-numbering.** §10.2 labels the new blind-mechanic Arms by their §-local description; the
+> **ledger V-number is the authority** (the design's own footnote). The map: the commitment-scheme Arm =
+> **ledger V-14**; the payout-curve Arm = **ledger V-15**; the reduced-set Arm = **ledger V-16(a)**; the
+> anonymized-alias Arm = **ledger V-16(b)**; scoring unification = **V-7**; the state machine = **V-8**.
+> This document now cites the ledger V-numbers.
 
 ---
 
@@ -140,11 +195,11 @@ and golden (blind)"*):
 > **Golden is the canon's BLIND/SEALED mode (Operator-ruled, §0.1).** The boost columns
 > (`golden`/`gold_multiplier`) remain — a golden room may still seed + boost its pool — but the type's
 > **defining** policies are `feedback="none"` + `settlement="sealed"`. The mechanics are specified in
-> §3.8 (each cited to the canon), and the `games` schema delta is §3.5. The one genuinely-open question
-> the Operator's "Existing linear score" constraint forces — does blind rank by **linear distance** or
-> **exact-match** (`architecture.md:59`) — is **Arm V-7** (recommend: one linear function for both
-> modes). The type discriminator + the nullable type-specific columns keep the engine **one `GAM`
-> identity** across both modes.
+> §3.8 (each cited to the canon), and the `games` schema delta is §3.5. The question the Operator's
+> "Existing linear score" constraint forced — does blind rank by **linear distance** or **exact-match**
+> (`architecture.md:59`) — is **ruled (V-7, D-16): one linear function for both modes**; the difference is
+> feedback + settlement, not the scoring math. The type discriminator + the nullable type-specific columns
+> keep the engine **one `GAM` identity** across both modes.
 
 ---
 
@@ -159,8 +214,8 @@ branded id, each carrying its own status word as text. The delta from the as-bui
 | `players` | **`PLR`** (was `USR`) | **brand re-based** `USR`→`PLR` at the mint (`wallet.ex:21`); columns **unchanged** (incl. the `tg_chat_id` add + the non-negative CHECK; see §3.7 on `bonus_diamonds`) |
 | `transactions` | `TXN` | **unchanged** (append-only ledger; the `player` FK now references a `PLR` id) |
 | `emoji_sets` | `EMS` | **unchanged** |
-| `rooms` | **`ROM`** (was `RMM`) | **brand re-based** `RMM`→`ROM` at the mint (`rooms.ex:18`); `round` FK column → **`game`**; `golden` + `gold_multiplier` folded into the initial create; **+ `type`** (the room's default game type) |
-| **`games`** | **`GAM`** (was `RND`) | **was `rounds`/`RND`** — renamed table + brand; **+ `type`** discriminator + the four **policy** columns; `golden` + `gold_multiplier` folded in; **+ the four blind columns LIVE** (`commitment`/`nonce`/`revealed_ms`/`top_k`); the `secret` + `nonce` stay server-side |
+| `rooms` | **`ROM`** (was `RMM`) | **brand re-based** `RMM`→`ROM` at the mint (`rooms.ex:18`); `round` FK column → **`game`**; `golden` + `gold_multiplier` folded into the initial create; **+ `type`** (the room's default game type); **+ `payout_split`** (the sealed-split policy, V-15) + **`cell_count`** (the reduced-set policy, V-16a) |
+| **`games`** | **`GAM`** (was `RND`) | **was `rounds`/`RND`** — renamed table + brand; **+ `type`** discriminator + the four **policy** columns; `golden` + `gold_multiplier` folded in; **+ the four blind columns LIVE** (`commitment`/`nonce`/`revealed_ms`/`top_k`, `top_k` default `5`); **+ `payout_split`** (the snapshotted split, V-15) + **`cell_codes`** (the snapshotted reduced keyboard, V-16a); the `secret` + `nonce` stay server-side |
 | `guesses` | `GES` | `round` FK column → **`game`** (references a `GAM` id); **`tier` REMOVED**; **`percentage` REMOVED** (linear `points` only) |
 
 The Valkey keyspace for a classic game changes only by the **removal** of the bonus layer (§5); the
@@ -224,6 +279,36 @@ timestamps
 
 Source: `schemas/emoji_set.ex`, migration `20260618000000`.
 
+#### 3.3.1 The EMS seed — grounded in the two real sprite sheets (measured on disk)
+
+The reduced-set ruling (V-16a, §3.8.4) supplies **two real sprite sheets** under
+`docs/codemojex/emoji-sets/` (`01-emoji-set.png`, `02-emoji-set.png`, + `@2x` retina variants). **No
+manifest exists** — the grid is derived from the **measured PNG dimensions**, per the no-invent rule. An
+`EmojiSet` addresses a cell `XXYY` at `(-x·cell_size, -y·cell_size)` (`emoji_set.ex:5,52`), so
+`cols = width ÷ cell_size` and `rows = height ÷ cell_size`, **both integers**.
+
+**Measured (sips):** `01` is `720 × 1080` (base) / `1440 × 2160` (`@2x` — exactly 2× base, no extra rows);
+`02` is `720 × 1512` / `1440 × 3024`. The code default `cell_size = 144` (`emoji_set.ex:39`) gives
+**non-integer** rows (`01`: `5 × 7.5`; `02`: `5 × 10.5`) — it does **not** fit these assets. The only cell
+size dividing **both** sheets' width **and** height into integers is **`cell_size = 72`** (`01`: `10 × 15`
+= 150 cells; `02`: `10 × 21` = 210 cells; `120` fits `01` but not `02`, `360` fits neither's height). **The
+seed states `cell_size = 72`** — the measured-true divisor, not the blind `144` default:
+
+| EMS | name | cols | rows | cell_size | sprite_url | codes |
+|---|---|---|---|---|---|---|
+| EMS-1 | `emoji-set-01` | `10` | `15` | `72` | `/emoji-sets/01-emoji-set.png` (`@2x` via retina srcset) | `all_cells(10,15)` = **150** row-major `XXYY` cells |
+| EMS-2 | `emoji-set-02` | `10` | `21` | `72` | `/emoji-sets/02-emoji-set.png` | `all_cells(10,21)` = **210** cells |
+
+`codes` is the **full** keyboard (every cell) — the room exposes the whole set, and the per-game
+`cell_count` snapshot (§3.4 / §3.8.4) does the narrowing, **not** a smaller `EMS.codes`. The `secret` is
+six distinct codes drawn from the game's snapshot (`EmojiSet.secret`, `emoji_set.ex:64`).
+
+> **`cell_size` is a surfaced fork (the only one in this convergence).** The code default is `144`; the
+> two measured assets demand `72` for an integer grid. The seed states **`72`** (the measured-true value);
+> if the Operator intends a different grid (e.g. the assets are to be re-exported at a `144` cell), that is
+> a one-line ruling that changes only these two seed rows — the mechanism (`cell_count` + `cell_codes`) is
+> unaffected. Flagged for the Director, recommending `72`.
+
 ### 3.4 `rooms` (`ROM`, was `RMM`) — the brand re-base + the FK rename + the type default
 
 ```
@@ -240,11 +325,26 @@ status        string   not null  default "waiting"
 game          string   nullable                       -- WAS `round`: the at-most-one active game
 golden        boolean  not null  default false
 gold_multiplier integer not null default 1
+payout_split  {array,integer}  not null  default [40,25,15,12,8]  -- NEW (V-15): the sealed-split policy, snapshotted to the game
+cell_count    integer  nullable                       -- NEW (V-16a): the reduced-set size N; null = the full EMS set (classic)
 timestamps
 ```
 
 Relationship: `rooms.game` → `games.id` (the at-most-one active game; nullable when waiting). The room
 is a **template**; a game snapshots it at start (`rooms.ex` `start_game`).
+
+> **`payout_split` (V-15, D-15)** — an ordered integer **weight array** (the default `[40,25,15,12,8]`
+> sums 100); the sealed settlement pays rank `i` of the top-`top_k` its share `payout_split[i] / Σ
+> payout_split` of the game's `prize_pool` (§3.8.2). It is a **room policy** snapshotted onto the game at
+> start (`games.payout_split`) so a game settles by the split it was created under, even if the room's
+> policy later changes. Default `[40,25,15,12,8]` (five weights, matching the default `top_k = 5`); a room
+> with a different breadth sets its own array.
+>
+> **`cell_count` (V-16a, D-15)** — the **reduced-set size** `N` (nullable; `null` = the full `EMS` cell
+> set = classic today). At `start_game` the game snapshots `Enum.take_random(EMS.codes, N)` into
+> `games.cell_codes` when `cell_count = N`, else the full `EMS.codes` when `null` (§3.4 → §3.5 / §3.8.4).
+> A golden room sets `cell_count` (e.g. `24`); a classic room leaves it `null`. The narrowing is a
+> per-game randomized snapshot, **not** a smaller `EMS` row (the EMS stays the full keyboard).
 
 > **`type` vs `golden`.** `type` is the engine discriminator (`classic` | `golden`); `golden` +
 > `gold_multiplier` are the **boost economy** the `golden` type carries. They are consistent by
@@ -269,17 +369,19 @@ scoring       string   not null  default "linear"       -- NEW policy: "linear" 
 settlement    string   not null  default "live"         -- NEW policy: "live" (classic) | "sealed" (golden)
 economy       string   not null  default "winner_take_all" -- NEW policy: the payout curve word
 secret        {array,string}  not null                  -- server-side; no player-facing query selects it
+cell_codes    {array,string}  not null                  -- NEW (V-16a): the game's snapshotted keyboard (take_random N of the room codes, or the full set); the secret draws from THIS
 commitment    string   nullable                         -- NEW (blind): hash over secret+nonce, set at open (§3.8.3)
 nonce         string   nullable                         -- NEW (blind): server-side, sealed; revealed at close (§3.8.3)
 revealed_ms   bigint   nullable                         -- NEW (blind): when secret+nonce were revealed (null until close)
-top_k         integer  nullable                         -- NEW (blind): sealed payout breadth — pay the top K (§3.8.2)
+top_k         integer  not null  default 5               -- NEW (blind): sealed payout breadth — pay the top K (§3.8.2 / V-15)
+payout_split  {array,integer}  not null  default [40,25,15,12,8]  -- NEW (V-15): the snapshotted split weights; rank i takes split[i]/Σsplit of prize_pool
 started_ms    bigint   not null
 ends_ms       bigint   not null
 prize_pool    bigint   not null  default 0              -- diamonds, seeded from the room
 guess_fee     integer  not null  default 1
 free          boolean  not null  default false
 clip_cost     integer  not null  default 1
-status        string   not null  default "open"          -- the state machine (§3.8.5 / V-8)
+status        string   not null  default "open"          -- the state machine (§3.8.5 / V-8) — CHECK-bounded to the 7 canon words
 golden        boolean  not null  default false
 gold_multiplier integer not null default 1
 timestamps
@@ -289,6 +391,9 @@ INDEX (room)
 - **CHECK `games_type` (ships — V-1 Arm A, Director-ratified):** `type IN ('classic','golden')` —
   bounds the launch type set so an unknown type cannot be written (the queryability the money-adjacent
   floor wants).
+- **CHECK `games_status` (ships — V-8, D-16):** `status IN ('scheduled','open','active','revealing',
+  'settling','settled','voided')` — the full seven canon words (`specs.md:36`); classic uses
+  `open → settled`, golden `open → revealing → settling → settled`, `voided` the abort (§3.8.5).
 - The **four policy columns** (`feedback`, `scoring`, `settlement`, `economy`) realize the canon's
   *"four policies"* (`architecture.md`/`roadmap.md`). They are **snapshotted from the room's type at
   game start** and immutable for the game's life — the same snapshot discipline `golden`/`gold_multiplier`
@@ -305,22 +410,25 @@ INDEX (room)
 
   | Column | Type / null | Written | Read |
   |---|---|---|---|
-  | `commitment` | `string`, null | at open (`start_game`, golden) — `H(secret ‖ nonce)` | exposable at open (the player records it); re-checked at reveal |
+  | `cell_codes` | `text[]`, not null | at start — `Enum.take_random(room_codes, cell_count)` (or the full set when `cell_count` null) | the keyboard the player taps; the source the `secret` is drawn from (§3.8.4) |
+  | `commitment` | `string`, null | at open (`start_game`, golden) — SHA-256(`secret ‖ nonce`), lowercase hex | exposable at open (the player records it); re-checked at reveal |
   | `nonce` | `string`, null | at open, **server-side sealed** | exposed only at reveal (`revealed_ms` set) |
   | `revealed_ms` | `bigint`, null | at close (`revealing` transition) | the privacy gate — `points` withheld from reads until this is set (§3.8.1) |
-  | `top_k` | `integer`, null | at start, snapshotted from the room (the sealed payout breadth) | the settlement pass pays the top `top_k` (§3.8.2) |
+  | `top_k` | `integer`, default `5` | at start, snapshotted from the room (the sealed payout breadth) | the settlement pass pays the top `top_k` (§3.8.2) |
+  | `payout_split` | `int[]`, default `[40,25,15,12,8]` | at start, snapshotted from `rooms.payout_split` | the settlement pass pays rank `i` its share `split[i]/Σsplit` (§3.8.2) |
 - `secret` stays a server-side column, selected by **no** player-facing query (`schemas/round.ex`,
   `view.ex` — the privacy invariant).
 - The `GAM` id doubles as the cache version + the idempotency token (immutable for the game's life;
   `tables.ex`, `cache` coherence `:none`). **The `secret`/`nonce`/`commitment` are immutable for the
   game's life** — the cache version story is unchanged.
 
-> **The state machine (§3.8.5 / Arm V-8).** `specs.md:36` names `scheduled, open, active, revealing,
-> settling, settled, voided`; the as-built code uses `open | closed`. This model adopts the **full canon
-> set as text words**, each type traversing the subset it needs: **classic** `open → settled`; **golden**
-> `open → revealing → settling → settled`; `voided` is the abort path for both (§3.8.5). The `status`
-> column stays free text so the founding rung ships the classic subset and the blind rung widens it — no
-> migration. A sub-ruling (V-8) bounds it with a CHECK and fixes classic's terminal word.
+> **The state machine (§3.8.5 / V-8, RULED D-16).** `specs.md:36` names `scheduled, open, active,
+> revealing, settling, settled, voided`; the as-built code uses `open | closed`. This model adopts the
+> **full canon set, CHECK-bounded** (the `games_status` CHECK above), each type traversing the subset it
+> needs: **classic** `open → settled` (the as-built `closed` maps to **`settled`** — the ruled terminal
+> word); **golden** `open → revealing → settling → settled`; `voided` is the abort path for both
+> (§3.8.5). The founding rung (cm.1) writes the classic subset (`open`, `settled`); the blind rung (cm.3)
+> writes `revealing`, `settling` — both within the one CHECK, no migration between rungs.
 
 Source: `schemas/round.ex`, migrations `20260618000000` + `20260625000000`; the type/policy columns +
 the four blind-mode columns are the NEW design realizing `architecture.md` "Provably-fair secret" +
@@ -396,72 +504,81 @@ revealed secret, ranks players, pays the top K … records the rake; the game mo
   signal, so no early close; `ends_ms` is the sole trigger).
 - **The pass (at `revealing`→`settling`, §3.8.5):** reveal the secret+nonce; for each player take their
   **best linear `points`** (V-7); rank players by best `points` desc; pay the **top `top_k`** by rank
-  from the game's `prize_pool` (boosted by `gold_multiplier` if `golden`, via `Economy.effective_pool/3`);
-  deposit each prize as a `TXN` through the wallet inside the one-shot close (`cm:{game}:closed` `SET NX`,
-  as-built `rooms.ex`).
+  from the game's `prize_pool` (boosted by `gold_multiplier` if `golden`, via `Economy.effective_pool/3`),
+  **each rank `i` taking its share `payout_split[i] / Σ payout_split`** of the effective pool; deposit each
+  prize as a `TXN` through the wallet inside the one-shot close (`cm:{game}:closed` `SET NX`, as-built
+  `rooms.ex`).
 - **Idempotency invariant:** the pass is **pure + guarded** — a re-run pays identically (the `SET NX`
   lock + the pure ranking, the as-built exactly-once close discipline extended to the top-K split).
-- **The payout split curve** for top-K (how the boosted pool divides across the K winners) is a
-  **policy choice that ships this scope, so it is now a fork to rule — Arm V-11.** `economy.ex` already
-  has `winner_take_all/2` (K=1) and `proportional/2`. A top-K-by-rank curve is a new pure `economy.ex`
-  function; **the curve shape is not a schema concern** (the schema carries only `top_k`), but because
-  the blind flow builds now, the curve's *shape* (winner-take-all over the top scorer vs a graduated
-  split across K, and whether K is a fixed number or a fraction of the field) is an Operator-visible
-  product decision — **framed as Arm V-11 (§10)**, RECOMMEND a fixed `top_k` with a graduated split
-  (each rank `i` of `K` takes a decreasing share), grounded in `specs.md:47`'s "pay the top K".
+- **The payout split is a STORED weight array (V-15, RULED D-15).** `games.top_k` defaults **`5`**; the
+  split is the ordered integer array `games.payout_split` (default `[40,25,15,12,8]`, snapshotted from
+  `rooms.payout_split` at start, §3.4/§3.5). The settlement ranks every guess linearly and pays rank `i`
+  of the top-`top_k` its **weight share** `payout_split[i] / Σ payout_split` of `Economy.effective_pool/3`.
+  This is a **new pure `economy.ex` function** (`top_k_split/2` over the ranked best `points` + the stored
+  array) — the seam beside the as-built `winner_take_all/2` (K=1) + `proportional/2`. The split is **not**
+  a computed monotone curve (the first-pass recommendation) — it is the Operator-configured array, so a
+  room sets its own prize distribution and a game settles by the split it was created under. When fewer than
+  `top_k` players guessed, only the present ranks are paid (the share normalizes over the weights actually
+  assigned). Grounded in `specs.md:47`'s "pay the top K".
 
 #### 3.8.3 Commit-reveal — the provably-fair secret
 
 `architecture.md` "Provably-fair secret": a hash commitment over the secret + a nonce gives **hiding**
 (no secret leaks before reveal) + **binding** (the server cannot open to a different secret after open).
 `specs.md:53–56`. Contract:
-- **At open** (`start_game` for a golden game): draw the `secret` (six distinct codes from the reduced
-  set), draw a `nonce`, compute `commitment = H(secret ‖ nonce)`, store all three on the `GAM`; `secret`
-  + `nonce` are **server-side, sealed** (no player-facing query selects them); `commitment` MAY be
-  exposed at open (the player can record it).
+- **At open** (`start_game` for a golden game): draw the `secret` (six distinct codes from the game's
+  snapshotted keyboard `cell_codes`, §3.8.4), draw a `nonce`, compute `commitment = SHA-256(secret ‖
+  nonce)`, store all three on the `GAM`; `secret` + `nonce` are **server-side, sealed** (no player-facing
+  query selects them); `commitment` MAY be exposed at open (the player can record it).
 - **At close** (`revealing`): set `revealed_ms`; **expose** `secret`, `nonce`, `commitment` so any player
-  recomputes `H(secret ‖ nonce)` and checks it equals the stored `commitment` (`specs.md:55`). The
+  recomputes `SHA-256(secret ‖ nonce)` and checks it equals the stored `commitment` (`specs.md:55`). The
   commitment **binds** the server to the secret it fixed at open.
-- **The hash + encoding are a fork to rule — Arm V-10.** `architecture.md` calls a hash-based commitment
-  "the lean instantiation" but leaves the exact scheme an **open question** (*"is a stronger scheme or a
-  published per-room seed required"*). Because the commitment ships LIVE this scope, the exact scheme is
-  a now-decision (provably-fair correctness depends on it being fixed + published so a player can
-  recompute it). **Framed as Arm V-10 (§10)**, RECOMMEND **SHA-256 over a canonical UTF-8 encoding of the
-  six secret codes joined by a separator then `‖ nonce`, emitted as lowercase hex** (the lean default the
-  canon names; the column is a `string` commitment regardless of the choice). The encoding MUST be
-  byte-pinned + documented so the client verifies identically — that pinning is the deliverable, the
-  hash family is the Operator's ruling.
+- **The hash + encoding are RULED (V-14, D-16): SHA-256(secret ‖ nonce), lowercase hex.** `architecture.md`
+  calls a hash-based commitment "the lean instantiation" but left the exact scheme an open question; the
+  Operator ruled it **SHA-256 over a canonical UTF-8 encoding of the six secret codes joined by a record
+  separator then `‖ nonce`, emitted as lowercase hex** (`:crypto.hash(:sha256, …)`, zero new dependency).
+  HMAC (a keyed secret cannot be published for the player to recompute → breaks verifiability) and a
+  per-cell commitment (leaks the secret's structure) were rejected. The `games.commitment` column is a
+  `string`. **The encoding is byte-pinned + documented** so a client in any language recomputes it
+  identically — that pinning is the deliverable; `cm.3.md` G2 carries the exact byte layout.
 
-#### 3.8.4 The reduced symbol set
+#### 3.8.4 The reduced symbol set — a room `cell_count` + a per-game randomized snapshot (RULED V-16a)
 
 `specs.md:46`: *"Use a reduced emoji set (for example 18 or 24 cells) to keep the space tractable without
-hints"*; `architecture.md:14`: *"over a reduced symbol set."* Contract:
-- A golden game draws its secret from a **smaller `EMS`** — a reduced `codes` array — **not** a per-game
-  subset column. Modeled as the `emojiset` the golden room points at (the room picks a reduced set at
-  creation). **No new `games` column** — the reduction is the size of the referenced `EMS.codes`.
-- **The set SIZE is a fork — Arm V-12 (with the anonymized-leaderboard treatment).** `specs.md:46` names
-  "18 or 24 cells" as examples, not a fixed size; the secret is six distinct codes (`EmojiSet.secret`),
-  so the size sets the difficulty. Because golden ships now, a concrete launch size is needed —
-  **RECOMMEND a 24-cell reduced `EMS` row** (the larger of the canon's two examples, a tractable
-  six-of-24 space). The mechanism is **a smaller `EMS` row** (the as-built `EmojiSet` supports arbitrary
-  `codes`), **not** a per-game `games.symbols` subset column (that route is rejected — it forks the EMS
-  contract). If the Operator wants the smaller 18-cell set or a per-game subset, that is the V-12 ruling.
+hints"*; `architecture.md:14`: *"over a reduced symbol set."* **The Operator ruled the mechanism (V-16a,
+D-15) — superseding the first-pass "a smaller `EMS` row":** the reduction is a **room config + a per-game
+randomized snapshot**, not a property of the `EMS`. Contract:
+- **`rooms.cell_count`** (`N`, nullable; §3.4) is the reduced-set size. **`null` = the full room cell set**
+  (= classic today); a golden room sets `N` (e.g. `24`).
+- **At `start_game`** the game snapshots its keyboard into **`games.cell_codes`** (§3.5): when
+  `cell_count = N`, `cell_codes = Enum.take_random(EMS.codes, N)` — a **randomized** `N`-cell subset of the
+  room's full keyboard; when `cell_count` is `null`, `cell_codes = EMS.codes` (the full set). The snapshot
+  is **immutable for the game's life** (the cache-version story, §3.5).
+- **The secret draws its six from `games.cell_codes`** — `EmojiSet.secret` over the game's snapshot, not
+  the room's full `EMS` (`emoji_set.ex:64`; the keyboard the player taps and the secret they chase index
+  the **same** snapshot). The `EMS` row stays the **full** keyboard (§3.3.1) — the narrowing is the
+  per-game `cell_codes`, **not** a smaller `EMS.codes`.
+- **Why a snapshot, not a smaller `EMS`:** one `EMS` row (the full 150- or 210-cell sheet, §3.3.1) serves
+  **both** classic (`cell_count` null → the whole keyboard) and golden (`cell_count` `N` → a fresh random
+  `N`-subset per game), so the reduced contest varies game to game without a separate reduced `EMS` row per
+  difficulty. The size `N` is the room policy (`cell_count`); the six-of-`N` space sets the difficulty.
+  **NEW columns:** `rooms.cell_count`, `games.cell_codes` (§3.4 / §3.5).
 
-#### 3.8.5 The state machine (Arm V-8)
+#### 3.8.5 The state machine (V-8, RULED D-16)
 
 `specs.md:36`: `scheduled → open → active → revealing → settling → settled → voided`. The model adopts
-the full set as **text words**, each type a subset:
-- **classic:** `open → settled` (the as-built `closed` terminal maps to `settled` under the unified
-  machine — V-8 sub-ruling fixes the word). A perfect crack or the timer triggers the close.
+the full set as **text words bounded by the `games_status` CHECK** (§3.5), each type a subset:
+- **classic:** `open → settled` (the as-built `closed` terminal maps to **`settled`** — the ruled
+  terminal word, D-16). A perfect crack or the timer triggers the close.
 - **golden:** `open → revealing → settling → settled`. The timer triggers `revealing` (reveal
   secret+nonce, set `revealed_ms`, score the sealed batch) → `settling` (pay top-K) → `settled` (expose
   for verification).
 - **both:** `voided` is the abort path (an admin void / an unrecoverable settlement failure).
 - `scheduled` + `active` are **canon states the launch types do not yet use** (`scheduled` = a future
-  pre-open state; `active` = a future open-with-players refinement). The text column carries them when a
-  rung needs them. **The founding rung ships the classic subset** (`open`, `settled`); **the blind rung
-  adds** `revealing`, `settling`. **V-8 sub-ruling:** bound `status` with a CHECK over the 7 words, or
-  leave it open (as-built); and classic terminal = `settled` (unified) or `closed` (as-built word kept).
+  pre-open state; `active` = a future open-with-players refinement). The CHECK admits them; the launch
+  types do not write them. **The founding rung (cm.1) writes the classic subset** (`open`, `settled`);
+  **the blind rung (cm.3) writes** `revealing`, `settling`. The CHECK is **one** column constraint
+  shipped in cm.1's initial create — both rungs write within it, no migration between them.
 
 #### 3.8.6 The grounding GAPS — designed-around, NOT invented (flagged)
 
@@ -472,19 +589,23 @@ supports the blind **flow** without them; they land with their systems (the road
   **game's own `prize_pool`** (`rooms.ex` `do_close`). **This model's top-K pays from `prize_pool`** (the
   grounded path); **no rake column** (a `BNK` concern). When the bank system is built, the pool's escrow
   + the rake move to it — additive. **GAP flagged, not invented.**
-- **The anonymized leaderboard.** `architecture.md` "Anonymization" + `specs.md:49`: a per-game alias on
-  the **`RMP` membership**. There is **no membership table** as-built (the leaderboard keys on `USR`
-  directly). **This model does not add the alias** — the anonymized leaderboard lands with the `RMP`
-  system. Until then a golden leaderboard ranks by `USR` like classic. **GAP flagged, not invented.**
+- **The anonymized leaderboard (DEFER to `RMP` — RULED V-16b, D-15).** `architecture.md` "Anonymization"
+  + `specs.md:49`: a per-game alias on the **`RMP` membership**. There is **no membership table** as-built
+  (the leaderboard keys on `PLR` directly, the re-based player brand). **This model does not add the
+  alias** — the Operator ruled it **deferred to the `RMP` rung**: until then a golden leaderboard ranks by
+  `PLR` like classic, and the reveal-gated privacy (no score until reveal, §3.8.1) already secures the
+  blind contest without the alias. **The board push carries `{player_id, score}`** now; the wire shape is
+  authored to **accept `{alias, score}`** later (the `RMP` rung supplies the alias without a wire break).
+  **GAP flagged, not invented.**
 - **The `SES` session / verified `initData`.** Out of scope (the as-built reads the player id from the
   request; `codemojex.design.md` names verified `initData` "the one explicit gap before launch"). Not a
   blind-mode-specific gap, but it bears on the regulatory seam (§ Arm V-9).
 
 > **Why these are gaps, not blockers.** The blind FLOW — commit → seal → no-feedback → reveal → sealed
-> linear score → top-K pay-from-pool — is **fully realizable** on the as-built nine-brand floor with the
-> four new `games` columns. The bank, membership-alias, and session systems are **enhancements** the
-> roadmap already schedules; designing around them keeps this model grounded + NO-INVENT, and leaves a
-> clean additive seam for each.
+> linear score → top-K pay-from-pool by the stored split — is **fully realizable** on the as-built
+> nine-brand floor with the new `games` columns (the four blind columns + `cell_codes` + `payout_split`).
+> The bank, membership-alias, and session systems are **enhancements** the roadmap already schedules;
+> designing around them keeps this model grounded + NO-INVENT, and leaves a clean additive seam for each.
 
 ---
 
@@ -496,8 +617,8 @@ supports the blind **flow** without them; they land with their systems (the road
 | Brand | Entity | Lives in |
 |---|---|---|
 | `GAM` | game (was `RND`) | Postgres `games`, EchoStore `:cm_games` |
-| `RMM` | room | Postgres `rooms` |
-| `USR` | player | Postgres `players`, Valkey lanes/board |
+| `ROM` | room (was `RMM`) | Postgres `rooms` |
+| `PLR` | player (was `USR`) | Postgres `players`, Valkey lanes/board |
 | `EMS` | emoji set | Postgres `emoji_sets`, EchoStore `:cm_emojisets` |
 | `GES` | guess | Postgres `guesses` |
 | `TXN` | wallet transaction | Postgres `transactions` |
@@ -507,11 +628,13 @@ supports the blind **flow** without them; they land with their systems (the road
 
 The id is the only value that crosses a boundary; it keys the Postgres row, the Valkey entry, the bus
 job, and the announce message. The 14-byte shape (`<<_::binary-14>>`) and the `ts(41)|node(10)|seq(12)`
-snowflake are **unchanged** — only the `RND` namespace string becomes `GAM`.
+snowflake are **unchanged** — **three** namespace strings re-base at the mint (`RND`→`GAM`, `RMM`→`ROM`,
+`USR`→`PLR`); the rest are byte-unchanged.
 
-> The forward roadmap's larger namespace set (`ROM`/`RMP`/`BNK`/`PLR`/`RSC`/`SES`/`PKG`/`ORD`/`OTX`/
-> `WHK`/`SHR`/`AEV`) is the **target** for systems not yet built (commerce, growth, analytics). This
-> model keeps the **nine as-built brands**; the rest land with their systems. Out of scope here.
+> The forward roadmap's remaining namespace set (`RMP`/`BNK`/`RSC`/`SES`/`PKG`/`ORD`/`OTX`/`WHK`/`SHR`/
+> `AEV`) is the **target** for systems not yet built (commerce, growth, analytics). This model now holds
+> the nine brands `GAM`/`ROM`/`PLR`/`EMS`/`GES`/`TXN`/`JOB`/`NOT`/`CMD` (the three re-bases done); the
+> rest land with their systems. Out of scope here.
 
 ---
 
@@ -567,12 +690,13 @@ behavior beyond the model.
 
 ### 6.1 Schemas (`lib/codemojex/schemas/`)
 - **Rename** `round.ex` → `game.ex`; `Codemojex.Schemas.Round` → `Codemojex.Schemas.Game`;
-  `schema "rounds"` → `schema "games"`; **add** `type`, `feedback`, `scoring`, `settlement`, `economy`
-  **and the four blind columns** `commitment`, `nonce`, `revealed_ms`, `top_k` to the schema + the `cast`
-  list (the blind columns ship LIVE — §3.5).
-- `room.ex`: `field :round` → `field :game` (+ the `cast` list); **add** `type`. The module
-  `Codemojex.Schemas.Room` **stays** (not brand-coupled); the `ROM` re-base is at the mint (§6.3), not
-  the module name.
+  `schema "rounds"` → `schema "games"`; **add** `type`, `feedback`, `scoring`, `settlement`, `economy`,
+  **the four blind columns** `commitment`, `nonce`, `revealed_ms`, `top_k`, **and** `cell_codes` +
+  `payout_split` to the schema + the `cast` list (the blind columns ship LIVE — §3.5; `top_k` defaults
+  `5`, `payout_split` defaults `[40,25,15,12,8]`).
+- `room.ex`: `field :round` → `field :game` (+ the `cast` list); **add** `type`, `payout_split`,
+  `cell_count`. The module `Codemojex.Schemas.Room` **stays** (not brand-coupled); the `ROM` re-base is at
+  the mint (§6.3), not the module name.
 - `guess.ex`: `field :round` → `field :game` (+ `cast`/`validate_required`); **remove** `field :tier`
   and `field :percentage` from the schema + the `cast` list.
 - `player.ex`: the module `Codemojex.Schemas.Player` **stays**; the `PLR` re-base is at the mint
@@ -596,17 +720,23 @@ behavior beyond the model.
 - **Room mint (`ROM`):** `generate!("RMM")` → `generate!("ROM")` (`rooms.ex:18`) + the `RMM`→`ROM`
   doc-prose (`rooms.ex:14`).
 - **Game mint + entity rename:** `start_round/3` → `start_game/3`; `generate!("RND")` →
-  `generate!("GAM")` (`rooms.ex:60`); **snapshot the type + the four policies** onto the game at start
-  (from the room's `type`, via the type→policy lookup); `close_round/1` → `close_game/1`;
-  `close_if_expired/1`; `:no_round` → `:no_game`.
+  `generate!("GAM")` (`rooms.ex:60`); **snapshot the type + the four policies + `payout_split` + `top_k`**
+  onto the game at start (from the room's `type`/`payout_split`, via the type→policy lookup); **snapshot
+  the keyboard** into `cell_codes` (`Enum.take_random(EMS.codes, room.cell_count)` when `cell_count` set,
+  else the full `EMS.codes`, §3.8.4) and **draw the `secret` from `cell_codes`** (`EmojiSet.secret`, six
+  distinct, `emoji_set.ex:64`); `close_round/1` → `close_game/1`; `close_if_expired/1`; `:no_round` →
+  `:no_game`.
 - **The blind open branch (golden, LIVE):** when the started game's `type="golden"`, also draw a
-  `nonce`, compute `commitment = H(secret ‖ nonce)`, snapshot `top_k` from the room, and write all four
-  blind columns at start (§3.8.3). `secret` + `nonce` stay server-side.
+  `nonce`, compute `commitment = SHA-256(secret ‖ nonce)` (lowercase hex, the byte-pinned encoding,
+  §3.8.3 / V-14), and write the blind columns at start. `secret` + `nonce` stay server-side; the snapshot
+  + `secret` already happened in the common mint above (the secret is six distinct of `cell_codes`).
 - **The close path branches on `settlement`:** classic (`settlement="live"`) keeps the as-built
   `effective_pool`/`winner_take_all` path **unchanged** (the Golden boost stays); golden
   (`settlement="sealed"`) runs the sealed pass (§3.8.2) inside the **same** `cm:{game}:closed` `SET NX`
   one-shot — reveal (`set revealed_ms`, expose secret+nonce), rank by best linear `points`, pay the top
-  `top_k` from `effective_pool`, then `settled`. The exactly-once discipline is the same lock.
+  `top_k` from `effective_pool` **each rank by its `payout_split` weight share** (the new pure
+  `economy.ex` `top_k_split/2`, §3.8.2 / V-15), emit the **one fat `revealed` event** (V-13, §6.6), then
+  `settled`. The exactly-once discipline is the same lock.
 
 ### 6.4 The scoring authority (`game.ex` — `Codemojex.ScoreWorker`)
 - `Cache.fetch_round` → `Cache.fetch_game`; `Store.put_guess` map: **drop the `percentage:` and
@@ -630,10 +760,16 @@ behavior beyond the model.
 - **The blind privacy widening (LIVE):** for a golden game (`feedback="none"`) **before** `revealed_ms`
   is set, the player-facing reads **withhold the score** — `my_history/3` returns `emojis` + `at_ms` but
   **not `points`**; `game_view/1`'s `totals.best`/`best_pct` and the leaderboard return **no score** (the
-  channel carries `status` + timer only). After `revealed_ms`, the golden reads return the score like
-  classic (the contest is over; §3.8.1). This is a **policy branch on `feedback`/`revealed_ms`** inside
-  the existing `view.ex` privacy module — not a new view. The `secret`/`nonce` are never selected by any
-  player-facing read at any time until reveal exposes them for verification.
+  channel carries `status` + timer only) — but `game_view/1` **does** carry the `commitment` from open (so
+  the player records it for later verification, V-13). After `revealed_ms`, the golden reads return the
+  score like classic (the contest is over; §3.8.1). This is a **policy branch on `feedback`/`revealed_ms`**
+  inside the existing `view.ex` privacy module — not a new view. The `secret`/`nonce` are never selected by
+  any player-facing read at any time until reveal exposes them for verification.
+- **The reveal emission (V-13, LIVE):** at close the golden path emits **one fat `revealed` event** (not a
+  stream of per-guess pushes) carrying the `secret` + `nonce` + `commitment` + the final board + the top-K
+  payouts + the terminal `status` — the first and only results the blind client receives. The per-guess
+  `scored` push is **suppressed in-flight** (§3.8.1); the `revealed` event is the single broadcast at the
+  `revealing` transition.
 
 ### 6.7 The external wire (the cutover surface)
 - HTTP routes `/rounds/:id…` → `/games/:id…`; PubSub topic `"round:" <> …` → `"game:" <> …`; channel
@@ -646,8 +782,9 @@ behavior beyond the model.
   the new `PLR` id (no column rename — the value's brand changes, the column name stays).
 - The `USR`→`PLR` doc-prose in `game.ex:6` (the moduledoc naming the player's lane by its `USR`) → `PLR`.
 - `game.ex` `Codemojex.Settle`: `close_round` → `close_game`, the `round` bindings → `game`; **the sealed
-  top-K pass** (§3.8.2) is the golden branch (`settlement="sealed"`) — a new pure `economy.ex` top-K
-  function (V-11) over the ranked best `points`, paid inside the `cm:{game}:closed` one-shot.
+  top-K pass** (§3.8.2) is the golden branch (`settlement="sealed"`) — a new pure `economy.ex`
+  `top_k_split/2` over the ranked best `points` + the stored `games.payout_split` weights (V-15), paid
+  inside the `cm:{game}:closed` one-shot; the `revealed` event (V-13) is emitted from the same close.
 - `notifier.ex`: `round_result/3` → `game_result/3`, `golden_win/4`'s `round_id` → `game_id`.
 - `scoring.ex`: **remove the `tier/1` function and the `tier:` key** from `score/2`'s return; drop
   `percentage` from the return map if the Operator confirms it is unused (or keep it computed-not-stored
@@ -689,12 +826,14 @@ clean initial create-migration**, not a rename + the two existing creates.
   `20260625000000_golden_rooms_and_notifications.exs` into **one** `create`-only migration standing up
   the **six** tables directly (no `notifications` table — §0.2): `create table(:players)` (with
   `tg_chat_id` + the non-negative CHECK) · `create table(:transactions)` · `create table(:emoji_sets)` ·
-  `create table(:rooms)` (with `game` not `round`, `type`, `golden`/`gold_multiplier`) ·
-  `create table(:games)` (with `type` + the four policy columns + **the four blind columns LIVE**
-  (`commitment`/`nonce`/`revealed_ms`/`top_k`) + `golden`/`gold_multiplier` + `secret` + the timer/fee
-  props) · `create table(:guesses)` **without** `tier`/`percentage`. Indexes: `games(room)`,
-  `guesses(game, player)`, `transactions(player, inserted_at)`, `players(tg_chat_id)`. The `games_type`
-  CHECK (`type IN ('classic','golden')`) ships in this create.
+  `create table(:rooms)` (with `game` not `round`, `type`, `golden`/`gold_multiplier`, **`payout_split`
+  default `[40,25,15,12,8]`**, **`cell_count` nullable**) · `create table(:games)` (with `type` + the four
+  policy columns + **the four blind columns LIVE** (`commitment`/`nonce`/`revealed_ms`/`top_k` default
+  `5`) + **`payout_split` default `[40,25,15,12,8]`** + **`cell_codes`** + `golden`/`gold_multiplier` +
+  `secret` + the timer/fee props) · `create table(:guesses)` **without** `tier`/`percentage`. Indexes:
+  `games(room)`, `guesses(game, player)`, `transactions(player, inserted_at)`, `players(tg_chat_id)`. **Two
+  CHECKs ship in this create:** `games_type` (`type IN ('classic','golden')`) and **`games_status`**
+  (`status IN ('scheduled','open','active','revealing','settling','settled','voided')`, V-8).
 - The Operator chooses the mechanism (§10/V-4): **(A)** rewrite the two existing migration files into
   one clean initial create (a fresh machine permits editing migration history that has never run on a
   live DB), or **(B)** keep the two files and add a third that drops `tier`/`percentage` + renames the
@@ -763,10 +902,11 @@ build is the eventual Mars rung after Operator approval of §10.
   *As the platform, a Golden game runs blind and pays its boosted pool to the top scorers at the sealed
   close so the contest is provably fair and the promotion draws play.*
   *Given* `games.type="golden"`, `feedback="none"`, `settlement="sealed"`, `golden`/`gold_multiplier`,
-  `top_k`; *When* a golden game closes on the timer (golden never closes early — no per-guess signal);
-  *Then* the sealed pass reveals secret+nonce (sets `revealed_ms`), ranks players by best linear
-  `points`, `Economy.effective_pool/3` boosts the pool by `gold_multiplier`, the **top-`top_k`** split
-  (V-11) pays the K highest inside the one-shot `SET NX` close, and a re-run pays identically.
+  `top_k` (default 5), `payout_split`; *When* a golden game closes on the timer (golden never closes early
+  — no per-guess signal); *Then* the sealed pass reveals secret+nonce (sets `revealed_ms`), ranks players
+  by best linear `points`, `Economy.effective_pool/3` boosts the pool by `gold_multiplier`, the
+  **top-`top_k`** split (V-15) pays rank `i` its weight share `payout_split[i]/Σ` inside the one-shot
+  `SET NX` close, the **one fat `revealed` event** (V-13) is emitted, and a re-run pays identically.
   *Invariant INV-5:* settlement is applied once, at close, over the boosted pool; the close lock
   (`cm:{game}:closed`) makes the sealed pass exactly-once; the payout is a pure function of the ranked
   best `points` (idempotent).
@@ -831,78 +971,64 @@ The first-pass forks, settled by the Operator + the Director (2026-06-24):
   the slug; the migration arm.)
 - **§7 `Scoring.score/2` → `percentage` computed-not-stored; `tier` fn + key removed** (Director-ratified).
 
-### 10.2 OPEN — the live forks the blind-Golden build (cm.3) waits on (Director rules with the Operator)
+### 10.2 RULED — the blind-mechanic Arms (D-15/D-16, 2026-06-25 — folded, do not re-litigate)
 
-> The blind flow ships LIVE this scope (V-6 Arm B), so these are **live forks to rule before cm.3
-> builds**, not deferred questions. **cm.1 depends on none of them** — the schema (the four blind columns
-> + the policy switch) carries the flow regardless of how each is ruled, so the founding rung is
-> unblocked while cm.3's contracts are fixed by these rulings. The four-part records (Rationale / 5W /
-> Steelman / Steward) for the new Arms are appended to the ledger this turn; the ledger numbering is the
-> authority for the V-n labels.
+> The blind flow ships LIVE this scope (V-6 Arm B). The Operator ruled every open mechanic (ledger D-15
+> PRODUCT/SCOPE + D-16 ENGINEERING SLATE). The rulings below are folded into §3.5/§3.8; the four-part
+> records (Rationale / 5W / Steelman / Steward) are in the ledger under the cited V-n. **Where a ruling
+> refined the mechanism beyond the architect's recommendation it is marked SUPERSEDES.** Nothing here is
+> open; cm.3's contracts are fixed.
 
-- **Arm V-7 — scoring unification (linear vs exact-match for blind). RECOMMEND Arm A:** **one linear
-  scoring function** for both modes behind the `scoring="linear"` policy — blind settlement scores every
-  `GES` with the same linear distance total + ranks by best total. (Arm B: a separate exact-match ranking,
-  `architecture.md:59`'s literal wording — rejected: it **contradicts the Operator's HARD "Existing
-  linear score"** and `roadmap.md` B7.4.1, and adds a second scoring implementation.) The difference
-  between modes is **feedback + settlement, not the scoring math.** This is the only reading consistent
-  with the linear-score constraint; surfaced because `architecture.md` genuinely says "exact-match."
+- **V-7 — scoring unification → RULED: ONE linear scoring function, both modes** (D-16, the Operator's
+  HARD constraint). Blind settlement scores every `GES` with the same linear distance + ranks by best
+  total; `architecture.md:59`'s "exact-match" is the rejected arm. The difference between modes is
+  **feedback + settlement, not the scoring math.** (§3.8.2.)
 
-- **Arm V-8 — the state-machine shape. RECOMMEND Arm A:** the **full canon set as text words**, each type
-  a subset — classic `open → settled`, golden `open → revealing → settling → settled`, `voided` the abort
-  (§3.8.5). (Arm B: two minimal per-type machines — rejected: forks the status vocabulary by type.)
-  **Sub-rulings:** (a) bound `status` with a CHECK over the 7 words, or leave it open (as-built)? (b)
-  classic's terminal word = `settled` (unified) or `closed` (the as-built word kept)?
+- **V-8 — the state-machine shape → RULED: the full canon set, CHECK-bounded; classic terminal `settled`**
+  (D-16). The `games_status` CHECK over the seven words ships (§3.5); classic `open → settled` (the
+  as-built `closed` maps to `settled`), golden `open → revealing → settling → settled`, `voided` the
+  abort (§3.8.5). The two sub-rulings are both closed: yes, bound with a CHECK; classic terminal is
+  `settled`.
 
-- **Arm V-9 — the regulatory / age / region gating. RECOMMEND Arm A (a SEAM, not schema-shaping):** a
-  thin **eligibility predicate** consulted at join for a paid blind room (a region allowlist / age floor),
-  with the gating **data as room/app config, NOT a `games` column**, and a permissive default so the
-  engine builds + runs now. (Arm B: regulatory columns on the schema now — rejected: the fields are an
-  open question pending legal review; speculative + gold-plating.) **This is a SEAM design + a flagged
-  LAUNCH-GATE / legal-review decision** (`architecture.md:58`'s own framing), **not a schema-shaping
-  blocker** — recorded for the launch checklist; it does not gate the schema build.
+- **V-9 — the regulatory / age / region gating → RULED: a config SEAM, a launch-gate decision (NOT
+  schema-shaping)** (D-16). A thin **eligibility predicate** consulted at join for a paid blind room (a
+  region allowlist / age floor), the gating **data as room/app config, NOT a `games` column**, a
+  permissive default so the engine builds + runs now. Recorded for the launch checklist; it does **not**
+  gate the schema build. (`architecture.md:58`'s own framing.)
 
-- **Arm V-10 — the codemojex specs-home structure. RECOMMEND Arm A: mirror the emq pattern** —
-  `docs/codemojex/specs/<rung>.{md,stories.md,llms.md}` + `specs/progress/<rung>.progress.md` +
-  `.registry.json` + a rollup dashboard. (Arm B: a flatter home — rejected: loses the per-rung registry
-  the aaw tooling uses.) **Sub-ruling:** the rung-slug scheme — **`cm.N`** (recommended: a clean
-  spec-rung namespace distinct from the COURSE chapter `B7.x`) vs the roadmap's `B7.x` numbering. §12
-  assumes `cm.N`.
+- **V-10 (specs-home) — RULED: mirror the emq pattern** — `docs/codemojex/specs/<rung>.{md,stories.md,
+  llms.md}` + `specs/progress/` + `.registry.json` + a rollup dashboard; the rung-slug scheme is **`cm.N`**
+  (this run uses the flat `codemojex-game-rename` scope ledger; §12 assumes `cm.N` for the spec triads).
 
-> **The Stage-2 blind-mechanic Arms (new this turn).** Because the blind flow ships LIVE, these three
-> mechanics the canon leaves genuinely open become decisions to rule now. Each is a four-part record in
-> the ledger; the V-n label is the ledger sequence (these append after the prior V-10).
+- **V-14 (commitment scheme) — RULED: SHA-256(secret ‖ nonce), lowercase hex** (D-16). SHA-256 over a
+  canonical UTF-8 encoding of the six secret codes joined by a record separator, then `‖ nonce`, emitted
+  as lowercase hex (`:crypto.hash(:sha256, …)`, zero new dependency). A per-cell commitment (leaks the
+  secret's structure) and an HMAC with a server key (the keyed secret cannot be published for the player
+  to recompute — breaks verifiability) are the rejected arms. **The byte-pinned encoding is the
+  deliverable** (so a client recomputes identically); `games.commitment` is a `string`. (§3.8.3.)
 
-- **Arm (commitment scheme) — the exact hash + what is committed. RECOMMEND Arm A:** **SHA-256 over a
-  canonical UTF-8 encoding of the secret codes joined by a record separator, then `‖ nonce`, emitted as
-  lowercase hex** (the "lean instantiation" the canon names, `architecture.md` "Provably-fair secret"). A
-  per-cell or per-position commitment (Arm B) and an HMAC with a server key (Arm C) are rejected: the
-  per-cell scheme leaks the structure of the secret (a position-by-position commitment narrows the space)
-  and HMAC's keyed secret cannot be published for the player to recompute (it breaks the *verifiable* in
-  provably-fair). **The deliverable is the byte-pinned encoding** (so the client recomputes identically);
-  the hash family is the Operator's ruling. The `games.commitment` column is a `string` regardless — this
-  is a flow decision, not a schema one.
+- **V-15 (sealed top-K payout) — RULED: `top_k` DEFAULT 5 + a configurable `payout_split` weight array**
+  (D-15). **SUPERSEDES** the first-pass recommendation of a *computed* monotone rank-weight curve. The
+  split is the ordered integer array `rooms.payout_split` (default `[40,25,15,12,8]`) **snapshotted to
+  the game** (`games.payout_split`); the sealed settlement ranks every guess linearly and pays rank `i` of
+  the top-`top_k` its share `payout_split[i] / Σ payout_split` of `Economy.effective_pool/3`. A new pure
+  `economy.ex` `top_k_split/2` (the seam beside `winner_take_all/2` + `proportional/2`). Winner-take-all
+  (makes `top_k` vestigial) and a fraction-of-field `top_k` (couples the prize to turnout) are the
+  rejected arms. **NEW columns** `games.top_k` (default `5`), `games.payout_split`, `rooms.payout_split`.
+  (§3.4 / §3.5 / §3.8.2.)
 
-- **Arm (sealed top-K payout curve) — how the boosted pool divides across K winners. RECOMMEND Arm A: a
-  fixed `top_k` with a graduated split** — pay the K highest-ranked by best `points`, each rank taking a
-  decreasing share (a documented monotone curve, e.g. a normalized rank weight), grounded in `specs.md:47`
-  "pay the top K". (Arm B: winner-take-all even in golden — `top_k` effectively 1, rejected as it makes
-  `top_k` vestigial and contradicts "top K"; Arm C: `top_k` as a *fraction* of the field — rejected as it
-  couples the prize breadth to turnout, an economic lever better left a fixed config.) The curve is a new
-  pure `economy.ex` function (the seam: `economy.ex` already has `winner_take_all/2` + `proportional/2`);
-  the schema carries only `top_k`. **The split shape is the Operator's product decision.**
+- **V-16a (reduced set) — RULED: room `cell_count` (N, nullable) + a per-game randomized `games.cell_codes`
+  snapshot** (D-15). **SUPERSEDES** the first-pass recommendation of a fixed 24-cell `EMS` row. `null`
+  `cell_count` = the full room cell set (= classic today); at `start_game` the game snapshots
+  `Enum.take_random(EMS.codes, N)` into `games.cell_codes`, and the secret draws its six from **that**
+  snapshot. The `EMS` row stays the **full** keyboard (the seed §3.3.1). A smaller `EMS` row and a per-game
+  `games.symbols` subset column are both superseded. **NEW columns** `rooms.cell_count`, `games.cell_codes`.
+  (§3.4 / §3.5 / §3.8.4.)
 
-- **Arm (reduced-set size + the anonymized leaderboard) — RECOMMEND Arm A on each:** (a) **a 24-cell
-  reduced `EMS` row** for golden (the larger of `specs.md:46`'s "18 or 24" examples — a tractable
-  six-of-24 space), the mechanism being a smaller `EMS` row (not a per-game `games.symbols` subset
-  column, which forks the EMS contract); (b) **defer the anonymized leaderboard to the `RMP` rung** — the
-  per-game alias the canon describes (`architecture.md` "Anonymization" / `specs.md:49`) needs the `RMP`
-  membership that is **not built** (the leaderboard keys on `PLR` directly), so until `RMP` lands, a
-  golden leaderboard ranks by `PLR` like classic, **and the privacy gate (no score until reveal, §3.8.1)
-  already delivers the blind contest's secrecy without the alias.** (Arm B: build a per-game alias now
-  without `RMP` — rejected: invents the membership surface; Arm C: an 18-cell set — the Operator's call
-  if a harder space is wanted.) The reduced-set size is a launch config; the anonymized alias is a flagged
-  `RMP`-rung dependency (§3.8.6).
+- **V-16b (anonymized leaderboard) — RULED: DEFER to the `RMP` rung** (D-15). The board push carries
+  `{player_id, score}` now; the wire shape is authored to accept `{alias, score}` later (the `RMP` rung
+  supplies the alias without a wire break). The reveal-gated privacy (no score until reveal, §3.8.1)
+  already secures the blind contest. (§3.8.6.)
 
 ### 10.3 The "as described" grounding for blind-mode (what is on disk vs what is flagged)
 
@@ -912,15 +1038,14 @@ The first-pass forks, settled by the Operator + the Director (2026-06-24):
   "Provably-fair secret" / `specs.md:53–56`); the reduced set (`specs.md:46` / `architecture.md:14`); the
   state machine (`specs.md:36`).
 - **Flagged grounding GAPS (designed-around, NOT invented — §3.8.6):** the `BNK` bank + the rake (top-K
-  pays from `prize_pool` as-built; no bank/rake column); the anonymized leaderboard alias (needs `RMP`
-  membership — absent; ranks by `PLR` until built — the reveal-gated privacy already secures the blind
-  contest); the `SES` session / verified `initData` (out of scope, bears on V-9).
-- **Open questions the canon itself leaves — now FRAMED AS ARMS this turn (the blind flow ships LIVE, so
-  they are decisions to rule, not build-time guesses):** scoring unification (V-7); the commitment hash +
-  encoding (§3.8.3 / the commitment-scheme Arm — recommend byte-pinned SHA-256); the top-K split curve
-  (§3.8.2 / the payout-curve Arm — recommend fixed `top_k`, graduated split); the reduced-set size + the
-  anonymized-leaderboard treatment (§3.8.4 / the reduced-set Arm — recommend a 24-cell `EMS`, defer the
-  alias to `RMP`).
+  pays from `prize_pool` as-built; no bank/rake column); the anonymized leaderboard alias (deferred to
+  `RMP`, V-16b; ranks by `PLR` until built — the reveal-gated privacy already secures the blind contest);
+  the `SES` session / verified `initData` (out of scope, bears on V-9).
+- **The open questions the canon left — now RULED (D-15/D-16):** scoring unification (V-7, linear);
+  the commitment scheme (V-14, SHA-256 lowercase hex); the top-K payout (V-15, `top_k` 5 + a stored
+  `payout_split` array); the reduced set (V-16a, room `cell_count` + per-game `cell_codes` snapshot); the
+  anonymized alias (V-16b, deferred to `RMP`); the state machine (V-8, CHECK-bounded, classic terminal
+  `settled`). No mechanic remains a build-time guess.
 
 ---
 
@@ -960,7 +1085,7 @@ authored.
 ```
 docs/codemojex/specs/
   cm.1.md  cm.1.stories.md  cm.1.llms.md      -- the founding rung: schema + 3 brand re-bases + classic
-  cm.3.md  cm.3.stories.md  cm.3.llms.md       -- blind Golden (body authored §12.4; the live forks ride the Arms)
+  cm.3.md  cm.3.stories.md  cm.3.llms.md       -- blind Golden (body authored §12.4; all mechanics RULED, D-15/D-16)
   progress/
     cm.1.progress.md  cm.1.registry.json       -- per-rung aaw ledgers (or the flat scope ledger for this run)
     …
@@ -968,8 +1093,8 @@ docs/codemojex/specs/
 
 > **This run's scope ships BOTH cm.1 and cm.3** (D-10: the blind flow is LIVE). cm.2 (a classic-hardening
 > split) is no longer a separate planned rung — it folds into cm.1. The two authored bodies are cm.1
-> (settled core + the three re-bases) and cm.3 (the blind flow); the cm.3 contracts are fixed by the
-> §10.2 Arm rulings before its build leg.
+> (settled core + the three re-bases) and cm.3 (the blind flow); the cm.3 contracts are now fixed — every
+> §10.2 Arm is RULED (D-15/D-16).
 
 The rollup dashboard is `docs/codemojex/codemojex.specs-progress.md` (or the existing
 `codemojex.progress.md` reused as the rollup — a Director call). The single rung ladder stays
@@ -985,17 +1110,17 @@ rung that lands the schema.
 
 | Rung | Scope | Builds on | Gates on | Status |
 |---|---|---|---|---|
-| **cm.1 — the founding core** | the fresh six-table schema (§3) **with the four blind columns present** + `GAM`/`ROM`/`PLR` (the **three** brand re-bases) + the type/policy discriminator + the `games_type` CHECK + **linear scoring, tier removed** + the round→game rename (code + wire) + the **reinitialization** (§8). **Classic live mode end-to-end.** | the as-built floor | compile + `--include valkey` green on the fresh schema; the residual-grep proof (0 `RND`/`RMM`/`USR`/`tier`/`percentage`); the `games_type` CHECK exercised | **body authored (§12.3); BUILD-GRADE — the settled core depends on no open fork** |
-| **cm.3 — blind Golden** | feedback `none` + privacy withholding (§3.8.1); the commit-reveal columns + flow, the fixed commitment scheme (§3.8.3 / V-10-Arm); sealed top-K settlement from `prize_pool`, the fixed split curve (§3.8.2 / V-11-Arm); the reduced-set wiring (§3.8.4 / V-12-Arm); the `revealing`/`settling` states (§3.8.5 / V-8). | cm.1 | the cm.1 gate + the blind-flow stories (R-4, R-7) + the privacy/fairness probes | **body authored (§12.4); the contracts are fixed by the §10.2 Arm rulings, then it builds this scope** |
+| **cm.1 — the founding core** | the fresh six-table schema (§3) **with the four blind columns + `cell_codes` + `payout_split` present** + `GAM`/`ROM`/`PLR` (the **three** brand re-bases) + the type/policy discriminator + the `games_type` + `games_status` CHECKs + **linear scoring, tier removed** + the round→game rename (code + wire) + the **reinitialization** (§8). **Classic live mode end-to-end.** | the as-built floor | compile + `--include valkey` green on the fresh schema; the residual-grep proof (0 `RND`/`RMM`/`USR`/`tier`/`percentage`); both CHECKs exercised | **body authored (§12.3); BUILD-GRADE — the settled core depends on no open fork** |
+| **cm.3 — blind Golden** | feedback `none` + privacy withholding (§3.8.1); the commit-reveal columns + flow, SHA-256(secret‖nonce) lowercase hex (§3.8.3 / V-14); sealed top-K settlement from `prize_pool` by the stored `payout_split`, `top_k` 5 (§3.8.2 / V-15); the room `cell_count` + per-game `cell_codes` reduced-set wiring (§3.8.4 / V-16a); the one fat `revealed` event (§6.6 / V-13); the `revealing`/`settling` states (§3.8.5 / V-8). | cm.1 | the cm.1 gate + the blind-flow stories (R-4, R-7) + the privacy/fairness/idempotency probes | **body authored (§12.4); all mechanics RULED (D-15/D-16); builds this scope** |
 | **cm.4+ — the deferred systems** | the `BNK` bank + rake, `RMP` membership + the anonymized leaderboard, `SES` sessions / verified `initData`, commerce, growth, analytics (roadmap B7.5/B7.6 + beyond). | cm.1–cm.3 | per-system gates | out of this design's scope; named in the roadmap |
 
-> **Why cm.1 is the unblocked core while cm.3 rides the Arms.** cm.1's scope is **entirely the settled
-> core** (§10.1) — the fresh schema (with the blind columns *present*, inert for classic), the three
-> brand re-bases, the tier removal, classic live mode. None of it depends on how the §10.2 Arms are
-> ruled. cm.3 is the blind **flow** on that same schema: it writes the blind columns and runs the sealed
-> pass, and its contracts (the commitment scheme, the split curve, the reduced size, the state words) are
-> fixed by the §10.2 rulings before its build leg. Both ship this scope (D-10); the spec ladder is the
-> sequencing, not a gate that holds cm.3 indefinitely.
+> **Why cm.1 is the settled core and cm.3 is the flow on it.** cm.1's scope is **entirely the settled
+> core** (§10.1) — the fresh schema (with the blind columns + `cell_codes` + `payout_split` *present*,
+> inert for classic), the three brand re-bases, the tier removal, classic live mode. cm.3 is the blind
+> **flow** on that same schema: it writes the blind columns + `cell_codes` and runs the sealed pass, and
+> its contracts (SHA-256 commit-reveal, the stored `payout_split`, the `cell_count` snapshot, the state
+> words) are now **all RULED** (§10.2, D-15/D-16) — no `[RULE]`-pending fork remains. Both ship this scope
+> (D-10); the spec ladder is the sequencing.
 
 ### 12.3 The founding-rung triad — cm.1 (authored; Stage-2 widens it to three brands)
 
@@ -1004,17 +1129,18 @@ to bring `RMM`→`ROM` + `USR`→`PLR` IN and the blind columns LIVE-but-inert-f
 (the body authoritative; stories + brief derive):
 
 **`cm.1.md` — the spec body.** Deliverables: D1 the fresh **six-table** schema (§3, all columns incl. the
-four blind-mode columns, **present but `NULL` for classic** — golden writes them in cm.3) via one clean
-initial create (§8); D2 the **three brand re-bases** (`round`→`game`/`RND`→`GAM` across code + wire per §6
-+ the Venus-1 brief §4; `RMM`→`ROM` at `rooms.ex:18`; `USR`→`PLR` at `wallet.ex:21` — §6.1/§6.3/§6.8); D3
-the type/policy discriminator + the `games_type` CHECK (classic defaults); D4 linear scoring as the sole
-score + rank, **tier + percentage removed** (§3.6, §5, §7); D5 the reinitialization (drop+recreate
-`codemojex_dev` + `codemojex_test`, §8). Invariants: INV-1 exactly three brands change, residual grep 0
-`RND`/`RMM`/`USR`; INV-2 the `games_type` CHECK rejects an unknown type; INV-3 `Scoring.score/2` stays
-linear, purity preserved; INV-4 `players.bonus_diamonds` kept; INV-6 no data migration / no rebrand step;
-INV-7 no caller left at the old name + the privacy invariant holds; INV-8 the four blind columns exist and
-are `NULL` for a created classic game. Every public call cites a real module or a canon §; no invented
-surface.
+four blind-mode columns + `cell_codes` + `payout_split`, **`NULL`/inert for classic** — golden writes the
+blind columns in cm.3; `cell_codes` snapshots the full set + `payout_split`/`top_k` default for a classic
+game) via one clean initial create (§8) with **both** the `games_type` and `games_status` CHECKs; D2 the
+**three brand re-bases** (`round`→`game`/`RND`→`GAM` across code + wire per §6 + the Venus-1 brief §4;
+`RMM`→`ROM` at `rooms.ex:18`; `USR`→`PLR` at `wallet.ex:21` — §6.1/§6.3/§6.8); D3 the type/policy
+discriminator + the `games_type` CHECK (classic defaults); D4 linear scoring as the sole score + rank,
+**tier + percentage removed** (§3.6, §5, §7); D5 the reinitialization (drop+recreate `codemojex_dev` +
+`codemojex_test`, §8). Invariants: INV-1 exactly three brands change, residual grep 0 `RND`/`RMM`/`USR`;
+INV-2 the `games_type` CHECK rejects an unknown type; INV-3 `Scoring.score/2` stays linear, purity
+preserved; INV-4 `players.bonus_diamonds` kept; INV-6 no data migration / no rebrand step; INV-7 no caller
+left at the old name + the privacy invariant holds; INV-8 the four blind columns exist and are `NULL` for a
+created classic game. Every public call cites a real module or a canon §; no invented surface.
 
 **`cm.1.stories.md` — acceptance.** The Given/When/Then for D1–D5, derived from §9's stories R-1 (the
 three re-bases), R-2 (type/policy, classic exercised), R-3 (linear-only), R-5 (reinit), R-6 (wire); R-4 +
@@ -1033,36 +1159,41 @@ brief leaves no decision the spec has not fixed — the settled core has no open
 ### 12.4 The blind-Golden triad — cm.3 (body authored §12.4 ⇒ `cm.3.md`)
 
 The blind flow ships LIVE (D-10), so its body is authored this run as `docs/codemojex/specs/cm.3.md`
-(VenusPG owns it per the Stage-2 charter). Its contracts derive from §3.8 and are **fixed by the §10.2
-Arm rulings** before the build leg — the body carries the recommended Arm as the default and marks each
-as `[RULE]`-pending so the Director's `AskUserQuestion` closes them:
+(VenusPG owns it per the Stage-2 charter). Its contracts derive from §3.8 and are **fixed — every §10.2
+Arm is RULED (D-15/D-16)**; the body now states each mechanic as a contract, not a `[RULE]`-pending default:
 
 **`cm.3.md` — the spec body.** Deliverables: G1 feedback `none` + the privacy withholding (§3.8.1 — no
-score leaks before `revealed_ms`; the `view.ex` policy branch); G2 commit-reveal — `commitment` at open,
-`secret`+`nonce` sealed, reveal+verify at close (§3.8.3; the commitment scheme = the V-10-Arm ruling,
-default byte-pinned SHA-256); G3 sealed top-K settlement from `prize_pool` inside the one-shot close
-(§3.8.2; the split curve = the V-11-Arm ruling, default fixed `top_k` graduated); G4 the reduced-set
-wiring (§3.8.4; the size = the V-12-Arm ruling, default a 24-cell `EMS`); G5 the `revealing`/`settling`
-states (§3.8.5; the state-machine shape + CHECK = V-8). Invariants: INV-5 the sealed pass is exactly-once
-+ idempotent (the `cm:{game}:closed` `SET NX` + the pure ranked split); INV-9 `secret`+`nonce` selected by
-no player-facing query until reveal, the commitment binds the server. Grounding: every mechanic cites
-§3.8 → the canon line; the three flagged gaps (`BNK`/`RMP`/`SES`, §3.8.6) are designed-around, never
-invented.
+score leaks before `revealed_ms`; the `view.ex` policy branch) + the one fat `revealed` event at close
+(§6.6, V-13); G2 commit-reveal — `commitment` at open, `secret`+`nonce` sealed, reveal+verify at close
+(§3.8.3; the scheme = **SHA-256(secret‖nonce) lowercase hex**, V-14); G3 sealed top-K settlement from
+`prize_pool` inside the one-shot close (§3.8.2; the split = the **stored `payout_split` weight array**,
+`top_k` 5, V-15); G4 the reduced-set wiring (§3.8.4; the mechanism = **room `cell_count` + the per-game
+randomized `games.cell_codes` snapshot**, V-16a); G5 the `revealing`/`settling` states (§3.8.5; the
+state-machine shape = **the CHECK-bounded 7 words, classic terminal `settled`**, V-8). Invariants: INV-5
+the sealed pass is exactly-once + idempotent (the `cm:{game}:closed` `SET NX` + the pure ranked split);
+INV-9 `secret`+`nonce` selected by no player-facing query until reveal, the commitment binds the server.
+Grounding: every mechanic cites §3.8 → the canon line; the three flagged gaps (`BNK`/`RMP`/`SES`, §3.8.6)
+are designed-around, never invented.
 
-**`cm.3.stories.md` / `cm.3.llms.md`** derive from §9's R-4 + R-7 and this body — authored once the §10.2
-Arms are ruled, so the scoring/scheme/curve/size/state contracts are fixed, not guessed. (The body is the
-authoritative contract now; the stories + brief follow the rulings.)
+**`cm.3.stories.md` / `cm.3.llms.md`** derive from §9's R-4 + R-7 and this body — the
+scoring/scheme/split/reduced-set/state contracts are now fixed by the rulings, so the derived files are
+authored without a guess. (The body is the authoritative contract; the stories + brief follow it.)
 
-> The decoupling the spec ladder gives: **cm.1 builds on no open fork**; **cm.3's body is authored but its
-> mechanics are `[RULE]`-pending** — the Director rules the §10.2 Arms with the Operator, the cm.3 stories
-> + brief re-derive to the rulings, then cm.3 builds. Both rungs ship this scope (D-10).
+> The spec ladder: **cm.1 is the settled core**; **cm.3's body is authored with every mechanic RULED**
+> (§10.2, D-15/D-16) — the cm.3 stories + brief derive directly, then cm.3 builds. Both rungs ship this
+> scope (D-10). No `[RULE]`-pending fork remains in either body.
 
 ---
 
-*Authored by Venus-PG (architect), Stage-2 extension. The model is grounded entirely on disk this session
-— every table, column, brand, policy word, blind-mode rule, and rung scope cites a real schema, migration,
-or canon doc; the three flagged grounding gaps (§3.8.6) are designed-around, never invented. The Stage-2
-reconcile corrected two facts to disk (six Postgres tables, not seven; `codemojex_dev`/`codemojex_test`,
-not `codemoji_game`). No production code was edited. cm.1 (the settled core + the three brand re-bases)
+*Authored by Venus-PG (architect), Stage-2 extension + Stage-2 convergence (2026-06-25). The model is
+grounded entirely on disk — every table, column, brand, policy word, blind-mode rule, and rung scope cites
+a real schema, migration, or canon doc; the EMS seed is measured from the two real sprite sheets (§3.3.1);
+the three flagged grounding gaps (§3.8.6) are designed-around, never invented. The convergence folded the
+D-15/D-16 rulings (the stored `payout_split` + `top_k` 5; the room `cell_count` + per-game `cell_codes`
+snapshot; the CHECK-bounded `status`; SHA-256 commit-reveal; the one fat `revealed` event; one linear
+scoring fn; kept wire words + FK columns; deferred alias) — **no `[RULE]`-pending fork remains**. The
+Stage-2 reconcile corrected two facts to disk (six Postgres tables, not seven; `codemojex_dev`/
+`codemojex_test`, not `codemoji_game`). No production code was edited. cm.1 (the settled core + the three
+brand re-bases)
 builds from §3/§6/§8/§12.3; cm.3 (the blind flow) builds from §3.8/§12.4 once the §10.2 Arms are ruled.
 The Director ratifies; the Operator accepts.*
