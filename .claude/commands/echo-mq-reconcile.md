@@ -7,6 +7,13 @@ model: opus
 
 # /echo-mq-reconcile — (re)build a chapter to the three-pillar target
 
+> **⚠ BCS CALIBRATION (2026-06-25).** This command predates the new BCS manuscript and still names **`EchoCache.*`**
+> (→ **`EchoStore.*`** / `echo/apps/echo_store`) and **`Exchange.*`** (→ **`codemojex`** / `echo/apps/codemojex`, B7),
+> cites the retired figure source `docs/echo/bcs/content/bcsN.*` (→ **`docs/echo/bcs/bcs.N.md`**), and builds the cms at
+> the stale `apps/jonnify-cms` (→ **`go/jonnify-cms`**). For a run that brings the echomq course to the **new BCS
+> direction**, prefer **`/bcs-reconcile E<N>`** (it loads the `bcs-writer` overlay + composes this engine's
+> dark-editorial discipline). Use this command directly only for an echomq change that is **not** about the BCS deltas.
+
 You are bringing a chapter of the jonnify **"EchoMQ, In Depth"** course (served at `/echomq`) to the **three-pillar
 target design**. In the current model this is a **build/rebuild to target**, not a preserve-and-retarget: the old
 course internals are off-target (a different structure, version framing, the retired v1-line teaching), so this engine

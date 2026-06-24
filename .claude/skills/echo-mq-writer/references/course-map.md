@@ -1,5 +1,13 @@
 # EchoMQ, In Depth — course map
 
+> **⚠ BCS CALIBRATION (2026-06-25) — defer to `bcs-writer` on the cross-cutting facts below.** The new manuscript
+> `docs/echo/bcs/bcs.N.md` re-pointed surfaces this digest still names the old way. Read every **`EchoCache.*` /
+> `echo/apps/echo_cache`** (the grounding-map rows, the Cache pillar) as **`EchoStore.*` / `echo/apps/echo_store`**
+> (renamed 2026-06-18, 1:1), and the bus consumer **`Exchange.{Gateway,OrderBook,Decider}`** (`echo/apps/exchange`,
+> deleted) as **`codemojex` / `echo/apps/codemojex`** (manuscript B7). The figure source moved from
+> `docs/echo/bcs/content/bcsN.*` (retired) to `docs/echo/bcs/bcs.N.md`; a new **persistence floor** + the
+> **`/echo-persistence`** door also apply. Authority: the **`bcs-writer`** skill; the page reconcile is **`/bcs-reconcile E<N>`**.
+
 The course **"EchoMQ, In Depth"** is served at **`/echomq`** (folder-routed via `serveDirTree`; **wired live** in
 `main.go` — `/echomq` + `/echomq/*`, `ECHOMQ_DIR`, default `/app/html/echomq`; the URL tree mirrors `html/echomq/`,
 a new `.html` is live on save). It teaches the **internals of the Valkey-native job system you own** — canonical in

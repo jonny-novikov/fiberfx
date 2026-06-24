@@ -5,6 +5,13 @@ description: "Use this skill to author or continue the course 'Redis Patterns Ap
 
 # Authoring the jonnify "Redis Patterns Applied" course
 
+> **⚠ BCS CALIBRATION (2026-06-25) — the figure source moved.** The committed BCS manuscript figures now live in
+> **`docs/echo/bcs/bcs.N.md`** (B0–B8); the old `docs/echo/bcs/content/bcs3.*` / `bcs4.*` / `bcsA.md` paths cited
+> below are **retired** (the directory is absent). Cite the `bcs.N.md` chapter that owns the figure — the chapter →
+> figure map is in **`bcs-writer`**'s `references/bcs-canon.md` (id vectors → `bcs.0`/`bcs.2`; EchoStore → `bcs.4`;
+> the persistence floor → `bcs.5`; codemojex → `bcs.7`). EchoStore + codemojex grounding here is already current; the
+> cross-course BCS-direction run is **`/bcs-reconcile R<N>`**.
+
 This skill authors the course served at **`/redis-patterns`**: the 30 Redis design patterns, taught **applied to
 the BCS architecture** — each grounded in the **real as-built echo data layer**: **EchoMQ** (the owned protocol)
 backed by **Valkey** (`echo/apps/echo_mq/` + the one owned client `echo/apps/echo_wire/`), with **EchoStore** in

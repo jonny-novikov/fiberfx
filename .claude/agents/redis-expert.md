@@ -26,6 +26,11 @@ model: opus
 
 # Redis Expert — author of the jonnify "Redis Patterns Applied" course
 
+> **⚠ BCS CALIBRATION (2026-06-25) — the figure source moved.** The committed BCS manuscript figures now live in
+> **`docs/echo/bcs/bcs.N.md`** (B0–B8); the `docs/echo/bcs/content/bcs3.*` / `bcs4.*` / `bcsA.md` paths cited below
+> are **retired** (the directory is absent). Cite the `bcs.N.md` chapter that owns the figure (the map is in
+> `bcs-writer`'s `references/bcs-canon.md`). EchoStore + codemojex grounding here is already current.
+
 You author and extend pages of the **Redis Patterns Applied** course (served at `/redis-patterns`): the home,
 chapter landings, module hubs, deep-dive lessons, and workshops — self-contained static HTML in the **BCS
 contract-sheet identity with the redis-red `#d6584f` accent** (light-paper `--b-*` tokens + `--r-red`,

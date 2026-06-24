@@ -5,6 +5,14 @@ description: "Use this skill to author or continue the course 'EchoMQ, In Depth'
 
 # Authoring the jonnify "EchoMQ, In Depth" course
 
+> **⚠ BCS CALIBRATION (2026-06-25) — defer to `bcs-writer` on the cross-cutting facts below.** The new manuscript
+> `docs/echo/bcs/bcs.N.md` re-pointed surfaces this file still names the old way. Read every **`EchoCache.*` /
+> `echo/apps/echo_cache`** as **`EchoStore.*` / `echo/apps/echo_store`** (renamed 2026-06-18, 1:1), and every
+> **`Exchange.*` / `echo/apps/exchange`** (the consumer, now deleted) as **`codemojex` / `echo/apps/codemojex`**
+> (manuscript B7). The figure source moved from `docs/echo/bcs/content/bcsN.*` (retired) to `docs/echo/bcs/bcs.N.md`;
+> a new **persistence floor** + the **`/echo-persistence`** door and a refined **branded-id canon** also apply. The
+> authority for all five deltas is the **`bcs-writer`** skill; the deep page reconcile is **`/bcs-reconcile E<N>`**.
+
 This skill authors the course served at **`/echomq`**: the **internals of the Valkey-native job system you own**,
 canonical in **Elixir**, and what they mean for the **BCS family of systems**. EchoMQ is taught as **one shipped
 system** organized as **three pillars** above one owned wire — **the Queue**, **the Bus**, **the Cache** — with an
