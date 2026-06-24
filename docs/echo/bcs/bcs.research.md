@@ -1,7 +1,5 @@
 # BCS · Research · Composition Approaches
 
-<show-structure depth="2"/>
-
 ## Preface to the research appendix
 
 The Branded Component System is a measured manuscript. Its chapters commit to local records: code that runs, tables that exist, contracts that hold. This appendix does something different. It is the literature review the measured chapters stand on. Where the manuscript says "we do it this way," the appendix says "here is the lineage of ways it has been done, who reported what, and where." Evidence here is reported and attributed to its sources, not measured locally. When a benchmark number appears, it is quoted as the originating author published it, with their hardware and their caveats intact. When a design claim appears, it is traced to the blog post, slide deck, paper, or repository where it was first stated.
@@ -117,8 +115,7 @@ The chapter's through-line: across objects, traits, prototypes, game components,
 
 ---
 
-# BCS · Research 2 · The Modern ECS Family in Depth — bcs.research.2.md
-<show-structure depth="2"/>
+## BCS · Research 2 · The Modern ECS Family in Depth
 
 ## What the modern family inherited
 
@@ -211,12 +208,12 @@ Bevy deserves a note as the hybrid that proves the rule: its components are stor
 
 ---
 
-# BCS · Research 3 · Composition in Distributed Systems, the Decider Pattern, and Putting It All Together — bcs.research.3.md
-<show-structure depth="2"/>
+## BCS · Research 3 · Composition in Distributed Systems, the Decider Pattern
 
 ## When the handle crosses the wire
 
-Chapter 2 ended at a wall: the generational-index handle is an index into an array owned by one system in one address space, and it means nothing on the other side of a socket, a save file, or a foreign store. Distributed composition begins exactly where the pointer dies. This chapter traces how the field composes systems when references cannot be shared, develops the Decider pattern as the unit of distributed business logic, sketches an advanced Decider design for a trading engine keyed by branded identities, and closes with the synthesis that states the appendix's thesis.
+Chapter 2 ended at a wall: the generational-index handle is an index into an array owned by one system in one address space, and it means nothing on the other side of a socket, a save file, or a foreign store. 
+Distributed composition begins exactly where the pointer dies. This chapter traces how the field composes systems when references cannot be shared, develops the Decider pattern as the unit of distributed business logic, sketches an advanced Decider design for a trading engine keyed by branded identities, and closes with the synthesis that states the appendix's thesis.
 
 ## Helland's entities and idempotence
 
@@ -247,128 +244,3 @@ isTerminal : State -> bool
 `decide` takes a command and the current state and returns the events that should happen; `evolve` takes a state and an event and returns the next state; `initialState` is the state before anything has happened; `isTerminal` marks a state past which no command is accepted. Chassaing's framing starts from a system as a function of inputs over time, and the Decider is the shape that falls out. Oskar Dudycz, in "How to effectively compose your business logic" (event-driven.io), describes why this shape matters for composition: the Decider "groups business logic, state evolution and rebuild together with the initial state," and because it is built on functional composition it lets the developer focus on the business process rather than on wiring. Both authors note the property that makes the Decider distributable: it is a pure function. Given the same command and state it yields the same events, so it can run anywhere the state can be reconstructed, and the events it emits are immutable facts in Helland's sense.
 
 A Decider is also composable in the large. Chassaing's post shows many small Deciders combined into one, and the same machinery expresses a process manager — a Decider whose commands and events are the events and commands of other Deciders. This is the bridge from a single aggregate to a composed system.
-
-## An advanced Decider sketch for a trading engine
-
-The manuscript's worked domain is a trading system with the namespaces ORD (orders), PRT (portfolios), STR (strategies), and JOB (jobs). The following sketch keys each Decider by a branded identity and lets commands and events carry identities and parameters as their only cargo — no shared state, no pointers, in the spirit of Helland's entities. State lives in system-owned stores (manuscript 2.2); the bus (EchoMQ, manuscript 3.5) routes commands and events with exactly-once effect via provenance.
-
-An order-lifecycle Decider, keyed by an ORD identity:
-
-```elixir
-# state: :new | {:placed, qty} | {:partially_filled, filled, qty}
-#        | :filled | :cancelled
-def decide({:place, ord_id, qty}, :new),
-  do: [{:placed, ord_id, qty}]
-def decide({:fill, ord_id, n}, {:placed, qty}) when n <= qty,
-  do: [{:filled, ord_id, n}]
-def decide({:cancel, ord_id}, {:placed, _qty}),
-  do: [{:cancelled, ord_id}]
-def decide(_cmd, _terminal), do: []   # isTerminal => no events
-
-def evolve(:new, {:placed, _id, qty}), do: {:placed, qty}
-def evolve({:placed, qty}, {:filled, _id, n}) when n == qty, do: :filled
-def evolve({:placed, qty}, {:filled, _id, n}), do: {:partially_filled, n, qty}
-def evolve(_s, {:cancelled, _id}), do: :cancelled
-```
-
-A portfolio/position Decider, keyed by a PRT identity, consumes the order's `filled` events as its own commands — this is the process-manager composition:
-
-```elixir
-def decide({:apply_fill, prt_id, ord_id, n, price}, %Position{} = pos) do
-  # provenance guard: has this PRT already absorbed this ORD fill?
-  if MapSet.member?(pos.absorbed, ord_id),
-    do: [],
-    else: [{:position_changed, prt_id, ord_id, n, price}]
-end
-
-def evolve(%Position{} = pos, {:position_changed, _prt, ord_id, n, price}) do
-  %{pos | qty: pos.qty + n,
-          cost: pos.cost + n * price,
-          absorbed: MapSet.put(pos.absorbed, ord_id)}
-end
-```
-
-A risk Decider, keyed by an STR identity, decides whether a placement is allowed before the order Decider ever sees it, and emits a rejection event rather than throwing:
-
-```elixir
-def decide({:check, str_id, ord_id, qty, limit}, %Risk{exposure: e})
-    when e + qty > limit,
-  do: [{:rejected, str_id, ord_id, :limit_breached}]
-def decide({:check, str_id, ord_id, qty, _limit}, %Risk{}),
-  do: [{:approved, str_id, ord_id, qty}]
-```
-
-Three observations connect the sketch to the manuscript. The commands and events carry only branded identities (ORD, PRT, STR) plus scalar parameters, never references to in-memory state — the identity is the only thing that crosses the boundary between Deciders. The provenance guard in the portfolio Decider is Helland's idempotence: the position remembers the ORD identities it has absorbed, matching EchoMQ's row-level provenance. And the composition between Deciders is by message on the bus, not by call — the order Decider's `filled` event becomes the portfolio Decider's `apply_fill` command, routed by the bus with the fencing and fair-lane guarantees of manuscript 3.3 and 3.4.
-
-## LMAX: a data-driven business-logic processor
-
-The trading domain also supplies the canonical data-driven composition example. Martin Fowler's "The LMAX Architecture" (2011) describes a retail financial exchange whose Business Logic Processor, in Fowler's words, "can handle 6 million orders per second on a single thread," running entirely in memory using event sourcing. The processor is single-threaded business logic surrounded by Disruptors — ring-buffer queues that pass events between stages without locks. Fowler is careful to attribute the headline number to its conditions: "The 6 million TPS benchmark was measured on a 3Ghz dual-socket quad-core Nehalem based Dell server with 32GB RAM," a caveat worth repeating since the number is often quoted bare. LMAX is the proof that the Decider shape scales: pure, in-memory business logic fed by an ordered stream of events, with input and output composed as queues. The manuscript's EchoMQ ring-rotation fair lanes (3.4) and single-owner consumers are the same architecture in a different substrate — composition by an ordered buffer feeding owned logic.
-
-LMAX also demonstrates the immutability lesson: because the business logic is fed by an ordered, replayable event stream and holds state only in memory, recovery is replay, and the same input stream feeds replicas deterministically. This is Helland's immutability and Kreps' log meeting in a production exchange.
-
-## Putting it all together
-
-The appendix can now state its thesis as a conclusion rather than a claim.
-
-Across fifty years and two independent lineages — the object/game lineage of Chapter 1 and the database/distributed lineage of this chapter — every composition approach resolves into the same three roles: identity names the thing, data holds its state, behavior runs over it. The approaches differ only in where they draw the encapsulation boundary and what they let cross it. Class inheritance drew the boundary around the object and let structure cross by being inherited. Object composition drew it around each collaborator and let behavior cross by reference. The ECS family drew it around the component store and let the entity index cross — but only within one process, because the index is a slot in a privately owned array. Helland drew it around the entity and let messages cross, requiring idempotence because messages repeat. The Decider drew it around a pure function and let events cross as immutable facts.
-
-BCS draws the boundary around the system and lets only the identity cross. That is the whole design, and the research shows it is the limit point of the entire tradition: take the ECS generational handle, which dies at the process boundary, and promote it into a value that survives every boundary. The branded snowflake is that promotion — the distributed generational index.
-
-Each property of the branded snowflake answers a role the literature assigned to a different mechanism. It is typed by a three-character namespace prefix (ORD, PRT, JOB, STR), which is the kind law that traits and component types carried inside the process, now carried in the name itself. It is ordered by mint time through order-preserving base62 encoding, so lexicographic order equals mint order — chronology without a timestamp column, which is Kreps' totally-ordered log property folded into the key. It is placed by a hash32 function, which is Weissflog's system-owned-array idea generalised: the name tells you where the data lives without a central map. And it is contracted identically across Elixir, Node, Go, Rust/C, PostgreSQL, and WebAssembly, so the same name resolves in every runtime — the one thing the in-process handle could never do.
-
-The substrate completes the picture. Valkey is the shared ground on which the systems are composed: the job bus (manuscript 3.1–3.5) is systems composed by messages, with fencing tokens for safety and fair lanes for liveness, which is the log and the Disruptor in one; the caches (Part IV) are composition-safe read paths whose snowflake-versioned newer-wins coherence is Helland's immutability applied to reads. The manuscript's stores (2.2, 2.3) are the component tables of the ECS-as-database framing, owned by OTP processes in the actor lineage (2.1), composed as data folds rather than storage-class moves (2.4), with relations themselves treated as systems (2.5) in the spirit of Codd.
-
-The reader should take from this appendix a single corrective. The ECS literature is often read as advice about memory layout. Read across the whole tradition, its real subject is the boundary: what is a system, what does it own, and what is allowed to leave it. BCS's answer is that a system owns its state and behavior outright and exposes nothing but names, and that a name engineered to carry kind, chronology, and placement, and to mean the same thing in every runtime, is enough to compose anything. The branded snowflake is not a smaller pointer. It is the pointer that survived being thrown across the network, the disk, and the language barrier, and came back still meaning what it meant.
-
-### References
-
-11. Helland — Life beyond Distributed Transactions (entities, messaging, idempotence by remembering): [ics.uci.edu](https://ics.uci.edu/~cs223/papers/cidr07p15.pdf)
-26. Helland — Immutability Changes Everything (immutable data to coordinate at a distance): [queue.acm.org](https://queue.acm.org/detail.cfm?id=2884038)
-27. Kreps — The Log: What every software engineer should know (the log as a totally-ordered unifying abstraction): [engineering.linkedin.com](https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying)
-28. Chassaing — Functional Event Sourcing Decider (decide/evolve/initialState/isTerminal): [thinkbeforecoding.com](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)
-29. Dudycz — How to effectively compose your business logic (Decider as composed business logic): [event-driven.io](https://event-driven.io/en/how_to_effectively_compose_your_business_logic/)
-30. Fowler — The LMAX Architecture (single-threaded business-logic processor, 6M TPS, Disruptors): [martinfowler.com](https://martinfowler.com/articles/lmax.html)
-
----
-
-# BCS · Appendix C · Consolidated References — bcs.research.references.md
-<show-structure depth="2"/>
-
-Every research reference used across the three chapters, with full citation, URL, a short abstract, and the chapter(s) that cite it. A reverse index by chapter follows the list.
-
-1. Gamma, E. (with Venners, B.) — "Design Principles from Design Patterns." Artima Developer, 2005. [artima.com](https://www.artima.com/articles/design-principles-from-design-patterns). Abstract: Interview in which Gang of Four co-author Erich Gamma restates and defends the principle "favor object composition over class inheritance," arguing inheritance is brittle through base/subclass coupling while composition gives black-box reuse. Cited by: Chapter 1.
-2. Schärli, N., Ducasse, S., Nierstrasz, O., Black, A.P. — "Traits: Composable Units of Behaviour." ECOOP 2003, LNCS 2743, pp. 248–274. [rmod-files.lille.inria.fr](https://rmod-files.lille.inria.fr/Team/Texts/Papers/Scha03a-ECOOP-Traits.pdf). Abstract: Identifies conceptual and practical problems in single, multiple, and mixin inheritance and proposes traits — stateless groups of pure methods that compose into classes with explicit conflict resolution. Cited by: Chapter 1.
-3. Ungar, D., Smith, R.B. — "Self: The Power of Simplicity." OOPSLA 1987; revised in Lisp and Symbolic Computation 4 (1991). [doi.org](https://doi.org/10.1007/BF01806105). Abstract: Introduces Self, a class-free language built on prototypes, slots, and delegation, where objects are cloned from prototypes and share behavior by delegation rather than through classes. Cited by: Chapter 1.
-4. Leonard, T. — "Postmortem: Thief: The Dark Project." Game Developer Magazine, 1999. [gamedeveloper.com](https://www.gamedeveloper.com/design/postmortem-i-thief-the-dark-project-i-). Abstract: Looking Glass lead programmer's postmortem describing the Dark Object System as a general property database for simulation objects, with no code-based object hierarchy and designer-driven composition through tools. Cited by: Chapter 1.
-5. Bilas, S. — "A Data-Driven Game Object System." GDC 2002 (Dungeon Siege). [gamedevs.org](https://www.gamedevs.org/uploads/data-driven-game-object-system.pdf). Abstract: Slides presenting a component-assembled game object system aimed at removing engineer involvement from content; reports more than 7,300 unique placeable object types and over 100,000 objects placed across the game's two maps. Cited by: Chapter 1.
-6. West, M. — "Evolve Your Hierarchy." Cowboy Programming, 2007. [cowboyprogramming.com](https://cowboyprogramming.com/2007/01/05/evolve-your-heirachy/). Abstract: Argues for composing game entities as aggregations of components instead of deep class hierarchies; documents allowing components to hold direct pointers to one another after manager-routed references cost over 5% of CPU time. Cited by: Chapter 1.
-7. Martin, A. — "Entity Systems are the future of MMOG development, Part 1." T-machine.org, 2007. [t-machine.org](https://t-machine.org/index.php/2007/09/03/entity-systems-are-the-future-of-mmog-development-part-1/). Abstract: Opens the influential series framing entity systems as a data problem, with entities as pure identifiers, components as data, and systems as logic over component arrays. Cited by: Chapter 1.
-8. Martin, A. — "Entity Systems, Part 2." T-machine.org, 2007. [t-machine.org](https://t-machine.org/index.php/2007/11/11/entity-systems-are-the-future-of-mmog-development-part-2/). Abstract: Defines component-oriented entity systems as a subset of component-oriented programming and states that entities have no data and no methods. Cited by: Chapter 1.
-9. Martin, A. — "Entity Systems, Part 3." T-machine.org, 2007. [t-machine.org](https://t-machine.org/index.php/2007/12/22/entity-systems-are-the-future-of-mmog-development-part-3/). Abstract: Connects entity systems to SQL and relational databases, treating the entity store as a queryable data model. Cited by: Chapter 1.
-10. Itterheim, S. — "Overview of Entity Component System (ECS) variations with pseudo-code." GitHub gist. [gist.github.com](https://gist.github.com/LearnCocos2D/77f0ced228292676689f). Abstract: Compares ECS variants in pseudo-code — Bilas (entity owns components), a Bilas component-type-ordered variant, GameplayKit, and Martin (entity as ID, component as data, system as logic) — recommending Martin's model when console/multi-core performance demands it and defaulting to Bilas' otherwise. Cited by: Chapter 1, Chapter 2.
-11. Helland, P. — "Life beyond Distributed Transactions: an Apostate's Opinion." CIDR 2007 / ACM Queue 2016. [ics.uci.edu](https://ics.uci.edu/~cs223/papers/cidr07p15.pdf). Abstract: Argues atomicity at scale shrinks to a single keyed entity, with cross-entity coordination by retriable messages and correctness via idempotence — the entity remembers messages it has processed. Cited by: Chapter 1, Chapter 3.
-12. Mertens, S. — "Entity Component System FAQ." flecs.dev / GitHub. [flecs.dev](http://www.flecs.dev/ecs-faq/). Abstract: Reference taxonomy of ECS storage strategies — archetype, sparse-set, bitset, reactive — with their iteration and structural-change tradeoffs and lists of implementing engines; notes archetype query overhead reduces to zero on average. Cited by: Chapter 2.
-13. Mertens, S. — "Building an ECS #2: Archetypes and Vectorization." Medium. [ajmmertens.medium.com](https://ajmmertens.medium.com/building-an-ecs-2-archetypes-and-vectorization-fe21690805f9). Abstract: Explains archetype tables, contiguous component arrays, archetype-edge caching for structural changes, and why array layout enables cache-friendly vectorized iteration. Cited by: Chapter 2.
-14. Mertens, S. — "Building an ECS #3: Storage in Pictures." Medium. [ajmmertens.medium.com](https://ajmmertens.medium.com/building-an-ecs-storage-in-pictures-642b8bfd6e04). Abstract: Visual walk-through of flecs storage describing an archetype as a database table with entities as rows and components as columns, plus tag and relationship handling. Cited by: Chapter 2.
-15. Mertens, S. — "flecs Relationships documentation." GitHub. [github.com](https://github.com/SanderMertens/flecs/blob/master/docs/Relationships.md). Abstract: Documents entity relationship pairs (Relationship, Target), their implementation on the archetype graph, and the fragmentation cost of many component combinations. Cited by: Chapter 2.
-16. Mertens, S. — "Why it is time to start thinking of games as databases." Medium. [ajmmertens.medium.com](https://ajmmertens.medium.com/why-it-is-time-to-start-thinking-of-games-as-databases-e7971da33ac3). Abstract: Argues game state should be a queryable database so tools and agents can read the world, making explicit the ECS-as-database framing. Cited by: Chapter 2.
-17. Unity Technologies — "On DOTS: Entity Component System." Unity Blog. [blog.unity.com](https://blog.unity.com/technology/on-dots-entity-component-system). Abstract: Describes DOTS grouping entities with identical component sets into archetypes stored in 16 KiB chunks, the cost of archetype switching, and fast load times from raw byte layout. Cited by: Chapter 2.
-18. Unity Technologies — "Archetypes concepts," Entities manual (com.unity.entities@1.0). [docs.unity3d.com](https://docs.unity3d.com/Packages/com.unity.entities@1.0/manual/concepts-archetypes.html). Abstract: Documentation detailing 16 KiB chunk arrays per component type, entity movement between archetypes on structural change, and the warning that frequent moves reduce performance. Cited by: Chapter 2.
-19. Caini, M. (skypjack) — "ECS back and forth, Part 9: Sparse sets and EnTT." [skypjack.github.io](https://skypjack.github.io/2020-08-02-ecs-baf-part-9/). Abstract: Explains the sparse-set model behind EnTT — dense packed arrays plus sparse index arrays — with O(1) operations and O(N) tightly packed iteration. Cited by: Chapter 2.
-20. Caini, M. — "ECS back and forth, Part 6." [skypjack.github.io](https://skypjack.github.io/2019-11-19-ecs-baf-part-6/). Abstract: Describes EnTT groups, which arrange multiple sparse sets so shared entities are ordered identically at the front, enabling branchless perfect struct-of-arrays iteration. Cited by: Chapter 2.
-21. Caini, M. — "ECS back and forth, Part 12." [skypjack.github.io](https://skypjack.github.io/2021-08-29-ecs-baf-part-12/). Abstract: Shows how EnTT achieves optional per-type pointer stability by leaving tombstone holes instead of swap-and-pop, preserving references across removals. Cited by: Chapter 2.
-22. Weissflog, A. — "Handles are the better pointers." 2018. [floooh.github.io](https://floooh.github.io/2018/06/17/handles-vs-pointers.html). Abstract: Advocates centralized system-owned arrays exposing index-handles with safety-check bits instead of raw pointers, converting to a pointer only at use and never storing it. Cited by: Chapter 2.
-23. Bevy contributors — "Components and Storage." DeepWiki (bevyengine/bevy). [deepwiki.com](https://deepwiki.com/bevyengine/bevy/2.2-components-and-storage). Abstract: Documents Bevy's hybrid per-component storage — table storage for fast iteration (default) and sparse-set storage for frequently added/removed components — over generational-index archetypes. Cited by: Chapter 2.
-24. abeimler — "ecs_benchmark." GitHub. [github.com](https://github.com/abeimler/ecs_benchmark). Abstract: Comparative ECS micro-benchmark suite reporting per-operation timings (for example, "Update 8 entities with 7 Systems": EnTT 355ns, EnTT group 199ns, flecs 2332ns) across EnTT, flecs, EntityX, Ginseng, gaia-ecs and others, with the maintainer's caution to benchmark one's own workload. Cited by: Chapter 2.
-25. Mertens, S. — "ecs_benchmark (flecs)." GitHub. [github.com](https://github.com/SanderMertens/ecs_benchmark). Abstract: flecs' own benchmark repository (figures for release v4.1.0), stating the tests intentionally measure as little as possible and do not reflect real-life scenarios. Cited by: Chapter 2.
-26. Helland, P. — "Immutability Changes Everything." ACM Queue 13(9), 2015/2016. [queue.acm.org](https://queue.acm.org/detail.cfm?id=2884038). Abstract: Argues that cheap storage drives a trend toward immutable data, which is what lets distributed systems coordinate at a distance without locks, underpinning event sourcing and versioned coherence. Cited by: Chapter 3.
-27. Kreps, J. — "The Log: What every software engineer should know about real-time data's unifying abstraction." LinkedIn Engineering, 2013. [engineering.linkedin.com](https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying). Abstract: Defines the log as an append-only totally-ordered record sequence and shows how publishing to and reading from a shared log decouples and composes systems, with finance as the early stream-processing adopter. Cited by: Chapter 3.
-28. Chassaing, J. — "Functional Event Sourcing Decider." thinkbeforecoding.com, 2021. [thinkbeforecoding.com](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider). Abstract: Introduces the Decider — decide (Command, State → Event list), evolve (State, Event → State), initialState, isTerminal — and shows many Deciders composing into one and into process managers. Cited by: Chapter 3.
-29. Dudycz, O. — "How to effectively compose your business logic." event-driven.io, 2022. [event-driven.io](https://event-driven.io/en/how_to_effectively_compose_your_business_logic/). Abstract: Applies the Decider pattern to a shopping-cart state machine, describing it as grouping business logic, state evolution, and initial state via functional composition, crediting Chassaing. Cited by: Chapter 3.
-30. Fowler, M. — "The LMAX Architecture." martinfowler.com, 2011. [martinfowler.com](https://martinfowler.com/articles/lmax.html). Abstract: Describes the LMAX exchange's single-threaded in-memory event-sourced Business Logic Processor, reported at 6 million orders per second on a 3 GHz dual-socket quad-core Nehalem Dell server with 32 GB RAM, surrounded by lock-free Disruptor ring buffers. Cited by: Chapter 3.
-
-## Reverse index (chapter → reference numbers)
-
-- Chapter 1: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
-- Chapter 2: 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25
-- Chapter 3: 11, 26, 27, 28, 29, 30

@@ -25,11 +25,11 @@ Jobs depend on jobs, and a dependency is a relation, not a field. `Flows.add` re
 
 ## B3.3 · The Stream Tier
 
-EchoMQ's program runs in three movements, and its destination is EchoMQ 3.0 — a Stream Tier beside the job queue. A queue is for work that is claimed and completed once; a stream is an append-only log that many readers consume at their own pace. The tier is built additively: the writer, the readers, and retention each shipped as a rung with its own conformance probe, and the stream keys are born braced and branded like every other key on the bus.
+EchoMQ's program ran in three movements, and the third has landed as EchoMQ 3.0 — a Stream Tier beside the job queue. A queue is for work that is claimed and completed once; a stream is an append-only log that many readers consume at their own pace. The tier is built additively: the writer, the readers, and retention each shipped as a rung with its own conformance probe, and the stream keys are born braced and branded like every other key on the bus.
 
 `EchoMQ.Stream` is the writer — it appends an entry to the log and returns its id, the log ordered by append the way the property store is ordered by mint. `EchoMQ.StreamConsumer` is the reader law: a consumer group reads new entries, acknowledges them, and resumes where it left off, so a reader that restarts does not replay what it has already handled. A deliberate polyglot seam keeps the read side reachable from any language that speaks the wire, not only the BEAM.
 
-A log that only grows is a leak, so retention is a policy, not a default. `EchoMQ.Stream.trim` bounds the log by length or age, and the trimming driver is named and opt-in — a queue keeps its history until a system decides how much of it to keep. The stream is the same idea as the store seen sideways: identity orders the entries, the boundary owns them, and what survives is a choice the system makes, not an accident of volume.
+A log that only grows is a leak, so retention is a policy, not a default. `EchoMQ.Stream.trim` bounds the log by length or age, and the trimming driver is named and opt-in — a queue keeps its history until a system decides how much to keep. What is trimmed is not lost: `EchoStore.StreamArchive` folds trimmed segments into the durable Graft floor — deep history without resident memory, readable beside the live tail. The stream is the same idea as the store seen sideways: identity orders the entries, the boundary owns them, and what survives is a choice the system makes, not an accident of volume.
 
 ## References
 

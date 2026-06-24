@@ -33,7 +33,7 @@ The name is trustworthy because the system proves it before trusting it. Those t
 
 ## B0.3 · The stack and the floor
 
-The course builds a stack, and the stack has a shape worth seeing before the chapters fill it in. At the top are your systems, written against BCS. Beneath them, `echo_data` provides the branded id, the property stores, and the CHAMP forest. Beneath that, `echo_cache` gives a near-cache — ETS in the heap, Valkey one hop away. And beneath that, `echo_mq` is the Valkey-native bus that moves work between systems.
+The course builds a stack, and the stack has a shape worth seeing before the chapters fill it in. At the top are your systems, written against BCS. Beneath them, `echo_data` provides the branded id, the property stores, and the CHAMP forest. Beneath that, `echo_mq` is the Valkey-native bus that moves work between systems. Then `echo_store` is the declared near-cache, holding hot state close to the systems that read it.
 
 Those tiers are fast because they are volatile, and a system of record cannot be only volatile. The durable floor — Echo Persistence — sits beneath them: an ETS head, the Valkey bus and its L2, a durable local page tier on CubDB or Fjall, and a remote tier on Tigris. State lives somewhere fast and is made durable beneath, on a dial the system sets.
 
