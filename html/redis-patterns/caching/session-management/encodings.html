@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.06.1 · Hash, String &amp; JSON · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.06.1 — the session encoding choice: a HSET Hash gives field-level reads and writes, an opaque SET string holds the record as one blob, and JSON nests structure inside that blob. The trade-off is field access against a single round trip and a read-modify-write. Grounded in EchoCache.Table — the framed version<>value write.">
+<meta name="description" content="R1.06.1 — the session encoding choice: a HSET Hash gives field-level reads and writes, an opaque SET string holds the record as one blob, and JSON nests structure inside that blob. The trade-off is field access against a single round trip and a read-modify-write. Grounded in EchoStore.Table — the framed version<>value write.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -210,7 +210,7 @@ dl.deflist dd{color:var(--b-ink)}
     <nav class="topnav" aria-label="Page sections">
       <a href="#three">The three shapes</a>
       <a href="#update">A single-field update</a>
-      <a href="#echocache">On EchoCache</a>
+      <a href="#echocache">On EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -224,7 +224,7 @@ dl.deflist dd{color:var(--b-ink)}
       <h1>Three shapes for <span class="hns">one record</span>.</h1>
       <p class="lede">A Hash for field-level reads and writes. A string for one opaque blob. JSON when the blob has
       structure. The trade-off is <b>field access against a single round trip</b>.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache/lib/echo_cache/table.ex (put/3, the framed version&lt;&gt;value
+      <p class="heronote">Grounding: echo/apps/echo_store/lib/echo_store/table.ex (put/3, the framed version&lt;&gt;value
       write) &#8212; the encoding the store holds.</p>
 
       <figure class="anatomy" aria-labelledby="shapeCap">
@@ -326,22 +326,22 @@ dl.deflist dd{color:var(--b-ink)}
     <section id="echocache">
       <div class="sech">
         <span class="sno">&#167;3</span>
-        <h2>The session record on EchoCache</h2>
+        <h2>The session record on EchoStore</h2>
         <span class="ssrc">table.ex:290, :429 &#183; verbatim</span>
       </div>
       <div class="prose">
-        <p>EchoCache stores its values in the String shape, with one addition: it frames the bytes with a 14-byte branded
-        <strong>version</strong> prefix. <code>EchoCache.Table.put/3</code> writes <code>SET ecc:{&lt;table&gt;}:&lt;id&gt;
+        <p>EchoStore stores its values in the String shape, with one addition: it frames the bytes with a 14-byte branded
+        <strong>version</strong> prefix. <code>EchoStore.Table.put/3</code> writes <code>SET ecc:{&lt;table&gt;}:&lt;id&gt;
         (version&lt;&gt;value) PX ttl_ms</code> (<code>table.ex:290</code>), and a read splits the frame back apart &#8212;
         <code>&lt;&lt;version::binary-14, value::binary&gt;&gt;</code> (<code>table.ex:429</code>). The framed prefix is
         what lets a later coherence message compare two writes newer-wins; a plain unframed <code>SET</code> is the
         simpler choice when no cross-node coherence is needed.</p>
         <p>A session record is flat and few-field &#8212; a <code>SES</code> id, a user id, an opaque token &#8212; the
-        shape a Hash backs cleanly when the store is bare Valkey; the framed-String form is what EchoCache itself holds.
+        shape a Hash backs cleanly when the store is bare Valkey; the framed-String form is what EchoStore itself holds.
         How a credential is verified and the <code>SES</code> id is minted is the functional-Elixir and OTP craft of the
         <a href="/elixir">/elixir</a> course; this dive is the encoding the store holds.</p>
       </div>
-      <pre class="code"><span class="cmt"># EchoCache.Table.put/3 — the writer path, set both layers under the declared TTL (table.ex:290)</span>
+      <pre class="code"><span class="cmt"># EchoStore.Table.put/3 — the writer path, set both layers under the declared TTL (table.ex:290)</span>
 SET ecc:{sessions}:SES0KH... <span class="str">&lt;version&lt;&gt;value&gt;</span> PX <span class="str">1800000</span>
 
 <span class="cmt"># a read splits the 14-byte version prefix back off the value (table.ex:429)</span>
@@ -368,13 +368,13 @@ L2 GET on the same wire       31 us          <span class="fd">&#8592; the round 
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
-          <p>EchoCache holds the framed-String form &#8212; <code>version&lt;&gt;value</code> under a branded
+          <span class="lbl">its EchoStore application</span>
+          <p>EchoStore holds the framed-String form &#8212; <code>version&lt;&gt;value</code> under a branded
           <code>SES</code> key &#8212; so a coherence message can compare writes newer-wins. The session is flat, so the
           frame, not nesting, is the work.</p>
         </div>
       </div>
-      <p class="take">The encoding follows the access pattern. A flat session fits a Hash on bare Valkey; EchoCache frames
+      <p class="take">The encoding follows the access pattern. A flat session fits a Hash on bare Valkey; EchoStore frames
       it as a versioned String; a nested cart fits JSON &#8212; all end with the same <code>PX</code> deadline.</p>
 
       <p class="vnote"><span class="vk">Notes on Valkey</span><code>SET &#8230; PX</code> sets the value and the TTL in
@@ -392,7 +392,7 @@ L2 GET on the same wire       31 us          <span class="fd">&#8592; the round 
         <p>A session record fits three shapes, and the access pattern picks one. A Hash exposes named fields, so a
         single-field update &#8212; the sliding-expiry write &#8212; costs one <code>HSET</code>. A string or JSON value
         is opaque, so any change is a read-modify-write of the whole record. Flat sessions take the Hash; nested data
-        takes JSON; EchoCache frames its bytes as a versioned String. The deadline is set the same way for all of them.
+        takes JSON; EchoStore frames its bytes as a versioned String. The deadline is set the same way for all of them.
         The next dive is that deadline: how a TTL is set, slid, and reclaimed.</p>
       </div>
     </section>
@@ -409,7 +409,7 @@ L2 GET on the same wire       31 us          <span class="fd">&#8592; the round 
           <ul>
             <li><a href="https://redis.io/commands/hset" rel="noopener">Redis &mdash; <em>HSET</em></a> &mdash; set named fields of a Hash; the field-level write a Hash session uses.</li>
             <li><a href="https://redis.io/commands/hgetall" rel="noopener">Redis &mdash; <em>HGETALL</em></a> &mdash; read every field of a Hash in one command; the full-session read.</li>
-            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key to one value with <code>PX</code>; the framed-String encoding <code>EchoCache.Table.put</code> writes.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key to one value with <code>PX</code>; the framed-String encoding <code>EchoStore.Table.put</code> writes.</li>
             <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the Hash and String types and when each fits a record.</li>
           </ul>
         </div>
@@ -419,7 +419,7 @@ L2 GET on the same wire       31 us          <span class="fd">&#8592; the round 
             <li><a href="/redis-patterns/caching/session-management">R1.06 &#183; Session management</a><span class="rs">the module hub</span></li>
             <li><a href="/redis-patterns/caching/session-management/ttl-expiry">R1.06.2 &#183; TTL expiry</a><span class="rs">the next dive</span></li>
             <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
-            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under codemojex</span></li>
             <li><a href="/echomq">/echomq</a><span class="rs">the protocol the coherence lane rides</span></li>
           </ul>
         </div>
@@ -440,7 +440,7 @@ L2 GET on the same wire       31 us          <span class="fd">&#8592; the round 
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>

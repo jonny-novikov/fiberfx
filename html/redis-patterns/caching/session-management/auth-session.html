@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.06.3 · The auth tie-in · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.06.3 — session lifetime bound to a namespace: keyed by a branded SES id via EchoCache.Table.put, dropped with invalidate on logout, and refused at the kind gate so a USR id can never be a SES key. The Exchange Platform carries an opaque account id a session keys to. Grounded in EchoCache.Table — put/3, invalidate/3, gate/2 — and Exchange.Gateway.parse_account.">
+<meta name="description" content="R1.06.3 — session lifetime bound to a namespace: keyed by a branded SES id via EchoStore.Table.put, dropped with invalidate on logout, and refused at the kind gate so a USR id can never be a SES key. codemojex holds the same shape one level down — a player's per-round state in the per-player hash cm:{round}:lock:{player}, keyed by the USR brand. Grounded in EchoStore.Table — put/3, invalidate/3, gate/2 — and Codemojex.Locks.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -213,7 +213,7 @@ dl.deflist dd{color:var(--b-ink)}
     <nav class="topnav" aria-label="Page sections">
       <a href="#lifecycle">The lifecycle</a>
       <a href="#devices">One device or all</a>
-      <a href="#echocache">On EchoCache</a>
+      <a href="#echocache">On EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -227,9 +227,9 @@ dl.deflist dd{color:var(--b-ink)}
       <h1>Bound to the <span class="hns">namespace</span>.</h1>
       <p class="lede">A session is born at sign-in, ended by a logout, and refused at the door when its id is the wrong
       kind &#8212; so a <b>session key can only ever be a session</b>.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache/lib/echo_cache/table.ex (put/3, invalidate/3, gate/2) &#183;
-      echo/apps/exchange/lib/exchange/gateway.ex (parse_account/1) &#8212; the session the store holds and the kind law
-      that guards it.</p>
+      <p class="heronote">Grounding: echo/apps/echo_store/lib/echo_store/table.ex (put/3, invalidate/3, gate/2) &#183;
+      echo/apps/codemojex/lib/codemojex/locks.ex (the per-player lock hash) &#8212; the session the store holds and the
+      kind law that guards it.</p>
 
       <figure class="anatomy" aria-labelledby="cycleCap">
         <figcaption id="cycleCap"><b>The lifecycle, login to logout.</b> Select a phase to read the command that runs and
@@ -266,8 +266,8 @@ dl.deflist dd{color:var(--b-ink)}
       <div class="prose">
         <p>The session&#8217;s life runs alongside the login. At <strong>sign-in</strong>, the application verifies the
         credentials, keys a session record under a fresh random id, and returns that id to the browser as a cookie. The
-        session id must be cryptographically random &#8212; a guessable id is a way into someone else&#8217;s account
-        &#8212; and the password is never stored in the session; only the user id and a token go in.</p>
+        session id must be cryptographically random &#8212; a guessable id is a way into someone else&#8217;s signed-in
+        session &#8212; and the password is never stored in the session; only the user id and a token go in.</p>
         <p>On <strong>each request</strong>, the application reads the cookie&#8217;s id, loads the session, and resolves
         the user from it. A loaded session means signed in; a missing one means signed out. This is the read that every
         protected page depends on, and it is where a sliding deadline from the last dive keeps an active session
@@ -340,32 +340,33 @@ dl.deflist dd{color:var(--b-ink)}
     <section id="echocache">
       <div class="sech">
         <span class="sno">&#167;3</span>
-        <h2>The session on EchoCache &#8212; the kind gate</h2>
+        <h2>The session on EchoStore &#8212; the kind gate</h2>
         <span class="ssrc">table.ex:290, :171, :495 &#183; verbatim</span>
       </div>
       <div class="prose">
-        <p>EchoCache holds a session as a branded-id-keyed row with no auth surface of its own &#8212; there is no sign or
+        <p>EchoStore holds a session as a branded-id-keyed row with no auth surface of its own &#8212; there is no sign or
         verify call in the cache. Sign-in keys the row to a branded <code>SES</code> id and stores it with
-        <code>EchoCache.Table.put/3</code>, which sets both layers under the declared TTL &#8212;
+        <code>EchoStore.Table.put/3</code>, which sets both layers under the declared TTL &#8212;
         <code>SET ecc:{sessions}:&lt;id&gt; (version&lt;&gt;value) PX ttl_ms</code> (<code>table.ex:290</code>), the value
         framed with the write&#8217;s mint-time version. A re-auth re-<code>put</code>s with a fresh version, the sliding
-        move. Logout is <code>EchoCache.Table.invalidate/3</code> (<code>table.ex:171</code> &#8212; a <code>DEL</code> on
+        move. Logout is <code>EchoStore.Table.invalidate/3</code> (<code>table.ex:171</code> &#8212; a <code>DEL</code> on
         L2 plus an <code>:ets.delete</code>): the next read finds nothing and the gate fails closed.</p>
-        <p>The tie to authentication is the <strong>kind gate</strong>, not a credential check. Before either layer is
+        <p>The tie to a player is the <strong>kind gate</strong>, not a credential check. Before either layer is
         touched, <code>gate/2</code> (<code>table.ex:495</code>) requires <code>byte_size(id) == 14 and
         binary_part(id, 0, 3) == kind and BrandedId.valid?(id)</code>, returning <code>{:error, :kind}</code> otherwise
         &#8212; so a <code>USR</code> id can never be used as a <code>SES</code> key, and a wrong-namespace id is refused
-        with zero keys on the wire. The Exchange Platform carries an opaque <strong>account</strong> id
-        (<code>Exchange.Gateway.parse_account/1</code> &#8212; <code>{:ok, binary()} | {:error, :malformed}</code>,
-        carried verbatim, never branded); a session keys to the account it admits. How a credential is verified and a
-        <code>SES</code> id is minted is the functional-Elixir and OTP craft of the <a href="/elixir">/elixir</a> course;
-        this dive is the session the store holds and the kind law that guards it.</p>
+        with zero keys on the wire. codemojex holds the same shape one level down: a player&#8217;s per-round state is a
+        per-player hash <code>cm:{round}:lock:{player}</code> (<code>Codemojex.Locks</code> &#8212; field = position,
+        value = code, written with <code>HSET</code>), so a locked position <strong>persists across guesses with no
+        client state to lose</strong>, keyed by the player&#8217;s <code>USR</code> brand. How a credential is verified
+        and a <code>SES</code> id is minted is the functional-Elixir and OTP craft of the <a href="/elixir">/elixir</a>
+        course; this dive is the session the store holds and the kind law that guards it.</p>
       </div>
-      <pre class="code"><span class="cmt"># A session as an EchoCache row — keyed by a branded SES id, framed and TTL'd.</span>
+      <pre class="code"><span class="cmt"># A session as an EchoStore row — keyed by a branded SES id, framed and TTL'd.</span>
 <span class="cmt"># put/3 writes L2 and L1 in one synchronous call; there is no sign/verify in the cache.</span>
-SET ecc:{sessions}:SES0KH... <span class="str">&lt;version&lt;&gt;value&gt;</span> PX <span class="str">1800000</span>   <span class="cmt"># EchoCache.Table.put/3 — table.ex:290</span>
+SET ecc:{sessions}:SES0KH... <span class="str">&lt;version&lt;&gt;value&gt;</span> PX <span class="str">1800000</span>   <span class="cmt"># EchoStore.Table.put/3 — table.ex:290</span>
 GET ecc:{sessions}:SES0KH...                                <span class="cmt"># the read splits version&lt;&gt;value back apart</span>
-DEL ecc:{sessions}:SES0KH...                                <span class="cmt"># EchoCache.Table.invalidate/3 — logout, table.ex:171</span>
+DEL ecc:{sessions}:SES0KH...                                <span class="cmt"># EchoStore.Table.invalidate/3 — logout, table.ex:171</span>
 
 <span class="cmt"># the kind gate refuses a wrong-namespace id before either layer is touched (table.ex:495)</span>
 gate(<span class="str">"SES"</span>, <span class="str">"USR0KH..."</span>)   <span class="cmt"># -&gt; {:error, :kind}  (a USR id can never be a SES key)</span></pre>
@@ -377,13 +378,13 @@ gate(<span class="str">"SES"</span>, <span class="str">"USR0KH..."</span>)   <sp
           <button type="button" data-fact="put" aria-pressed="false">put/3 SET&#8230;PX</button>
           <button type="button" data-fact="invalidate" aria-pressed="false">invalidate/3</button>
           <button type="button" data-fact="gate" aria-pressed="false">the kind gate</button>
-          <button type="button" data-fact="account" aria-pressed="false">the account id</button>
+          <button type="button" data-fact="lock" aria-pressed="false">the player lock</button>
         </div>
         <div class="readout" id="factOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a fact. Each is
-        quoted from the real EchoCache or Exchange surface, and each lives in exactly one function or law.</div>
+        quoted from the real EchoStore or codemojex surface, and each lives in exactly one function or law.</div>
         <p class="take" style="margin-top:12px">Static verdicts &#8212; <code>put/3 SET&#8230;PX</code> &#8594; table.ex:290
         &#183; <code>invalidate/3</code> &#8594; table.ex:171 &#183; the kind gate &#8594; gate/2, table.ex:495 &#183; the
-        account id &#8594; Exchange.Gateway.parse_account/1, gateway.ex:212.</p>
+        player lock &#8594; Codemojex.Locks, locks.ex.</p>
       </figure>
 
       <div class="door">
@@ -408,10 +409,11 @@ the L1 hit                               <b>762 ns</b>   <span class="fd">&#8592
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
+          <span class="lbl">its EchoStore application</span>
           <p>A branded <code>SES</code> row via <code>put/3</code>, dropped by <code>invalidate/3</code> on logout, and
-          refused at the kind gate so a <code>USR</code> id can never be a session key. The session keys to the Exchange
-          account it admits.</p>
+          refused at the kind gate so a <code>USR</code> id can never be a session key. codemojex holds the same shape
+          in <code>cm:{round}:lock:{player}</code> &#8212; a player&#8217;s state in Valkey, keyed by the <code>USR</code>
+          brand.</p>
         </div>
       </div>
       <p class="take">A session&#8217;s life is the login&#8217;s life: keyed on sign-in, read on each request, dropped on
@@ -433,7 +435,7 @@ the L1 hit                               <b>762 ns</b>   <span class="fd">&#8592
       <div class="prose">
         <p>A session ties cache state to a namespace. Sign-in keys it under a random <code>SES</code> id; each request
         loads it to find the user; logout drops it with <code>invalidate/3</code> and the gate fails closed on the next
-        request. A per-user Set of session ids makes &#8220;sign out everywhere&#8221; a roster delete. EchoCache is the
+        request. A per-user Set of session ids makes &#8220;sign out everywhere&#8221; a roster delete. EchoStore is the
         worked case: <code>put/3</code> frames and TTLs the row, <code>invalidate/3</code> drops it, and
         <code>gate/2</code> refuses a wrong-namespace id at the door. The functional-Elixir and OTP craft that verifies a
         credential is the <a href="/elixir">/elixir</a> course. That closes the session module &#8212; encode the record,
@@ -451,8 +453,8 @@ the L1 hit                               <b>762 ns</b>   <span class="fd">&#8592
         <div>
           <h3 class="refgrp">Sources</h3>
           <ul>
-            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key with <code>PX</code>; the framed-and-TTL&#8217;d row <code>EchoCache.Table.put</code> writes for a session.</li>
-            <li><a href="https://redis.io/commands/del" rel="noopener">Redis &mdash; <em>DEL</em></a> &mdash; remove a key; the logout <code>EchoCache.Table.invalidate</code> runs against L2.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key with <code>PX</code>; the framed-and-TTL&#8217;d row <code>EchoStore.Table.put</code> writes for a session.</li>
+            <li><a href="https://redis.io/commands/del" rel="noopener">Redis &mdash; <em>DEL</em></a> &mdash; remove a key; the logout <code>EchoStore.Table.invalidate</code> runs against L2.</li>
             <li><a href="https://redis.io/commands/sadd" rel="noopener">Redis &mdash; <em>SADD</em></a> &mdash; add a member to a Set; the per-user roster that records each device&#8217;s session id.</li>
             <li><a href="https://redis.io/commands/smembers" rel="noopener">Redis &mdash; <em>SMEMBERS</em></a> &mdash; list a Set&#8217;s members; the active-session list behind &#8220;sign out everywhere&#8221;.</li>
           </ul>
@@ -463,9 +465,9 @@ the L1 hit                               <b>762 ns</b>   <span class="fd">&#8592
             <li><a href="/redis-patterns/caching/session-management">R1.06 &#183; Session management</a><span class="rs">the module hub</span></li>
             <li><a href="/redis-patterns/caching/session-management/ttl-expiry">R1.06.2 &#183; TTL expiry</a><span class="rs">the previous dive</span></li>
             <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
-            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under codemojex</span></li>
             <li><a href="/echomq">/echomq</a><span class="rs">the protocol the coherence lane rides</span></li>
-            <li><a href="/bcs">/bcs</a><span class="rs">the EchoCache manuscript, Part IV</span></li>
+            <li><a href="/bcs">/bcs</a><span class="rs">the EchoStore manuscript, Part IV</span></li>
           </ul>
         </div>
       </div>
@@ -485,7 +487,7 @@ the L1 hit                               <b>762 ns</b>   <span class="fd">&#8592
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -525,11 +527,11 @@ the L1 hit                               <b>762 ns</b>   <span class="fd">&#8592
   /* ---------- Interactive 1: the auth lifecycle (pure lookup over a fixed dataset) ---------- */
   var PHASES = {
     'sign-in': { node: 'sign-in',
-      text: 'Sign in: credentials verified, a SES session keyed and stored with EchoCache.Table.put/3 (SET ecc:{sessions}:<id> … PX), its id returned to the browser as a cookie. The user is now signed in.' },
+      text: 'Sign in: credentials verified, a SES session keyed and stored with EchoStore.Table.put/3 (SET ecc:{sessions}:<id> … PX), its id returned to the browser as a cookie. The user is now signed in.' },
     'request': { node: 'request',
       text: 'A request: the gate reads the cookie id and loads the session with fetch. The row resolves the user, so the request is admitted; a re-put on the next request keeps the deadline sliding.' },
     'logout':  { node: 'logout',
-      text: 'Log out: EchoCache.Table.invalidate/3 drops the row — DEL on L2 plus :ets.delete. The browser still holds the cookie, but the id now resolves to nothing.' },
+      text: 'Log out: EchoStore.Table.invalidate/3 drops the row — DEL on L2 plus :ets.delete. The browser still holds the cookie, but the id now resolves to nothing.' },
     'after':   { node: 'after',
       text: 'Next request: the load returns empty, so the gate treats the request as anonymous and redirects to sign in — it fails closed. Logout is immediate and total.' }
   };
@@ -618,10 +620,10 @@ the L1 hit                               <b>762 ns</b>   <span class="fd">&#8592
 
   /* ---------- Interactive 3: place the fact (pure lookup over a fixed dataset) ---------- */
   var FACTS = {
-    put:        { fact: 'SET ecc:{sessions}:<id> (version<>value) PX ttl_ms', where: 'EchoCache.Table.put/3 — table.ex:290', why: 'key the session row and set both layers under the declared TTL, framed with the mint-time version.' },
-    invalidate: { fact: 'DEL ecc:{sessions}:<id> + :ets.delete', where: 'EchoCache.Table.invalidate/3 — table.ex:171', why: 'the logout: drop the row from both layers unconditionally — the admin verb.' },
+    put:        { fact: 'SET ecc:{sessions}:<id> (version<>value) PX ttl_ms', where: 'EchoStore.Table.put/3 — table.ex:290', why: 'key the session row and set both layers under the declared TTL, framed with the mint-time version.' },
+    invalidate: { fact: 'DEL ecc:{sessions}:<id> + :ets.delete', where: 'EchoStore.Table.invalidate/3 — table.ex:171', why: 'the logout: drop the row from both layers unconditionally — the admin verb.' },
     gate:       { fact: 'byte_size(id)==14 and binary_part(id,0,3)==kind and BrandedId.valid?(id)', where: 'gate/2 — table.ex:495', why: 'the kind law at the door: a USR id can never be a SES key; a wrong-namespace id returns {:error, :kind} with zero keys on the wire.' },
-    account:    { fact: 'parse_account(s) -> {:ok, binary()} | {:error, :malformed}', where: 'Exchange.Gateway.parse_account/1 — gateway.ex:212', why: 'the opaque account id carried verbatim, never branded; a session keys to the account it admits.' }
+    lock:       { fact: 'HSET cm:{round}:lock:{player} <pos> <code>', where: 'Codemojex.Locks.lock/4 — locks.ex', why: 'codemojex holds a player\'s per-round state in Valkey, keyed by the USR brand: a locked position persists across guesses with no client state to lose — the same session shape one level down.' }
   };
   var factButtons = document.querySelectorAll('#factSel button');
   var factOut = document.getElementById('factOut');

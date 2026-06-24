@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.02.1 · The synchronous dual write · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.02.1 — the synchronous dual write: one write reaches both layers. EchoCache.Table.put sets the L2 Valkey row with SET … PX, then inserts into the L1 ETS table, and the call does not return until both land. The handle_call({:put, …}) clause quoted verbatim from the as-built table; the value is framed version <> value. The engine is Valkey.">
+<meta name="description" content="R1.02.1 — the synchronous dual write: one write reaches both layers. EchoStore.Table.put sets the L2 Valkey row with SET … PX, then inserts into the L1 ETS table, and the call does not return until both land. The handle_call({:put, …}) clause quoted verbatim from the as-built table; the value is framed version <> value. The engine is Valkey.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -210,7 +210,7 @@ div.door:hover{box-shadow:none}
     <nav class="topnav" aria-label="Page sections">
       <a href="#order">The order</a>
       <a href="#command">SET … PX</a>
-      <a href="#apply">On EchoCache</a>
+      <a href="#apply">On EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -224,7 +224,7 @@ div.door:hover{box-shadow:none}
       <h1>The synchronous dual <span class="hns">write</span>.</h1>
       <p class="lede">One write reaches both layers. The L1 ETS cache and the L2 Valkey row update together, and the
       call does not return until both are done.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache/lib/echo_cache/table.ex (handle_call({:put, &#8230;}),
+      <p class="heronote">Grounding: echo/apps/echo_store/lib/echo_store/table.ex (handle_call({:put, &#8230;}),
       verbatim) &#183; keyspace.ex (the key form) &#8212; the engine is Valkey.</p>
 
       <figure class="anatomy" aria-labelledby="dwCap">
@@ -236,7 +236,7 @@ div.door:hover{box-shadow:none}
           <button type="button" data-stage="l1" aria-pressed="false">3 &#183; L1 insert</button>
           <button type="button" data-stage="ret" aria-pressed="false">4 &#183; return</button>
         </div>
-        <svg class="dwrite" id="dwrite" viewBox="0 0 460 240" role="img" aria-label="A write from EchoCache.Table.put fans out to two layers: the L2 Valkey row written with SET PX, and the L1 ETS table written with insert. Both run on the one call, and the call returns ok only after both have landed. Select a stage to highlight it; its detail appears in the readout.">
+        <svg class="dwrite" id="dwrite" viewBox="0 0 460 240" role="img" aria-label="A write from EchoStore.Table.put fans out to two layers: the L2 Valkey row written with SET PX, and the L1 ETS table written with insert. Both run on the one call, and the call returns ok only after both have landed. Select a stage to highlight it; its detail appears in the readout.">
           <g class="node" data-stage="put"><rect x="150" y="14" width="160" height="40" rx="6"></rect><text class="nlbl" x="170" y="32">Table.put</text><text class="nsub" x="170" y="46">one GenServer.call</text></g>
 
           <path class="flow" d="M200 54 L110 96"></path>
@@ -266,7 +266,7 @@ div.door:hover{box-shadow:none}
         <span class="ssrc">write-through.md.txt &#183; How It Works</span>
       </div>
       <div class="prose">
-        <p>The write-through write is a single logical step made of two store writes. <code>EchoCache.Table.put</code>
+        <p>The write-through write is a single logical step made of two store writes. <code>EchoStore.Table.put</code>
         receives a changed value, sets the L2 Valkey row with <code>SET &#8230; PX</code>, writes the L1 ETS table with
         <code>insert</code>, and returns once both have landed. The two layers are never out of step at the moment the
         write returns, because the write does not return until both are done. In the as-built code the order is L2
@@ -327,15 +327,15 @@ div.door:hover{box-shadow:none}
     <section id="apply">
       <div class="sech">
         <span class="sno">&#167;3</span>
-        <h2>The dual write on EchoCache</h2>
+        <h2>The dual write on EchoStore</h2>
         <span class="ssrc">table.ex &#183; handle_call({:put, &#8230;}) &#183; verbatim</span>
       </div>
-      <p class="ethic">Take one change: an instrument reference row is updated. <code>EchoCache.Table.put</code> sets
+      <p class="ethic">Take one change: an emoji-set row is updated. <code>EchoStore.Table.put</code> sets
       the new value into the L2 Valkey row and the L1 ETS table, then returns. A later read serves the cached value
       and matches the source, because the cache was written on the same path:</p>
       <figure class="frozen">
-        <figcaption>echo/apps/echo_cache/lib/echo_cache/table.ex &#183; handle_call({:put, &#8230;}) &#183; verbatim<span class="tag">as-built</span></figcaption>
-        <pre>l2 = Keyspace.key(state.table, id)            <span class="fd">&#8592; "ecc:{instruments}:AST0NgWEfAEJfs"</span>
+        <figcaption>echo/apps/echo_store/lib/echo_store/table.ex &#183; handle_call({:put, &#8230;}) &#183; verbatim<span class="tag">as-built</span></figcaption>
+        <pre>l2 = Keyspace.key(state.table, id)            <span class="fd">&#8592; "ecc:{cm_emojisets}:EMS0ODMggk1d5N"</span>
 
 {:ok, "OK"} =
   Connector.command(state.conn, [
@@ -359,14 +359,14 @@ insert(state, id, value, version)             <span class="fd">&#8592; L1 ETS, o
         <span class="dr">the application &#183; the cache&#8217;s own key, one slot</span>
         <h3>The braced key &#8212; one cache, one cluster slot</h3>
         <p>The L2 key is the cache&#8217;s own form, the table name hash-tagged in braces so every key of one cache
-        co-locates &#8212; <code>EchoCache.Keyspace.key/2</code>, quoted from the as-built keyspace:</p>
+        co-locates &#8212; <code>EchoStore.Keyspace.key/2</code>, quoted from the as-built keyspace:</p>
         <figure class="frozen">
-          <figcaption>echo/apps/echo_cache/lib/echo_cache/keyspace.ex &#183; the key form<span class="tag">as-built</span></figcaption>
+          <figcaption>echo/apps/echo_store/lib/echo_store/keyspace.ex &#183; the key form<span class="tag">as-built</span></figcaption>
           <pre>def key(table, id) when is_binary(table) and is_binary(id) do
   unless BrandedId.valid?(id) do
     raise ArgumentError, "invalid branded id in cache key position: ..."
   end
-  <b>"ecc:{" &lt;&gt; table &lt;&gt; "}:" &lt;&gt; id</b>            <span class="fd">&#8592; ecc:{instruments}:AST0NgWEfAEJfs</span>
+  <b>"ecc:{" &lt;&gt; table &lt;&gt; "}:" &lt;&gt; id</b>            <span class="fd">&#8592; ecc:{cm_emojisets}:EMS0ODMggk1d5N</span>
 end</pre>
         </figure>
       </div>
@@ -379,7 +379,7 @@ end</pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
+          <span class="lbl">its EchoStore application</span>
           <p>The <code>handle_call({:put, &#8230;})</code> clause runs <code>SET &#8230; PX</code> to the L2 Valkey row,
           matches <code>{:ok, "OK"}</code>, then <code>insert</code>s into L1, and replies <code>:ok</code> &#8212; both
           layers, one call.</p>
@@ -446,7 +446,7 @@ end</pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -530,9 +530,9 @@ end</pre>
 
   /* ---------- Interactive 2: pick the cache command (pure lookup over a fixed dataset) ---------- */
   var COMMANDS = {
-    px5:   { wire: 'SET ecc:{instruments}:<id> version<>value PX 300000', ttl: '300000 ms (5 minutes)', use: 'a short expiry, set in milliseconds with PX' },
-    px300: { wire: 'SET ecc:{instruments}:<id> version<>value PX 300',    ttl: '300 ms — the committed drill (PTTL 300 ms of 300)', use: 'the bcs4.1 quote-cache TTL, on the server’s clock' },
-    px1h:  { wire: 'SET ecc:{instruments}:<id> version<>value PX 3600000', ttl: '3600000 ms (1 hour)', use: 'a longer expiry, the same one atomic command' }
+    px5:   { wire: 'SET ecc:{cm_emojisets}:<id> version<>value PX 300000', ttl: '300000 ms (5 minutes)', use: 'a short expiry, set in milliseconds with PX' },
+    px300: { wire: 'SET ecc:{cm_emojisets}:<id> version<>value PX 300',    ttl: '300 ms — the committed drill (PTTL 300 ms of 300)', use: 'the bcs4.1 cache-TTL drill, on the server’s clock' },
+    px1h:  { wire: 'SET ecc:{cm_emojisets}:<id> version<>value PX 3600000', ttl: '3600000 ms (1 hour)', use: 'a longer expiry, the same one atomic command' }
   };
   // pure: command key -> readout text
   function describeCmd(cmd) {

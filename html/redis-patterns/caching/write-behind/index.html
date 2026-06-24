@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.03 — Write-behind (write-back) · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="The R1.03 module hub: write-behind. Writes land in Valkey immediately and the database is synced asynchronously, so a burst of writes is absorbed and coalesced. Grounded in EchoCache.Journal — the transactional outbox and the async job lane over EchoMQ. Three dives: the async buffer, the durability trade-off, and coalescing writes.">
+<meta name="description" content="The R1.03 module hub: write-behind. Writes land in Valkey immediately and the database is synced asynchronously, so a burst of writes is absorbed and coalesced. Grounded in EchoStore.Journal — the transactional outbox and the async job lane over EchoMQ. Three dives: the async buffer, the durability trade-off, and coalescing writes.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -247,7 +247,7 @@ div.door:hover{box-shadow:none}
       <p class="lede">Maximize write throughput by writing only to Valkey and asynchronously syncing to the database
       later &#8212; <b>trading immediate durability for performance</b>. The cache acknowledges instantly; a
       background process synchronizes the changes, batching writes for efficiency.</p>
-      <p class="heronote">Grounding: echo_cache/journal.ex (the outbox, the job lane, the SQLite WAL) &#183;
+      <p class="heronote">Grounding: echo_store/journal.ex (the outbox, the job lane, the SQLite WAL) &#183;
       coherence.ex &#183; content/bcs4.4.md &#8212; every figure verbatim from a committed record. Engine: Valkey.</p>
 
       <figure class="anatomy" aria-labelledby="pathCap">
@@ -322,7 +322,7 @@ div.door:hover{box-shadow:none}
         <p>The write path adds one move to mark the key changed &#8212; <code>LPUSH writebuf &lt;key&gt;</code> onto
         a List buffer, or <code>SADD dirty &lt;key&gt;</code> onto a dirty-set &#8212; and the flush path drains it
         (<code>RPOP</code>, or <code>SMEMBERS</code>) and reads the current value before writing the source. On
-        EchoCache the deferral is real code: the writer&#8217;s verb <code>intend_and_enqueue/4</code> records the
+        EchoStore the deferral is real code: the writer&#8217;s verb <code>intend_and_enqueue/4</code> records the
         intent locally, hands the apply to the job lane over EchoMQ, and returns &#8212; the bus carries the apply
         off the write path.</p>
       </div>
@@ -337,7 +337,7 @@ div.door:hover{box-shadow:none}
       <div class="prose">
         <ul>
           <li><strong>Extremely low write latency.</strong> Operations complete as soon as Valkey acknowledges &#8212;
-          and, on EchoCache, after one local SQLite append &#8212; because no database round trip is on the request
+          and, on EchoStore, after one local SQLite append &#8212; because no database round trip is on the request
           path.</li>
           <li><strong>High throughput.</strong> The database is protected from write storms. Many rapid updates
           collapse into a single database write during sync.</li>
@@ -359,7 +359,7 @@ div.door:hover{box-shadow:none}
         cache fails before synchronization, any writes since the last sync are lost &#8212; the cache becomes the
         system of record during the sync window. <strong>Eventual consistency:</strong> the database lags behind
         the cache, so a query straight to the database may return stale data.</p>
-        <p>EchoCache closes that window not with a cache-side append log but with the outbox: the intent is recorded
+        <p>EchoStore closes that window not with a cache-side append log but with the outbox: the intent is recorded
         in a <strong>SQLite WAL</strong> before the bus hears it, and <code>replay/2</code> re-enqueues every intent
         not yet covered by the applied memory. The bus already deduplicates a re-enqueued job id, and newer-wins
         makes a re-applied version harmless. The plain-store dials still apply where the buffer is a raw List:
@@ -398,7 +398,7 @@ div.door:hover{box-shadow:none}
         <p><strong>Write-behind excels</strong> where a small, bounded loss is acceptable in exchange for write
         throughput: <strong>counters and metrics</strong> (page views, likes, impressions), <strong>high-velocity
         session updates</strong> where database latency would be prohibitive, <strong>analytics ingestion</strong>
-        at high speed, and <strong>coherence obligations on EchoCache</strong> &#8212; a changed risk limit must
+        at high speed, and <strong>coherence obligations on EchoStore</strong> &#8212; a changed risk limit must
         reach every cache copy, the job lane carries it at-least-once, and the journal makes the obligation survive
         a bus restart.</p>
         <p><strong>Never use write-behind</strong> for data where loss is unacceptable: financial transactions,
@@ -421,7 +421,7 @@ div.door:hover{box-shadow:none}
         trip for many keys. <strong>Mark keys as synchronized</strong> &#8212; clear them from the buffer or
         dirty-set.</p>
         <p>If a database write fails, the key must remain marked for retry &#8212; the buffer is the only copy until
-        the source confirms. On EchoCache the equivalent is <code>compact/1</code>: an intent is retired only when
+        the source confirms. On EchoStore the equivalent is <code>compact/1</code>: an intent is retired only when
         its name carries an applied version at least as new &#8212; coverage, not acknowledgment, so the hot path
         pays no per-intent completion write. A burst of writes to one key collapses to a single source write: the
         dirty-set holds the key once however often it changed.</p>
@@ -472,7 +472,7 @@ div.door:hover{box-shadow:none}
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">on EchoCache</span>
+          <span class="lbl">on EchoStore</span>
           <p><code>Journal.intend_and_enqueue/4</code> records the intent in local SQLite and enqueues the apply on
           EchoMQ&#8217;s fair lanes; the apply happens off the write path, and <code>replay/2</code> rebuilds the
           lane after a bus restart.</p>
@@ -489,7 +489,7 @@ div.door:hover{box-shadow:none}
         <span class="ssrc">coherence.ex &#183; content/bcs4.4.md &#183; verbatim</span>
       </div>
       <div class="prose">
-        <p><code>EchoCache.Journal</code> is the write-behind path made durable: a per-group SQLite file standing
+        <p><code>EchoStore.Journal</code> is the write-behind path made durable: a per-group SQLite file standing
         beside the bus, holding the <code>intents</code> outbox (record &#8594; enqueue &#8594; mark) and the
         <code>applied</code> memory (the last version applied per name). The job lane is
         <code>Coherence.enqueue/5</code> over EchoMQ&#8217;s queue <code>ecc.coh.&lt;table&gt;</code>; the cargo is
@@ -502,7 +502,7 @@ div.door:hover{box-shadow:none}
         <h3>The lane that remembers</h3>
         <p>The outbox is not free, and the price is committed, figure by figure, against the bare lane:</p>
         <figure class="frozen">
-          <figcaption>content/bcs4.4.md &#183; EchoCache.Journal, the remembered lane<span class="tag">frozen</span></figcaption>
+          <figcaption>content/bcs4.4.md &#183; EchoStore.Journal, the remembered lane<span class="tag">frozen</span></figcaption>
           <pre>record-and-mark pair          <b>143 us</b>         <span class="fd">&#8592; the writer's edge</span>
 remembered-lane median        <b>524 us</b>         <span class="fd">&#8592; against the bare lane's 148</span>
 replay after a bus loss       exactly 30 uncovered intents re-enqueued in seq order
@@ -563,7 +563,7 @@ the trade                     <b>3.5 times</b> the latency buys an outbox, a las
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        BCS build: EchoMQ backed by Valkey, EchoCache in front.</p>
+        BCS build: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -603,8 +603,8 @@ the trade                     <b>3.5 times</b> the latency buys an outbox, a las
 
   /* ---------- Interactive 1: the two paths (pure lookup over a fixed dataset) ---------- */
   var PATHS = {
-    write: { name: 'the write path', runs: 'on the request: SET the value, LPUSH the key onto the buffer, acknowledge', waits: 'no — the caller returns the moment the cache has it', echo: 'on EchoCache, this is the local SQLite record before the bus hears the intent' },
-    flush: { name: 'the flush path', runs: 'a background worker on a timer: RPOP the buffer, read each value, write the database in one batch', waits: 'the caller never waits for it', echo: 'on EchoCache, the bus carries the apply at-least-once over EchoMQ' }
+    write: { name: 'the write path', runs: 'on the request: SET the value, LPUSH the key onto the buffer, acknowledge', waits: 'no — the caller returns the moment the cache has it', echo: 'on EchoStore, this is the local SQLite record before the bus hears the intent' },
+    flush: { name: 'the flush path', runs: 'a background worker on a timer: RPOP the buffer, read each value, write the database in one batch', waits: 'the caller never waits for it', echo: 'on EchoStore, the bus carries the apply at-least-once over EchoMQ' }
   };
   // pure: path key -> readout text
   function describePath(key) {

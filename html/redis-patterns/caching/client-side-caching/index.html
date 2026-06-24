@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.04 — Server-assisted client-side caching · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="The R1.04 module hub: cache hot keys in the application's own memory and let the server push invalidations, so a repeated read of an unchanged key skips the round-trip. Grounded in EchoCache's broadcast-coherence path — L1 ETS over L2 Valkey, the 29-byte coherence message over RESP3 pub/sub. Three dives: CLIENT TRACKING, the invalidation push, and the SHA1 script-cache parallel in EchoMQ.Script.">
+<meta name="description" content="The R1.04 module hub: cache hot keys in the application's own memory and let the server push invalidations, so a repeated read of an unchanged key skips the round-trip. Grounded in EchoStore's broadcast-coherence path — L1 ETS over L2 Valkey, the 29-byte coherence message over RESP3 pub/sub. Three dives: CLIENT TRACKING, the invalidation push, and the SHA1 script-cache parallel in EchoMQ.Script.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -254,7 +254,7 @@ div.door:hover{box-shadow:none}
       <h1>Server-assisted <span class="hns">client-side</span> caching.</h1>
       <p class="lede">Eliminate network round-trips for frequently accessed keys by caching values in application
       memory, with the engine automatically <b>sending invalidation messages</b> when data changes.</p>
-      <p class="heronote">Grounding: echo_cache/coherence.ex &#183; echo_cache/table.ex &#183; echo_wire/script.ex
+      <p class="heronote">Grounding: echo_store/coherence.ex &#183; echo_store/table.ex &#183; echo_wire/script.ex
       &#183; content/bcs4.2.md &#8212; every figure verbatim from a committed record.</p>
 
       <figure class="anatomy" aria-labelledby="dialCap">
@@ -284,7 +284,7 @@ div.door:hover{box-shadow:none}
       <div class="sech">
         <span class="sno">&#167;1</span>
         <h2>The architecture</h2>
-        <span class="ssrc">source &#183; echo_cache/table.ex</span>
+        <span class="ssrc">source &#183; echo_store/table.ex</span>
       </div>
       <div class="prose">
         <p>Client-side caching creates a multi-tier cache. <strong>L1 (local memory)</strong> is nanosecond access,
@@ -293,10 +293,10 @@ div.door:hover{box-shadow:none}
         holds and sends an invalidation message when those keys change.</p>
         <p>The payoff is the round-trip a cache-aside hit still pays. With cache-aside the data is in Valkey, one
         network hop away; a hit is fast but still a request and a response across a socket. For a key read thousands of
-        times a second and changed rarely &#8212; an instrument record, a feature flag, a config blob &#8212; that hop
+        times a second and changed rarely &#8212; an emoji set, a round secret, a config blob &#8212; that hop
         is pure overhead. A near cache removes it: a repeated read of an unchanged key is a memory lookup with no
         network at all, and the value stays correct because the server pushes a message the moment it goes stale. This
-        is exactly the shape of <strong>EchoCache</strong> (<code>echo/apps/echo_cache</code>): an L1 ETS table in the
+        is exactly the shape of <strong>EchoStore</strong> (<code>echo/apps/echo_store</code>): an L1 ETS table in the
         caller's process over an L2 Valkey row, with coherence carried by a server-side push.</p>
       </div>
 
@@ -309,7 +309,7 @@ div.door:hover{box-shadow:none}
         </div>
         <svg class="tiers" id="tiers" viewBox="0 0 460 200" role="img" aria-label="Three stacked tiers, top to bottom: L1 local memory in the redis accent, L2 Valkey, and L3 the database. Select a tier to highlight it; its access cost and owner appear in the readout.">
           <g class="tier l1" data-tier="L1"><rect x="40" y="14" width="380" height="48" rx="6"></rect><text class="tlbl" x="62" y="36">L1 &#183; local memory (ETS)</text><text class="tsub" x="62" y="52">nanoseconds &#183; the caller's process</text></g>
-          <g class="tier" data-tier="L2"><rect x="40" y="74" width="380" height="48" rx="6"></rect><text class="tlbl" x="62" y="96">L2 &#183; Valkey</text><text class="tsub" x="62" y="112">microseconds &#183; ecc:{instruments}:&lt;id&gt;</text></g>
+          <g class="tier" data-tier="L2"><rect x="40" y="74" width="380" height="48" rx="6"></rect><text class="tlbl" x="62" y="96">L2 &#183; Valkey</text><text class="tsub" x="62" y="112">microseconds &#183; ecc:{cm_emojisets}:&lt;id&gt;</text></g>
           <g class="tier" data-tier="L3"><rect x="40" y="134" width="380" height="48" rx="6"></rect><text class="tlbl" x="62" y="156">L3 &#183; the database</text><text class="tsub" x="62" y="172">milliseconds &#183; the system of record</text></g>
         </svg>
         <div class="readout" id="tierOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a tier.
@@ -336,14 +336,14 @@ div.door:hover{box-shadow:none}
         client running <code>CLIENT TRACKING ON BCAST PREFIX user: PREFIX session:</code> receives invalidations for
         any key starting with <code>user:</code> or <code>session:</code>. The trade-off reverses: a client may receive
         invalidations for keys it does not have cached locally, but server memory stays minimal because it tracks
-        prefix subscriptions, not individual accesses. EchoCache rides the broadcast shape over plain pub/sub: a table
+        prefix subscriptions, not individual accesses. EchoStore rides the broadcast shape over plain pub/sub: a table
         subscribes to one channel, <code>ecc:{&lt;table&gt;}:coh</code>, and the writer publishes a message naming the
         changed key.</p>
         <p><strong>How invalidation works.</strong> When tracking is enabled and a key changes, four steps follow. The
         server checks which clients hold the key; it sends an invalidation message naming the key; the client removes
         the key from its local cache; and the next access fetches fresh data. This keeps local caches synchronized
         without polling. The message names the key and carries no value &#8212; it reports only that the held copy is
-        no longer trustworthy. In EchoCache the message carries one more thing than a bare <code>CLIENT TRACKING</code>
+        no longer trustworthy. In EchoStore the message carries one more thing than a bare <code>CLIENT TRACKING</code>
         invalidation does &#8212; the writer's mint-time version &#8212; so a late stale message can never erase a
         newer row.</p>
       </div>
@@ -370,11 +370,11 @@ div.door:hover{box-shadow:none}
         cache size, evicting when memory is constrained. <strong>Complexity</strong> &#8212; handling invalidation
         messages requires dedicated connection management or async processing. <strong>Not for volatile data</strong>
         &#8212; if data changes constantly, invalidation traffic may exceed the benefit of caching. RESP3 carries push
-        notifications natively, making invalidation handling cleaner; EchoCache requires it for the broadcast lane
+        notifications natively, making invalidation handling cleaner; EchoStore requires it for the broadcast lane
         &#8212; the table opens a RESP3 connection precisely so a push and a reply can share one wire.</p>
       </div>
       <p class="vnote"><span class="vk">Notes on Valkey</span>Server-assisted client-side caching pushes an
-      <b>unversioned, orderless</b> invalidation &#8212; it names a key and nothing more. That is the gap EchoCache's
+      <b>unversioned, orderless</b> invalidation &#8212; it names a key and nothing more. That is the gap EchoStore's
       mint-time version closes: its 29-byte message carries the version, so newer-wins resolves a late stale message by
       comparison &#8212;
       <a href="https://valkey.io/topics/client-side-caching/" rel="noopener">valkey.io/topics/client-side-caching</a>.</p>
@@ -383,17 +383,17 @@ div.door:hover{box-shadow:none}
     <section id="applied">
       <div class="sech">
         <span class="sno">&#167;4</span>
-        <h2>The broadcast lane in EchoCache</h2>
-        <span class="ssrc">echo_cache/coherence.ex &#183; bcs4.2</span>
+        <h2>The broadcast lane in EchoStore</h2>
+        <span class="ssrc">echo_store/coherence.ex &#183; bcs4.2</span>
       </div>
       <div class="prose">
-        <p>The near cache the Exchange Platform would put in front of its instrument catalog is an EchoCache table: an
-        L1 ETS row in the caller's process over an L2 Valkey row keyed <code>ecc:{instruments}:&lt;id&gt;</code>.
+        <p>The near cache codemojex puts in front of its emoji set is an EchoStore table: an
+        L1 ETS row in the caller's process over an L2 Valkey row keyed <code>ecc:{cm_emojisets}:&lt;id&gt;</code>.
         Coherence is carried by a server push, not by polling. On start the table opens a RESP3 connection and
         subscribes to its coherence channel; when a writer changes a row, it publishes the change on that channel, and
         every subscribing table applies it newer-wins in its owner.</p>
       </div>
-      <pre class="code"><span class="cmt"># echo/apps/echo_cache/lib/echo_cache/coherence.ex</span>
+      <pre class="code"><span class="cmt"># echo/apps/echo_store/lib/echo_store/coherence.ex</span>
 def channel(table), do: <b>"ecc:{" &lt;&gt; table &lt;&gt; "}:coh"</b>
 def payload(&lt;&lt;_::binary-14&gt;&gt; = id, &lt;&lt;_::binary-14&gt;&gt; = version), do: id &lt;&gt; ":" &lt;&gt; version
 
@@ -424,7 +424,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
+          <span class="lbl">its EchoStore application</span>
           <p>An L1 ETS row over an L2 Valkey row; a RESP3 subscription on <code>ecc:{&lt;table&gt;}:coh</code>.
           <code>Coherence.broadcast/4</code> PUBLISHes the 29-byte message; the table drops L1 newer-wins.</p>
         </div>
@@ -451,7 +451,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
           <div class="top"><span class="num">R1.04.1</span><span class="pill built">built</span></div>
           <p class="t">CLIENT TRACKING</p>
           <p class="o">The server-assisted near cache: tracking in default and broadcast mode, and the real RESP3
-          subscription EchoCache opens for the broadcast shape.</p>
+          subscription EchoStore opens for the broadcast shape.</p>
         </a>
         <a class="mod" href="/redis-patterns/caching/client-side-caching/invalidation-push">
           <div class="top"><span class="num">R1.04.2</span><span class="pill built">built</span></div>
@@ -483,7 +483,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
         <div>
           <h3 class="refgrp">Sources</h3>
           <ul>
-            <li><a href="https://valkey.io/topics/client-side-caching/" rel="noopener">Valkey &mdash; <em>Client-side caching</em></a> &mdash; server-assisted tracking and its invalidation messages; the unversioned, orderless gap EchoCache's mint-time version closes.</li>
+            <li><a href="https://valkey.io/topics/client-side-caching/" rel="noopener">Valkey &mdash; <em>Client-side caching</em></a> &mdash; server-assisted tracking and its invalidation messages; the unversioned, orderless gap EchoStore's mint-time version closes.</li>
             <li><a href="https://valkey.io/topics/pubsub/" rel="noopener">Valkey &mdash; <em>Pub/Sub</em></a> &mdash; at-most-once delivery, the broadcast lane's contract taken whole.</li>
             <li><a href="https://redis.io/docs/latest/develop/use/client-side-caching/" rel="noopener">Redis &mdash; <em>Client-side caching</em></a> &mdash; the server-assisted near cache and invalidation via <code>CLIENT TRACKING</code>.</li>
             <li><a href="https://redis.io/commands/client-tracking" rel="noopener">Redis &mdash; <em>CLIENT TRACKING</em></a> &mdash; default and broadcast modes, <code>REDIRECT</code>, <code>NOLOOP</code>, and <code>OPTIN</code>/<code>OPTOUT</code>.</li>
@@ -496,7 +496,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
             <li><a href="/redis-patterns/caching/client-side-caching/invalidation-push">R1.04.2 &#183; The invalidation push</a><span class="rs">the change notification</span></li>
             <li><a href="/redis-patterns/caching/client-side-caching/script-cache">R1.04.3 &#183; The SHA1 script-cache parallel</a><span class="rs">the same shape, applied</span></li>
             <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
-            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under codemojex</span></li>
             <li><a href="/echomq">/echomq</a><span class="rs">the EVALSHA/script-loading protocol in depth</span></li>
           </ul>
         </div>
@@ -517,7 +517,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        BCS build: EchoMQ backed by Valkey, EchoCache in front.</p>
+        BCS build: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">Chapters</p>
@@ -598,7 +598,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
   /* ---------- Interactive 2: the three tiers (pure lookup over a fixed dataset) ---------- */
   var TIERS = {
     L1: { name: 'local memory (ETS)', cost: 'nanoseconds — a caller-side lookup, no network', owner: 'the application; the near cache the server keeps honest by push' },
-    L2: { name: 'Valkey', cost: 'microseconds — one round-trip to the shared store, key ecc:{instruments}:&lt;id&gt;', owner: 'the engine; the row every node shares' },
+    L2: { name: 'Valkey', cost: 'microseconds — one round-trip to the shared store, key ecc:{cm_emojisets}:&lt;id&gt;', owner: 'the engine; the row every node shares' },
     L3: { name: 'the database', cost: 'milliseconds — the loader behind both layers', owner: 'the system of record; read only on an L2 miss' }
   };
   // pure: tier key -> readout text

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.06 — Session management · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="The R1.06 module hub: session management, the canonical TTL-expiry use of Valkey. Per-user state keyed by a session id, given a deadline so it vanishes on logout or after inactivity. Three dives: the encoding choice (Hash, String, JSON), absolute vs sliding TTL and eviction, and the tie to a namespace. Grounded in EchoCache.Table — a SES-keyed row stored with SET … PX, refused at the kind gate.">
+<meta name="description" content="The R1.06 module hub: session management, the canonical TTL-expiry use of Valkey. Per-user state keyed by a session id, given a deadline so it vanishes on logout or after inactivity. Three dives: the encoding choice (Hash, String, JSON), absolute vs sliding TTL and eviction, and the tie to a namespace. Grounded in EchoStore.Table — a SES-keyed row stored with SET … PX, refused at the kind gate.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -227,7 +227,7 @@ table.ltable{width:100%;border-collapse:collapse;font-family:var(--mono);font-si
       <a href="#encodings">Encodings</a>
       <a href="#sliding">Sliding TTL</a>
       <a href="#logout">Logout</a>
-      <a href="#echocache">On EchoCache</a>
+      <a href="#echocache">On EchoStore</a>
       <a href="#dives">The dives</a>
       <a href="#refs">References</a>
     </nav>
@@ -242,7 +242,7 @@ table.ltable{width:100%;border-collapse:collapse;font-family:var(--mono);font-si
       <h1>Session <span class="hns">management</span>.</h1>
       <p class="lede">Store user sessions in Valkey with automatic expiration using TTL, choosing between Hashes
       (field-level access), Strings (serialized), or JSON (nested data) based on access patterns.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache/lib/echo_cache/table.ex (put/3, SET&#8230;PX, gate/2) &#183;
+      <p class="heronote">Grounding: echo/apps/echo_store/lib/echo_store/table.ex (put/3, SET&#8230;PX, gate/2) &#183;
       content/bcs4.1.md (the L1/L2 hit costs) &#8212; every figure verbatim from the as-built code or a committed record.</p>
 
       <figure class="anatomy" aria-labelledby="lifeCap">
@@ -334,14 +334,14 @@ EXPIRE session:abc123 <span class="str">1800</span>             <span class="cmt
       <div class="prose">
         <p>Creating a session is four steps:</p>
         <ol>
-          <li>Generate a unique session id &#8212; a UUID or a cryptographically secure random string. In EchoCache a
+          <li>Generate a unique session id &#8212; a UUID or a cryptographically secure random string. In EchoStore a
           session keys to a branded <code>SES</code> id minted at sign-in.</li>
           <li>Store the session data with its initial fields.</li>
           <li>Set the expiration time.</li>
           <li>Return the session id to the client, typically as a cookie.</li>
         </ol>
         <p>The session id must be <strong>cryptographically random</strong> to prevent guessing attacks &#8212; a
-        guessable id is a way into someone else&#8217;s account.</p>
+        guessable id is a way into someone else&#8217;s signed-in session.</p>
       </div>
     </section>
 
@@ -405,22 +405,24 @@ SUBSCRIBE session:invalidate           <span class="cmt"># every app server drop
     <section id="echocache">
       <div class="sech">
         <span class="sno">&#167;7</span>
-        <h2>On EchoCache &#8212; a TTL&#8217;d branded row</h2>
+        <h2>On EchoStore &#8212; a TTL&#8217;d branded row</h2>
         <span class="ssrc">table.ex:290, :90, :495 &#183; verbatim</span>
       </div>
       <div class="prose">
-        <p>A session is the textbook TTL&#8217;d row, and EchoCache stores one without any auth surface of its own.
-        <code>EchoCache.Table.put/3</code> sets both layers under the declared TTL, keyed by a branded <code>SES</code>
+        <p>A session is the textbook TTL&#8217;d row, and EchoStore stores one without any auth surface of its own.
+        <code>EchoStore.Table.put/3</code> sets both layers under the declared TTL, keyed by a branded <code>SES</code>
         id and framed with the write&#8217;s mint-time version &#8212; <code>SET ecc:{sessions}:&lt;id&gt;
         (version&lt;&gt;value) PX ttl_ms</code> (<code>table.ex:290</code>). A re-auth re-<code>put</code>s with a fresh
         version (<code>put/3</code> mints <code>BrandedId.generate!(spec.kind)</code>); logout is
-        <code>EchoCache.Table.invalidate/3</code> &#8212; a <code>DEL</code> on L2 plus an <code>:ets.delete</code>.</p>
-        <p>The tie to authentication is the <strong>kind gate</strong>, not a credential check the cache owns. Before
+        <code>EchoStore.Table.invalidate/3</code> &#8212; a <code>DEL</code> on L2 plus an <code>:ets.delete</code>.</p>
+        <p>The tie to a player is the <strong>kind gate</strong>, not a credential check the cache owns. Before
         either layer is touched, <code>gate/2</code> (<code>table.ex:495</code>) requires the id be 14 bytes, of the
         table&#8217;s declared namespace, and valid &#8212; so a <code>USR</code> id can never be used as a
-        <code>SES</code> key, and a wrong-namespace id is refused at the door with zero keys on the wire. The Exchange
-        Platform carries an opaque <strong>account</strong> id (<code>Exchange.Gateway.parse_account/1</code>); a session
-        keys to the account it admits.</p>
+        <code>SES</code> key, and a wrong-namespace id is refused at the door with zero keys on the wire. codemojex
+        holds the same shape one level down: a player&#8217;s per-round state is a per-player hash
+        <code>cm:{round}:lock:{player}</code> (<code>Codemojex.Locks</code> &#8212; field = position, value = code), so
+        a locked position <strong>persists across guesses with no client state to lose</strong>, keyed by the
+        player&#8217;s <code>USR</code> brand.</p>
       </div>
 
       <figure class="anatomy" aria-labelledby="placeCap">
@@ -431,23 +433,23 @@ SUBSCRIBE session:invalidate           <span class="cmt"># every app server drop
           <button type="button" data-fact="frame" aria-pressed="false">version&lt;&gt;value</button>
           <button type="button" data-fact="gate" aria-pressed="false">the kind gate</button>
           <button type="button" data-fact="key" aria-pressed="false">ecc:{sessions}:id</button>
-          <button type="button" data-fact="account" aria-pressed="false">the account id</button>
+          <button type="button" data-fact="lock" aria-pressed="false">the player lock</button>
         </div>
         <div class="readout" id="factOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a fact. Each
-        is quoted from the real EchoCache or Exchange surface, and each lives in exactly one function or law.</div>
+        is quoted from the real EchoStore or codemojex surface, and each lives in exactly one function or law.</div>
         <p class="take" style="margin-top:12px">Static verdicts &#8212; <code>SET&#8230;PX</code> &#8594; put/3, table.ex:290
         &#183; <code>version&lt;&gt;value</code> &#8594; the framed write, table.ex:296 &#183; the kind gate &#8594; gate/2,
-        table.ex:495 &#183; <code>ecc:{sessions}:id</code> &#8594; Keyspace.key/2 &#183; the account id &#8594;
-        Exchange.Gateway.parse_account/1.</p>
+        table.ex:495 &#183; <code>ecc:{sessions}:id</code> &#8594; Keyspace.key/2 &#183; the player lock &#8594;
+        Codemojex.Locks.</p>
       </figure>
 
       <div class="door">
         <span class="dr">the application &#183; the session row, value and TTL in one command</span>
         <h3>SET &#8230; PX against live Valkey</h3>
-        <p>EchoCache writes the L2 row with its expiry in one command, so the second layer expires itself even if every
+        <p>EchoStore writes the L2 row with its expiry in one command, so the second layer expires itself even if every
         node forgets &#8212; the committed cache record measured against live Valkey:</p>
         <figure class="frozen">
-          <figcaption>content/bcs4.1.md &#183; EchoCache cache-aside, against live Valkey<span class="tag">frozen</span></figcaption>
+          <figcaption>content/bcs4.1.md &#183; EchoStore cache-aside, against live Valkey<span class="tag">frozen</span></figcaption>
           <pre>L1 hit reads                  <b>1311621 / s</b>   <span class="fd">&#8592; 762 ns each, caller-side ETS</span>
 L2 GET on the same wire       31 us          <span class="fd">&#8592; the round trip a hit replaces</span>
 the L1 hit is                 <b>40 times cheaper</b>
@@ -479,13 +481,13 @@ the L2 row                    SET &#8230; PX, PTTL 300 ms of 300</pre>
           <p class="t">Hash, String &amp; JSON</p>
           <p class="o">The encoding choice: a <code>HSET</code> Hash for field-level reads and writes, an opaque
           <code>SET</code> string for one blob, or JSON for nested data &#8212; and the framed <code>version&lt;&gt;value</code>
-          EchoCache holds.</p>
+          EchoStore holds.</p>
         </a>
         <a class="mod" href="/redis-patterns/caching/session-management/ttl-expiry">
           <div class="top"><span class="num">R1.06.2</span><span class="pill built">built</span></div>
           <p class="t">TTL expiry</p>
           <p class="o">A fixed deadline from sign-in against a sliding window refreshed on each access, plus the lazy and
-          active eviction and EchoCache&#8217;s jittered <code>expires_at</code> &#8212; how a key that runs out is
+          active eviction and EchoStore&#8217;s jittered <code>expires_at</code> &#8212; how a key that runs out is
           reclaimed.</p>
         </a>
         <a class="mod" href="/redis-patterns/caching/session-management/auth-session">
@@ -504,8 +506,8 @@ the L2 row                    SET &#8230; PX, PTTL 300 ms of 300</pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
-          <p>A TTL&#8217;d branded-id row in an EchoCache table: <code>put/3</code> writes <code>SET&#8230;PX</code> framed
+          <span class="lbl">its EchoStore application</span>
+          <p>A TTL&#8217;d branded-id row in an EchoStore table: <code>put/3</code> writes <code>SET&#8230;PX</code> framed
           with a mint-time version, <code>invalidate/3</code> drops it on logout, and the kind gate binds the key to one
           namespace.</p>
         </div>
@@ -526,7 +528,7 @@ the L2 row                    SET &#8230; PX, PTTL 300 ms of 300</pre>
           <ul>
             <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; hashes, strings, key expiry, and the data structures a session store is built from.</li>
             <li><a href="https://redis.io/commands/hset" rel="noopener">Redis &mdash; <em>HSET</em></a> &mdash; set one or more fields of a Hash; the field-level write a Hash session uses.</li>
-            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key to one value with <code>PX</code>; value and TTL set atomically, the way <code>EchoCache.Table.put</code> writes L2.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key to one value with <code>PX</code>; value and TTL set atomically, the way <code>EchoStore.Table.put</code> writes L2.</li>
             <li><a href="https://valkey.io/commands/expire/" rel="noopener">Valkey &mdash; <em>EXPIRE</em></a> &mdash; set a key&#8217;s time-to-live; the deadline that ends an idle session on its own.</li>
             <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on key expiry and how the engine reclaims keys that have run out.</li>
           </ul>
@@ -538,7 +540,7 @@ the L2 row                    SET &#8230; PX, PTTL 300 ms of 300</pre>
             <li><a href="/redis-patterns/caching/session-management/ttl-expiry">R1.06.2 &#183; TTL expiry</a><span class="rs">absolute, sliding, and eviction</span></li>
             <li><a href="/redis-patterns/caching/session-management/auth-session">R1.06.3 &#183; The auth tie-in</a><span class="rs">the SES key, logout, the kind gate</span></li>
             <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
-            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under codemojex</span></li>
             <li><a href="/echomq">/echomq</a><span class="rs">the protocol the coherence lane rides</span></li>
           </ul>
         </div>
@@ -559,7 +561,7 @@ the L2 row                    SET &#8230; PX, PTTL 300 ms of 300</pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -650,11 +652,11 @@ the L2 row                    SET &#8230; PX, PTTL 300 ms of 300</pre>
 
   /* ---------- Interactive 2: place the fact (pure lookup over a fixed dataset) ---------- */
   var FACTS = {
-    put:     { fact: 'SET ecc:{sessions}:<id> (version<>value) PX ttl_ms', where: 'EchoCache.Table.put/3 — table.ex:290', why: 'set both layers under the declared TTL; value and deadline land in one command.' },
+    put:     { fact: 'SET ecc:{sessions}:<id> (version<>value) PX ttl_ms', where: 'EchoStore.Table.put/3 — table.ex:290', why: 'set both layers under the declared TTL; value and deadline land in one command.' },
     frame:   { fact: 'version <> value', where: 'the framed write — table.ex:296', why: 'a 14-byte branded version prefix on the bytes, so a later coherence message compares writes newer-wins.' },
     gate:    { fact: 'byte_size(id)==14 and binary_part(id,0,3)==kind and BrandedId.valid?(id)', where: 'gate/2 — table.ex:495', why: 'the kind law at the door: a wrong-namespace id is refused before either layer is touched (returns {:error, :kind}).' },
-    key:     { fact: 'ecc:{sessions}:SES0KH...', where: 'EchoCache.Keyspace.key/2 — keyspace.ex:20', why: 'the table name is hash-tagged so one cache lands in one cluster slot.' },
-    account: { fact: 'parse_account(s) -> {:ok, binary()} | {:error, :malformed}', where: 'Exchange.Gateway.parse_account/1 — gateway.ex:212', why: 'the opaque account id carried verbatim, never branded; a session keys to the account it admits.' }
+    key:     { fact: 'ecc:{sessions}:SES0KH...', where: 'EchoStore.Keyspace.key/2 — keyspace.ex:20', why: 'the table name is hash-tagged so one cache lands in one cluster slot.' },
+    lock:    { fact: 'HSET cm:{round}:lock:{player} <pos> <code>', where: 'Codemojex.Locks.lock/4 — locks.ex', why: 'a player\'s per-round state in Valkey, keyed by the USR brand: a locked position persists across guesses with no client state to lose — the same session shape one level down.' }
   };
   var factButtons = document.querySelectorAll('#factSel button');
   var factOut = document.getElementById('factOut');

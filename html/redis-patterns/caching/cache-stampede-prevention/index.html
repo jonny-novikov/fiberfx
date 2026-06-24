@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.05 &#183; Cache stampede prevention &#183; Redis Patterns Applied &#183; jonnify</title>
-<meta name="description" content="The R1.05 module hub: cache stampede prevention. When a hot key expires under heavy concurrency every reader misses at once and hammers the source. Three solutions stop the herd: a per-key regeneration lock (SET NX PX), probabilistic early refresh (X-Fetch) before expiry, and request coalescing. Grounded in EchoCache's single-flight flights map and its jittered TTL, backed by Valkey.">
+<meta name="description" content="The R1.05 module hub: cache stampede prevention. When a hot key expires under heavy concurrency every reader misses at once and hammers the source. Three solutions stop the herd: a per-key regeneration lock (SET NX PX), probabilistic early refresh (X-Fetch) before expiry, and request coalescing. Grounded in EchoStore's single-flight flights map and its jittered TTL, backed by Valkey.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -246,7 +246,7 @@ table.ltable{width:100%;border-collapse:collapse;font-family:var(--mono);font-si
       <h1>Cache stampede <span class="hns">prevention</span>.</h1>
       <p class="lede">Prevent multiple clients from simultaneously regenerating an expired cache key using locking,
       probabilistic early refresh, or request coalescing.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache &#183; table.ex (the single-flight <code>flights</code> map,
+      <p class="heronote">Grounding: echo/apps/echo_store &#183; table.ex (the single-flight <code>flights</code> map,
       the jittered <code>expires_at</code>) &#183; content/bcs4.1.md &#8212; every figure verbatim from a committed
       record.</p>
 
@@ -302,7 +302,7 @@ table.ltable{width:100%;border-collapse:collapse;font-family:var(--mono);font-si
         aggregations, external API calls. The danger scales with two factors: how hot the key is, and how expensive
         its regeneration is. Plain cache-aside has no defence here &#8212; every miss is independent, so <em>N</em>
         concurrent misses become <em>N</em> source reads. The cost of a miss is what makes the herd dangerous: in the
-        measured EchoCache record an L1 hit costs <code>762 ns</code>, while the L2 GET it replaces costs
+        measured EchoStore record an L1 hit costs <code>762 ns</code>, while the L2 GET it replaces costs
         <code>31 us</code> &#8212; the L1 hit is <strong>40 times cheaper</strong>, and a herd pays that round trip
         <em>N</em> times at once.</p>
       </div>
@@ -336,7 +336,7 @@ table.ltable{width:100%;border-collapse:collapse;font-family:var(--mono);font-si
       </div>
       <p class="take">X-Fetch beats the deadline: one read rebuilds early, the rest serve the fresh value, no lock and
       no waiting &#8212; the <a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">early-refresh
-      dive</a> computes the formula, then grounds the applied part in EchoCache&#8217;s jitter.</p>
+      dive</a> computes the formula, then grounds the applied part in EchoStore&#8217;s jitter.</p>
     </section>
 
     <section id="mutex">
@@ -435,14 +435,14 @@ return 0</pre>
       </div>
 
       <p class="vnote"><span class="vk">Notes on Valkey</span><code>SET key value PX &lt;ms&gt;</code> writes the
-      value and its millisecond expiry atomically &#8212; the form EchoCache uses for the jittered TTL. A separate
+      value and its millisecond expiry atomically &#8212; the form EchoStore uses for the jittered TTL. A separate
       <code>EXPIRE</code> after <code>SET</code> leaves an immortal key if the process dies between the two
       &#8212; <a href="https://valkey.io/commands/set" rel="noopener">valkey.io/commands/set</a>.</p>
 
       <div class="door">
         <span class="dr">the application &#183; one fill per herd, measured</span>
-        <h3>EchoCache stops the herd by construction</h3>
-        <p>EchoCache does not bolt a lock on after the fact: misses route through the table&#8217;s owner, concurrent
+        <h3>EchoStore stops the herd by construction</h3>
+        <p>EchoStore does not bolt a lock on after the fact: misses route through the table&#8217;s owner, concurrent
         misses on one id coalesce onto a single in-flight load, and rows expire on a jittered clock so a cohort never
         re-herds. The cost the herd would have paid is the committed figure &#8212; an L1 hit against the L2 GET it
         replaces:</p>
@@ -464,7 +464,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
       <div class="prose">
         <p>Each dive takes one solution and runs it on a hot key, in the arc <em>lock &#8594; refresh early &#8594;
         coalesce</em>: a deterministic per-key lock, a probabilistic refresh that beats expiry, and the coalescing
-        EchoCache really does. Read them in order &#8212; the lock is the one to reach for first.</p>
+        EchoStore really does. Read them in order &#8212; the lock is the one to reach for first.</p>
       </div>
 
       <div class="mods" style="margin-top:6px">
@@ -478,13 +478,13 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
           <div class="top"><span class="num">R1.05.2</span><span class="pill built">built</span></div>
           <p class="t">Probabilistic early refresh</p>
           <p class="o">X-Fetch the pattern: recompute before expiry with a rising probability, using the real
-          <code>delta&#183;beta&#183;&minus;log(rand)</code> formula &#8212; then grounded in EchoCache&#8217;s real
+          <code>delta&#183;beta&#183;&minus;log(rand)</code> formula &#8212; then grounded in EchoStore&#8217;s real
           expiry jitter.</p>
         </a>
         <a class="mod" href="/redis-patterns/caching/cache-stampede-prevention/coalescing">
           <div class="top"><span class="num">R1.05.3</span><span class="pill built">built</span></div>
           <p class="t">Request coalescing</p>
-          <p class="o">Concurrent misses on one id collapse into a single in-flight fill &#8212; the EchoCache
+          <p class="o">Concurrent misses on one id collapse into a single in-flight fill &#8212; the EchoStore
           <code>flights</code> map and the <code>:coalesced</code> counter; every waiter reads the one answer.</p>
         </a>
       </div>
@@ -498,8 +498,8 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
-          <p>EchoCache fuses two of these into the owner: the single-flight <code>flights</code> map coalesces
+          <span class="lbl">its EchoStore application</span>
+          <p>EchoStore fuses two of these into the owner: the single-flight <code>flights</code> map coalesces
           concurrent misses onto one load (the <code>:coalesced</code> counter), and the jittered
           <code>expires_at</code> spreads a cohort&#8217;s expiry &#8212; one fill per herd, no synchronized
           re-herd.</p>
@@ -519,7 +519,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
         <div>
           <h3 class="refgrp">Sources</h3>
           <ul>
-            <li><a href="https://valkey.io/commands/set" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; the <code>NX</code> and <code>PX</code> options for the regeneration lock, and <code>PX</code> for the jittered millisecond TTL EchoCache writes.</li>
+            <li><a href="https://valkey.io/commands/set" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; the <code>NX</code> and <code>PX</code> options for the regeneration lock, and <code>PX</code> for the jittered millisecond TTL EchoStore writes.</li>
             <li><a href="https://redis.io/commands/set" rel="noopener">Redis &mdash; <em>SET</em></a> &mdash; the canonical command reference for the self-expiring lock.</li>
             <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; expiry, key TTL, and the string commands the lock and refresh are built from.</li>
             <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on locks, TTL, and atomic check-and-delete with a token.</li>
@@ -533,7 +533,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
             <li><a href="/redis-patterns/caching/cache-stampede-prevention/early-refresh">R1.05.2 &#183; Probabilistic early refresh</a><span class="rs">X-Fetch the pattern, jitter the mechanism</span></li>
             <li><a href="/redis-patterns/caching/cache-stampede-prevention/coalescing">R1.05.3 &#183; Request coalescing</a><span class="rs">one fill per herd, every waiter served</span></li>
             <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
-            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under the Exchange Platform</span></li>
+            <li><a href="/redis-patterns/overview">R0 &#183; Overview</a><span class="rs">Valkey under codemojex</span></li>
             <li><a href="/echomq">/echomq</a><span class="rs">the protocol the coherence lane rides</span></li>
           </ul>
         </div>
@@ -554,7 +554,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">&#183;</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>

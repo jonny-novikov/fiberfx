@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.01 — Cache-aside (lazy loading) · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="The R1.01 module hub: cache-aside, the default caching strategy. The application owns the cache — on a read miss it fetches from the source and fills Valkey with an expiry; on a write it invalidates the key. Three dives: GET/SET PX miss-fill, explicit DEL invalidation, and TTL as a staleness backstop. Grounded in EchoCache's declared near-cache — Table.fetch, L1 ETS over L2 Valkey.">
+<meta name="description" content="The R1.01 module hub: cache-aside, the default caching strategy. The application owns the cache — on a read miss it fetches from the source and fills Valkey with an expiry; on a write it invalidates the key. Three dives: GET/SET PX miss-fill, explicit DEL invalidation, and TTL as a staleness backstop. Grounded in EchoStore's declared near-cache — Table.fetch, L1 ETS over L2 Valkey.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -245,7 +245,7 @@ div.door:hover{box-shadow:none}
       <p class="lede">Use cache-aside for read-heavy workloads: on a cache miss, fetch from the database and populate
       the cache; on a write, invalidate or update the cache explicitly. The application owns the cache &#8212;
       <b>Valkey never reads the source on its own</b>.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache &#183; EchoCache.Table.fetch &#183; content/bcs4.1.md
+      <p class="heronote">Grounding: echo/apps/echo_store &#183; EchoStore.Table.fetch &#183; content/bcs4.1.md
       &#8212; the declared near-cache, L1 ETS over L2 Valkey, every figure verbatim from a committed record.</p>
 
       <figure class="anatomy" aria-labelledby="flowCap">
@@ -284,7 +284,7 @@ div.door:hover{box-shadow:none}
       <div class="sech">
         <span class="sno">&#167;1</span>
         <h2>How it works</h2>
-        <span class="ssrc">cache-aside.md.txt &#183; echo_cache</span>
+        <span class="ssrc">cache-aside.md.txt &#183; echo_store</span>
       </div>
       <div class="prose">
         <p>When the application needs data, it follows one sequence. <strong>Check the cache first</strong>: query
@@ -305,21 +305,21 @@ div.door:hover{box-shadow:none}
       <div class="sech">
         <span class="sno">&#167;2</span>
         <h2>Redis commands used</h2>
-        <span class="ssrc">echo_cache/keyspace.ex &#183; table.ex</span>
+        <span class="ssrc">echo_store/keyspace.ex &#183; table.ex</span>
       </div>
       <div class="prose">
         <p>A typical cache-aside flow uses three commands &#8212; a read, a fill with an expiry, and an
-        invalidation. The key is EchoCache&#8217;s own keyspace, <code>ecc:{&lt;table&gt;}:&lt;id&gt;</code>
-        (<code>EchoCache.Keyspace.key/2</code>), with the table name hash-tagged so one cache lands in one cluster
+        invalidation. The key is EchoStore&#8217;s own keyspace, <code>ecc:{&lt;table&gt;}:&lt;id&gt;</code>
+        (<code>EchoStore.Keyspace.key/2</code>), with the table name hash-tagged so one cache lands in one cluster
         slot:</p>
       </div>
-      <pre class="code">GET ecc:{quotes}:AST0NuE6bV7FoH                       <span class="cmt"># =&gt; nil  (a miss)</span>
-SET ecc:{quotes}:AST0NuE6bV7FoH <b>"{…value…}"</b> PX 300     <span class="cmt"># fill the cache with a 300 ms TTL</span>
-DEL ecc:{quotes}:AST0NuE6bV7FoH                       <span class="cmt"># invalidate on a write</span></pre>
+      <pre class="code">GET ecc:{cm_emojisets}:EMS0ODMggk1d5N                       <span class="cmt"># =&gt; nil  (a miss)</span>
+SET ecc:{cm_emojisets}:EMS0ODMggk1d5N <b>"{…value…}"</b> PX 300     <span class="cmt"># fill the cache with a 300 ms TTL</span>
+DEL ecc:{cm_emojisets}:EMS0ODMggk1d5N                       <span class="cmt"># invalidate on a write</span></pre>
       <div class="prose">
         <p>Set the value and the TTL in one command; a separate <code>EXPIRE</code> after <code>SET</code> leaves an
-        immortal key if the process dies between the two. In EchoCache the read surface is one function:
-        <code>EchoCache.Table.fetch/3</code> returns <code>{:ok, value, source}</code> with source
+        immortal key if the process dies between the two. In EchoStore the read surface is one function:
+        <code>EchoStore.Table.fetch/3</code> returns <code>{:ok, value, source}</code> with source
         <code>:hit | :l2 | :fill</code> &#8212; an L1 ETS hit in the caller&#8217;s process, an L2 Valkey hit, or a
         loader fill. The functional-Elixir craft behind the echo data layer is taught by the
         <a href="/elixir/pragmatic/state">/elixir state chapter</a>; this module is the cache placed in front of the
@@ -357,13 +357,13 @@ DEL ecc:{quotes}:AST0NuE6bV7FoH                       <span class="cmt"># invali
         <p>The primary disadvantage is stale data. A reader takes a cache hit; another process updates the row in the
         database; the cached copy stays unchanged until the TTL expires. The cache now holds outdated information,
         for up to the remaining TTL.</p>
-        <p>The cost of avoiding that round trip is what makes the trade worth managing. EchoCache&#8217;s committed
+        <p>The cost of avoiding that round trip is what makes the trade worth managing. EchoStore&#8217;s committed
         record measures it: an L1 hit reads in <strong>762 ns</strong> against <strong>31 us</strong> per L2
         <code>GET</code> on the same wire &#8212; the hit is <strong>40 times cheaper</strong> than the round trip
         it replaces.</p>
       </div>
       <figure class="frozen">
-        <figcaption>content/bcs4.1.md &#183; EchoCache, L1 hit versus L2 GET, against live Valkey<span class="tag">frozen</span></figcaption>
+        <figcaption>content/bcs4.1.md &#183; EchoStore, L1 hit versus L2 GET, against live Valkey<span class="tag">frozen</span></figcaption>
         <pre>L1 hit reads          <b>1311621 / s</b>   <span class="fd">&#8592; 762 ns each, caller-side ETS</span>
 L2 GET                31 us          <span class="fd">&#8592; the round trip on the same wire</span>
 L1 versus L2          <b>40 times</b> cheaper
@@ -384,7 +384,7 @@ L2 expiry             PTTL 300 ms of 300   <span class="fd">&#8592; written with
         source, it immediately deletes the cached key with <code>DEL</code>. The next read misses and fetches fresh
         data. Deleting is simpler and safer than updating the cache in place, which risks a race &#8212; two
         set-on-write writers can interleave and leave the older value in place indefinitely, whereas delete-on-write
-        is wrong for at most one TTL. The TTL is therefore a correctness bound, not a memory knob. In EchoCache the
+        is wrong for at most one TTL. The TTL is therefore a correctness bound, not a memory knob. In EchoStore the
         unconditional admin verb is <code>Table.invalidate/3</code> &#8212; a <code>DEL</code> on L2 plus an
         <code>:ets.delete</code> on L1, dropping one name from both layers.</p>
       </div>
@@ -405,7 +405,7 @@ L2 expiry             PTTL 300 ms of 300   <span class="fd">&#8592; written with
       </div>
 
       <div class="door">
-        <span class="dr">the application &#183; EchoCache&#8217;s declared near-cache</span>
+        <span class="dr">the application &#183; EchoStore&#8217;s declared near-cache</span>
         <h3>The fill discipline, measured against live Valkey</h3>
         <p>The miss-fill, the keyspace, and the expiry are not aspirations &#8212; <code>SET key value PX &lt;ms&gt;</code>
         sets value and TTL atomically (<a href="https://valkey.io/commands/set/" rel="noopener">valkey.io/commands/set</a>),
@@ -461,7 +461,7 @@ warm read                     hit, owner untouched</pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
+          <span class="lbl">its EchoStore application</span>
           <p><code>Table.fetch</code> returns <code>:hit | :l2 | :fill</code> &#8212; an L1 ETS hit, an L2 Valkey
           hit, or a loader fill; <code>invalidate</code> drops both layers. The L1 hit is 40 times cheaper than the
           L2 round trip it replaces.</p>
@@ -472,8 +472,8 @@ warm read                     hit, owner untouched</pre>
 
       <p class="booknote">After R1.01, the chapter continues with write-through, write-behind, client-side caching,
       stampede prevention, and sessions. Return to the <a href="/redis-patterns/caching">Caching chapter</a> to
-      continue, or open the <a href="/redis-patterns/overview">Overview</a> for where Valkey sits under the Exchange
-      Platform.</p>
+      continue, or open the <a href="/redis-patterns/overview">Overview</a> for where Valkey sits under
+      codemojex.</p>
     </section>
 
     <section id="refs">
@@ -520,7 +520,7 @@ warm read                     hit, owner untouched</pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -559,11 +559,11 @@ warm read                     hit, owner untouched</pre>
 
   /* ---------- Interactive: the cache-aside flow (pure lookup over a fixed dataset) ---------- */
   var STEPS = {
-    'read-hit':   { cmd: 'GET ecc:{quotes}:AST0NuE6bV7FoH', path: 'read', result: 'value present (hit)', next: 'serve the cached value; the source is not read', key: 'unchanged, still cached' },
-    'read-miss':  { cmd: 'GET ecc:{quotes}:AST0NuE6bV7FoH', path: 'read', result: 'nil (miss)', next: 'read the value from the source', key: 'absent — about to be filled' },
-    'fill':       { cmd: 'SET ecc:{quotes}:AST0NuE6bV7FoH <value> PX 300', path: 'read', result: 'OK', next: 'serve the value; the cache is now warm', key: 'present, expires in 300 ms' },
+    'read-hit':   { cmd: 'GET ecc:{cm_emojisets}:EMS0ODMggk1d5N', path: 'read', result: 'value present (hit)', next: 'serve the cached value; the source is not read', key: 'unchanged, still cached' },
+    'read-miss':  { cmd: 'GET ecc:{cm_emojisets}:EMS0ODMggk1d5N', path: 'read', result: 'nil (miss)', next: 'read the value from the source', key: 'absent — about to be filled' },
+    'fill':       { cmd: 'SET ecc:{cm_emojisets}:EMS0ODMggk1d5N <value> PX 300', path: 'read', result: 'OK', next: 'serve the value; the cache is now warm', key: 'present, expires in 300 ms' },
     'write':      { cmd: 'UPDATE the source', path: 'write', result: 'committed', next: 'invalidate the cached copy', key: 'now stale until cleared' },
-    'invalidate': { cmd: 'DEL ecc:{quotes}:AST0NuE6bV7FoH', path: 'write', result: '1 (key removed)', next: 'the next read misses and re-fills', key: 'absent — forces a fresh fill' }
+    'invalidate': { cmd: 'DEL ecc:{cm_emojisets}:EMS0ODMggk1d5N', path: 'write', result: '1 (key removed)', next: 'the next read misses and re-fills', key: 'absent — forces a fresh fill' }
   };
   // pure: step key -> readout HTML
   function describeStep(step) {

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.05.1 &#183; Lock-on-miss &#183; Redis Patterns Applied &#183; jonnify</title>
-<meta name="description" content="R1.05.1 — the per-key regeneration lock. On a stampede, one request wins SET lock val NX PX and rebuilds the hot key; the rest poll, serve stale, or fail fast. The lock self-expires with PX so a crashed holder cannot deadlock, and a token-checked Lua release stops a stale lock from deleting another holder's. Grounded in EchoCache's single-flight flights map, backed by Valkey.">
+<meta name="description" content="R1.05.1 — the per-key regeneration lock. On a stampede, one request wins SET lock val NX PX and rebuilds the hot key; the rest poll, serve stale, or fail fast. The lock self-expires with PX so a crashed holder cannot deadlock, and a token-checked Lua release stops a stale lock from deleting another holder's. Grounded in EchoStore's single-flight flights map, backed by Valkey.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -225,7 +225,7 @@ pre.code .cmt{color:var(--b-dim)}
       <p class="lede">One request wins the lock and rebuilds the hot key. The rest wait, serve a stale copy, or fail
       fast &#8212; but never read the source.</p>
       <p class="heronote">Grounding: content/fundamental/cache-stampede-prevention.md.txt (Solution 2) &#183;
-      echo/apps/echo_cache/table.ex (the single-flight <code>flights</code> map) &#8212; the lock idea, applied.</p>
+      echo/apps/echo_store/table.ex (the single-flight <code>flights</code> map) &#8212; the lock idea, applied.</p>
 
       <figure class="anatomy" aria-labelledby="raceCap">
         <figcaption id="raceCap"><b>The lock race.</b> Select what the losing requests do; one winner reaches the
@@ -252,7 +252,7 @@ pre.code .cmt{color:var(--b-dim)}
           </g>
           <g class="role lockbox" data-role="lock">
             <rect x="170" y="96" width="118" height="58" rx="8"></rect>
-            <text class="flbl" x="229" y="120" text-anchor="middle">lock:instruments:AAPL</text>
+            <text class="flbl" x="229" y="120" text-anchor="middle">lock:set:EMS0ODMggk1d5N</text>
             <text class="fsub" x="229" y="138" text-anchor="middle">SET NX PX 5000</text>
           </g>
           <g class="role srcbox" data-role="source">
@@ -276,7 +276,7 @@ pre.code .cmt{color:var(--b-dim)}
         <span class="ssrc">source &#183; Redis Commands Used</span>
       </div>
       <div class="prose">
-        <p>The lock is one command. <code>SET lock:instruments:AAPL &lt;token&gt; NX PX 5000</code> sets the lock key to a
+        <p>The lock is one command. <code>SET lock:set:EMS0ODMggk1d5N &lt;token&gt; NX PX 5000</code> sets the lock key to a
         unique token only if it does not already exist (<code>NX</code>), with a five-second expiry in milliseconds
         (<code>PX 5000</code>). The reply is the gate: <code>OK</code> means this request holds the lock and may
         rebuild; <code>nil</code> means another request already holds it.</p>
@@ -288,7 +288,7 @@ pre.code .cmt{color:var(--b-dim)}
       </div>
       <pre class="code"><span class="cmt"># Try to win the regeneration lock for one hot key.</span>
 <span class="cmt"># NX: set only if absent (one winner). PX 5000: self-expire in 5s.</span>
-<b>SET</b> lock:instruments:AAPL <span class="str">"a1b2c3-unique-token"</span> <b>NX</b> <b>PX</b> 5000
+<b>SET</b> lock:set:EMS0ODMggk1d5N <span class="str">"a1b2c3-unique-token"</span> <b>NX</b> <b>PX</b> 5000
 <span class="cmt"># -> OK    : this request holds the lock; read the source and refill</span>
 <span class="cmt"># -> (nil) : another request holds it; this request waits or serves stale</span></pre>
       <dl class="deflist">
@@ -308,7 +308,7 @@ pre.code .cmt{color:var(--b-dim)}
       </div>
       <div class="prose">
         <p>The point of the lock is what the requests that <em>lose</em> it do: not read the source. Each loser has
-        four options, trading freshness against latency and load. Pick one in the race above, or read them here:</p>
+        four options, weighing freshness against latency and load. Pick one in the race above, or read them here:</p>
         <ul>
           <li><strong>Poll</strong> &#8212; sleep briefly, then re-read the cache. The winner&#8217;s fill lands
           within a rebuild, so a short poll loop returns the fresh value with no source read and no staleness. The
@@ -337,7 +337,7 @@ pre.code .cmt{color:var(--b-dim)}
       <p class="ethic">Releasing looks trivial &#8212; delete the lock key after the refill &#8212; and a naive
       <code>DEL</code> is a bug. If request A wins the lock but its rebuild runs long and the <code>PX 5000</code>
       expiry fires, the lock is free; request B acquires it with a fresh token. If A then calls a plain
-      <code>DEL lock:instruments:AAPL</code>, it deletes <em>B&#8217;s</em> lock &#8212; two requests now run as the holder
+      <code>DEL lock:set:EMS0ODMggk1d5N</code>, it deletes <em>B&#8217;s</em> lock &#8212; two requests now run as the holder
       at once. The guard against this is the token: read the lock, check the stored token equals this
       request&#8217;s, and delete only on a match &#8212; as one atomic Lua script.</p>
       <pre class="code"><span class="cmt">-- release only if this request still owns the lock (atomic)</span>
@@ -345,7 +345,7 @@ if redis.call(<span class="str">"get"</span>, KEYS[1]) == ARGV[1] then
     return redis.call(<span class="str">"del"</span>, KEYS[1])
 end
 return 0
-<span class="cmt">-- KEYS[1] = lock:instruments:AAPL   ARGV[1] = this request's token</span>
+<span class="cmt">-- KEYS[1] = lock:set:EMS0ODMggk1d5N   ARGV[1] = this request's token</span>
 <span class="cmt">-- returns 1 (released) or 0 (the lock is no longer this one's — do nothing)</span></pre>
       <div class="prose">
         <p>Run the release below against either an owned lock or one that already expired and was re-acquired by
@@ -363,7 +363,7 @@ return 0
         </div>
         <svg class="relfig" id="relSvg" viewBox="0 0 460 140" role="img" aria-label="Two token boxes are compared: the stored lock token on the left and this request's token on the right. A connector lights with the accent on a match and stays neutral on a mismatch, and the box on the far right shows whether the DEL fires or is skipped.">
           <g class="box"><rect x="20" y="46" width="150" height="48" rx="8"></rect></g>
-          <text class="blbl" x="95" y="40">GET lock:instruments:AAPL</text>
+          <text class="blbl" x="95" y="40">GET lock:set:EMS0ODMggk1d5N</text>
           <text class="tok" id="storedTok" x="95" y="76" fill="#d6584f">"z9y8x7"</text>
           <g class="box"><rect x="200" y="46" width="118" height="48" rx="8"></rect></g>
           <text class="blbl" x="259" y="40">this token</text>
@@ -379,8 +379,8 @@ return 0
 
       <div class="door">
         <span class="dr">the application &#183; one fill per herd at the owner</span>
-        <h3>EchoCache elects the single fill in-process</h3>
-        <p>EchoCache reaches the same one-winner guarantee without a separate lock key: a miss calls the owner with
+        <h3>EchoStore elects the single fill in-process</h3>
+        <p>EchoStore reaches the same one-winner guarantee without a separate lock key: a miss calls the owner with
         <code>{:fill, id}</code>, and the owner&#8217;s <code>flights</code> map admits one load per id. The first
         miss launches a flight; a concurrent miss appends its caller to the waiter list and bumps the
         <code>:coalesced</code> counter. The cost the lock saves is the committed figure &#8212; the L1 hit against
@@ -406,8 +406,8 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
-          <p>EchoCache serializes the fill through the table&#8217;s owner: the <code>flights</code> map admits one
+          <span class="lbl">its EchoStore application</span>
+          <p>EchoStore serializes the fill through the table&#8217;s owner: the <code>flights</code> map admits one
           load per id, concurrent misses coalesce onto it (the <code>:coalesced</code> counter), and every waiter
           reads the one answer &#8212; the lock idea, in-process.</p>
         </div>
@@ -460,7 +460,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">&#183;</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -507,7 +507,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
   var ROLE = {
     winner: 'the winner: one request takes the lock, reads the source once, and refills the key.',
     loser:  'the losers: three requests lose the lock and never read the source.',
-    lock:   'the lock: SET lock:instruments:AAPL token NX PX 5000 admits exactly one writer, and self-expires in 5s.',
+    lock:   'the lock: SET lock:set:EMS0ODMggk1d5N token NX PX 5000 admits exactly one writer, and self-expires in 5s.',
     source: 'the source: read by exactly one request per expiry, whatever the losers do.'
   };
   var lockSvg = document.getElementById('lockSvg');
@@ -517,7 +517,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
   // pure: strategy -> race readout text
   function describeRace(strategy) {
     var w = WAIT[strategy];
-    return '4 readers contend; SET lock:instruments:AAPL NX PX 5000 admits exactly 1. The winner reads the source and refills. ' +
+    return '4 readers contend; SET lock:set:EMS0ODMggk1d5N NX PX 5000 admits exactly 1. The winner reads the source and refills. ' +
       'The 3 losers: ' + w.losers + '. Source reads: 1. Staleness: ' + w.staleness + '. Latency: ' + w.latency + '.';
   }
   function setWait(strategy) {
@@ -563,7 +563,7 @@ the L1 hit is                 <b>40 times</b>       cheaper than the round trip 
     var stored = l.holds === null ? '(nil)' : '"' + l.holds + '"';
     var match = l.holds === MY_TOKEN;
     var del = match ? 'DEL fires -> 1 (released)' : 'DEL skipped -> 0 (not held by this request; do nothing)';
-    return 'GET lock:instruments:AAPL -> ' + stored + ' vs this request’s token "' + MY_TOKEN + '": ' +
+    return 'GET lock:set:EMS0ODMggk1d5N -> ' + stored + ' vs this request’s token "' + MY_TOKEN + '": ' +
       (match ? 'match' : 'no match') + '. ' + del + '. (' + l.label + '.)';
   }
   function setRelease(state) {

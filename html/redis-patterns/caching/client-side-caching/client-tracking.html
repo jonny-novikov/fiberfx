@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.04.1 · CLIENT TRACKING · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.04.1 — CLIENT TRACKING, the server-assisted near cache. How the server records which keys each connection holds in default mode, how broadcast mode trades a tracking table for key-prefix subscriptions, and the real RESP3 subscription EchoCache opens for the broadcast shape: Connector.start_link(protocol: 3, push_to: self()) + Connector.subscribe on ecc:{table}:coh.">
+<meta name="description" content="R1.04.1 — CLIENT TRACKING, the server-assisted near cache. How the server records which keys each connection holds in default mode, how broadcast mode trades a tracking table for key-prefix subscriptions, and the real RESP3 subscription EchoStore opens for the broadcast shape: Connector.start_link(protocol: 3, push_to: self()) + Connector.subscribe on ecc:{table}:coh.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -212,7 +212,7 @@ table.trk-table{width:100%;border-collapse:collapse;font-family:var(--mono);font
     <nav class="topnav" aria-label="Page sections">
       <a href="#record">The record</a>
       <a href="#modes">Default vs broadcast</a>
-      <a href="#applied">In EchoCache</a>
+      <a href="#applied">In EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -235,18 +235,18 @@ table.trk-table{width:100%;border-collapse:collapse;font-family:var(--mono);font
       <h1>CLIENT <span class="hns">TRACKING</span>.</h1>
       <p class="lede">The server keeps a record of which keys each connection holds, so it can warn that connection the
       moment one changes.</p>
-      <p class="heronote">Grounding: real <code>CLIENT TRACKING</code> &#183; echo_cache/table.ex (the RESP3
-      subscription) &#183; echo_cache/coherence.ex (the channel).</p>
+      <p class="heronote">Grounding: real <code>CLIENT TRACKING</code> &#183; echo_store/table.ex (the RESP3
+      subscription) &#183; echo_store/coherence.ex (the channel).</p>
 
       <figure class="anatomy" aria-labelledby="trkCap">
         <figcaption id="trkCap"><b>Read a key, watch the record fill.</b> Select a key the connection reads next; the
         slot fills and the table on the right shows what the server has recorded.</figcaption>
         <div class="segbar" id="readSel" role="group" aria-label="Which key the connection reads next">
-          <button type="button" data-key="instr:AAPL" aria-pressed="false">GET instr:AAPL</button>
+          <button type="button" data-key="set:EMS9q" aria-pressed="false">GET set:EMS9q</button>
           <button type="button" data-key="flag:halt" aria-pressed="false">GET flag:halt</button>
           <button type="button" data-key="cfg:limits" aria-pressed="false">GET cfg:limits</button>
         </div>
-        <svg class="track" id="track" viewBox="0 0 460 150" role="img" aria-label="A connection box, conn 7, joined by a path to a server tracking box. Between them sit three key slots — instr:AAPL, flag:halt, cfg:limits. As the connection reads a key, that slot fills to show the server has recorded the connection as holding it. Hover or select a slot to highlight it.">
+        <svg class="track" id="track" viewBox="0 0 460 150" role="img" aria-label="A connection box, conn 7, joined by a path to a server tracking box. Between them sit three key slots — set:EMS9q, flag:halt, cfg:limits. As the connection reads a key, that slot fills to show the server has recorded the connection as holding it. Hover or select a slot to highlight it.">
           <g class="conn"><rect x="20" y="55" width="110" height="48" rx="8"></rect></g>
           <text class="nlbl" x="75" y="76">conn 7</text>
           <text class="nsub" x="75" y="92">near cache</text>
@@ -257,7 +257,7 @@ table.trk-table{width:100%;border-collapse:collapse;font-family:var(--mono);font
           <text class="nlbl" x="385" y="76">the server</text>
           <text class="nsub" x="385" y="92">tracking table</text>
 
-          <g class="slot" data-key="instr:AAPL"><rect x="150" y="14" width="92" height="24" rx="5"></rect><text class="slbl" x="196" y="30">instr:AAPL</text></g>
+          <g class="slot" data-key="set:EMS9q"><rect x="150" y="14" width="92" height="24" rx="5"></rect><text class="slbl" x="196" y="30">set:EMS9q</text></g>
           <g class="slot" data-key="flag:halt"><rect x="150" y="106" width="92" height="24" rx="5"></rect><text class="slbl" x="196" y="122">flag:halt</text></g>
           <g class="slot" data-key="cfg:limits"><rect x="252" y="106" width="92" height="24" rx="5"></rect><text class="slbl" x="298" y="122">cfg:limits</text></g>
         </svg>
@@ -308,7 +308,7 @@ table.trk-table{width:100%;border-collapse:collapse;font-family:var(--mono);font
       <div class="prose">
         <p>There are two ways to keep the record. <strong>Default mode</strong> tracks the exact keys each connection
         read &#8212; precise, but the server holds a per-key table. <strong>Broadcast mode</strong>
-        (<code>CLIENT TRACKING ON BCAST PREFIX instr:</code>) tracks <em>prefixes</em> instead: the server keeps no
+        (<code>CLIENT TRACKING ON BCAST PREFIX set:</code>) tracks <em>prefixes</em> instead: the server keeps no
         per-key table and instead notifies every broadcast subscriber whenever any key under a registered prefix
         changes. Cheaper for the server, but a connection may receive invalidations for keys it never read.</p>
         <p>The choice is a trade between server memory and notification precision. Compare them below: pick a mode and
@@ -331,20 +331,20 @@ table.trk-table{width:100%;border-collapse:collapse;font-family:var(--mono);font
     <section id="applied">
       <div class="sech">
         <span class="sno">&#167;3</span>
-        <h2>The near cache in EchoCache</h2>
-        <span class="ssrc">echo_cache/table.ex (init)</span>
+        <h2>The near cache in EchoStore</h2>
+        <span class="ssrc">echo_store/table.ex (init)</span>
       </div>
       <div class="prose">
-        <p>Picture the Exchange Platform's instrument-catalog read path with a near cache in front of it. A gateway
-        reads an instrument record often and the record changes rarely. With a near cache on, the table holds the
-        instrument in local L1 ETS and lets the server carry the change notification; later reads are memory lookups.
+        <p>Picture codemojex's emoji-set read path with a near cache in front of it. The scoring consumer
+        reads an emoji set often and the set never changes for the round's life. With a near cache on, the table holds the
+        set in local L1 ETS and lets the server carry the change notification; later reads are memory lookups.
         The first read still falls through to Valkey for the value, and the table populates both the L2 row
-        (<code>ecc:{instruments}:&lt;id&gt;</code>) and the local copy. Every later read of the unchanged instrument
+        (<code>ecc:{cm_emojisets}:&lt;id&gt;</code>) and the local copy. Every later read of the unchanged set
         stays in the process.</p>
-        <p>EchoCache rides the broadcast shape over plain pub/sub. The table opens a RESP3 connection at start and
+        <p>EchoStore rides the broadcast shape over plain pub/sub. The table opens a RESP3 connection at start and
         subscribes to its coherence channel &#8212; the real <code>init</code> path:</p>
       </div>
-      <pre class="code"><span class="cmt"># echo/apps/echo_cache/lib/echo_cache/table.ex (init)</span>
+      <pre class="code"><span class="cmt"># echo/apps/echo_store/lib/echo_store/table.ex (init)</span>
 {:ok, sub} =
   Connector.start_link(
     Keyword.get(opts, :connector, [])
@@ -354,8 +354,8 @@ table.trk-table{width:100%;border-collapse:collapse;font-family:var(--mono);font
 :ok = Connector.subscribe(sub, Coherence.channel(table_str))   <span class="cmt"># ecc:{&lt;table&gt;}:coh</span></pre>
       <div class="prose">
         <p>The channel name derives from the table name and nothing else &#8212;
-        <code>Coherence.channel("instruments")</code> is <code>ecc:{instruments}:coh</code>. A writer that changes an
-        instrument publishes on that channel; the next dive follows the push.</p>
+        <code>Coherence.channel("cm_emojisets")</code> is <code>ecc:{cm_emojisets}:coh</code>. A writer that changes a
+        set publishes on that channel; the next dive follows the push.</p>
       </div>
 
       <div class="door">
@@ -366,7 +366,7 @@ table.trk-table{width:100%;border-collapse:collapse;font-family:var(--mono);font
         name hash-tagged so every key of one cache lands in one cluster slot. The first read fills both layers under a
         TTL with a single atomic command:</p>
         <pre class="code"><span class="cmt"># the L2 fill, value and TTL set atomically (id is a 14-byte branded id)</span>
-SET <b>ecc:{instruments}:&lt;id&gt;</b> &lt;version+value&gt; PX 300000</pre>
+SET <b>ecc:{cm_emojisets}:&lt;id&gt;</b> &lt;version+value&gt; PX 300000</pre>
       </div>
 
       <p class="vnote"><span class="vk">Notes on Valkey</span>The broadcast subscription rides plain pub/sub, which is
@@ -382,8 +382,8 @@ SET <b>ecc:{instruments}:&lt;id&gt;</b> &lt;version+value&gt; PX 300000</pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">in EchoCache</span>
-          <p>The table reads a hot instrument key into L1 ETS and keeps a local copy. A RESP3 subscription on
+          <span class="lbl">in EchoStore</span>
+          <p>The table reads a hot emoji-set key into L1 ETS and keeps a local copy. A RESP3 subscription on
           <code>ecc:{&lt;table&gt;}:coh</code> carries the change; the next dive applies it newer-wins.</p>
         </div>
       </div>
@@ -432,7 +432,7 @@ SET <b>ecc:{instruments}:&lt;id&gt;</b> &lt;version+value&gt; PX 300000</pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        BCS build: EchoMQ backed by Valkey, EchoCache in front.</p>
+        BCS build: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">Chapters</p>
@@ -476,11 +476,11 @@ SET <b>ecc:{instruments}:&lt;id&gt;</b> &lt;version+value&gt; PX 300000</pre>
 
   /* ---------- hero: read a key, watch the tracking record fill (pure over a fixed dataset) ---------- */
   var KEYMETA = {
-    'instr:AAPL': { tick: 't0', note: 'an instrument record, read often, changed rarely' },
-    'flag:halt':  { tick: 't1', note: 'a halt flag, almost never changes' },
-    'cfg:limits': { tick: 't2', note: 'a position-limit config blob' }
+    'set:EMS9q':  { tick: 't0', note: 'an emoji set, read every guess, immutable for the round' },
+    'flag:halt':  { tick: 't1', note: 'a round-closed flag, almost never changes' },
+    'cfg:limits': { tick: 't2', note: 'a rate-limit config blob' }
   };
-  var ORDER = ['instr:AAPL', 'flag:halt', 'cfg:limits'];
+  var ORDER = ['set:EMS9q', 'flag:halt', 'cfg:limits'];
   var held = []; // accumulates as keys are read; reading a held key is a no-op for the record
   // pure: held-list, last-read -> readout text
   function describeHeld(list, last) {
@@ -535,7 +535,7 @@ SET <b>ecc:{instruments}:&lt;id&gt;</b> &lt;version+value&gt; PX 300000</pre>
       g.addEventListener('click', function () { readKey(g.getAttribute('data-key')); });
     });
   }
-  readKey('instr:AAPL'); // initial render — correct without interaction
+  readKey('set:EMS9q'); // initial render — correct without interaction
 
   /* ---------- content: pick a tracking mode, what each side pays (pure over a fixed dataset) ---------- */
   var MODES = {

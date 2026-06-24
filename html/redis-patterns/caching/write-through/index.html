@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.02 — Write-through · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="The R1.02 module hub: write-through caching. Every write goes to the cache and the database in one synchronous step, so a read immediately after a write is always fresh. Grounded in EchoCache.Table.put — SET … PX to the L2 Valkey row then insert into the L1 ETS table, framed with the write's mint-time version. Three dives: the synchronous dual write, the consistency guarantee, and the latency cost.">
+<meta name="description" content="The R1.02 module hub: write-through caching. Every write goes to the cache and the database in one synchronous step, so a read immediately after a write is always fresh. Grounded in EchoStore.Table.put — SET … PX to the L2 Valkey row then insert into the L1 ETS table, framed with the write's mint-time version. Three dives: the synchronous dual write, the consistency guarantee, and the latency cost.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -235,7 +235,7 @@ div.door:hover{box-shadow:none}
       <h1>Write-<span class="hns">through</span>.</h1>
       <p class="lede">Maintain cache-database consistency by synchronously writing to both the cache and the database
       before returning success &#8212; <b>so reads always hit the cache with fresh data</b>.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache &#183; EchoCache.Table.put &#183; content/bcs4.1.md &#8212;
+      <p class="heronote">Grounding: echo/apps/echo_store &#183; EchoStore.Table.put &#183; content/bcs4.1.md &#8212;
       every figure verbatim from a committed record; the engine is Valkey.</p>
 
       <figure class="anatomy" aria-labelledby="wpCap">
@@ -247,7 +247,7 @@ div.door:hover{box-shadow:none}
           <button type="button" data-stage="ret" aria-pressed="false">return</button>
           <button type="button" data-stage="read" aria-pressed="false">later read</button>
         </div>
-        <svg class="wpath" id="wpath" viewBox="0 0 460 250" role="img" aria-label="A write from EchoCache.Table.put reaches the L2 Valkey row with SET PX, then inserts into the L1 ETS table, then returns ok; both are written before the call returns. A later read is served fresh from the L1 cache. Select a stage to highlight it; its detail appears in the readout.">
+        <svg class="wpath" id="wpath" viewBox="0 0 460 250" role="img" aria-label="A write from EchoStore.Table.put reaches the L2 Valkey row with SET PX, then inserts into the L1 ETS table, then returns ok; both are written before the call returns. A later read is served fresh from the L1 cache. Select a stage to highlight it; its detail appears in the readout.">
           <g class="node" data-stage="put"><rect x="150" y="14" width="160" height="40" rx="6"></rect><text class="nlbl" x="170" y="32">Table.put</text><text class="nsub" x="170" y="46">one GenServer.call</text></g>
 
           <path class="flow" d="M200 54 L110 96"></path>
@@ -307,12 +307,12 @@ div.door:hover{box-shadow:none}
         and the application returns success only after both complete. The cache half is one command:
         <code>SET &#8230; PX</code> sets the value and the millisecond TTL together &#8212; atomically.</p>
       </div>
-      <pre class="code"><b>SET</b> ecc:{instruments}:AST0NgWEfAEJfs "&lt;version&gt;&lt;value&gt;" PX 300000   <span style="color:var(--b-dim)"># cache: value + TTL, atomically</span>
-UPDATE instruments ... WHERE id = ...                              <span style="color:var(--b-dim)"># the corresponding database write</span>
+      <pre class="code"><b>SET</b> ecc:{cm_emojisets}:EMS0ODMggk1d5N "&lt;version&gt;&lt;value&gt;" PX 300000   <span style="color:var(--b-dim)"># cache: value + TTL, atomically</span>
+UPDATE emoji_sets ... WHERE id = ...                              <span style="color:var(--b-dim)"># the corresponding database write</span>
 <span style="color:var(--b-dim)"># return success only after both acknowledge</span></pre>
       <div class="prose">
         <p>The key is the cache&#8217;s own form <code>ecc:{&lt;table&gt;}:&lt;id&gt;</code>
-        (<code>EchoCache.Keyspace.key/2</code>): a fresh prefix beside <code>emq:</code>, with the table name
+        (<code>EchoStore.Keyspace.key/2</code>): a fresh prefix beside <code>emq:</code>, with the table name
         hash-tagged in braces so every key of one cache lands in one cluster slot. The value is framed
         <code>version &lt;&gt; value</code> &#8212; a 14-byte branded version prefix in front of the bytes &#8212; so a
         later coherence message can compare newer-wins. The cache half of a write-through write is one command; the
@@ -441,8 +441,8 @@ UPDATE instruments ... WHERE id = ...                              <span style="
         <p>The dual write is not an aspiration &#8212; it is the <code>handle_call({:put, &#8230;})</code> clause in
         the as-built table: set the L2 row with the value and TTL atomically, then insert into L1, on the one call.</p>
         <figure class="frozen">
-          <figcaption>echo/apps/echo_cache/lib/echo_cache/table.ex &#183; handle_call({:put, &#8230;})<span class="tag">as-built</span></figcaption>
-          <pre>l2 = Keyspace.key(state.table, id)            <span class="fd">&#8592; "ecc:{instruments}:AST0NgWEfAEJfs"</span>
+          <figcaption>echo/apps/echo_store/lib/echo_store/table.ex &#183; handle_call({:put, &#8230;})<span class="tag">as-built</span></figcaption>
+          <pre>l2 = Keyspace.key(state.table, id)            <span class="fd">&#8592; "ecc:{cm_emojisets}:EMS0ODMggk1d5N"</span>
 {:ok, "OK"} =
   Connector.command(state.conn, [
     "SET", l2, <b>version &lt;&gt; value</b>, "PX",      <span class="fd">&#8592; L2 Valkey: value + TTL, atomically</span>
@@ -461,8 +461,8 @@ insert(state, id, value, version)             <span class="fd">&#8592; L1 ETS, o
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
-          <p><code>EchoCache.Table.put</code> runs <code>SET &#8230; PX</code> to the L2 Valkey row then
+          <span class="lbl">its EchoStore application</span>
+          <p><code>EchoStore.Table.put</code> runs <code>SET &#8230; PX</code> to the L2 Valkey row then
           <code>insert</code> into the L1 ETS table, both inside one synchronous <code>GenServer.call</code>; reads
           are always fresh.</p>
         </div>
@@ -482,7 +482,7 @@ insert(state, id, value, version)             <span class="fd">&#8592; L1 ETS, o
           <h3 class="refgrp">Sources</h3>
           <ul>
             <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; <code>SET key value PX &lt;ms&gt;</code> sets value and TTL atomically; the L2 write-path command.</li>
-            <li><a href="https://valkey.io/topics/" rel="noopener">Valkey &mdash; <em>Topics</em></a> &mdash; the engine EchoCache&#8217;s L2 layer is written against; the live line is Valkey.</li>
+            <li><a href="https://valkey.io/topics/" rel="noopener">Valkey &mdash; <em>Topics</em></a> &mdash; the engine EchoStore&#8217;s L2 layer is written against; the live line is Valkey.</li>
             <li><a href="https://redis.io/commands/set" rel="noopener">Redis &mdash; <em>SET</em></a> &mdash; the string write-path command and its <code>EX</code>/<code>PX</code> expiry options.</li>
             <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the data structures and commands the cache write is built from.</li>
           </ul>
@@ -495,7 +495,7 @@ insert(state, id, value, version)             <span class="fd">&#8592; L1 ETS, o
             <li><a href="/redis-patterns/caching/write-through/latency-cost">R1.02.3 &#183; The latency cost</a><span class="rs">the price of the guarantee</span></li>
             <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
             <li><a href="/echomq">/echomq</a><span class="rs">the bus behind the at-least-once coherence lane</span></li>
-            <li><a href="/bcs">/bcs</a><span class="rs">the EchoCache manuscript, Part IV</span></li>
+            <li><a href="/bcs">/bcs</a><span class="rs">the EchoStore manuscript, Part IV</span></li>
           </ul>
         </div>
       </div>
@@ -515,7 +515,7 @@ insert(state, id, value, version)             <span class="fd">&#8592; L1 ETS, o
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -554,7 +554,7 @@ insert(state, id, value, version)             <span class="fd">&#8592; L1 ETS, o
 
   /* ---------- Interactive 1: the write path (pure lookup over a fixed dataset) ---------- */
   var STAGES = {
-    l2:   { name: 'L2 · the Valkey row', detail: 'SET ecc:{instruments}:<id> version<>value PX ttl_ms — value and TTL set atomically, on the server’s clock; the larger latency term.', done: 'the call has NOT returned' },
+    l2:   { name: 'L2 · the Valkey row', detail: 'SET ecc:{cm_emojisets}:<id> version<>value PX ttl_ms — value and TTL set atomically, on the server’s clock; the larger latency term.', done: 'the call has NOT returned' },
     l1:   { name: 'L1 · the ETS table', detail: 'insert(state, id, value, version) — a sub-microsecond ETS write, on the same call as the L2 SET.', done: 'the call has NOT returned' },
     ret:  { name: 'return · :ok', detail: 'the put clause replies :ok only after both the L2 SET answered {:ok, "OK"} and the L1 insert ran.', done: 'the call returns now' },
     read: { name: 'a later read', detail: 'fetch reads the L1 row in the caller’s process — a hit at 762 ns, the value the write produced.', done: 'served fresh from L1' },

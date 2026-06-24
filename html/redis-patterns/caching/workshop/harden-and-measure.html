@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.07.3 · Harden and measure · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.07.3 — harden EchoCache against a stampede by construction: the single-flight flights map coalesces a herd onto one fill (200 cold readers, loader runs once), the jittered TTL (ttl +/- ttl*jitter) keeps a cohort from re-herding, and EchoCache.Table.stats/1 reads the hit rate off the cache's own lock-free counters. The workshop's final stage. Grounded in the real as-built echo data layer; the engine is Valkey.">
+<meta name="description" content="R1.07.3 — harden EchoStore against a stampede by construction: the single-flight flights map coalesces a herd onto one fill (200 cold readers, loader runs once), the jittered TTL (ttl +/- ttl*jitter) keeps a cohort from re-herding, and EchoStore.Table.stats/1 reads the hit rate off the cache's own lock-free counters. The workshop's final stage. Grounded in the real as-built echo data layer; the engine is Valkey.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -227,7 +227,7 @@ div.door:hover{box-shadow:none}
     <nav class="topnav" aria-label="Page sections">
       <a href="#herd">One fill per herd</a>
       <a href="#measure">Make it a number</a>
-      <a href="#apply">On EchoCache</a>
+      <a href="#apply">On EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -239,10 +239,10 @@ div.door:hover{box-shadow:none}
     <section class="hero">
       <p class="kicker">R1.07.3 &#183; Caching workshop &#8212; stage 3</p>
       <h1>Harden and <span class="hns">measure</span>.</h1>
-      <p class="lede">The one instrument every order touches draws a herd when its row expires. EchoCache absorbs it
+      <p class="lede">The one emoji set every guess touches draws a herd when its row expires. EchoStore absorbs it
       <b>by construction</b> &#8212; the single-flight coalesces a herd onto one fill, the jittered TTL stops a
       cohort from re-herding &#8212; and <code>stats/1</code> reads the hit rate off the counters.</p>
-      <p class="heronote">Grounding: echo_cache/table.ex (flights, launch_flight, expires_at, stats/1) &#183;
+      <p class="heronote">Grounding: echo_store/table.ex (flights, launch_flight, expires_at, stats/1) &#183;
       content/bcs4.1.md (the single-flight gate, Valkey).</p>
 
       <figure class="anatomy" aria-labelledby="herdCap">
@@ -278,12 +278,12 @@ div.door:hover{box-shadow:none}
       <div class="sech">
         <span class="sno">&#167;1</span>
         <h2>One fill per herd, by construction</h2>
-        <span class="ssrc">echo_cache/table.ex:265 &#183; bcs4.1</span>
+        <span class="ssrc">echo_store/table.ex:265 &#183; bcs4.1</span>
       </div>
       <div class="prose">
         <p>A stampede &#8212; the thundering herd &#8212; happens when a popular key expires and every concurrent
         reader misses in the same instant. Each miss would read the source, so the loader is hit once per reader at
-        once. EchoCache closes that by construction, not by a lock. Misses route through the table&#8217;s owner, and
+        once. EchoStore closes that by construction, not by a lock. Misses route through the table&#8217;s owner, and
         concurrent misses on one id <strong>coalesce</strong> onto a single flight: the first caller&#8217;s miss
         launches <code>launch_flight/2</code>; a concurrent miss on the same id finds the flight already in the
         <code>flights</code> map and joins its waiter list
@@ -298,7 +298,7 @@ div.door:hover{box-shadow:none}
       </div>
       <dl class="deflist">
         <dt>the flights map</dt><dd><code>id -&gt; {ref, waiters}</code> in the owner&#8217;s state; the first miss launches a flight, the rest join.</dd>
-        <dt>launch_flight/2</dt><dd>The single flight: <code>GET ecc:{instruments}:&lt;id&gt;</code> &#8594; loader &#8594; <code>SET &#8230; PX</code>, then reply to all waiters.</dd>
+        <dt>launch_flight/2</dt><dd>The single flight: <code>GET ecc:{cm_emojisets}:&lt;id&gt;</code> &#8594; loader &#8594; <code>SET &#8230; PX</code>, then reply to all waiters.</dd>
         <dt>coalesced</dt><dd>The counter bumped for every miss that joins an in-flight load instead of launching its own.</dd>
         <dt>one answer</dt><dd><code>Enum.each(waiters, &amp;GenServer.reply(&amp;1, reply))</code> &#8212; the herd costs one loader run.</dd>
       </dl>
@@ -308,7 +308,7 @@ div.door:hover{box-shadow:none}
       <div class="sech">
         <span class="sno">&#167;2</span>
         <h2>No synchronized expiry &#8212; the jittered clock</h2>
-        <span class="ssrc">echo_cache/table.ex:484 &#183; bcs4.1</span>
+        <span class="ssrc">echo_store/table.ex:484 &#183; bcs4.1</span>
       </div>
       <div class="prose">
         <p>Rows filled together must not expire together, or the TTL itself schedules the next herd.
@@ -320,11 +320,11 @@ div.door:hover{box-shadow:none}
         synchronized re-herd. The sweeper then reclaims dead rows on a fixed tick, so memory is bounded by the
         declaration, not by luck.</p>
         <p>Set the jitter to the herd a surface fears: 0.1&#8211;0.2 spreads a cohort across a fifth of its TTL,
-        enough to turn a synchronized re-fill into a trickle. This is the honest mechanism EchoCache implements
+        enough to turn a synchronized re-fill into a trickle. This is the honest mechanism EchoStore implements
         &#8212; expiry jitter plus single-flight &#8212; not a probabilistic early-expiration scheme; the
         early-refresh variant of stampede prevention is the
         <a href="/redis-patterns/caching/cache-stampede-prevention">R1.05</a> module&#8217;s territory, and
-        EchoCache&#8217;s real answer is the jittered clock.</p>
+        EchoStore&#8217;s real answer is the jittered clock.</p>
       </div>
       <p class="vnote"><span class="vk">Notes on Valkey</span>The L2 row is written with <code>SET &#8230; PX</code>
       carrying the jittered expiry, and the engine runs its own on-access and active expiration as a second
@@ -338,10 +338,10 @@ div.door:hover{box-shadow:none}
       <div class="sech">
         <span class="sno">&#167;3</span>
         <h2>Make the hit rate a number</h2>
-        <span class="ssrc">echo_cache/table.ex:179 &#183; stats/1</span>
+        <span class="ssrc">echo_store/table.ex:179 &#183; stats/1</span>
       </div>
       <div class="prose">
-        <p>A cache you cannot measure is a cache you cannot tune. <code>EchoCache.Table.stats/1</code> returns the
+        <p>A cache you cannot measure is a cache you cannot tune. <code>EchoStore.Table.stats/1</code> returns the
         counter snapshot plus the live size: <code>hits, misses, fills, l2_hits, coalesced, swept, full_skips,
         sweeps, coh_applied, coh_stale</code>, and <code>size</code>. Every counter is a <code>:counters</code> slot
         bumped on the hot path &#8212; atomic, lock-free, never a <code>GenServer.call</code>, which is why a hit
@@ -349,7 +349,7 @@ div.door:hover{box-shadow:none}
         of reads served without touching the loader.</p>
         <p>Run a read load below and watch the counters fill. The readout reports the <code>hits</code> and
         <code>misses</code> tallies, the hit rate they compute, and the <code>coalesced</code> count under a herd. A
-        hot instrument kept warm drives the rate up; a short TTL that expires the row mid-load drives it down with
+        hot emoji set kept warm drives the rate up; a short TTL that expires the row mid-load drives it down with
         extra misses; a herd shows up as <code>coalesced</code> waiters that cost no extra loader run.</p>
       </div>
 
@@ -357,7 +357,7 @@ div.door:hover{box-shadow:none}
         <figcaption id="loadCap"><b>Run a read load.</b> The <code>:counters</code> fill; the readout computes the
         hit rate.</figcaption>
         <div class="segbar" id="loadSel" role="group" aria-label="Which read load to run">
-          <button type="button" data-load="hot" aria-pressed="true">a hot instrument</button>
+          <button type="button" data-load="hot" aria-pressed="true">a hot emoji set</button>
           <button type="button" data-load="mixed" aria-pressed="false">mixed reads</button>
           <button type="button" data-load="herd" aria-pressed="false">a cold herd</button>
         </div>
@@ -377,19 +377,19 @@ div.door:hover{box-shadow:none}
     <section id="apply">
       <div class="sech">
         <span class="sno">&#167;4</span>
-        <h2>Hardened and measured on EchoCache</h2>
-        <span class="ssrc">echo_cache/table.ex &#183; exchange/gateway.ex</span>
+        <h2>Hardened and measured on EchoStore</h2>
+        <span class="ssrc">echo_store/table.ex &#183; codemojex/game.ex</span>
       </div>
       <div class="prose">
-        <p>Take one read of the hottest instrument under load: many orders hit the most-traded instrument as its row
+        <p>Take one read of the hottest emoji set under load: many guesses hit the most-played set as its row
         expires. The owner receives a herd of misses on one id, coalesces them onto a single flight, and replies to every
         waiter with the one answer &#8212; the loader ran once. Every read, hot or not, bumps <code>hits</code> or
-        <code>misses</code>, so the catalog cache reports its own hit rate through <code>stats/1</code>. The gateway
-        receives the instrument or <code>{:error, :unknown_instrument}</code>; the single-flight and the counters
-        live in the cache.</p>
+        <code>misses</code>, so the cache reports its own hit rate through <code>stats/1</code>.
+        <code>Codemojex.Guesses.submit/3</code> receives the emoji set or <code>{:error, :bad_guess}</code> for a code
+        the round&#8217;s keyboard does not expose; the single-flight and the counters live in the cache.</p>
       </div>
       <pre class="code"><span class="cmt"># Harden by construction + measure — the owner coalesces a herd, the counters report.</span>
-<span class="cmt"># Inside the owner, on a herd of misses for one id (echo_cache/table.ex:265):</span>
+<span class="cmt"># Inside the owner, on a herd of misses for one id (echo_store/table.ex:265):</span>
 case Map.fetch(state.flights, id) do
   {:ok, {ref, waiters}} -&gt;                 <span class="cmt"># a flight is in progress: coalesce onto it</span>
     :counters.add(state.spec.counters, counter(<b>:coalesced</b>), 1)
@@ -401,7 +401,7 @@ case Map.fetch(state.flights, id) do
 end
 
 <span class="cmt"># The hit rate, off the cache's own counters:</span>
-%{hits: h, misses: m, coalesced: c, size: n} = EchoCache.Table.<b>stats</b>(:instruments)
+%{hits: h, misses: m, coalesced: c, size: n} = EchoStore.Table.<b>stats</b>(:cm_emojisets)
 <span class="cmt"># hit_rate = h / (h + m)</span></pre>
       <div class="prose">
         <p>The single-flight confines a hot regeneration to one loader run; the jittered TTL stops the cohort from
@@ -412,8 +412,8 @@ end
 
       <div class="door">
         <span class="dr">the application &#183; one fill per herd, gated</span>
-        <h3>EchoCache.Table against live Valkey</h3>
-        <p>The herd discipline is measured, not assumed &#8212; the committed EchoCache gate against the live
+        <h3>EchoStore.Table against live Valkey</h3>
+        <p>The herd discipline is measured, not assumed &#8212; the committed EchoStore gate against the live
         engine:</p>
         <figure class="frozen">
           <figcaption>content/bcs4.1.md &#183; the single-flight and jitter gate, against live Valkey<span class="tag">frozen</span></figcaption>
@@ -432,8 +432,8 @@ hit rate                      hits / (hits + misses)</pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
-          <p>The hottest instrument&#8217;s herd coalesces onto one <code>launch_flight</code>, the jittered TTL
+          <span class="lbl">its EchoStore application</span>
+          <p>The hottest emoji set&#8217;s herd coalesces onto one <code>launch_flight</code>, the jittered TTL
           spreads the cohort, and <code>stats/1</code> reports <code>hits / (hits + misses)</code> with
           <code>coalesced</code> proving the herd cost one load.</p>
         </div>
@@ -450,10 +450,10 @@ hit rate                      hits / (hits + misses)</pre>
       </div>
       <div class="prose">
         <p>The workshop&#8217;s four layers are in place. Stage 1 cached the catalog with
-        <code>EchoCache.Table.fetch/3</code>; stage 2 kept it consistent with <code>Coherence.broadcast</code>/<code>enqueue</code>
-        and <code>newer?</code>; this stage hardened the hot instrument with the single-flight <code>flights</code>
-        map and the jittered TTL, and measured the cache with <code>EchoCache.Table.stats/1</code>. The catalog cache
-        now reads through EchoCache, tracks changes, survives a herd on its busiest instrument by construction, and
+        <code>EchoStore.Table.fetch/3</code>; stage 2 kept it consistent with <code>Coherence.broadcast</code>/<code>enqueue</code>
+        and <code>newer?</code>; this stage hardened the hot emoji set with the single-flight <code>flights</code>
+        map and the jittered TTL, and measured the cache with <code>EchoStore.Table.stats/1</code>. The emoji-set cache
+        now reads through EchoStore, tracks changes, survives a herd on its busiest set by construction, and
         reports its own hit rate &#8212; built entirely from patterns taught in R1.01&#8211;R1.06.</p>
       </div>
       <div class="doors">
@@ -466,7 +466,7 @@ hit rate                      hits / (hits + misses)</pre>
         <a class="door" href="/bcs/cache/cache-aside">
           <span class="dr">/bcs &#183; Part IV</span>
           <h3>Cache-aside at ETS speed</h3>
-          <p>The EchoCache manuscript chapter the single-flight, the jitter, and the <code>762 ns</code> figure come
+          <p>The EchoStore manuscript chapter the single-flight, the jitter, and the <code>762 ns</code> figure come
           from &#8212; declared and gated.</p>
         </a>
         <a class="door" href="/redis-patterns/caching/cache-stampede-prevention">
@@ -490,7 +490,7 @@ hit rate                      hits / (hits + misses)</pre>
           <ul>
             <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; <code>SET &#8230; PX</code> writes the L2 row with its jittered expiry in one atomic command.</li>
             <li><a href="https://valkey.io/commands/expire/" rel="noopener">Valkey &mdash; <em>EXPIRE</em></a> &mdash; the server&#8217;s own reclamation, the L2-side counterpart of the sweeper that bounds memory.</li>
-            <li><a href="https://redis.io/commands/incr" rel="noopener">Redis &mdash; <em>INCR</em></a> &mdash; the atomic-counter primitive behind a measured hit rate; EchoCache keeps its tallies in lock-free <code>:counters</code>.</li>
+            <li><a href="https://redis.io/commands/incr" rel="noopener">Redis &mdash; <em>INCR</em></a> &mdash; the atomic-counter primitive behind a measured hit rate; EchoStore keeps its tallies in lock-free <code>:counters</code>.</li>
             <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on expiry, atomic operations, and single-instance discipline.</li>
           </ul>
         </div>
@@ -502,7 +502,7 @@ hit rate                      hits / (hits + misses)</pre>
             <li><a href="/redis-patterns/caching/cache-stampede-prevention">R1.05 &#183; Cache stampede prevention</a><span class="rs">the herd, the lock, early refresh</span></li>
             <li><a href="/redis-patterns/caching/cache-aside">R1.01 &#183; Cache-aside</a><span class="rs">the base pattern</span></li>
             <li><a href="/redis-patterns/caching">R1 &#183; Caching</a><span class="rs">the chapter</span></li>
-            <li><a href="/bcs/cache/cache-aside">/bcs &#183; cache-aside</a><span class="rs">the EchoCache manuscript: single-flight, jitter, the gate</span></li>
+            <li><a href="/bcs/cache/cache-aside">/bcs &#183; cache-aside</a><span class="rs">the EchoStore manuscript: single-flight, jitter, the gate</span></li>
           </ul>
         </div>
       </div>
@@ -522,7 +522,7 @@ hit rate                      hits / (hits + misses)</pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -561,7 +561,7 @@ hit rate                      hits / (hits + misses)</pre>
 
   /* ---------- Interactive 1: a herd of misses on one id (pure lookup over a fixed dataset) ---------- */
   var ACTORS = {
-    first:  { name: 'the first miss', does: 'launches the one flight — launch_flight/2 runs GET ecc:{instruments}:<id>, the loader, then SET ... PX', result: 'becomes the head of the waiter list; every other miss joins it' },
+    first:  { name: 'the first miss', does: 'launches the one flight — launch_flight/2 runs GET ecc:{cm_emojisets}:<id>, the loader, then SET ... PX', result: 'becomes the head of the waiter list; every other miss joins it' },
     rest:   { name: 'the rest of the herd', does: 'find the flight already in the flights map and coalesce onto it — put_in(flights[id], {ref, [from | waiters]})', result: 'bump the coalesced counter; touch neither L2 nor the loader' },
     loader: { name: 'the loader', does: 'is called exactly once, by the one flight, regardless of how many readers missed', result: 'the owner replies to every waiter with the one answer — the herd cost one load' }
   };
@@ -602,11 +602,11 @@ hit rate                      hits / (hits + misses)</pre>
   }
 
   /* ---------- Interactive 2: read load -> :counters -> hit rate (pure over a fixed dataset) ---------- */
-  // Each load is a fixed sequence of reads. 'herd' models eight concurrent misses on one cold id.
+  // Each load is a fixed sequence of emoji-set reads. 'herd' models eight concurrent misses on one cold id.
   var LOADS = {
-    hot:   { seq: ['BTC', 'BTC', 'BTC', 'BTC', 'BTC', 'BTC', 'BTC', 'BTC'], concurrent: false },
-    mixed: { seq: ['BTC', 'BTC', 'ETH', 'BTC', 'SOL', 'BTC', 'ETH', 'BTC'], concurrent: false },
-    herd:  { seq: ['BTC', 'BTC', 'BTC', 'BTC', 'BTC', 'BTC', 'BTC', 'BTC'], concurrent: true } // all eight miss at once
+    hot:   { seq: ['STARS', 'STARS', 'STARS', 'STARS', 'STARS', 'STARS', 'STARS', 'STARS'], concurrent: false },
+    mixed: { seq: ['STARS', 'STARS', 'FOOD', 'STARS', 'FLAGS', 'STARS', 'FOOD', 'STARS'], concurrent: false },
+    herd:  { seq: ['STARS', 'STARS', 'STARS', 'STARS', 'STARS', 'STARS', 'STARS', 'STARS'], concurrent: true } // all eight miss at once
   };
   // pure: (load name, row TTL in reads) -> { hits, misses, fills, coalesced, reads }
   function runLoad(name, ttl) {

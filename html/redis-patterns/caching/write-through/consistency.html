@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.02.2 · The consistency guarantee · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.02.2 — the consistency guarantee of write-through: why a read immediately after a write cannot be stale. Both layers were set under one TTL, framed with the write's mint-time version, so a read-after-write serves the value the write produced; across writers, EchoCache.Coherence.newer? keeps order newer-wins. The engine is Valkey.">
+<meta name="description" content="R1.02.2 — the consistency guarantee of write-through: why a read immediately after a write cannot be stale. Both layers were set under one TTL, framed with the write's mint-time version, so a read-after-write serves the value the write produced; across writers, EchoStore.Coherence.newer? keeps order newer-wins. The engine is Valkey.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -212,7 +212,7 @@ div.door:hover{box-shadow:none}
     <nav class="topnav" aria-label="Page sections">
       <a href="#claim">The guarantee</a>
       <a href="#read">A read after a write</a>
-      <a href="#apply">On EchoCache</a>
+      <a href="#apply">On EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -226,8 +226,8 @@ div.door:hover{box-shadow:none}
       <h1>The consistency <span class="hns">guarantee</span>.</h1>
       <p class="lede">A read that follows a write-through write cannot be stale &#8212; because both layers were written
       on the same path, under one TTL, framed with the write&#8217;s mint-time version.</p>
-      <p class="heronote">Grounding: the <code>version &lt;&gt; value</code> frame in echo/apps/echo_cache (table.ex) +
-      <code>EchoCache.Coherence.newer?/2</code> (coherence.ex) &#8212; the engine is Valkey.</p>
+      <p class="heronote">Grounding: the <code>version &lt;&gt; value</code> frame in echo/apps/echo_store (table.ex) +
+      <code>EchoStore.Coherence.newer?/2</code> (coherence.ex) &#8212; the engine is Valkey.</p>
 
       <figure class="anatomy" aria-labelledby="tlCap">
         <figcaption id="tlCap"><b>Move the read along the timeline.</b> Select where the read happens to see which
@@ -280,7 +280,7 @@ div.door:hover{box-shadow:none}
         <code>version &lt;&gt; value</code> &#8212; a 14-byte branded mint-time version in front of the bytes. The
         version is not for the read after this write (that read is fresh because both layers were set in the one call);
         it is for the <em>next</em> writer&#8217;s late message. A coherence message compares versions and drops a row
-        only when the incoming version is newer (<code>EchoCache.Coherence.newer?/2</code>), so a late stale
+        only when the incoming version is newer (<code>EchoStore.Coherence.newer?/2</code>), so a late stale
         invalidation can never erase a newer row. Freshness on the write path; newer-wins across writers.</p>
         <p>Contrast cache-aside, which invalidates the cache on a write rather than updating it. After a cache-aside
         write, the cache is empty (or, if invalidation is deferred, briefly stale); the next read takes a miss,
@@ -333,20 +333,20 @@ div.door:hover{box-shadow:none}
     <section id="apply">
       <div class="sech">
         <span class="sno">&#167;3</span>
-        <h2>The guarantee on EchoCache</h2>
+        <h2>The guarantee on EchoStore</h2>
         <span class="ssrc">table.ex &#183; coherence.ex &#183; verbatim</span>
       </div>
       <div class="prose">
-        <p>Take an instrument reference row that was updated. <code>EchoCache.Table.put</code> sets the L2 Valkey row
+        <p>Take an emoji-set row that was updated. <code>EchoStore.Table.put</code> sets the L2 Valkey row
         and the L1 ETS table on the same call; the write returns once both are done. A read of the same id is served
         from the cache and matches what was written &#8212; there is no moment after the write where the cache could
         hand back the old value.</p>
       </div>
-      <pre class="code"><span style="color:var(--b-dim)"># echo/apps/echo_cache — a write-through put, then a fetch.</span>
-EchoCache.Table.<b>put</b>(:instruments, "AST0NgWEfAEJfs", new_value)
+      <pre class="code"><span style="color:var(--b-dim)"># echo/apps/echo_store — a write-through put, then a fetch.</span>
+EchoStore.Table.<b>put</b>(:cm_emojisets, "EMS0ODMggk1d5N", new_value)
 <span style="color:var(--b-dim)">#   handle_call sets L2 (SET … PX) then L1 (insert) under one TTL  -&gt;  {:reply, :ok}</span>
 
-EchoCache.Table.<b>fetch</b>(:instruments, "AST0NgWEfAEJfs")
+EchoStore.Table.<b>fetch</b>(:cm_emojisets, "EMS0ODMggk1d5N")
 <span style="color:var(--b-dim)">#   {:ok, new_value, :hit}   — the L1 row holds the value the put produced</span></pre>
       <div class="prose">
         <p>Across writers, the value&#8217;s framed version is what keeps order. The coherence comparison reads the
@@ -358,9 +358,9 @@ EchoCache.Table.<b>fetch</b>(:instruments, "AST0NgWEfAEJfs")
         <span class="dr">the application &#183; newer-wins across writers</span>
         <h3>The framed version, compared</h3>
         <p>The value carries a mint-time version; a coherence message drops a row only when its version is newer
-        &#8212; <code>EchoCache.Coherence.newer?/2</code>, quoted from the as-built coherence module:</p>
+        &#8212; <code>EchoStore.Coherence.newer?/2</code>, quoted from the as-built coherence module:</p>
         <figure class="frozen">
-          <figcaption>echo/apps/echo_cache/lib/echo_cache/coherence.ex &#183; newer?/2 &#183; verbatim<span class="tag">as-built</span></figcaption>
+          <figcaption>echo/apps/echo_store/lib/echo_store/coherence.ex &#183; newer?/2 &#183; verbatim<span class="tag">as-built</span></figcaption>
           <pre><span class="fd"># Mint-order comparison across kinds: true when `a` was minted after `b`.</span>
 def newer?(&lt;&lt;_::binary-3, pa::binary-11&gt;&gt;,
            &lt;&lt;_::binary-3, pb::binary-11&gt;&gt;), do: <b>pa &gt; pb</b>
@@ -376,7 +376,7 @@ def newer?(&lt;&lt;_::binary-3, pa::binary-11&gt;&gt;,
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
+          <span class="lbl">its EchoStore application</span>
           <p>A <code>fetch</code> after a <code>put</code> returns the value the put produced; both layers were set
           under one TTL, and the framed version lets <code>Coherence.newer?/2</code> keep order newer-wins across
           writers.</p>
@@ -443,7 +443,7 @@ def newer?(&lt;&lt;_::binary-3, pa::binary-11&gt;&gt;,
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>
@@ -539,9 +539,9 @@ def newer?(&lt;&lt;_::binary-3, pa::binary-11&gt;&gt;,
 
   /* ---------- Interactive 2: classify a read after a write (pure over a fixed dataset) ---------- */
   var SCENARIOS = {
-    hit:        { redis: 'GET ecc:{instruments}:<id> -> the new value', result: 'fresh', why: 'both layers were written before the write returned' },
-    concurrent: { redis: 'GET ecc:{instruments}:<id> -> old or new, never torn', result: 'consistent', why: 'a single-key GET returns one whole value, the before or the after, not a mix' },
-    expired:    { redis: 'GET ecc:{instruments}:<id> -> nil (miss), then re-read source', result: 'fresh', why: 'the PX expired, so the loader re-reads the still-current source and backfills' }
+    hit:        { redis: 'GET ecc:{cm_emojisets}:<id> -> the new value', result: 'fresh', why: 'both layers were written before the write returned' },
+    concurrent: { redis: 'GET ecc:{cm_emojisets}:<id> -> old or new, never torn', result: 'consistent', why: 'a single-key GET returns one whole value, the before or the after, not a mix' },
+    expired:    { redis: 'GET ecc:{cm_emojisets}:<id> -> nil (miss), then re-read source', result: 'fresh', why: 'the PX expired, so the loader re-reads the still-current source and backfills' }
   };
   // pure: scenario key -> readout text
   function describeScenario(sc) {

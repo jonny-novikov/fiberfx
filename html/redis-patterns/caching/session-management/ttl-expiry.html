@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.06.2 · TTL expiry · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.06.2 — session expiry: an absolute deadline fixed at sign-in against a sliding window refreshed by an EXPIRE on each access, so active users stay in and idle ones fall out. Plus the lazy and active eviction that makes a TTL real, and EchoCache's jittered expires_at and sweeper. Grounded in EchoCache.Table — SET … PX, the jittered clock, and the :sweep handler.">
+<meta name="description" content="R1.06.2 — session expiry: an absolute deadline fixed at sign-in against a sliding window refreshed by an EXPIRE on each access, so active users stay in and idle ones fall out. Plus the lazy and active eviction that makes a TTL real, and EchoStore's jittered expires_at and sweeper. Grounded in EchoStore.Table — SET … PX, the jittered clock, and the :sweep handler.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -211,7 +211,7 @@ dl.deflist dd{color:var(--b-ink)}
     <nav class="topnav" aria-label="Page sections">
       <a href="#two">Absolute vs sliding</a>
       <a href="#evict">How a key is reclaimed</a>
-      <a href="#echocache">On EchoCache</a>
+      <a href="#echocache">On EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -225,7 +225,7 @@ dl.deflist dd{color:var(--b-ink)}
       <h1>A deadline that <span class="hns">slides</span>.</h1>
       <p class="lede">An absolute TTL ends the session at a fixed time from sign-in. A sliding TTL refreshes the deadline
       on each request, so <b>active users stay in and idle ones fall out</b>.</p>
-      <p class="heronote">Grounding: echo/apps/echo_cache/lib/echo_cache/table.ex (SET&#8230;PX, the jittered expires_at/1,
+      <p class="heronote">Grounding: echo/apps/echo_store/lib/echo_store/table.ex (SET&#8230;PX, the jittered expires_at/1,
       the :sweep handler) &#8212; the deadline the store enforces.</p>
 
       <figure class="anatomy" aria-labelledby="modeCap">
@@ -328,11 +328,11 @@ dl.deflist dd{color:var(--b-ink)}
     <section id="echocache">
       <div class="sech">
         <span class="sno">&#167;3</span>
-        <h2>The deadline on EchoCache</h2>
+        <h2>The deadline on EchoStore</h2>
         <span class="ssrc">table.ex:290, :484, :350 &#183; verbatim</span>
       </div>
       <div class="prose">
-        <p>EchoCache writes its L2 row with the TTL in the same command &#8212; <code>SET ecc:{&lt;table&gt;}:&lt;id&gt;
+        <p>EchoStore writes its L2 row with the TTL in the same command &#8212; <code>SET ecc:{&lt;table&gt;}:&lt;id&gt;
         (version&lt;&gt;value) PX ttl_ms</code> (<code>table.ex:290</code>) &#8212; so value and deadline land atomically;
         a session is a TTL&#8217;d row and the <code>PX</code> expiry is its lifetime. A re-<code>put</code> on the next
         request re-stamps the row with a fresh deadline, the sliding-window move.</p>
@@ -343,7 +343,7 @@ dl.deflist dd{color:var(--b-ink)}
         clocks, each layer sovereign over its own staleness. The functional-Elixir and OTP craft behind the cache is the
         <a href="/elixir">/elixir</a> course; this dive is the deadline the store enforces.</p>
       </div>
-      <pre class="code"><span class="cmt"># EchoCache.Table — L2 row written with its expiry, value and deadline in one command (table.ex:290)</span>
+      <pre class="code"><span class="cmt"># EchoStore.Table — L2 row written with its expiry, value and deadline in one command (table.ex:290)</span>
 SET ecc:{sessions}:SES0KH... <span class="str">&lt;version&lt;&gt;value&gt;</span> PX <span class="str">1800000</span>
 
 <span class="cmt"># L1 expiry is jittered, so a cohort filled together never expires together (table.ex:484)</span>
@@ -373,7 +373,7 @@ the L2 row                     SET &#8230; PX, PTTL 300 ms of 300</pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
+          <span class="lbl">its EchoStore application</span>
           <p>The L2 row carries <code>PX</code> on the server&#8217;s clock; the L1 copy carries a jittered
           <code>expires_at</code> and a <code>:sweep</code> handler reclaims the dead rows &#8212; two clocks, neither
           trusting the other&#8217;s watch.</p>
@@ -397,7 +397,7 @@ the L2 row                     SET &#8230; PX, PTTL 300 ms of 300</pre>
         <p>A session deadline is absolute when it is fixed at sign-in and sliding when an <code>EXPIRE</code> after each
         read pushes it a full window past now. Sliding keeps active users in and lets idle ones fall out. The engine makes
         the deadline real two ways: lazily, deleting an expired key the instant a command reads it, and actively, sweeping
-        never-read expired keys in the background. EchoCache adds a jittered L1 clock and its own sweeper. The next dive
+        never-read expired keys in the background. EchoStore adds a jittered L1 clock and its own sweeper. The next dive
         binds this deadline to the namespace it belongs to &#8212; keyed by a branded id, dropped on logout, refused at
         the kind gate.</p>
       </div>
@@ -414,7 +414,7 @@ the L2 row                     SET &#8230; PX, PTTL 300 ms of 300</pre>
           <h3 class="refgrp">Sources</h3>
           <ul>
             <li><a href="https://valkey.io/commands/expire/" rel="noopener">Valkey &mdash; <em>EXPIRE</em></a> &mdash; set a key&#8217;s time-to-live; the command rerun on each read to slide a session&#8217;s deadline, and the engine&#8217;s two reclamation paths.</li>
-            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key with <code>PX</code>; value and TTL in one command, the way <code>EchoCache.Table.put</code> writes L2.</li>
+            <li><a href="https://valkey.io/commands/set/" rel="noopener">Valkey &mdash; <em>SET</em></a> &mdash; set a key with <code>PX</code>; value and TTL in one command, the way <code>EchoStore.Table.put</code> writes L2.</li>
             <li><a href="https://redis.io/commands/ttl" rel="noopener">Redis &mdash; <em>TTL</em></a> &mdash; read a key&#8217;s remaining life in seconds; <code>-2</code> for a reclaimed key, <code>-1</code> for no deadline.</li>
             <li><a href="https://antirez.com/" rel="noopener">Sanfilippo, S. &mdash; <em>antirez weblog</em></a> &mdash; the Redis creator on expiry sampling and the cost of background eviction.</li>
           </ul>
@@ -446,7 +446,7 @@ the L2 row                     SET &#8230; PX, PTTL 300 ms of 300</pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        real echo data layer: EchoMQ backed by Valkey, EchoCache in front.</p>
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This module</p>

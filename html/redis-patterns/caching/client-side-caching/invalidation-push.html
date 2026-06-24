@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R1.04.2 · The invalidation push · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R1.04.2 — the invalidation push: when a tracked key changes, the server sends a RESP3 message naming the key to every connection holding it, and only those. The holders drop their copy and re-read lazily. Grounded in EchoCache's real Coherence.broadcast/4 PUBLISH on ecc:{table}:coh, the 29-byte coherence message, and the {:emq_push, [\"message\", …]} handler.">
+<meta name="description" content="R1.04.2 — the invalidation push: when a tracked key changes, the server sends a RESP3 message naming the key to every connection holding it, and only those. The holders drop their copy and re-read lazily. Grounded in EchoStore's real Coherence.broadcast/4 PUBLISH on ecc:{table}:coh, the 29-byte coherence message, and the {:emq_push, [\"message\", …]} handler.">
 <style>
 /* ============ The redis contract sheet ============
    The BCS identity (html/bcs/index.html) with the redis-red accent.
@@ -210,7 +210,7 @@ div.door:hover{box-shadow:none}
     <nav class="topnav" aria-label="Page sections">
       <a href="#frame">The message</a>
       <a href="#holder">The holder</a>
-      <a href="#applied">In EchoCache</a>
+      <a href="#applied">In EchoStore</a>
       <a href="#refs">References</a>
     </nav>
   </div>
@@ -233,14 +233,14 @@ div.door:hover{box-shadow:none}
       <h1>The invalidation <span class="hns">push</span>.</h1>
       <p class="lede">A tracked key changes; the server pushes its name to every connection holding it, and only those.
       The near caches <b>drop their copy</b>.</p>
-      <p class="heronote">Grounding: real RESP3 push frames &#183; echo_cache/coherence.ex (broadcast/4) &#183;
-      echo_cache/table.ex (the push handler) &#183; content/bcs4.2.md (the lanes, measured).</p>
+      <p class="heronote">Grounding: real RESP3 push frames &#183; echo_store/coherence.ex (broadcast/4) &#183;
+      echo_store/table.ex (the push handler) &#183; content/bcs4.2.md (the lanes, measured).</p>
 
       <figure class="anatomy" aria-labelledby="fanCap">
         <figcaption id="fanCap"><b>Change a key, see who gets the push.</b> Select a key that changes; only the
         connections holding it light up and receive the message.</figcaption>
         <div class="segbar" id="changeSel" role="group" aria-label="Which key changes">
-          <button type="button" data-key="instr:AAPL" aria-pressed="false">SET instr:AAPL</button>
+          <button type="button" data-key="set:EMS9q" aria-pressed="false">SET set:EMS9q</button>
           <button type="button" data-key="flag:halt" aria-pressed="false">SET flag:halt</button>
           <button type="button" data-key="cfg:limits" aria-pressed="false">DEL cfg:limits</button>
         </div>
@@ -252,10 +252,10 @@ div.door:hover{box-shadow:none}
 
           <g class="conn" data-conn="conn 7"><rect x="20" y="110" width="120" height="52" rx="8"></rect></g>
           <text class="nlbl" x="80" y="130">conn 7</text>
-          <text class="nsub" x="80" y="146">instr:AAPL &#183; flag:halt</text>
+          <text class="nsub" x="80" y="146">set:EMS9q &#183; flag:halt</text>
           <g class="conn" data-conn="conn 9"><rect x="170" y="110" width="120" height="52" rx="8"></rect></g>
           <text class="nlbl" x="230" y="130">conn 9</text>
-          <text class="nsub" x="230" y="146">instr:AAPL</text>
+          <text class="nsub" x="230" y="146">set:EMS9q</text>
           <g class="conn" data-conn="conn 12"><rect x="320" y="110" width="120" height="52" rx="8"></rect></g>
           <text class="nlbl" x="380" y="130">conn 12</text>
           <text class="nsub" x="380" y="146">cfg:limits</text>
@@ -333,16 +333,16 @@ div.door:hover{box-shadow:none}
     <section id="applied">
       <div class="sech">
         <span class="sno">&#167;3</span>
-        <h2>The broadcast lane in EchoCache</h2>
-        <span class="ssrc">echo_cache/coherence.ex &#183; bcs4.2</span>
+        <h2>The broadcast lane in EchoStore</h2>
+        <span class="ssrc">echo_store/coherence.ex &#183; bcs4.2</span>
       </div>
       <div class="prose">
-        <p>EchoCache rides this push over plain pub/sub, and adds one byte-field a bare invalidation lacks: the
-        writer's mint-time version. A writer that changes an instrument row publishes the change on the table's channel
+        <p>EchoStore rides this push over plain pub/sub, and adds one byte-field a bare invalidation lacks: the
+        writer's mint-time version. A writer that changes an emoji-set row publishes the change on the table's channel
         &#8212; the real <code>Coherence.broadcast/4</code> &#8212; and every subscribing table receives the push and
         applies it newer-wins in its owner.</p>
       </div>
-      <pre class="code"><span class="cmt"># echo/apps/echo_cache/lib/echo_cache/coherence.ex</span>
+      <pre class="code"><span class="cmt"># echo/apps/echo_store/lib/echo_store/coherence.ex</span>
 def channel(table), do: <b>"ecc:{" &lt;&gt; table &lt;&gt; "}:coh"</b>
 def payload(&lt;&lt;_::binary-14&gt;&gt; = id, &lt;&lt;_::binary-14&gt;&gt; = version), do: id &lt;&gt; ":" &lt;&gt; version
 
@@ -350,7 +350,7 @@ def broadcast(conn, table, id, version) do
   Connector.command(conn, [<b>"PUBLISH"</b>, channel(table), payload(id, version)])
 end
 
-<span class="cmt"># echo/apps/echo_cache/lib/echo_cache/table.ex — the holder applies the push</span>
+<span class="cmt"># echo/apps/echo_store/lib/echo_store/table.ex — the holder applies the push</span>
 def handle_info({:emq_push, ["message", _channel, payload]}, state) do
   case Coherence.parse(payload) do
     {:ok, id, version} -&gt; Ring.publish(state.ring, {id, version})
@@ -392,7 +392,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
         </div>
         <div class="arrow" aria-hidden="true">&#8594;</div>
         <div class="cell elix">
-          <span class="lbl">its EchoCache application</span>
+          <span class="lbl">its EchoStore application</span>
           <p><code>Coherence.broadcast/4</code> PUBLISHes the 29-byte message on <code>ecc:{&lt;table&gt;}:coh</code>;
           the holder's <code>{:emq_push, ["message", &#8230;]}</code> handler drops L1 newer-wins.</p>
         </div>
@@ -442,7 +442,7 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
       <div class="foot-brand">
         <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
         <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
-        BCS build: EchoMQ backed by Valkey, EchoCache in front.</p>
+        BCS build: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">Chapters</p>
@@ -487,8 +487,8 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
   /* ---------- hero: change a key, see who gets the push (pure over a fixed dataset) ---------- */
   // Which connections hold which keys (fixed dataset).
   var HOLDINGS = {
-    'conn 7':  ['instr:AAPL', 'flag:halt'],
-    'conn 9':  ['instr:AAPL'],
+    'conn 7':  ['set:EMS9q', 'flag:halt'],
+    'conn 9':  ['set:EMS9q'],
     'conn 12': ['cfg:limits']
   };
   var CONNS = ['conn 7', 'conn 9', 'conn 12'];
@@ -523,14 +523,14 @@ the guarantee costs          <b>2.1 times the latency</b></pre>
   changeButtons.forEach(function (b) {
     b.addEventListener('click', function () { setChange(b.getAttribute('data-key')); });
   });
-  setChange('instr:AAPL'); // initial render — correct without interaction
+  setChange('set:EMS9q'); // initial render — correct without interaction
 
   /* ---------- content: step a holder's state through one invalidation (pure over a fixed dataset) ---------- */
   var STATES = {
-    fresh:   { step: 1, label: 'holding', local: 'instr:AAPL cached locally', reads: 'served from memory, no command sent', observes: 'fast, current value' },
-    push:    { step: 2, label: 'push arrives', local: 'instr:AAPL still cached, now suspect', reads: 'a RESP3 invalidate instr:AAPL frame arrives unsolicited', observes: 'nothing yet — the push is internal' },
-    dropped: { step: 3, label: 'copy dropped', local: 'instr:AAPL removed from the local cache', reads: 'no local copy; next read will miss', observes: 'nothing yet — drop is lazy, no eager re-read' },
-    reread:  { step: 4, label: 're-read', local: 'instr:AAPL fetched once and re-cached', reads: 'one GET to Valkey, then tracked again', observes: 'one slower read, then fast and current again' }
+    fresh:   { step: 1, label: 'holding', local: 'set:EMS9q cached locally', reads: 'served from memory, no command sent', observes: 'fast, current value' },
+    push:    { step: 2, label: 'push arrives', local: 'set:EMS9q still cached, now suspect', reads: 'a RESP3 invalidate set:EMS9q frame arrives unsolicited', observes: 'nothing yet — the push is internal' },
+    dropped: { step: 3, label: 'copy dropped', local: 'set:EMS9q removed from the local cache', reads: 'no local copy; next read will miss', observes: 'nothing yet — drop is lazy, no eager re-read' },
+    reread:  { step: 4, label: 're-read', local: 'set:EMS9q fetched once and re-cached', reads: 'one GET to Valkey, then tracked again', observes: 'one slower read, then fast and current again' }
   };
   // pure: state key -> readout text
   function describeState(st) {
