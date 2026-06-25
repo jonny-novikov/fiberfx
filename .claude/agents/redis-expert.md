@@ -100,7 +100,7 @@ on **every** page even if your per-page brief omits them — they are the parts 
    This is the course's reason to exist. Ground every pattern in the **real as-built echo data layer** —
    `echo/apps/echo_mq` (EchoMQ — `Jobs`/`Lanes`/`Consumer`/`Keyspace` + the inline Lua scripts; the braced
    `emq:{q}:` keyspace), `echo/apps/echo_store` (EchoStore — `Ring`/`Table`/`Journal`/`Coherence`),
-   `echo/apps/echo_wire` (the EchoWire connector — `EchoMQ.Connector`, EVALSHA-first, the `echomq:2.0.0` version
+   `echo/apps/echo_wire` (the EchoWire connector — `EchoMQ.Connector`, EVALSHA-first, the `echomq:3.0.0` version
    fence) — and the **codemojex** consumer (`echo/apps/codemojex` — `Codemojex.Guesses` /
    `Codemojex.Board` / `Codemojex.ScoreWorker`, design corpus `echo/apps/codemojex/`), quoted only from what the roadmap's
    **grounding map** and the reframe contract's **figure inventory** name — the as-built code above plus the
@@ -118,7 +118,7 @@ on **every** page even if your per-page brief omits them — they are the parts 
    functional-Elixir & OTP craft behind the echo umbrella". **The no-BullMQ + naming law:** the course contains
    **NO mention of BullMQ at all** — never "BullMQ-compatible", never the `bull:` keyspace, never bullmq.io in
    Sources, **never Dragonfly**; the scrub greps (`bullmq|bull:|dragonfly`) must be **unconditionally empty**;
-   write **"EchoMQ"**, never "EchoMQ 2.0" as a recurring label (`echomq:2.0.0` only as a quoted wire string inside
+   write **"EchoMQ"**, never "EchoMQ 2.0" or "EchoMQ 3.x" as a recurring label (`echomq:3.0.0` only as a quoted wire string inside
    a frozen figure); Valkey is the only engine named (Redis permitted only as the historical/plain-Redis matrix
    row). `redlock` and `probabilistic-data-structures` are taught as **contrasts**, not as EchoMQ features. EchoMQ
    implementation depth (the full v2 script bundle, the fence internals, the protocol governance) is the dedicated

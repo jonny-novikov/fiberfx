@@ -91,11 +91,13 @@ A. **Valkey 9 is the only engine — never Dragonfly.** The owned wire's placeme
    `https://valkey.io/topics/cluster-spec/` (or `commands/cluster-keyslot/`), never a `dragonflydb.io` page or a
    `--lock_on_hashtags` flag. Scrub: `grep -riE 'dragonfly' <page>` is **0**.
 
-B. **The wire version is `echomq:2.4.2`** — the as-built `@wire_version`
-   (`echo/apps/echo_mq/lib/echo_mq/stream_consumer.ex`). It is **not** `echomq:2.0.0` (the retired fork label) and
-   **not** `3.0.0` ("3.x" / "Stream Tier 3.0" is the *delivery* name; the wire stamp has not cut over). echomq prose
-   carries **no version labels** (the echo-mq-writer as-shipped rule); where a `@wire_version` constant must appear,
-   use the real one. Scrub: `grep -nE 'echomq:2\.0\.0|EchoMQ 2\.0' <page>` is **0**.
+B. **The wire version is `echomq:3.0.0`** — the as-built `@wire_version`
+   (`echo/apps/echo_wire/lib/echo_mq/connector.ex:35`). The Stream Tier (EchoMQ 3.x) is shipped and the wire stamp
+   has cut over, so `echomq:3.0.0` is the real constant; `echomq:2.0.0` (the retired fork label) and `echomq:2.4.2`
+   (a superseded pin) are both **stale** — never teach them. echomq/redis/bcs prose carries **no version labels** (the
+   echo-mq-writer as-shipped rule) — never "EchoMQ 2.0", "EchoMQ 3.0", "v1 line", "1.3.0", "three movements", or the
+   v1→v2 break narrative in narrative; where a `@wire_version` constant must appear, use `echomq:3.0.0`. Scrub:
+   `grep -nE 'echomq:2\.[0-9]\.[0-9]|EchoMQ [0-9]\.[0-9]|v1 line' <page>` is **0**.
 
 C. **Reachability before reconcile — retire orphaned legacy, don't polish it.** A consumer course can carry an older
    generation of pages still *served but unlinked* (the retired echomq E0–E8 numbering left `core/` + `substrate/`
@@ -118,10 +120,12 @@ For each page the run touches:
    cited `echo/apps` surface on disk and each `bcs.N.md` figure in its chapter before shipping.
 3. **Provenance discipline (the verbatim-figure rule).** The manuscript's worked examples are committed figures —
    keep them **verbatim** when quoting the manuscript (e.g. `bcs.2.md` teaches with the illustrative brands `PLR` /
-   `ROM`). A page's **own** consumer example uses the **live app's real brands** (`USR` · `RMM` · `RND` · `GES` ·
-   `JOB` · `TXN` · `CMD` · `NOT` · `EMS`) and real `Codemojex.*` surfaces. Do not rewrite a quoted manuscript figure
-   to the app's brands, and do not ground a page-own example in a manuscript-illustrative brand. (This is the same
-   discipline that kept the committed worked-queue figures intact during the redis re-home.)
+   `ROM`). A page's **own** consumer example uses the **live app's real brands**, verified via `generate!` on disk —
+   the cm.* rename made them `PLR` · `ROM` · `GAM` · `GES` · `JOB` · `TXN` · `SES` · `CMD` · `NOT` · `EMS`, so the
+   live `PLR`/`ROM` **coincide** with bcs.2's illustrative `PLR`/`ROM` (`USR`/`RMM`/`RND` are pre-rename and NOT
+   minted). Verify every page-own brand with `grep generate!("XXX") echo/apps/codemojex` rather than trusting a brand
+   list — and real `Codemojex.*` surfaces likewise. Do not rewrite a quoted manuscript figure to the app's brands.
+   (This is the same discipline that kept the committed worked-queue figures intact during the redis re-home.)
 4. **Gate + scrub** with the BCS calibration scrubs (§3) on top of the per-course gate.
 
 ## 3. The calibration scrubs (run on every touched page, on top of the per-course gate)
@@ -132,7 +136,7 @@ grep -rniE 'EchoCache|echo/apps/echo_cache'        $P && echo "DELTA2 FAIL" || e
 grep -rniE 'Exchange\.[A-Z]|echo/apps/exchange'    $P && echo "DELTA3 FAIL" || echo "codemojex OK"
 grep -rn  'bcs/content/bcs'                         $P && echo "DELTA1 FAIL (retired figure source)" || echo "bcs.N.md OK"
 grep -rniE 'dragonfly'                              $P && echo "ENGINE FAIL (Valkey 9 only — §1a.A)" || echo "Valkey OK"
-grep -rnE  'echomq:2\.0\.0|EchoMQ 2\.0'             $P && echo "VERSION FAIL (echomq:2.4.2, no label — §1a.B)" || echo "as-shipped OK"
+grep -rnE  'echomq:2\.[0-9]\.[0-9]|EchoMQ [0-9]\.[0-9]|v1 line'  $P && echo "VERSION FAIL (wire is echomq:3.0.0, no version label — §1a.B)" || echo "as-shipped OK"
 grep -rnoE '(EchoStore|EchoMQ|EchoWire|Codemojex)\.[A-Za-z.]+' $P | sort -u   # re-find each on disk in echo/apps/
 grep -rn  '234878118\|1704067200000\|USR0KHTOWnGLuC' $P   # id vectors, if cited, must be verbatim (delta 5)
 ```

@@ -61,14 +61,13 @@ A page conforms when **all** of these hold. **(A)** is the reframe-to-target wor
    `{:version_fence, got}`) or `Codemojex.Guesses`'s six closed errors. A `Portal.enroll`-style example → an
    `Codemojex.Guesses.submit/3` or `EchoWire`/`EchoMQ.Jobs` call. **Keep every URL slug** (e.g. an
    `…/redis-under-game` path stays — change human titles + labels, never the href).
-3. **BullMQ → ZERO.** No mention of BullMQ anywhere on a page. The v1 history is told without naming it ("EchoMQ
-   broke from its v1 line, now frozen at `1.3.0`"). Never the `bull:` keyspace, never `bullmq.io` in Sources,
+3. **BullMQ → ZERO.** No mention of BullMQ anywhere on a page. EchoMQ is taught present-tense, as the current system (no v1/2.0 history). Never the `bull:` keyspace, never `bullmq.io` in Sources,
    **never Dragonfly** (`echo/apps/codemojex` names Dragonfly the native primary — the reframe overrides it; **Valkey
-   only**). Always "EchoMQ" (never "EchoMQ 2.0" as a recurring label); `echomq:2.0.0` only as a quoted wire string.
+   only**). Always "EchoMQ" (no version label in prose); `echomq:3.0.0` (the as-built `@wire_version`) only as a quoted wire string.
 4. **Ground in the real as-built code — never a `.out`.** Re-ground every figure to the real surfaces:
    `echo/apps/echo_mq` (EchoMQ — `Jobs`/`Lanes`/`Consumer`/`Keyspace`, the `emq:{q}:<type>` builder, the Lua
    scripts), `echo/apps/echo_store` (EchoStore — `Ring`/`Table`/`Journal`/`Coherence`), `echo/apps/echo_wire`
-   (`EchoWire` + `EchoMQ.Connector`, the `echomq:2.0.0` fence), `echo/apps/codemojex` (the consumer). Supplement with
+   (`EchoWire` + `EchoMQ.Connector`, the `echomq:3.0.0` fence), `echo/apps/codemojex` (the consumer). Supplement with
    the committed BCS manuscript figures (`docs/echo/bcs/content/bcs3.*`, `bcs4.*`, `bcsA.md`) + `emq.md`. **`.out`
    rung transcripts are NOT course material** — never quote a `.out` file or foreground a "PASS N/N" gate dump as a
    page figure; teach the *pattern* from the code. Engine is **Valkey 9.1.0** (the live figure `bcsA.md` measured;

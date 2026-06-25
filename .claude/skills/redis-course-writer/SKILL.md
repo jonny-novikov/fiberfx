@@ -75,7 +75,7 @@ A course of interconnected **static HTML** pages: no framework, no runtime, no C
 fetched. The running grounding is the **real as-built echo data layer** — the code, never specs, **never `.out`
 files**: **EchoMQ** (`echo/apps/echo_mq/` — `Jobs` / `Lanes` / `Consumer` / `Keyspace` + the Lua scripts; the
 owned protocol, the braced `emq:{q}:` keyspace, every Lua key declared) **backed by Valkey** via the one owned
-client **EchoWire** (`echo/apps/echo_wire/` — `EchoWire`, `EchoMQ.Connector`, EVALSHA-first, the `echomq:2.0.0`
+client **EchoWire** (`echo/apps/echo_wire/` — `EchoWire`, `EchoMQ.Connector`, EVALSHA-first, the `echomq:3.0.0`
 version fence), with **EchoStore** in front (`echo/apps/echo_store/` — `Ring` / `Table` / `Journal` / `Coherence`;
 L1 ETS + L2 Valkey), worked through the **codemojex** consumer (`echo/apps/codemojex/`). Supplement with the
 committed BCS manuscript figures `docs/echo/bcs/content/bcs3.*` / `bcs4.*` / `bcsA.md` and the spec
@@ -84,7 +84,7 @@ verbatim from a committed source. **`.out` rung transcripts are NOT course mater
 a "PASS N/N" gate dump as a page figure — teach the PATTERN from the real code. **NO mention of BullMQ at all:**
 the course contains zero BullMQ references; never "BullMQ-compatible", never a "lineage note", never the `bull:`
 keyspace, never bullmq.io in Sources, **never Dragonfly** — the engine is **Valkey only**. Always write
-**"EchoMQ"** — never "EchoMQ 2.0" as a recurring label (`echomq:2.0.0` appears only as a quoted wire string inside
+**"EchoMQ"** — no version label in prose ("EchoMQ 2.0"/"EchoMQ 3.0"/"v1 line" all out); `echomq:3.0.0` (the as-built `@wire_version`) appears only as a quoted wire string inside
 a frozen figure). The queue, coordination, and time families ground in `echo/apps/echo_mq/`; the cache family in
 `echo/apps/echo_store/` (and `bcs4.*`); modeling grounds in clean standalone examples. Where a chapter's deeper
 implementation belongs to the protocol itself, it links forward to the **dedicated EchoMQ course** (`/echomq`).

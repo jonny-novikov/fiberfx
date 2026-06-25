@@ -79,7 +79,7 @@ A page conforms when **both** hold:
    grep -rniE 'Exchange\.[A-Z]|echo/apps/exchange' $D/  # delta 3 targets
    grep -rn  'bcs/content/bcs'                     $D/   # delta 1 targets (retired figure source)
    grep -rniE 'dragonfly'                          $D/   # §1a.A — Valkey 9 only; reframe to Cluster hash-slots
-   grep -rnE  'echomq:2\.0\.0|EchoMQ 2\.0'         $D/   # §1a.B — the wire is echomq:2.4.2, no version label
+   grep -rnE  'echomq:2\.[0-9]\.[0-9]|EchoMQ [0-9]\.[0-9]|v1 line' $D/   # §1a.B — the wire is echomq:3.0.0, no version label
    grep -rliE 'ink:#0a0e1a|Cormorant|fonts\.googleapis' $D/   # R-chapter only: still dark-editorial → re-skin
    ls -R $D 2>/dev/null || echo "absent → build-to-target / consider /bcs-author"
    ```
@@ -143,7 +143,7 @@ for p in $(/usr/bin/find $D -name '*.html'); do printf "%s " "$p"; go/jonnify-cm
 /usr/bin/grep -rniE 'Exchange\.[A-Z]|echo/apps/exchange' $D/ && echo "DELTA3 FAIL" || echo "codemojex OK"
 /usr/bin/grep -rn  'bcs/content/bcs'                     $D/ && echo "DELTA1 FAIL" || echo "bcs.N.md OK"
 /usr/bin/grep -rniE 'dragonfly'                          $D/ && echo "ENGINE FAIL (Valkey 9 only — §1a.A)" || echo "Valkey OK"
-/usr/bin/grep -rnE  'echomq:2\.0\.0|EchoMQ 2\.0'         $D/ && echo "VERSION FAIL (echomq:2.4.2, no label — §1a.B)" || echo "as-shipped OK"
+/usr/bin/grep -rnE  'echomq:2\.[0-9]\.[0-9]|EchoMQ [0-9]\.[0-9]|v1 line' $D/ && echo "VERSION FAIL (wire is echomq:3.0.0, no label — §1a.B)" || echo "as-shipped OK"
 /usr/bin/grep -rnoE '(EchoStore|EchoMQ|EchoWire|Codemojex)\.[A-Za-z.]+' $D/ | sort -u   # re-find each on disk in echo/apps/
 /usr/bin/grep -rn '234878118\|1704067200000' $D/        # delta 5: if id vectors cited, verbatim only
 ```

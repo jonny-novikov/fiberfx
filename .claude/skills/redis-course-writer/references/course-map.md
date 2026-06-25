@@ -74,8 +74,7 @@ implementation *depth* (the full Lua bundle, the version-fence internals, the pr
 dedicated **EchoMQ course** (`/echomq`); chapters R2–R6 and R8 link forward to it. Never fabricate a Redis/Valkey
 command, Lua script, EchoMQ module, or echo-data-layer / `Codemojex.*` surface — **verify on disk in
 `echo/apps/`**. **NO mention of BullMQ at all:** the course contains zero BullMQ references — no lineage note, never
-"BullMQ-compatible", never the `bull:` keyspace, never bullmq.io in Sources, never "EchoMQ 2.0" as a recurring
-label, **never Dragonfly** (the engine is **Valkey only**). `redlock` and `probabilistic-data-structures` are
+"BullMQ-compatible", never the `bull:` keyspace, never bullmq.io in Sources, no version label in prose (no "EchoMQ 2.0"/"EchoMQ 3.0"), **never Dragonfly** (the engine is **Valkey only**). `redlock` and `probabilistic-data-structures` are
 taught as **contrasts**, not as EchoMQ features.
 
 ## Resume point

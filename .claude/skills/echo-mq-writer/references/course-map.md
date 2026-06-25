@@ -52,9 +52,9 @@ Routes are **named by section** (route-rename authority granted). `/echomq` is f
 | **Overview** | `/echomq` (home + `/echomq/overview`) | one system; the three pillars; the protocol below the line (why it's polyglot + coherent); Elixir-canonical; the Redis-Patterns door; the BCS-family implications | `echo_mq.md` + `emq.roadmap.md` (thesis) |
 | **The Protocol** | `/echomq/protocol` | the substrate all three pillars share: the owned keyspace `emq:{q}:`, the `{q}` hashtag, the `{emq}:` reserve; the record/job hash & fields; the Lua layer & EVALSHA (*scripts ARE the protocol*); immutability + branded ids (the 14-byte gate) | `EchoMQ.Keyspace` + the inline `EchoMQ.Script.new/2` Lua — **real code** |
 | **The Queue** | `/echomq/queue` | distribute work: the lifecycle/state machine; jobs · lanes · consumer; fair lanes/groups; batches; lifecycle controls (TTL/cancel/checkpoints); **flows** (orchestration) | `EchoMQ.{Jobs,Lanes,Consumer,Cancel,Stalled,Backoff,Repeat,Flows}` — **real code** |
-| **The Bus** | `/echomq/bus` | broadcast signals: pub/sub events; the retained replayable event log/streams; consumer groups + at-least-once; time-travel & the archive | `EchoMQ.Events` (**real code**) + the stream-tier **canon** (`emq.roadmap.md` §stream tier, `emq3.specs.md`) → **`[RECONCILE]`-shadowed** |
-| **The Cache** | `/echomq/cache` | serve reads: cache-aside two layers (L1 ETS / L2 Valkey); single-flight + jittered TTL; coherence — newer wins on the Bus | `EchoCache.{Table,Ring,Journal,Coherence,Keyspace,Shadow}` — **real code** |
-| **The Proof** | `/echomq/proof` | the whole system holds: the conformance suite; telemetry & tracing; the benchmark gate | `EchoMQ.{Conformance,Meter,Metrics}` — **real code** (benchmark partial) |
+| **The Bus** | `/echomq/bus` | broadcast signals: pub/sub events; the retained replayable event log/streams; consumer groups + at-least-once; time-travel & the archive | `EchoMQ.{Events,Stream,StreamConsumer,StreamRetention}` + `EchoStore.StreamArchive` — **real code (the Stream Tier shipped 2026-06-23; NOT `[RECONCILE]`-canon anymore).** **The Bus pillar is COMPLETE (2026-06-25):** landing + modules 01 (the-events-channel) · 02 (the-stream-log) · 03 (the-consumer-group, `EchoMQ.StreamConsumer`) · 04 (time-travel, `read_window/6`/`read_since/5`) · 05 (retention-and-archive, `trim/4` + `StreamRetention` + `StreamArchive` → `/echo-persistence`) + the workshop |
+| **The Cache** | `/echomq/cache` | serve reads: cache-aside two layers (L1 ETS / L2 Valkey); single-flight + jittered TTL; coherence — newer wins on the Bus | `EchoStore.{Table,Ring,Journal,Coherence,Keyspace}` — **real code** (was `EchoCache.*` + `.Shadow`, renamed/retired 2026-06-18). **COMPLETE 2026-06-25:** landing + 01 cache-aside-two-layers · 02 single-flight-and-jittered-ttl · 03 coherence (the `:coherence_drop` Lua + the two lanes + `newer?/2`) + the workshop |
+| **The Proof** | `/echomq/proof` | the whole system holds: the conformance suite; telemetry & the read plane; the benchmark frontier | `EchoMQ.{Conformance,Meter,Metrics}` — **real code**. **COMPLETE 2026-06-25:** landing + 01 the-conformance-suite · 02 telemetry-and-the-read-plane + the workshop; the **Benchmark** is a `soon` frontier card (no surface on disk — never built/invented) |
 
 Three levels per section: **Section** landing (`<section>/index.html`) → **Module** hub (`<section>/<module>/index.html`,
 ≥3 dives) → **Dive** (`<section>/<module>/<sub>.html`). Each section closes with a **workshop**. The Overview is the
@@ -174,8 +174,25 @@ named handle; the §3a frozen-tree scrub → 0; every `EchoMQ.*`/`EchoCache.*` r
   two-column References; md-first source-of-record; the redis-patterns door; never run git.
 
 ## 9. Resume point
-**Batch 1** builds the **Overview** + **The Protocol** (fresh, to this target), redesigns the content-map to the spine
-above, and reconciles redis **R1 caching** (door → `/echomq/cache`). **Forward program:** The Queue, The Bus (the big
-new construction — `Events` real + the stream tier canon, `[RECONCILE]`-heavy), The Cache, The Proof — each via its own
-`<chapter>.prompt.md`; then redis R2–R8 second-pass. **Iteration 2** sweeps the `[RECONCILE]` ledger against the
-shipped upstream stream tier.
+**Built:** the **Overview** + **The Protocol** + **The Queue** (all pillars), and **The Bus pillar — COMPLETE**
+(2026-06-25, via `docs/echo_mq/course/bus.prompt.md`): landing + **01 `the-events-channel`** · **02 `the-stream-log`**
+· **03 `the-consumer-group`** · **04 `time-travel`** · **05 `retention-and-archive`** + the **`workshop`**. All ground
+in the **real shipped Stream Tier** (NOT `[RECONCILE]`; the tier is on disk; no Lua — the verbs issue direct):
+`EchoMQ.{Events,Cancel}` (01); `EchoMQ.Stream` + `Stream.Id` (02); `EchoMQ.StreamConsumer` (03 — the reader law: the
+lazy `XGROUP CREATE … MKSTREAM` group door · drain-self-PEL then `XAUTOCLAIM` dead peers · the at-least-once
+order-theorem PEL exception); `EchoMQ.Stream.{read_window/6,read_since/5,minid_floor/1,maxid_ceil/1}` (04 — time IS an
+id position: `"<ms>-0"` floor / `"<ms>-<0x3FFFFF>"` ceil, exact edges; zero new Lua, delegates to `read/6`);
+`EchoMQ.Stream.trim/4` + `EchoMQ.StreamRetention` + `EchoStore.StreamArchive` (05 — retention as POLICY → the durable
+Graft floor at `@archive_base = 2^49`, the `W` watermark = a branded `EVT` id, fold-before-trim → the
+**`/echo-persistence`** door). The Bus landing **and** the echomq home Bus grid are relinked (all 6 cards `built`). The
+branded build stamp is **`EMQ`** course-wide (not `TSK`). **The Cache pillar — COMPLETE** (E4, 2026-06-25): landing + 01 `cache-aside-two-layers` · 02
+`single-flight-and-jittered-ttl` · 03 `coherence` (`EchoStore.Coherence` — "a message about a name", `newer?/2` the
+11-byte payload compare, the broadcast/job lanes via `Ring`/`Journal`, the `:coherence_drop` Lua → `/echo-persistence`)
++ the `workshop`. **The Proof pillar — COMPLETE** (E5, 2026-06-25): landing + 01 `the-conformance-suite`
+(`EchoMQ.Conformance` `scenarios/0`/`run/2`, no hard count) · 02 `telemetry-and-the-read-plane` (`EchoMQ.Meter` the
+zero-cost `:telemetry` surface + `EchoMQ.Metrics` the read plane) + the `workshop`; the **Benchmark** is a `soon`
+frontier card (no surface on disk — named, never built). **🏁 THE ECHOMQ COURSE IS COMPLETE — all six pillars built**
+(Overview · Protocol · Queue · Bus · Cache · Proof). **Next:** redis R2–R8 second-pass; the benchmark module if a
+bench surface ever lands. Author a
+pillar via `/bcs-author echomq <pillar> <module>` (or extend the pillar's `*.prompt.md` — the Bus MODULE 03/04/05 +
+WORKSHOP sections are the templates).

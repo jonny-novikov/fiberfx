@@ -64,16 +64,23 @@ The durable substrate beneath the volatile tiers (`bcs.5.md`, `bcs.preface.md` �
 ## 4. codemojex (delta 3 — the worked consumer)
 
 The live consumer of the same stack (EchoStore + EchoMQ + Postgres), `echo/apps/codemojex`, manuscript **B7**. Brands
-the live app mints: **USR · RMM · RND · GES · JOB · TXN · CMD · NOT · EMS**. Real surfaces (verify on disk before
+the live app mints (verified via `EchoData.BrandedId.generate!` on disk 2026-06-25): **PLR** (player) · **ROM** (room) ·
+**GAM** (game) · **GES** (guess) · **JOB** · **TXN** · **SES** · **CMD** · **NOT** · **EMS** — the cm.* GAM/ROM/PLR
+re-base; `USR`/`RMM`/`RND` are pre-rename names and are NOT codemojex brands. Real surfaces (verify on disk before
 citing — names below are the modules present, not a frozen API):
 
-`Codemojex.{Game, Board, Scoring, Ledger, Locks, RateLimiter, Store, Rooms, CommandWorker, NotificationWorker,
-Notifier, Telegram}` + the Phoenix web layer `codemojex_web` (`router.ex`, `channels/room_channel.ex`,
+`Codemojex.{Guesses, Board, Scoring, Settle, Rooms, Ledger, Locks, RateLimiter, Store, CommandWorker,
+NotificationWorker, Notifier, Telegram}` — the play/submit API is **`Codemojex.Guesses.submit/3`** (in `game.ex`),
+**not** `Codemojex.Game` (no such module; verified on disk 2026-06-25) + the Phoenix web layer `codemojex_web` (`router.ex`, `channels/room_channel.ex`,
 `controllers/game_controller.ex`). Keyspace `cm:*`; rides `emq:{q}:` for queues and `ecc:` / EchoStore for the cache.
 
-> **Provenance:** `bcs.2.md` teaches with the **illustrative** brands `PLR` / `ROM` (player / room). The **live app**
-> uses `USR` / `RMM` / `RND`. Quote a manuscript figure verbatim (keep `PLR`/`ROM` if you are quoting `bcs.2.md`);
-> ground a page-OWN example in the app's real brands + real `Codemojex.*` surfaces. Never cross the two.
+> **Provenance:** `bcs.2.md` teaches with the brands `PLR` / `ROM` (player / room); after the **cm.\* rename** the
+> **live app mints these same brands** — `PLR` / `ROM` / `GAM` (verified via `generate!` on disk) — so quoting a
+> `bcs.2.md` figure and grounding a page-OWN example in `PLR`/`ROM` now **coincide** (they are not different brand
+> sets). The real per-player-lane consumer call is `Codemojex.Guesses` → `EchoMQ.Lanes.enqueue(conn, "cm", player,
+> job, payload)` (`game.ex`: the lane is named by the player's `PLR`, so the bus rotates service across players —
+> the verbatim fair-lanes consumer for R6.02/R6.03). Do NOT invent a brand the app does not mint: `USR`/`RMM`/`RND`
+> are pre-rename names and are **not** codemojex brands (this misled an R6.03 author once — verify `generate!` on disk).
 
 ## 5. The two consumer courses — numbering + door map
 
@@ -89,8 +96,8 @@ The old pre-pillar `core/` + `substrate/` trees (retired E0–E8 numbering, citi
 `/echomq/{core,substrate,groups,batches,lifecycle,production}` no longer exist; `html/echomq/bus` is not yet built,
 so **E3 bus is build-to-target**. The retired **E0–E8** numbering does **not** apply here — `E<N>` is the
 six-section spine above, and a **section name** (`bus`, `cache`, `protocol`) is always accepted unambiguously.
-**Engine: Valkey 9 only — never Dragonfly; the as-built `@wire_version` is `echomq:2.4.2`** (`stream_consumer.ex`,
-not `2.0.0` and not `3.0.0`) — see [SKILL §1a](../SKILL.md).
+**Engine: Valkey 9 only — never Dragonfly; the as-built `@wire_version` is `echomq:3.0.0`** (`echo_wire/connector.ex`,
+not the stale `2.0.0`/`2.4.2`) — see [SKILL §1a](../SKILL.md).
 
 **The cross-course doors** (where the new direction adds or re-points an edge):
 

@@ -93,15 +93,14 @@ back to `subagent_type: "general-purpose"` (the redis-expert brief below is self
 - its **grounding artifact** from the grounding map, quoted VERBATIM from the **real as-built echo data layer** —
   `echo/apps/echo_mq` (EchoMQ — `Jobs`/`Lanes`/`Consumer`/`Keyspace` + the inline Lua; the braced `emq:{q}:`
   keyspace), `echo/apps/echo_store` (EchoStore — `Ring`/`Table`/`Journal`/`Coherence`), `echo/apps/echo_wire` (the
-  EchoWire connector — `EchoMQ.Connector`, EVALSHA-first, the `echomq:2.0.0` fence) — and the **codemojex**
+  EchoWire connector — `EchoMQ.Connector`, EVALSHA-first, the `echomq:3.0.0` fence) — and the **codemojex**
   consumer (`echo/apps/codemojex` — `Codemojex.Guesses`/`Codemojex.Board`/`Codemojex.ScoreWorker`), plus the committed
   BCS figures the reframe contract's **figure inventory** licenses (`docs/echo/bcs/content/bcs3.*` / `bcs4.*` /
   `bcsA.md` + `docs/echo_mq/emq.design.md`) — and the instruction to **re-find every figure on disk in its real
   source before citing**, to **never cite a `.out` rung transcript** (NOT course material), to invent nothing
   (no fabricated Redis/Valkey command, Lua script, EchoMQ module, or echo-data-layer/codemojex surface), and to obey
   the **no-BullMQ + naming law** (the course contains **NO mention of BullMQ at all**; never "BullMQ-compatible",
-  never the `bull:` keyspace, never bullmq.io, **never Dragonfly** — the engine is Valkey only; write "EchoMQ", never
-  "EchoMQ 2.0" as a recurring label);
+  never the `bull:` keyspace, never bullmq.io, **never Dragonfly** — the engine is Valkey only; write "EchoMQ", no version label in prose);
 - its **author source** `docs/redis-patterns/content/<section>/<pattern>.md.txt` (the
   [content-map](docs/redis-patterns/redis-patterns.content-map.md) names it) — **the content spine**: the hub LEADS
   with the source's opening summary as its `.lede`, then follows the source's `##` sections in the source's order
