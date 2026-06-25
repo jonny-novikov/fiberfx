@@ -16,8 +16,15 @@ if config_env() == :prod do
     System.get_env("SECRET_KEY_BASE") ||
       raise "environment variable SECRET_KEY_BASE is missing"
 
+  # The public host Phoenix uses to generate URLs and check socket origins. Driven by
+  # PHX_HOST (set in fly.toml) so a Fly app rename or a custom apex (e.g. codemoji.games)
+  # is a config change, not a code edit; falls back to the app's *.fly.dev host. TLS is
+  # terminated at Fly's edge, so the public URL is https on 443.
+  phx_host = System.get_env("PHX_HOST") || "codemojex.fly.dev"
+
   config :codemojex, CodemojexWeb.Endpoint,
     server: true,
+    url: [host: phx_host, port: 443, scheme: "https"],
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],
     secret_key_base: secret_key_base
 end
