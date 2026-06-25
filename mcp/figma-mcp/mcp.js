@@ -168,40 +168,6 @@ server.registerTool(
 );
 
 server.registerTool(
-  "get-batch-nodes",
-  {
-    title: "Get Batch Node Properties",
-    description: "Gets detailed properties for multiple nodes at once. More efficient than calling get-node-properties multiple times. Works entirely locally - no API key required.",
-    inputSchema: {
-      nodeIds: z.array(z.string())
-    },
-  },
-  async ({ nodeIds }) => {
-    const normalizedNodeIds = nodeIds.map(normalizeNodeId);
-    const result = await requestFigma('get-batch-nodes', { nodeIds: normalizedNodeIds });
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-  }
-);
-
-server.registerTool(
-  "export-batch-nodes",
-  {
-    title: "Export Batch Nodes as Images",
-    description: "Exports multiple nodes as images in one operation. More efficient than calling export-node multiple times. Works entirely locally - no API key required.",
-    inputSchema: {
-      nodeIds: z.array(z.string()),
-      format: z.enum(['PNG', 'SVG', 'JPG']).optional()
-    },
-  },
-  async ({ nodeIds, format }) => {
-    const resolvedFormat = (format || 'PNG').toUpperCase();
-    const normalizedNodeIds = nodeIds.map(normalizeNodeId);
-    const result = await requestFigma('export-batch-nodes', { nodeIds: normalizedNodeIds, format: resolvedFormat });
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-  }
-);
-
-server.registerTool(
   "check-bridge-status",
   {
     title: "Check Bridge Status",
