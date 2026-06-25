@@ -1,7 +1,7 @@
 # figl — enhance & deploy prompt (run on the WINDOWS Figma machine)
 
 > The authoritative scope for building the figma-local enhancement ladder. **Run this against the
-> Windows checkout `C:\dev\figma-mcp`** (the source of truth for the plugin + bridge) — *not on the
+> Windows checkout `C:\dev\jonnify\mcp\figma-mcp`** (the source of truth for the plugin + bridge) — *not on the
 > Mac*; the Mac cannot rebuild or reload the Figma plugin. The design and the ruled ADRs are in
 > [figl.design.md](figl.design.md); the ladder + invariants + seams in [figl.roadmap.md](figl.roadmap.md).
 > Implement **to the ADRs** (they carry the exact API surfaces and line citations) — this prompt
@@ -16,19 +16,19 @@
 
 Each step is tagged by locus. The Operator coordinates the two machines.
 
-- `[WIN]` — an agent/Claude Code session on the Windows machine, editing `C:\dev\figma-mcp`.
+- `[WIN]` — an agent/Claude Code session on the Windows machine, editing `C:\dev\jonnify\mcp\figma-mcp`.
 - `[FIGMA-manual]` — a human action in Figma Desktop (re-running the plugin); an agent cannot click it.
 - `[MAC]` — sync + reconnect on the Mac (the live `mcp.js` is `/Users/jonny/dev/jonnify/mcp/figma-mcp/mcp.js`).
 
 ## Preconditions (verify before any rung)
 
-1. `[WIN]` Bridge up: `pnpm bridge` running in `C:\dev\figma-mcp`; Figma Desktop open with the
+1. `[WIN]` Bridge up: `pnpm bridge` running in `C:\dev\jonnify\mcp\figma-mcp`; Figma Desktop open with the
    "Figma MCP Bridge" plugin showing **Connected to bridge**.
 2. `[MAC]` Reachable + connected: `curl http://192.168.3.120:3001/health` →
    `{"status":"ok","connected":true,"hasDocument":true}`.
 3. `[WIN]` Toolchain: `pnpm install` done; `tsc` available (the `build-plugin` script is
    `cd figma-plugin && tsc`, output `code.js` per the plugin manifest `main`).
-4. `[WIN]` Working tree clean on `C:\dev\figma-mcp` (so each rung is one reviewable change), and a
+4. `[WIN]` Working tree clean on `C:\dev\jonnify\mcp\figma-mcp` (so each rung is one reviewable change), and a
    way to sync `mcp.js` back to the Mac (git pull / scp / shared folder — per `docs/MAC-CLIENT.md`).
 
 ## Build & deploy primitives (the only commands you need)
@@ -115,7 +115,7 @@ harness, the handshake's advertised ⊆ backed assertion is the regression check
 
 ## Rollback
 
-Each rung is one change-set on `C:\dev\figma-mcp`. To roll back: revert the change-set,
+Each rung is one change-set on `C:\dev\jonnify\mcp\figma-mcp`. To roll back: revert the change-set,
 `build-plugin`, `[FIGMA-manual]` reload (and restart the bridge if `/health` changed), then
 `[MAC]` sync + reconnect. Because the plugin is the deployed artifact, *reverting the source is not
 enough* — you must rebuild and reload for the old `code.js` to take effect.
