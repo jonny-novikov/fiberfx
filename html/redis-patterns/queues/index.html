@@ -1,495 +1,473 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R3 · Reliable Queues — Redis Patterns Applied · jonnify</title>
-<meta name="description" content="The pivot chapter: a job is never lost. The reliable-queue family — an in-flight list under a lock (RPOPLPUSH wait→active), at-least-once with idempotent consumers (de:{id}), stalled recovery, the lifecycle as one atomic Lua move, and blocking pickup — grounded in EchoMQ's real worker fetch loop, with the door into the living EchoMQ course.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="description" content="The pivot chapter: a job is never lost. Six reliable-queue patterns grounded in EchoMQ's real leased state machine — EchoMQ.Jobs claim/reap on the server clock, the attempts fencing token, the inline Script.new Lua, the emq:{q}: keyspace — worked through codemojex's guess-command queue, with doors into the EchoMQ Queue pillar and the durable floor.">
 <style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
 :root{
-  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
-  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
-  --gold:#d4a85a; --gold-bright:#f0cd7f;
-  --blue:#5a87c4; --blue-bright:#9fc0ea;
-  --sage:#7ba387; --sage-bright:#a7c9b1;
-  --burgundy:#c4504c;
-  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
-  --redis:#d6584f; --redis-bright:#f2948c;
-  --line:#2a3252;
-  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --serif:"PT Serif", Georgia, serif;
-  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --measure:68ch;
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
 }
-*{box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{
-  margin:0; color:var(--cream); background:var(--ink);
-  font-family:var(--serif);
-  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
-  line-height:1.62; letter-spacing:.005em;
-  background-image:
-    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
-    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
-    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
-  background-attachment:fixed;
-}
-body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
-  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
-.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
-  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50}
 .skip:focus{left:0}
-::selection{background:var(--gold);color:var(--ink)}
-img,svg{max-width:100%}
-a{color:var(--gold-bright);text-decoration:none}
-a:hover{color:var(--cream)}
 
-/* ---- layout ---- */
-.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
-main{display:block}
-section{padding:clamp(2.6rem,6vw,4.6rem) 0}
-section + section{border-top:1px solid var(--line)}
-.prose{max-width:var(--measure)}
-.prose p{margin:0 0 1.05rem}
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
 
-/* ---- type ---- */
-h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
-  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
-h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
-h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
-h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
-h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
-.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
-  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
-  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
-.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
-  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
-  max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
-.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
-strong{color:var(--cream);font-weight:700}
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
 
-/* ---- header / footer ---- */
-.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
-  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
-.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
-.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
-  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
-.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
-.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
-.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
-  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
-.route-tag a{color:var(--gold);text-decoration:none}
-.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
-.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
-.route-tag .rcur{color:var(--gold-bright)}
-.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
-.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
-.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
-.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
-.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
-.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
-.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
-.foot-links{display:flex;flex-direction:column;gap:.45rem}
-.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
-.foot-links a:hover{color:var(--gold-bright)}
-.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
-.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
-@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
-@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
 
-/* ---- hero / crumbs ---- */
-.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
-.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
-  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
-.crumbs a{color:var(--cream-soft)}
-.crumbs .sep{opacity:.45}
-.crumbs .here{color:var(--gold)}
-.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
-.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
-.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+/* ---------- hero / crumbs ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
 
-/* ---- figures ---- */
-.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
-  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
-.fig svg{display:block;width:100%;height:auto}
-.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
-  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
-.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
-.door{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--redis);padding-left:.95rem;margin:1.5rem 0 0}
-.door b{color:var(--redis-bright)}
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.note{font-family:var(--mono);font-size:13px;color:var(--b-dim);border-left:3px solid var(--b-ts);padding-left:14px;margin:16px 0 0;max-width:78ch}
 
-/* ---- use-case list ---- */
-.uses{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-top:1.4rem}
-.uses .use{border:1px solid var(--line);border-radius:12px;padding:.9rem 1rem;background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3))}
-.uses .use h4{font-family:var(--serif-display);font-size:1.1rem;margin:0 0 .3rem;color:var(--cream)}
-.uses .use p{font-family:var(--sans);font-size:.84rem;color:var(--cream-dim);margin:0;line-height:1.45}
+/* ---------- lifecycle diagram (light) ---------- */
+.rp rect{fill:var(--b-paper);stroke:var(--b-line)}
+.rp .hit{stroke:var(--b-node)}
+.rp .miss{stroke:var(--r-red)}
+.rp .lock{fill:var(--r-red-tint);stroke:var(--r-red)}
+.rp text{font-family:var(--sans);fill:var(--b-ink);font-size:14px}
+.rp .lbl{font-family:var(--mono);fill:var(--b-dim);font-size:11px}
+.rp .flow{fill:none;stroke-width:1.6}
+.rp .back{fill:none;stroke:var(--b-ts);stroke-width:1.6;stroke-dasharray:5 4}
+
+/* ---------- use-case grid ---------- */
+.uses{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+.uses .use{border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card)}
+.uses .use h4{font-family:var(--mono);font-size:.95rem;margin:0 0 4px;color:var(--b-ink)}
+.uses .use p{font-family:var(--sans);font-size:.84rem;color:var(--b-dim);margin:0;line-height:1.45}
 @media(max-width:680px){.uses{grid-template-columns:1fr}}
 
-/* ---- interactive shells ---- */
-.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
-.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
-  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
-.solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);border-color:transparent}
-.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
-.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
-.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
-.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
-.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
-  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
-.geo-readout .dim{color:var(--cream-dim)}
-.geo-readout b{color:var(--redis-bright)}
-.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---------- doors / vnote ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+.vnote{font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--b-dim);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:10px 13px;margin:16px 0 0;max-width:80ch}
+.vnote b{color:var(--b-ink)}
 
-/* ---- queue lifecycle diagram ---- */
-.cd rect{fill:#10162b;stroke:#2a3252}
-.cd .gate{fill:rgba(214,88,79,.14);stroke:#d6584f}
-.cd .lock{fill:rgba(212,168,90,.12);stroke:#d4a85a}
-.cd text{font-family:var(--sans);fill:#d7cfb9;font-size:13px}
-.cd .lbl{font-family:var(--mono);fill:#a39c89;font-size:11px}
-.cd .flow{fill:none;stroke:#a39c89;stroke-width:1.5}
-.cd .back{fill:none;stroke:#d4a85a;stroke-width:1.5;stroke-dasharray:5 4}
+/* ---------- the chapter map (cards) ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.mod.work{border-left:3px solid var(--r-red)}
+.mod.work .num::after{content:" · workshop";color:var(--b-dim)}
 
-/* ---- contents cards ---- */
-.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
-.legend span{display:inline-flex;align-items:center;gap:.45rem}
-.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
-.pill.live{color:var(--sage-bright);border-color:var(--sage)}
-.pill.built{color:var(--gold-bright);border-color:var(--gold)}
-.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
-.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
-.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
-  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
-a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
-.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
-.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
-.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
-.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
-.mod.work{border-left:2px solid var(--redis)}
-.mod.work .num::after{content:" · workshop";color:var(--redis-bright)}
-.mod.contrast{border-left:2px solid var(--blue)}
-.mod.contrast .num::after{content:" · contrast";color:var(--blue-bright)}
-
-/* ---- ladder prose ---- */
-.ladder{font-family:var(--sans);font-size:.86rem;color:var(--cream-dim);line-height:1.6;margin:1.4rem 0 0;border-left:2px solid var(--line);padding-left:1rem}
-.ladder code{font-family:var(--mono);font-size:.82rem;color:var(--gold-bright)}
-
-/* ---- up next ---- */
-.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem;margin-top:1.2rem}
-.upnext .mod .t{font-size:1.06rem}
+/* ---------- up next ---------- */
+.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px}
+.upnext .mod .t{font-size:.92rem}
 @media(max-width:860px){.upnext{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.upnext{grid-template-columns:1fr}}
 
-/* ---- references ---- */
-.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
-.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
-.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
-.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
-.refs a{color:var(--cream)}
-.refs a:hover{color:var(--gold-bright)}
-.refs em{color:var(--cream-dim);font-style:italic}
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
 @media(max-width:680px){.refs{grid-template-columns:1fr}}
 
-/* ---- pager ---- */
-.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
-.pager .spacer{flex:1}
-.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
-  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
-.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
 
-/* ---- branded stamp ---- */
-.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
-  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
-.stamp:hover{border-color:var(--gold)}
-.stamp .id{color:var(--gold-bright)}
-.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
 .stamp.open .panel{display:grid}
-.stamp .panel dt{color:var(--cream-dim)}
-.stamp .panel dd{margin:0;color:var(--cream)}
 
-/* ---- reveal ---- */
-html.js .reveal{opacity:0;transform:translateY(14px)}
-html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
-@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
-
-@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
 </style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to the contents</a>
 
-<header class="site">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
-    <nav>
-      <a href="/redis-patterns">Home</a>
-      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><span class="rcur">queues</span></span>
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><span class="rcur">queues</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#why">Why &amp; when</a>
+      <a href="#what">The patterns</a>
+      <a href="#apply">How to apply</a>
+      <a href="#workshop">Workshop</a>
+      <a href="#refs">References</a>
     </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main id="main">
+  <div class="wrap">
 
-  <!-- ===================== HERO / OVERVIEW ===================== -->
-  <section class="hero">
-    <nav class="crumbs" aria-label="Breadcrumb">
-      <a href="/redis-patterns">Redis Patterns</a>
-      <span class="sep">/</span>
-      <span class="here">R3 · Reliable Queues</span>
-    </nav>
-    <p class="eyebrow">R3 · Reliable Queues</p>
-    <h1>Reliable <span class="ex">queues</span></h1>
-    <p class="lede">The pivot of the course: a job is never lost — moved in flight under a lock, delivered once that counts, reclaimed if its worker dies.</p>
-    <p class="kicker">A reliable queue is not one pattern but a family: an in-flight list under a lock, at-least-once
-      delivery to an idempotent consumer, recovery of a job whose worker crashed, the whole lifecycle moved
-      atomically, and pickup without busy-polling. This is the densest real grounding in the course — drawn straight
-      from EchoMQ's worker fetch loop, where <span class="math">RPOPLPUSH wait&rarr;active</span> parks a job under a
-      lock, <span class="math">de:{id}</span> makes a redelivery harmless, and <span class="math">moveToFinished-14</span>
-      completes the lifecycle in one move. It stands on R2's atomic moves and lock lease.</p>
-    <div class="toc-mini">
-      <a href="#overview">Overview</a>
-      <a href="#why">Why &amp; when</a>
-      <a href="#what">The patterns</a>
-      <a href="#apply">How to apply</a>
-      <a href="#road">The road ahead</a>
-      <a href="#door">The door</a>
-      <a href="#refs">References</a>
-    </div>
-  </section>
+    <!-- ===================== HERO / OVERVIEW ===================== -->
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <span class="here">R3 · Reliable Queues</span>
+      </nav>
+      <p class="kicker">R3 · Reliable Queues</p>
+      <h1>Reliable queues —<br>lose <span class="hns">no job</span>.</h1>
+      <p class="lede">The pivot of the course: a job is never lost — claimed under a server-clock lease, completed
+        once that counts, reclaimed if its worker dies.</p>
+      <p class="heronote">A reliable queue is not one pattern but a family — a recoverable in-flight claim,
+        at-least-once delivery to an idempotent consumer, recovery of a job whose worker crashed, the whole lifecycle
+        moved as one inline Lua script, and pickup without busy-polling. The grounding is the real <b>EchoMQ</b>
+        leased state machine (<code>echo/apps/echo_mq</code>) — <code>EchoMQ.Jobs.claim/3</code> pops the oldest
+        pending <code>JOB</code> with <code>ZPOPMIN</code>, mints a lease on the server clock, and increments the
+        row's <code>attempts</code> fencing token — worked through <b>codemojex</b>'s guess-command queue. This
+        chapter stands on R2's atomic moves.</p>
+      <div class="toc-mini">
+        <a href="#why">Why &amp; when</a>
+        <a href="#what">The patterns</a>
+        <a href="#apply">How to apply</a>
+        <a href="#workshop">Workshop</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
 
-  <!-- ===================== OVERVIEW ===================== -->
-  <section id="overview">
-    <h2>Overview</h2>
-    <div class="prose">
-      <p>A naive queue is a list: push on one end, pop on the other. It loses jobs. The moment a worker pops a job and
-        then crashes — before the work is done, before it is acknowledged — that job is gone from Redis and gone from
-        memory. Nothing reclaims it.</p>
-      <p>The reliable-queue family is the set of techniques that close every one of those gaps: where the job sits
-        while in flight, how a duplicate delivery is made harmless, how a dead worker's job comes back, how the whole
-        lifecycle moves without tearing, and how a worker waits for work without burning CPU.</p>
-      <p>EchoMQ implements every one of these in real code, and its worker fetch loop is the worked example for the
-        whole chapter. <code style="font-family:var(--mono);font-size:.86em;color:var(--redis-bright)">moveToActive-11.lua</code>
-        parks a job in <span class="math">emq:{queue}:active</span> with <span class="math">RPOPLPUSH</span>;
-        <code style="font-family:var(--mono);font-size:.86em;color:var(--redis-bright)">moveToFinished-14.lua</code>
-        is the whole lifecycle in one EVALSHA; and <span class="math">BZPOPMIN</span> on
-        <span class="math">emq:{queue}:marker</span> wakes a blocked worker instead of polling.</p>
-    </div>
-    <figure class="fig cd" aria-labelledby="cdTitle">
-      <h4 id="cdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The reliable lifecycle · wait → active → done, with reclaim</h4>
-      <svg viewBox="0 0 1000 240" role="img" aria-label="A job moves left to right through four states. From the wait list it is moved into the active list by an atomic RPOPLPUSH under a lock. From active it transitions to done by one Lua move. If the worker crashes, the lock expires and a dashed recover path returns the job from active back to wait, so no job is lost.">
-        <rect x="36" y="92" width="150" height="48" rx="11"></rect>
-        <text x="111" y="115" text-anchor="middle">wait list</text>
-        <text class="lbl" x="111" y="132" text-anchor="middle">emq:{q}:wait</text>
-        <path class="flow" d="M186 116 L300 116" marker-end="url(#a3)"></path>
-        <rect class="lock" x="300" y="92" width="180" height="48" rx="12"></rect>
-        <text x="390" y="113" text-anchor="middle" font-size="13" fill="#f0cd7f">RPOPLPUSH + lock</text>
-        <text class="lbl" x="390" y="130" text-anchor="middle">moveToActive-11.lua</text>
-        <path class="flow" d="M480 116 L600 116" marker-end="url(#a3)"></path>
-        <rect x="600" y="92" width="150" height="48" rx="11"></rect>
-        <text x="675" y="115" text-anchor="middle">active list</text>
-        <text class="lbl" x="675" y="132" text-anchor="middle">emq:{q}:active</text>
-        <path class="flow" d="M750 116 L864 116" marker-end="url(#a3)"></path>
-        <rect class="gate" x="864" y="92" width="100" height="48" rx="11"></rect>
-        <text x="914" y="115" text-anchor="middle">done</text>
-        <text class="lbl" x="914" y="132" text-anchor="middle">moveToFinished-14</text>
-        <path class="back" d="M675 140 C 675 205, 111 205, 111 140" marker-end="url(#a4)"></path>
-        <text class="lbl" x="393" y="222" text-anchor="middle" fill="#d4a85a">recover · lock expired → moveStalledJobsToWait-8.lua</text>
-        <defs>
-          <marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#a39c89"></path></marker>
-          <marker id="a4" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#d4a85a"></path></marker>
-        </defs>
-      </svg>
-    </figure>
-    <p class="take">A reliable queue never holds a job in a place where a crash can erase it — every state is a Redis
-      location, and every move between them is recoverable.</p>
-  </section>
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
-  <!-- ===================== WHY & WHEN ===================== -->
-  <section id="why">
-    <h2>Why &amp; when</h2>
-    <div class="prose">
-      <p>Use the reliable-queue family whenever losing a job is not acceptable and a worker can crash at any instant —
-        which is every real background-job system. Each failure mode below has one matching technique, and the chapter
-        is the set of those answers.</p>
-    </div>
-    <div class="uses">
-      <div class="use"><h4>A worker crashes mid-job</h4><p>The job must not vanish when a worker dies — move it into an in-flight list under a lock, and reclaim it when the lock expires.</p></div>
-      <div class="use"><h4>A job runs twice</h4><p>At-least-once delivery means a job can arrive more than once — make the consumer idempotent and mark completion with <span style="font-family:var(--mono);font-size:.92em">de:{id}</span>.</p></div>
-      <div class="use"><h4>A multi-step transition tears</h4><p>A lifecycle move touches many keys and must be all-or-nothing — run the whole transition as one Lua script.</p></div>
-      <div class="use"><h4>The worker busy-polls the queue</h4><p>A worker that loops on the queue burns CPU and adds latency — block on a marker and let Redis wake it.</p></div>
-    </div>
-    <p class="take">Every technique in this chapter answers one of four failures of a naive queue: a lost in-flight
-      job, a double run, a torn transition, and a busy-poll.</p>
-  </section>
+    <!-- ===================== WHY & WHEN ===================== -->
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Why &amp; when</h2>
+        <span class="ssrc">echo/apps/echo_mq</span>
+      </div>
+      <div class="prose">
+        <p>A naive queue pops a job off one end and hands it to a worker. The moment that worker crashes &#8212;
+          mid-job, before the work is acknowledged &#8212; the job is gone from Valkey and gone from memory, with
+          nothing to reclaim it. Reach for the reliable-queue family whenever losing a job is not acceptable and a
+          worker can crash at any instant, which is every real background-job system. Each failure mode below has one
+          matching technique, and the chapter is the set of those answers.</p>
+      </div>
+      <div class="uses">
+        <div class="use"><h4>A worker crashes mid-job</h4><p>The job must not vanish when a worker dies &#8212; claim it under a server-clock lease, and reap it back to pending when the lease expires.</p></div>
+        <div class="use"><h4>A job runs twice</h4><p>At-least-once delivery means a job can arrive more than once &#8212; make the consumer idempotent and key the effect on the branded <code>JOB</code> id.</p></div>
+        <div class="use"><h4>A multi-step transition tears</h4><p>A lifecycle move touches the row, a set, and a counter and must be all-or-nothing &#8212; run the whole transition as one inline Lua script.</p></div>
+        <div class="use"><h4>The worker busy-polls the queue</h4><p>A worker that loops on the queue burns CPU and adds latency &#8212; park on a wake key and let Valkey wake it.</p></div>
+      </div>
+      <figure class="anatomy rp" aria-labelledby="rpTitle">
+        <figcaption id="rpTitle">The reliable lifecycle &#183; pending &#8594; active under a lease &#8594; done, with reap on crash</figcaption>
+        <svg viewBox="0 0 1000 200" role="img" aria-label="A job moves left to right. From the pending sorted set it is claimed into the active set with ZPOPMIN under a server-clock lease. From active it transitions to done by one inline Lua move. If the worker crashes, the lease expires and a dashed reap path returns the job from active back to pending, so no job is lost.">
+          <rect x="36" y="78" width="160" height="48" rx="12"></rect>
+          <text x="116" y="101" text-anchor="middle">pending</text>
+          <text class="lbl" x="116" y="118" text-anchor="middle">emq:{q}:pending</text>
+          <path class="flow miss" d="M196 102 L320 102" marker-end="url(#ar)"></path>
+          <text class="lbl" x="258" y="92" text-anchor="middle">ZPOPMIN + lease</text>
+          <rect class="lock" x="320" y="78" width="180" height="48" rx="12"></rect>
+          <text x="410" y="101" text-anchor="middle">active</text>
+          <text class="lbl" x="410" y="118" text-anchor="middle">claim/3 · attempts++</text>
+          <path class="flow hit" d="M500 102 L640 102" marker-end="url(#ar)"></path>
+          <text class="lbl" x="570" y="92" text-anchor="middle">complete/5</text>
+          <rect x="640" y="78" width="150" height="48" rx="12"></rect>
+          <text x="715" y="101" text-anchor="middle">done</text>
+          <text class="lbl" x="715" y="118" text-anchor="middle">row retired</text>
+          <path class="back" d="M410 126 C 410 178, 116 178, 116 126" marker-end="url(#arb)"></path>
+          <text class="lbl" x="263" y="172" text-anchor="middle" fill="#20618e">reap · lease expired by server TIME → back to pending</text>
+          <defs>
+            <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#68705f"></path></marker>
+            <marker id="arb" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#20618e"></path></marker>
+          </defs>
+        </svg>
+      </figure>
+      <p class="take">Every technique in this chapter answers one of four failures of a naive queue: a lost in-flight
+        job, a double run, a torn transition, and a busy-poll.</p>
+    </section>
 
-  <!-- ===================== WHAT (the deep dives) ===================== -->
-  <section id="what">
-    <h2>The patterns</h2>
-    <div class="prose">
-      <p>Three deep dives carry the chapter's orientation — the reliable-queue family in one place, the lifecycle as
-        one atomic move, and where the queue goes next. Each is a full lesson grounded in EchoMQ's worker path. The
-        granular module ladder below takes each pattern in depth, one hub plus three dives per module.</p>
-    </div>
-    <div class="legend">
-      <span><span class="pill built">built</span> ready to read</span>
-      <span><span class="pill soon">soon</span> specified</span>
-    </div>
-    <div class="mods">
-      <a class="mod" href="/redis-patterns/queues/the-reliable-queue"><div class="top"><span class="num">R3 · dive</span><span class="pill built">built</span></div><p class="t">The reliable queue</p><p class="o">The family in one place: <span style="font-family:var(--mono);font-size:.9em">RPOPLPUSH wait→active</span> under a lock, at-least-once + <span style="font-family:var(--mono);font-size:.9em">de:{id}</span> idempotency, and stalled reclaim via <span style="font-family:var(--mono);font-size:.9em">moveStalledJobsToWait</span>.</p></a>
-      <a class="mod" href="/redis-patterns/queues/states-as-locations"><div class="top"><span class="num">R3 · dive</span><span class="pill built">built</span></div><p class="t">States as locations</p><p class="o">The lifecycle as one atomic Lua move: states are Redis locations, <span style="font-family:var(--mono);font-size:.9em">moveToFinished-14.lua</span> is one EVALSHA, and <span style="font-family:var(--mono);font-size:.9em">:marker</span> + <span style="font-family:var(--mono);font-size:.9em">BZPOPMIN</span> replaces busy-polling.</p></a>
-      <a class="mod" href="/redis-patterns/queues/the-road-ahead"><div class="top"><span class="num">R3 · dive</span><span class="pill built">built</span></div><p class="t">The road ahead</p><p class="o">Where the queue goes next: the arc R3→R8, and the door into the living EchoMQ course.</p></a>
-    </div>
-    <p class="prose" style="margin:1.8rem 0 0">The granular modules — each a hub plus three dives, closing with the workshop capstone:</p>
-    <div class="mods" style="margin-top:1rem">
-      <a class="mod" href="/redis-patterns/queues/processing-list"><div class="top"><span class="num">R3.01</span><span class="pill built">built</span></div><p class="t">Processing list</p><p class="o">Move a job <em>into</em> an in-flight list so a crash is recoverable: the <span style="font-family:var(--mono);font-size:.9em">wait</span>/<span style="font-family:var(--mono);font-size:.9em">active</span> LISTs, the atomic <span style="font-family:var(--mono);font-size:.9em">RPOPLPUSH</span>/<span style="font-family:var(--mono);font-size:.9em">LMOVE</span> transfer, and the in-flight list as the recovery ledger.</p></a>
-      <a class="mod" href="/redis-patterns/queues/at-least-once"><div class="top"><span class="num">R3.02</span><span class="pill built">built</span></div><p class="t">At-least-once</p><p class="o">Delivery guarantees and why consumers must be idempotent: at-least-once semantics, idempotent consumers, and why exactly-once is a lie — grounded in producer-side <span style="font-family:var(--mono);font-size:.9em">de:{id}</span> dedup.</p></a>
-      <a class="mod" href="/redis-patterns/queues/stalled-recovery"><div class="top"><span class="num">R3.03</span><span class="pill built">built</span></div><p class="t">Stalled recovery</p><p class="o">Reclaim jobs whose worker died: lock-expiry detection, two-phase mark/recover, and the atomic <span style="font-family:var(--mono);font-size:.9em">moveStalledJobsToWait</span> Lua sweep versus the non-atomic Go loop.</p></a>
-      <a class="mod" href="/redis-patterns/queues/atomic-state-machine"><div class="top"><span class="num">R3.04</span><span class="pill built">built</span></div><p class="t">Atomic state machine</p><p class="o">The whole lifecycle as one atomic Lua move: states are Redis locations, and <span style="font-family:var(--mono);font-size:.9em">moveToFinished-14.lua</span> transitions a job — drop the lock, record the result, fetch the next — in one <span style="font-family:var(--mono);font-size:.9em">EVALSHA</span>.</p></a>
-      <a class="mod" href="/redis-patterns/queues/blocking-vs-polling"><div class="top"><span class="num">R3.05</span><span class="pill built">built</span></div><p class="t">Blocking vs polling</p><p class="o">Stop busy-polling the queue: the busy-poll cost, the blocking pop, and the marker wake-up — a worker blocks on <span style="font-family:var(--mono);font-size:.9em">emq:{queue}:marker</span> with <span style="font-family:var(--mono);font-size:.9em">BZPOPMIN</span> and wakes when a job is added.</p></a>
-      <a class="mod work" href="/redis-patterns/queues/workshop"><div class="top"><span class="num">R3.06</span><span class="pill built">built</span></div><p class="t">Workshop</p><p class="o">The capstone: a reliable Portal enrollment-job queue assembling R3.01–R3.05 — at-least-once delivery plus an idempotent <span style="font-family:var(--mono);font-size:.9em">enroll/2</span> is exactly-once-in-effect.</p></a>
-    </div>
-  </section>
+    <!-- ===================== WHAT (the module cards) ===================== -->
+    <section id="what">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The patterns</h2>
+        <span class="ssrc">six modules &#183; one workshop</span>
+      </div>
+      <div class="prose">
+        <p>Six teaching modules, then a workshop. Each module is a hub with three dives, grounded in the real EchoMQ
+          worker path.</p>
+      </div>
+      <div class="legend">
+        <span><span class="pill built">built</span> ready to read</span>
+        <span><span class="pill soon">soon</span> specified</span>
+      </div>
+      <div class="mods">
+        <a class="mod" href="/redis-patterns/queues/processing-list"><div class="top"><span class="num">R3.01</span><span class="pill built">built</span></div><p class="t">Processing list</p><p class="o">Move a job into a recoverable in-flight state: the leased <code>EchoMQ.Jobs.claim/3</code>, not a list pop.</p></a>
+        <a class="mod" href="/redis-patterns/queues/at-least-once"><div class="top"><span class="num">R3.02</span><span class="pill built">built</span></div><p class="t">At-least-once</p><p class="o">Delivery guarantees and idempotent consumers; the branded <code>JOB</code> id as the idempotency key.</p></a>
+        <a class="mod" href="/redis-patterns/queues/stalled-recovery"><div class="top"><span class="num">R3.03</span><span class="pill built">built</span></div><p class="t">Stalled recovery</p><p class="o">Reclaim a dead worker's job by lease expiry on the server clock; <code>EchoMQ.Stalled</code> and the durable floor.</p></a>
+        <a class="mod" href="/redis-patterns/queues/atomic-state-machine"><div class="top"><span class="num">R3.04</span><span class="pill built">built</span></div><p class="t">Atomic state machine</p><p class="o">The lifecycle as one inline <code>Script.new/2</code> Lua transition; states are <code>emq:{q}:</code> locations.</p></a>
+        <a class="mod" href="/redis-patterns/queues/blocking-vs-polling"><div class="top"><span class="num">R3.05</span><span class="pill built">built</span></div><p class="t">Blocking vs polling</p><p class="o">Stop busy-polling; the <code>EchoMQ.Consumer</code> parks on the wake key with <code>BLPOP</code>.</p></a>
+        <a class="mod work" href="/redis-patterns/queues/workshop"><div class="top"><span class="num">R3.06</span><span class="pill built">built</span></div><p class="t">Workshop</p><p class="o">A reliable codemojex guess-command queue assembling R3.01&#8211;R3.05.</p></a>
+      </div>
+    </section>
 
-  <!-- ===================== HOW TO APPLY (interactive) ===================== -->
-  <section id="apply">
-    <h2>How to apply</h2>
-    <div class="prose">
-      <p>The hard part is matching the reliable-queue technique to the failure you cannot allow. Name the failure, and
-        the technique — and the real EchoMQ artifact that implements it — follows.</p>
-    </div>
-    <figure class="fig" aria-labelledby="pickTitle">
-      <h4 id="pickTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Name the failure · get the reliable-queue technique</h4>
-      <div class="controls">
-        <div class="solid-select" id="pickSel" role="group" aria-label="Queue failure modes">
-          <button type="button" data-k="crash" data-c="redis" class="active" aria-pressed="true">A worker crashes mid-job</button>
-          <button type="button" data-k="twice" data-c="gold" aria-pressed="false">A job runs twice</button>
-          <button type="button" data-k="tear" data-c="sage" aria-pressed="false">A multi-step transition tears</button>
-          <button type="button" data-k="poll" data-c="blue" aria-pressed="false">The worker busy-polls the queue</button>
+    <!-- ===================== HOW TO APPLY (interactive) ===================== -->
+    <section id="apply">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>How to apply</h2>
+        <span class="ssrc">name the failure &#183; the technique follows</span>
+      </div>
+      <div class="prose">
+        <p>The hard part is matching the reliable-queue technique to the failure you cannot allow. Name the failure,
+          and the technique &#8212; and the real EchoMQ artifact that implements it &#8212; follows.</p>
+      </div>
+      <figure class="anatomy" aria-labelledby="pickTitle">
+        <figcaption id="pickTitle">Name the failure &#183; get the reliable-queue technique</figcaption>
+        <div class="segbar" id="pickSel" role="group" aria-label="Queue failure modes">
+          <button type="button" data-k="crash" aria-pressed="false">A worker crashes mid-job</button>
+          <button type="button" data-k="twice" aria-pressed="false">A job runs twice</button>
+          <button type="button" data-k="tear" aria-pressed="false">A multi-step transition tears</button>
+          <button type="button" data-k="poll" aria-pressed="false">The worker busy-polls</button>
+        </div>
+        <div class="readout" id="pickOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a failure to see the technique and the real EchoMQ artifact that closes it.</div>
+      </figure>
+      <p class="take">There is no single reliable-queue trick &#8212; only the technique that closes the failure you
+        cannot accept, each one a real move in EchoMQ's worker loop.</p>
+    </section>
+
+    <!-- ===================== WORKSHOP + the application doors ===================== -->
+    <section id="workshop">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The workshop</h2>
+        <span class="ssrc">echo/apps/codemojex &#183; EchoMQ.Lanes</span>
+      </div>
+      <div class="prose">
+        <p>The chapter closes with <strong>R3.06</strong>: a reliable codemojex guess-command queue assembling
+          R3.01&#8211;R3.05. <code>Codemojex.Guesses.submit/3</code> mints a branded <code>JOB</code> id and enqueues
+          it on the player's fair lane with <code>EchoMQ.Lanes.enqueue/5</code>;
+          <code>Codemojex.ScoreWorker.handle/1</code> &#8212; wired as an <code>EchoMQ.Consumer</code> with
+          <code>lease_ms: 10_000</code> &#8212; drains the lane through <code>EchoMQ.Lanes.claim/3</code>, scores the
+          guess, and completes the job with <code>EchoMQ.Jobs.complete/5</code>. A worker that crashes mid-score
+          leaves its <code>JOB</code> leased in the active set; the next reap returns it to its lane. A guess is never
+          lost, and one keyboard masher cannot starve the field because the lane is named by the player.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The state machine in depth</h3>
+          <p>The EchoMQ Queue pillar teaches the leased state machine, the inline Lua, fair lanes, and the schedule set behind the <code>emq:{q}:</code> keyspace, rung by rung.</p>
+        </a>
+        <a class="door" href="/echo-persistence">
+          <span class="dr">/echo-persistence</span>
+          <h3>The durable floor</h3>
+          <p>A job that exhausts its retries, or whose completion is archived, reaches the durable tier — <code>EchoStore.StreamArchive</code> folding into the Graft floor, the durability dial taught end to end.</p>
+        </a>
+      </div>
+      <p class="vnote"><b>Notes on Valkey.</b> <code>EchoMQ.Jobs.claim/3</code> reads the lease deadline from
+        <code>TIME</code> &#8212; the server's clock, not the caller's &#8212; so a slow client never claims a longer
+        lease than it earned, and reap is measured on the same clock that minted it.
+        <span style="color:var(--b-ts)">valkey.io/commands/time</span></p>
+    </section>
+
+    <!-- ===================== UP NEXT ===================== -->
+    <section id="upnext">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Up next</h2>
+        <span class="ssrc">R4&#8211;R8</span>
+      </div>
+      <div class="prose">
+        <p>R3 is the spine the rest of the course hangs from. Each later chapter is a different surface over the same
+          jobs &#8212; time and priority first, then the durable event log and flow control.</p>
+      </div>
+      <div class="upnext">
+        <a class="mod" href="/redis-patterns/time-delay-priority"><div class="top"><span class="num">R4</span><span class="pill soon">soon</span></div><p class="t">Time, Delay &amp; Priority</p><p class="o">The sorted set as a clock.</p></a>
+        <div class="mod"><div class="top"><span class="num">R5</span><span class="pill soon">soon</span></div><p class="t">Streams &amp; Events</p><p class="o">The durable log.</p></div>
+        <div class="mod"><div class="top"><span class="num">R6</span><span class="pill soon">soon</span></div><p class="t">Flow Control</p><p class="o">Staying stable under load.</p></div>
+        <div class="mod"><div class="top"><span class="num">R7</span><span class="pill soon">soon</span></div><p class="t">Data Modeling</p><p class="o">How data lives in RAM.</p></div>
+        <div class="mod"><div class="top"><span class="num">R8</span><span class="pill soon">soon</span></div><p class="t">Production &amp; Ops</p><p class="o">Running the tier at scale.</p></div>
+      </div>
+    </section>
+
+    <!-- ===================== REFERENCES ===================== -->
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <p class="refgrp">Sources</p>
+          <ul>
+            <li><a href="https://valkey.io/commands/zpopmin/" rel="noopener">Valkey — ZPOPMIN</a><span class="rs">the pop that claims the oldest pending job from the score-0 mint-ordered set, the engine the connector is gated against</span></li>
+            <li><a href="https://valkey.io/commands/hincrby/" rel="noopener">Valkey — HINCRBY</a><span class="rs">increments the row's attempts field, the lease fencing token that makes a stale completion a no-op</span></li>
+            <li><a href="https://redis.io/docs/latest/develop/interact/programmability/eval-intro/" rel="noopener">Redis — Scripting with Lua</a><span class="rs">the atomic lifecycle transition via EVAL / EVALSHA that every EchoMQ script runs</span></li>
+            <li><a href="https://redis.io/docs/latest/develop/use/patterns/" rel="noopener">Redis — Patterns</a><span class="rs">the canonical write-ups of the reliable work-queue access pattern</span></li>
+          </ul>
+        </div>
+        <div>
+          <p class="refgrp">Related</p>
+          <ul>
+            <li><a href="/redis-patterns/coordination">R2 — Coordination</a><span class="rs">the atomic moves and lock lease R3 builds on</span></li>
+            <li><a href="/echomq/queue">EchoMQ — the Queue pillar</a><span class="rs">the state machine, lanes, and schedule set in depth</span></li>
+            <li><a href="/echo-persistence">The persistence floor</a><span class="rs">where a dead-lettered or archived job lands durably</span></li>
+            <li><a href="/bcs">The Branded Component System</a><span class="rs">Part III builds the EchoMQ bus these patterns ground in</span></li>
+          </ul>
         </div>
       </div>
-      <div class="geo-readout" id="pickOut" aria-live="polite"></div>
-    </figure>
-    <p class="take">There is no single reliable-queue trick — only the technique that closes the failure you cannot
-      accept, each one a real move in EchoMQ's worker loop.</p>
-  </section>
+    </section>
 
-  <!-- ===================== THE ROAD AHEAD ===================== -->
-  <section id="road">
-    <h2>The road ahead</h2>
-    <div class="prose">
-      <p>R3 is the spine the rest of the course hangs from. With a reliable queue in hand, each later chapter is a
-        different surface over the same jobs — scheduling, observability, flow control, the data model, and operating
-        the tier. They build on the queue rather than replacing it.</p>
-    </div>
-    <div class="uses">
-      <div class="use"><h4>R4 · Time, Delay &amp; Priority</h4><p>The sorted set as a clock — schedule and prioritize the jobs R3 makes reliable.</p></div>
-      <div class="use"><h4>R5 · Streams &amp; Events</h4><p>The durable log — observe the lifecycle R3 defines, replayable after the fact.</p></div>
-      <div class="use"><h4>R6 · Flow Control</h4><p>Staying stable under load — rate-limit, batch, and bound concurrency over R3's jobs.</p></div>
-      <div class="use"><h4>R7 · Data Modeling</h4><p>How data lives in RAM — the job record and read-models behind the queue.</p></div>
-      <div class="use"><h4>R8 · Production &amp; Operations</h4><p>Running the tier at scale — operate everything above in production.</p></div>
-    </div>
-    <p class="take">Time, streams, flow control, the data model, and operations are all surfaces over the one reliable
-      queue R3 builds.</p>
-  </section>
-
-  <!-- ===================== UP NEXT ===================== -->
-  <section id="upnext">
-    <h2>Up next</h2>
-    <div class="prose">
-      <p>With a reliable queue built, the parallel surfaces over its jobs can follow — time and priority first, then
-        the durable event log and flow control.</p>
-    </div>
-    <div class="upnext">
-      <a class="mod" href="/redis-patterns/time-delay-priority"><div class="top"><span class="num">R4</span><span class="pill soon">soon</span></div><p class="t">Time, Delay &amp; Priority</p><p class="o">The sorted set as a clock.</p></a>
-      <a class="mod" href="/redis-patterns/streams-events"><div class="top"><span class="num">R5</span><span class="pill soon">soon</span></div><p class="t">Streams &amp; Events</p><p class="o">The durable log.</p></a>
-      <a class="mod" href="/redis-patterns/flow-control"><div class="top"><span class="num">R6</span><span class="pill soon">soon</span></div><p class="t">Flow Control</p><p class="o">Staying stable under load.</p></a>
-      <a class="mod" href="/redis-patterns/data-modeling"><div class="top"><span class="num">R7</span><span class="pill soon">soon</span></div><p class="t">Data Modeling</p><p class="o">How data lives in RAM.</p></a>
-      <a class="mod" href="/redis-patterns/production-operations"><div class="top"><span class="num">R8</span><span class="pill soon">soon</span></div><p class="t">Production &amp; Ops</p><p class="o">Running the tier at scale.</p></a>
-    </div>
-  </section>
-
-  <!-- ===================== THE DOOR ===================== -->
-  <section id="door">
-    <h2>The door</h2>
-    <div class="prose">
-      <p>This chapter teaches the reliable-queue patterns and proves each with one real EchoMQ excerpt. The
-        <strong>engine</strong> that runs them — the full worker fetch loop, the heartbeat manager, the stalled-check
-        coordination across a worker pool, and the polyglot concurrency models (a BEAM process pool versus a goroutine
-        semaphore) — is the subject of the dedicated EchoMQ course.</p>
-    </div>
-    <p class="door"><b>&rarr; EchoMQ.</b> The EchoMQ course is the living companion depth course: it teaches the
-      protocol in depth and tracks the EchoMQ build rung by rung (E1&ndash;E8 &#8644; emq.1&ndash;emq.6). Per its
-      cross-link map, R3 opens onto <a href="/echomq/core">E2 &middot; The lifecycle, components &amp; runtimes</a> —
-      the as-built library and the worker fetch loop — <a href="/echomq/batches">E5 &middot; Batches</a>, and
-      <a href="/echomq/lifecycle">E6 &middot; Lifecycle controls</a>.</p>
-    <p class="note">R3's patterns are transferable Redis techniques; the EchoMQ course owns the implementation depth
-      behind them.</p>
-  </section>
-
-  <!-- ===================== REFERENCES ===================== -->
-  <section id="refs">
-    <h2>References</h2>
-    <div class="refs">
-      <div>
-        <h3>Sources</h3>
-        <ul>
-          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the atomic move that parks a job in the in-flight list.</li>
-          <li><a href="https://redis.io/commands/bzpopmin/">Redis &mdash; <em>BZPOPMIN</em></a> &mdash; the blocking pop that wakes a worker instead of polling.</li>
-          <li><a href="https://redis.io/docs/latest/develop/interact/programmability/eval-intro/">Redis &mdash; <em>Scripting with Lua</em></a> &mdash; the atomic lifecycle transition via EVAL / EVALSHA.</li>
-          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>The reliable-queue protocol</em></a> &mdash; the protocol EchoMQ ports across runtimes.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Related in this course</h3>
-        <ul>
-          <li><a href="/redis-patterns/coordination">R2 &middot; Coordination</a> &mdash; the atomic moves and lock lease R3 builds on.</li>
-          <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a> &mdash; every state move as one Lua script.</li>
-          <li><a href="/redis-patterns/overview/redis-under-portal">R0.2 &middot; Redis under Portal</a> &mdash; the EchoMQ bus these patterns ground in.</li>
-          <li><a href="/elixir/pragmatic/cqrs">/elixir &middot; Commands, queries &amp; events</a> &mdash; the engine the atomic moves run inside.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================== PAGER ===================== -->
-  <section>
+    <!-- ===================== PAGER ===================== -->
     <nav class="pager" aria-label="Chapter navigation">
-      <a class="btn ghost" href="/redis-patterns/coordination"><span aria-hidden="true">←</span> R2 · Coordination</a>
-      <span class="spacer"></span>
-      <a class="btn" href="/redis-patterns/queues/the-reliable-queue">R3 · The reliable queue <span aria-hidden="true">→</span></a>
+      <a class="pgx" href="/redis-patterns/coordination"><span class="pk">prev</span>&#8592; R2 · Coordination</a>
+      <a class="pgx" href="/redis-patterns/queues/the-reliable-queue"><span class="pk">begin</span>R3 · The reliable queue &#8594;</a>
     </nav>
-  </section>
 
+  </div>
 </main>
 
 <footer class="site-foot">
   <div class="wrap">
     <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
       <div class="foot-brand">
-        <a class="foot-logo" href="/redis-patterns">jonnify<span class="dot"></span></a>
-        <p class="foot-tag">Redis Patterns Applied &mdash; the Redis design patterns, taught applied and grounded in real EchoMQ-in-Portal code.</p>
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
       <div class="foot-links">
         <p class="foot-h">This chapter</p>
-        <a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a>
-        <a href="/redis-patterns/queues/states-as-locations">R3 &middot; States as locations</a>
-        <a href="/redis-patterns/queues/the-road-ahead">R3 &middot; The road ahead</a>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/redis-patterns/queues/the-reliable-queue">R3 &#183; The reliable queue</a>
+        <a href="/redis-patterns/queues/states-as-locations">R3 &#183; States as locations</a>
+        <a href="/redis-patterns/queues/the-road-ahead">R3 &#183; The road ahead</a>
+        <a href="/redis-patterns/queues/workshop">R3.06 &#183; Workshop</a>
       </div>
       <div class="foot-links">
-        <p class="foot-h">The course</p>
+        <p class="foot-h">The courses</p>
         <a href="/redis-patterns">Course home</a>
-        <a href="/redis-patterns/coordination">R2 &middot; Coordination</a>
-        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
+        <a href="/echomq/queue">EchoMQ — the Queue pillar</a>
+        <a href="/echo-persistence">The persistence floor</a>
+        <a href="/bcs">The Branded Component System</a>
       </div>
     </nav>
     <div class="foot-bar">
@@ -511,33 +489,34 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 <script>
 (function () {
   "use strict";
+  document.documentElement.classList.add('js');
 
-  /* ---------- Interactive: name the failure, get the reliable-queue technique (pure lookup) ---------- */
+  /* ---------- Interactive: name the failure, get the reliable-queue technique (pure lookup, no storage) ---------- */
   var PICK = {
-    crash: { name: "The in-flight list + stalled reclaim", art: "moveToActive-11.lua · moveStalledJobsToWait-8.lua", one: "RPOPLPUSH wait→active parks the job in emq:{queue}:active under a lock, so a crash is recoverable; when the lock expires, moveStalledJobsToWait-8.lua returns the job to wait." },
-    twice: { name: "At-least-once + an idempotent consumer", art: "emq:{queue}:de:{id} via EchoMQ.Keys.dedup/2", one: "At-least-once delivery can hand the same job out twice. The de:{id} marker plus an idempotent consumer makes the second delivery a no-op — exactly-once on the wire is a lie, so make the work safe to repeat." },
-    tear:  { name: "The lifecycle as one EVALSHA", art: "moveToFinished-14.lua (14 keys)", one: "A multi-key lifecycle move must be all-or-nothing. moveToFinished-14.lua transitions the job across 14 keys in one Lua script, so no other client interleaves and the move cannot tear." },
-    poll:  { name: "Blocking pickup", art: "emq:{queue}:marker + BZPOPMIN", one: "A busy-poll loop burns CPU and adds latency. BZPOPMIN on emq:{queue}:marker (EchoMQ.Keys.marker/1) parks the worker on a dedicated blocking connection until a job arrives, then Redis wakes it." }
+    crash: { name: "Leased claim + reap", art: "EchoMQ.Jobs.claim/3 · EchoMQ.Jobs.reap/2", one: "claim/3 pops the oldest pending JOB with ZPOPMIN and writes a lease deadline from the server TIME into emq:{q}:active. A crash leaves the job leased in active; reap/2 returns every lease expired by the server clock to pending. The job is recoverable, never lost." },
+    twice: { name: "An idempotent effect keyed by the JOB id", art: "the branded JOB id · EchoMQ.Jobs.complete/5", one: "At-least-once delivery can hand the same job out twice. The branded JOB id is a stable idempotency key, so the effect runs once; exactly-once on the wire is a lie, so make the work safe to repeat. A stale completion is fenced out by the attempts token." },
+    tear:  { name: "One inline Lua transition", art: "EchoMQ.Script.new/2 via Connector.eval/4", one: "A lifecycle move touches the row, a set, and a counter and must be all-or-nothing. Each EchoMQ transition is one inline Script.new/2 body run as one EVALSHA, so no other client interleaves and the move cannot tear." },
+    poll:  { name: "Park on the wake key", art: "EchoMQ.Consumer · BLPOP emq:{q}:wake", one: "A busy-poll loop burns CPU and adds latency. The EchoMQ.Consumer parks on BLPOP emq:{q}:wake until a job is added pushes a wake token or the beat elapses, then drains — a parked consumer costs the wire nothing." }
   };
 
   function renderPick(k) {
     var d = PICK[k];
     var out = document.getElementById('pickOut');
     if (!d || !out) return;
-    out.innerHTML = '<b>' + d.name + '</b><br><span class="dim">' + d.art + '</span><br>' + d.one;
+    out.innerHTML = '<span class="rk">readout &#183;</span> <b>' + d.name + '</b> &middot; <span class="rk">' + d.art + '</span><br>' + d.one;
   }
 
   document.querySelectorAll('#pickSel button').forEach(function (b) {
     b.addEventListener('click', function () {
-      document.querySelectorAll('#pickSel button').forEach(function (o) {
-        var on = o === b;
-        o.classList.toggle('active', on);
-        o.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-      renderPick(b.getAttribute('data-k'));
+      var on = b.getAttribute('aria-pressed') !== 'true';
+      document.querySelectorAll('#pickSel button').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+      if (on) { b.setAttribute('aria-pressed', 'true'); renderPick(b.getAttribute('data-k')); }
+      else {
+        var out = document.getElementById('pickOut');
+        if (out) out.innerHTML = '<span class="rk">readout &#183;</span> Select a failure to see the technique and the real EchoMQ artifact that closes it.';
+      }
     });
   });
-  renderPick('crash');
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -553,7 +532,7 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
   }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
   function decodeBranded(id) {
-    if (!id || id.length < 4) return null;
+    if (!id || id.length !== 14) return null;
     var ns = id.slice(0, 3);
     var snow = b62decode(id.slice(3));
     if (snow === null) return null;
@@ -585,22 +564,5 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 })();
 </script>
 
-<script>
-document.documentElement.classList.add('js');
-document.addEventListener('DOMContentLoaded', function () {
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var els = document.querySelectorAll('.reveal');
-  if (reduce || !('IntersectionObserver' in window)) {
-    els.forEach(function (e) { e.classList.add('in'); });
-    return;
-  }
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (en) {
-      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-    });
-  }, { threshold: 0.12 });
-  els.forEach(function (e) { io.observe(e); });
-});
-</script>
 </body>
 </html>

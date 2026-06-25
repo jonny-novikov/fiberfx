@@ -1,631 +1,495 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R3 · The reliable queue: lose no job · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R3 · A reliable queue loses no job. Three guarantees build it in order: move a job into an in-flight list atomically (RPOPLPUSH / LMOVE wait→active) so a crash leaves it recoverable; accept at-least-once delivery and make the consumer idempotent; reclaim a job whose worker died (its lock expired) back to wait. Grounded in EchoMQ's real worker path — moveToActive-11.lua's RPOPLPUSH, EchoMQ.Keys.dedup/2's emq:{queue}:de:{id}, and moveStalledJobsToWait-8.lua.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="description" content="R3 · A reliable queue loses no job. Three guarantees build it in order, grounded in EchoMQ's real leased state machine: claim a job into the active set under a server-clock lease (EchoMQ.Jobs.claim/3, ZPOPMIN + attempts), accept at-least-once and key the idempotent effect on the branded JOB id, and reap a job whose lease expired (EchoMQ.Jobs.reap/2, EchoMQ.Stalled.check/3) back to pending.">
 <style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
 :root{
-  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
-  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
-  --gold:#d4a85a; --gold-bright:#f0cd7f;
-  --blue:#5a87c4; --blue-bright:#9fc0ea;
-  --sage:#7ba387; --sage-bright:#a7c9b1;
-  --burgundy:#c4504c;
-  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
-  --redis:#d6584f; --redis-bright:#f2948c;
-  --line:#2a3252;
-  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --serif:"PT Serif", Georgia, serif;
-  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --measure:68ch;
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
 }
-*{box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{
-  margin:0; color:var(--cream); background:var(--ink);
-  font-family:var(--serif);
-  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
-  line-height:1.62; letter-spacing:.005em;
-  background-image:
-    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
-    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
-    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
-  background-attachment:fixed;
-}
-body::after{ /* faint vignette for depth */
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
-}
-.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
-  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
-.skip:focus{left:0}
-::selection{background:var(--gold);color:var(--ink)}
-img,svg{max-width:100%}
-a{color:var(--gold-bright);text-decoration:none}
-a:hover{color:var(--cream)}
-hr.rule{border:0;height:1px;margin:2.2rem 0;
-  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
 
-/* ---- layout ---- */
-.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
-main{display:block}
-section{padding:clamp(2.6rem,6vw,4.6rem) 0}
-section + section{border-top:1px solid var(--line)}
-.prose{max-width:var(--measure)}
-.prose p{margin:0 0 1.05rem}
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
 
-/* ---- type ---- */
-h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
-  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
-h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
-h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
-h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
-h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
-.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
-  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
-  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
-.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
-  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
-  max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
-.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
-strong{color:var(--cream);font-weight:700}
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
 
-/* ---- site header / footer ---- */
-.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
-  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
-.site .wrap{display:flex;align-items:center;justify-content:space-between;
-  height:58px;font-family:var(--sans)}
-.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
-  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
-  display:inline-block;transform:translateY(-2px)}
-.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
-  text-transform:uppercase;color:var(--cream-dim)}
-.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
-.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
-  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
-.route-tag a{color:var(--gold);text-decoration:none}
-.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
-.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
-.route-tag .rcur{color:var(--gold-bright)}
-.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
-  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
-.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
-  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
 
-/* ---- hero ---- */
-.hero{padding-top:clamp(3rem,8vw,6rem)}
-.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
-.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
-  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
-  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
-  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
-.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
-  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
-.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
-.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
-.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
 
-/* ---- figures / takeaways ---- */
-.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
-  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
-  padding:clamp(1rem,2.4vw,1.6rem)}
-.fig svg{display:block;width:100%;height:auto}
-.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
-  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
-  padding-left:1rem;border-left:2px solid var(--gold)}
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
 
-/* ---- interactive shells (shared with lesson pages) ---- */
-.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
-.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
-  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
-  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
-.solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
-.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
-.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
-.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
-.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
-.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
-.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
-.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
-.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
-.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
-  background:var(--ink);border:1px solid var(--line);border-radius:10px;
-  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
-.geo-readout .dim{color:var(--cream-dim)}
-.geo-readout b{color:var(--redis-bright)}
-.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
 
-/* ---- script / move diagram ---- */
-.cache .box rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
-.cache .src rect{fill:#161d38;stroke:#2a3252}
-.cache .rds rect{fill:rgba(214,88,79,.10);stroke:#d6584f;transition:fill .18s ease,stroke .18s ease}
-.cache text{font-family:var(--sans);fill:#d7cfb9}
-.cache .lbl{font-family:var(--mono);fill:#a39c89;font-size:11px}
-.cache .flow{stroke:#2a3252;stroke-width:1.4;fill:none;transition:stroke .18s ease,stroke-width .18s ease}
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink);margin:18px 0 6px}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim);margin-bottom:8px}
+.door a{font-weight:600}
 
-/* ---- code ---- */
-pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
-  background:var(--ink);border:1px solid var(--line);border-radius:12px;
-  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
-pre.code .op{color:var(--elixir-bright)}
-pre.code .fn{color:var(--cream)}
-pre.code .fn.blue{color:var(--blue-bright)}
-pre.code .fn.sage{color:var(--sage-bright)}
-pre.code .fn.gold{color:var(--gold-bright)}
-pre.code .fn.elixir{color:var(--elixir-bright)}
-pre.code .fn.burg{color:#e08f8b}
-pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
-pre.code .res{color:var(--gold-bright)}
-pre.code .str{color:var(--sage-bright)}
-pre.code .cmt{color:var(--cream-dim)}
-code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
-  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
 
-/* ---- pager ---- */
-.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
-  align-items:center;font-family:var(--sans)}
-.pager .p-left{color:var(--cream-dim);font-size:.9rem}
-.pager .spacer{flex:1}
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
 
-/* ---- branded stamp ---- */
-.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
-  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
-  background:var(--ink);user-select:none}
-.stamp:hover{border-color:var(--gold)}
-.stamp .id{color:var(--gold-bright)}
-.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
-  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
 .stamp.open .panel{display:grid}
-.stamp .panel dt{color:var(--cream-dim)}
-.stamp .panel dd{margin:0;color:var(--cream)}
 
-/* ---- reveal (JS-gated; content visible without JS) ---- */
-html.js .reveal{opacity:0;transform:translateY(14px)}
-html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
-@media (prefers-reduced-motion: reduce){
-  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
 }
-
-/* ---- responsive ---- */
-@media (max-width:760px){
-  .site nav{display:none}
-  .lede{max-width:none}
-  .take{font-size:1.08rem}
-}
-
-/* ---- module / lesson page additions (additive; shared head) ---- */
-.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
-  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
-.crumbs a{color:var(--cream-soft)}
-.crumbs .sep{opacity:.45}
-.crumbs .here{color:var(--gold)}
-.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
-.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
-.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
-.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
-.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
-.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
-  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
-.bridge .cell.idea .lbl{color:var(--gold)}
-.bridge .cell.elix .lbl{color:var(--redis-bright)}
-.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
-.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
-@media (max-width:760px){
-  .bridge{grid-template-columns:1fr;gap:.7rem}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
   .bridge .arrow{justify-self:center;transform:rotate(90deg)}
 }
-.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
-  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
-.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
-.deflist dd{margin:0;color:var(--cream-soft)}
-.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
-  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
-.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
-  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
-  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
-.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
-.door a{color:var(--gold-bright)}
-/* ---- references ---- */
-.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
-@media(max-width:680px){.refs{grid-template-columns:1fr}}
-.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
-.refs h3:first-child{margin-top:0}
-.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
-.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
-.refs a{color:var(--sage-bright)}
-.refs a:hover{color:var(--cream)}
-.refs em{color:var(--cream-dim);font-style:italic}
-.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+
+/* ---------- the claim figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.qflow{width:100%;height:auto;display:block;margin-top:4px}
+.qflow .set rect{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.5}
+.qflow .set.active rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.qflow .slbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.qflow .ssub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.qflow .job{font:13px var(--mono);font-weight:700;fill:var(--r-red);text-anchor:middle}
+.qflow .step{cursor:pointer;transition:opacity .18s ease}
+.qflow .step .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.qflow .step .elbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.qflow .step.win .edge{stroke:var(--b-node)}
+.qflow .step.win .elbl{fill:var(--b-node)}
+.qflow .step.back .edge{stroke:var(--b-ts);stroke-dasharray:4 3}
+.qflow .step.back .elbl{fill:var(--b-ts)}
+.qflow.focus .step{opacity:.22}
+.qflow.focus .step.on{opacity:1}
+.qflow.focus .step.on .edge{stroke-width:2.8}
+/* the idempotency figure */
+.idem .slot rect{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.5;transition:.18s ease}
+.idem .slot.fire rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.idem .slot.skip rect{fill:#e6efe6;stroke:var(--b-node)}
+.idem .dl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.idem .mk{font:11px var(--mono);font-weight:700;text-anchor:middle}
+.idem .mk.fire{fill:var(--r-red)}
+.idem .mk.skip{fill:var(--b-node)}
+.idem .tot{font:13px var(--mono);font-weight:700}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the page</a>
 
-<header class="site">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
-    <nav>
-      <a href="/redis-patterns">Home</a>
-      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><span class="rcur">the-reliable-queue</span></span>
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><span class="rcur">the-reliable-queue</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#claim">The claim</a>
+      <a href="#idem">At-least-once</a>
+      <a href="#stalled">Stalled recovery</a>
+      <a href="#applied">In EchoMQ</a>
+      <a href="#refs">References</a>
     </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main>
+  <div class="wrap">
 
-  <style>
-    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
-    .hero-split .hero{padding-top:0}
-    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
-    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
-    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
-    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
-    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
-    .foot-cols a:hover{color:var(--cream)}
-    .foot-cols .it{color:var(--cream-dim)}
-    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
-    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
-    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
-    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
-    /* the in-flight move — a fixed job crossing three named lists */
-    .mv .list rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
-    .mv .list.hot rect{fill:rgba(212,168,90,.12);stroke:#d4a85a}
-    .mv .list.lost rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
-    .mv .list.done rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
-    .mv text{font-family:var(--sans);fill:#d7cfb9}
-    .mv .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
-    .mv .job{font-family:var(--mono);font-size:13px;font-weight:700;fill:#f0cd7f}
-    .mv .arr{stroke:#2a3252;stroke-width:1.4;fill:none;transition:stroke .18s ease}
-    .mv .arr.on{stroke:#d4a85a}
-    .mv .arr.back{stroke:#5a87c4;stroke-dasharray:3 3}
-    .mv .cmd{font-family:var(--mono);fill:#a39c89;font-size:10px}
-    /* the dedup check — N deliveries, one effect */
-    .idem .slot rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
-    .idem .slot.fire rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
-    .idem .slot.skip rect{fill:rgba(123,163,135,.12);stroke:#7ba387}
-    .idem text{font-family:var(--mono);fill:#d7cfb9;font-size:12px}
-    .idem .ttl{font-family:var(--sans);fill:#a39c89;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-    .idem .mk{font-weight:700}
-    .idem .mk.fire{fill:#f2948c}
-    .idem .mk.skip{fill:#a7c9b1}
-    .idem .tot{font-family:var(--serif-display);font-size:18px;font-weight:600}
-  </style>
-
-  <div class="hero-split">
     <section class="hero">
-      <div class="crumbs">
+      <nav class="crumbs" aria-label="Breadcrumb">
         <a href="/redis-patterns">Redis Patterns</a>
         <span class="sep">/</span>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/redis-patterns/queues">R3 · Reliable Queues</a>
         <span class="sep">/</span>
         <span class="here">The reliable queue</span>
+      </nav>
+      <p class="kicker">R3 · dive 1</p>
+      <h1>The reliable <span class="hns">queue</span>.</h1>
+      <p class="lede">A reliable queue loses no job. The naive loop &mdash; claim, process, done &mdash; drops a job
+        the instant a worker dies between the claim and the finish.</p>
+      <p class="heronote">Three guarantees build a queue that survives a crash, and they build in order: claim a job
+        into a recoverable in-flight state, so a worker that dies leaves it reclaimable, not lost; accept that
+        redelivery means at-least-once, so the consumer must be idempotent; and reclaim a job whose worker died
+        &mdash; its lease expired &mdash; back to pending. Each guarantee is EchoMQ's real worker path, grounded in
+        <code>echo/apps/echo_mq</code>. Toggle the worker below to crash mid-job, and watch the job stay leased in
+        <code>emq:{q}:active</code> until the reap returns it to <code>emq:{q}:pending</code>.</p>
+
+      <figure class="anatomy" aria-labelledby="claimCap">
+        <figcaption id="claimCap"><b>The recoverable claim &mdash; finish completes the job, a crash leaves it
+          leased.</b> Hover or select a step to light its path and read the move it runs.</figcaption>
+        <div class="segbar" id="qSel" role="group" aria-label="Select a step of the reliable claim flow">
+          <button type="button" data-step="claim" aria-pressed="false">claim</button>
+          <button type="button" data-step="finish" aria-pressed="false">finish</button>
+          <button type="button" data-step="crash" aria-pressed="false">crash mid-job</button>
+          <button type="button" data-step="reap" aria-pressed="false">reap</button>
+        </div>
+        <svg class="qflow" id="qflow" viewBox="0 0 460 210" role="img" aria-label="A job moves between three places: the pending sorted set on the left, the active set in the middle under a lease, and done on the right. Claim moves it pending to active with ZPOPMIN under a server-clock lease. Finish completes it from active to done. A crash leaves it leased in active. Reap returns an expired lease from active back to pending. Hover or select a step to light its path; the move appears in the readout.">
+          <g class="set" id="setPending"><rect x="14" y="80" width="118" height="56" rx="8"></rect><text class="slbl" x="73" y="104">pending</text><text class="ssub" x="73" y="122">emq:{q}:pending</text></g>
+          <g class="set active" id="setActive"><rect x="171" y="80" width="118" height="56" rx="8"></rect><text class="slbl" x="230" y="104">active</text><text class="ssub" x="230" y="122">under a lease</text></g>
+          <g class="set" id="setDone"><rect x="328" y="80" width="118" height="56" rx="8"></rect><text class="slbl" x="387" y="104">done</text><text class="ssub" x="387" y="122">row retired</text></g>
+          <text class="job" id="jobMark" x="230" y="72">JOB</text>
+
+          <g class="step" data-step="claim"><path class="edge" d="M132 98 L171 98"></path><text class="elbl" x="151" y="90">ZPOPMIN</text></g>
+          <g class="step win" data-step="finish"><path class="edge" d="M289 98 L328 98"></path><text class="elbl" x="308" y="90">complete/5</text></g>
+          <g class="step" data-step="crash"><path class="edge" d="M230 136 L230 168"></path><text class="elbl" x="230" y="184">crash → leased</text></g>
+          <g class="step back" data-step="reap"><path class="edge" d="M171 128 L120 162 L73 162 L73 136"></path><text class="elbl" x="120" y="180">reap → pending</text></g>
+        </svg>
+        <div class="readout" id="qOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a step. The job
+          is claimed pending&#8594;active under a lease; finish completes it; a crash leaves it leased; reap returns an
+          expired lease to pending.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="claim">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The recoverable claim</h2>
+        <span class="ssrc">echo_mq/jobs.ex &#183; @claim</span>
       </div>
-      <p class="eyebrow">R3 &middot; dive 1</p>
-      <h1>The reliable <span class="ex">queue</span></h1>
-      <p class="lede">A reliable queue loses no job. The naive loop &mdash; pop, process, done &mdash; drops a job the
-        instant a worker dies between the pop and the finish.</p>
-      <p class="kicker">Three guarantees build a queue that survives a crash, and they build in order: move a job
-        <em>into</em> an in-flight list atomically, so a worker that dies leaves it recoverable, not lost; accept that
-        redelivery means at-least-once, so the consumer must be idempotent; and reclaim a job whose worker died &mdash;
-        its lock expired &mdash; back to the waiting list. Toggle the worker on the right to crash mid-job, and watch
-        the job stay parked in <code class="inl">active</code> until the stalled sweep returns it to
-        <code class="inl">wait</code>. Each guarantee is EchoMQ's real worker path, below.</p>
-      <div class="toc-mini" aria-label="On this page">
-        <a href="#move">The in-flight move</a>
-        <a href="#idem">At-least-once</a>
-        <a href="#stalled">Stalled recovery</a>
-        <a href="#applied">In EchoMQ</a>
-        <a href="#refs">References</a>
+      <div class="prose">
+        <p>A pop-and-process loop is the leak. If a job leaves the queue the moment it is taken &#8212; before any work
+          has happened &#8212; and the worker then crashes (a deploy, an OOM kill, a power loss), the job is neither in
+          Valkey nor finished. It is lost, with nothing to recover it from.</p>
+        <p>The fix is to never let a job leave a recoverable place until it is done. EchoMQ does not pop a job out: it
+          <strong>claims</strong> it from the pending sorted set into the active set under a <strong>lease</strong>.
+          <code>EchoMQ.Jobs.claim/3</code> runs one inline Lua script &#8212; <code>ZPOPMIN emq:{q}:pending</code>
+          takes the oldest id, <code>HINCRBY</code> bumps the row's <code>attempts</code>, <code>HSET</code> marks the
+          row <code>active</code>, and <code>ZADD emq:{q}:active</code> parks the id scored by its lease deadline,
+          where the deadline is read from the server's <code>TIME</code>. The job is in exactly one set at every
+          instant; a worker that dies leaves its job leased in the active set, recoverable.</p>
+      </div>
+      <pre class="code"><span class="cmt">-- @claim (inline EchoMQ.Script.new/2) — the leased, recoverable claim</span>
+local popped = redis.call('<b>ZPOPMIN</b>', KEYS[1])         <span class="cmt">-- KEYS[1] = emq:{q}:pending</span>
+if #popped == 0 then return {} end
+local id = popped[1]
+local att = redis.call('<b>HINCRBY</b>', jk, 'attempts', 1)  <span class="cmt">-- the fencing token</span>
+redis.call('HSET', jk, 'state', 'active')
+local t = redis.call('<b>TIME</b>')                          <span class="cmt">-- the server clock, not the caller's</span>
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), id)  <span class="cmt">-- KEYS[2] = emq:{q}:active, lease deadline</span>
+return {id, redis.call('HGET', jk, 'payload'), att}</pre>
+      <p class="take">A job is never popped out into nowhere &#8212; it is claimed into the active set under a lease, so
+        a crash leaves it leased and reclaimable, not lost.</p>
+    </section>
+
+    <section id="idem">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>At-least-once and idempotency</h2>
+        <span class="ssrc">echo_mq/jobs.ex &#183; @complete</span>
+      </div>
+      <div class="prose">
+        <p>The recoverable claim makes redelivery possible &#8212; that is the whole point. It also makes redelivery
+          inevitable in one case: a worker that finishes the work, then crashes before it completes the job. On
+          recovery the lease has expired, so the job is reclaimed and the work runs again.</p>
+        <p>This is the honest cost of never losing a job. <strong>Exactly-once delivery is a lie</strong> &#8212; you
+          cannot both guarantee a job is never lost and guarantee it is never delivered twice, because the completion
+          itself can be lost. A reliable queue offers <strong>at-least-once</strong>: a job is delivered one or more
+          times, never zero. The responsibility moves to the consumer, which must be <strong>idempotent</strong>.</p>
+        <p>The stable key for that is the job's identity. Every EchoMQ job is a branded <code>JOB</code> id, gated at
+          the key builder (<code>EchoMQ.Keyspace.job_key/2</code>). Key the effect on that id and a redelivery is a
+          no-op. EchoMQ also fences completion itself: <code>EchoMQ.Jobs.complete/5</code> carries the
+          <code>attempts</code> token the claim minted, and a completion whose token no longer matches is refused, so
+          a stale worker cannot complete a job another worker now holds. Slide the delivery count below and watch the
+          id-keyed effect stay at one.</p>
+      </div>
+
+      <figure class="anatomy idem" aria-labelledby="idemCap">
+        <figcaption id="idemCap"><b>At-least-once vs effect-once &mdash; N deliveries, the JOB-id key, how many
+          effects.</b> Select the consumer kind.</figcaption>
+        <div class="segbar" id="idemSel" role="group" aria-label="Whether the consumer is idempotent">
+          <button type="button" data-idem="on" aria-pressed="true">idempotent (JOB-id key)</button>
+          <button type="button" data-idem="off" aria-pressed="false">no key</button>
+        </div>
+        <svg class="idem" viewBox="0 0 460 120" role="img" aria-label="A job delivered three times. With the branded JOB id as the idempotency key, the first delivery applies the effect once and every later delivery is a no-op, so the effect count stays one. With no key, every delivery applies the effect, so the effect count equals the delivery count.">
+          <g class="slot" id="d1"><rect x="20" y="20" width="120" height="44" rx="8"></rect></g>
+          <text class="dl" x="80" y="40">deliver 1</text>
+          <text class="mk" id="d1m" x="80" y="56">effect</text>
+          <g class="slot" id="d2"><rect x="170" y="20" width="120" height="44" rx="8"></rect></g>
+          <text class="dl" x="230" y="40">deliver 2</text>
+          <text class="mk" id="d2m" x="230" y="56">effect</text>
+          <g class="slot" id="d3"><rect x="320" y="20" width="120" height="44" rx="8"></rect></g>
+          <text class="dl" x="380" y="40">deliver 3</text>
+          <text class="mk" id="d3m" x="380" y="56">effect</text>
+          <text class="tot" id="idemTot" x="20" y="98" fill="#2e7d5b">3 deliveries → 1 effect</text>
+        </svg>
+        <div class="readout" id="idemOut" aria-live="polite"></div>
+      </figure>
+
+      <p class="take">Exactly-once delivery is a lie; a reliable queue is at-least-once. Keying the effect on the
+        branded <code>JOB</code> id makes the effect happen once across every redelivery.</p>
+    </section>
+
+    <section id="stalled">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Stalled recovery</h2>
+        <span class="ssrc">echo_mq/jobs.ex &#183; @reap &#183; stalled.ex</span>
+      </div>
+      <div class="prose">
+        <p>A job in the active set whose worker has died must come back. The death signal is a <strong>lease that
+          expired</strong>: the active set is scored by each job's lease deadline, so any member whose score is in the
+          past is held by no live worker. <code>EchoMQ.Jobs.reap/2</code> is the recovery &#8212; one inline Lua sweep
+          over <code>emq:{q}:active</code> for members scored at or before <code>now</code> (server <code>TIME</code>),
+          each <code>ZADD</code>ed back to <code>emq:{q}:pending</code> and re-marked <code>pending</code>. The job
+          re-enters the normal pickup path and is delivered again &#8212; at-least-once in action.</p>
+        <p>The sweep must itself be careful. Done as two steps &#8212; read the expired set, then move each member
+          &#8212; two recovery processes can both see the same stalled job and both move it. EchoMQ runs
+          detect-and-move as one Lua script over the active and pending sets, so each stalled member is reclaimed once
+          per sweep. A non-atomic check-then-move is the cautionary contrast, correct only until two sweeps overlap.</p>
+        <p>Above the bare reaper sits <code>EchoMQ.Stalled.check/3</code>, a count-thresholded sweep: each pass
+          increments a per-job <code>stalled</code> field, recovers a job below the <code>:max_stalled</code>
+          threshold, and dead-letters one at or above it &#8212; so a job that repeatedly stalls is not recovered
+          forever, but lands on the durable floor.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>ZRANGEBYSCORE active -inf now</code> selects every
+        member whose lease deadline is at or before the server's now, in one pass &#8212; the reap reads the same
+        <code>TIME</code> the claim wrote, so a lease is never judged expired against a clock it never saw &#8212;
+        <a href="https://valkey.io/commands/zrangebyscore/" rel="noopener">valkey.io/commands/zrangebyscore</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>In EchoMQ &mdash; the worker path that loses no job</h2>
+        <span class="ssrc">echo/apps/echo_mq</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ's worker loop is all three guarantees in real code. The recoverable claim is
+          <code>EchoMQ.Jobs.claim/3</code> &#8212; <code>ZPOPMIN</code> from <code>emq:{q}:pending</code> into
+          <code>emq:{q}:active</code> under a server-clock lease. The idempotency key is the branded <code>JOB</code>
+          id, fenced by the <code>attempts</code> token on <code>EchoMQ.Jobs.complete/5</code>. Stalled recovery is
+          <code>EchoMQ.Jobs.reap/2</code> and the count-thresholded <code>EchoMQ.Stalled.check/3</code>. The
+          <code>EchoMQ.Consumer</code> loop drives them on a beat: reap, then drain.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A reliable queue claims a job into a recoverable in-flight state under a lease, redelivers it
+            at-least-once to an idempotent consumer, and reclaims a crashed job whose lease expired.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Jobs.claim/3</code>'s <code>ZPOPMIN</code> + server-clock lease, the branded <code>JOB</code>
+            id fenced by the <code>attempts</code> token on <code>complete/5</code>, and <code>EchoMQ.Jobs.reap/2</code>
+            with <code>EchoMQ.Stalled.check/3</code> &#8212; the real Elixir worker path.</p>
+        </div>
+      </div>
+      <p class="take">The naive pop-and-process loses a job on a crash; EchoMQ's leased claim, its
+        <code>JOB</code>-id-keyed idempotent effect, and its reap sweep are the three guarantees that make the queue
+        lose none.</p>
+
+      <div class="door">
+        <span class="dr">&rarr; EchoMQ &#183; /echomq/queue</span>
+        <h3>The state machine in depth</h3>
+        <p>The full worker fetch loop &#8212; the lease cadence, the metronome that fans readiness across a worker
+          pool, fair lanes, and the schedule set &#8212; is the dedicated EchoMQ Queue pillar. This dive teaches the
+          reliable-queue pattern; that course teaches the engine that runs it.</p>
+        <p><a href="/echomq/queue">/echomq/queue &#183; the EchoMQ Queue pillar</a></p>
       </div>
     </section>
 
-    <figure class="fig mv" aria-labelledby="mvTitle">
-      <h4 id="mvTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The in-flight move &middot; job 7 across wait, active, done &mdash; and back</h4>
-      <div class="controls">
-        <div class="solid-select" id="mvSel" role="group" aria-label="Whether the worker finishes the job or crashes mid-job">
-          <button type="button" data-mode="finish" data-c="sage" class="active" aria-pressed="true">worker finishes</button>
-          <button type="button" data-mode="crash" data-c="redis" aria-pressed="false">worker crashes mid-job</button>
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/zpopmin/" rel="noopener">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; the pop that claims the oldest pending job from the score-0 mint-ordered set, the heart of the claim script.</li>
+            <li><a href="https://valkey.io/commands/hincrby/" rel="noopener">Valkey &mdash; <em>HINCRBY</em></a> &mdash; increments the row's <code>attempts</code>, the lease fencing token that makes a stale completion a no-op.</li>
+            <li><a href="https://valkey.io/commands/time/" rel="noopener">Valkey &mdash; <em>TIME</em></a> &mdash; the server clock the lease deadline and reap both read, never the caller's.</li>
+            <li><a href="https://redis.io/docs/latest/develop/interact/programmability/eval-intro/" rel="noopener">Redis &mdash; <em>Scripting with Lua</em></a> &mdash; how the multi-key claim and the reap sweep each run as one atomic script.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a><span class="rs">the chapter: the whole family</span></li>
+            <li><a href="/redis-patterns/queues/states-as-locations">R3 &#183; States as locations</a><span class="rs">the next dive: the lifecycle as one atomic Lua transition</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &#183; Atomic updates</a><span class="rs">the atomic move the reliable queue is built on</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the EchoMQ Queue pillar: the leased state machine in depth</span></li>
+          </ul>
         </div>
       </div>
+    </section>
 
-      <svg viewBox="0 0 460 220" role="img" aria-label="Job 7 starts in the wait list. RPOPLPUSH moves it atomically into the active list under a lock. When the worker finishes, the job is removed from active and recorded done. When the worker crashes mid-job, the job stays parked in active, recoverable; its lock then expires and moveStalledJobsToWait returns it to the wait list for another worker. The selected mode lights the job's resting place.">
-        <!-- wait -->
-        <text class="ttl" x="30" y="28">emq:{q}:wait (LIST)</text>
-        <g class="list" id="lWait"><rect x="30" y="36" width="120" height="46" rx="10"></rect></g>
-        <text class="job" id="jobWait" x="90" y="64" text-anchor="middle">&mdash;</text>
-        <!-- active -->
-        <text class="ttl" x="170" y="28">emq:{q}:active (LIST)</text>
-        <g class="list" id="lActive"><rect x="170" y="36" width="120" height="46" rx="10"></rect></g>
-        <text class="job" id="jobActive" x="230" y="64" text-anchor="middle">&mdash;</text>
-        <!-- done -->
-        <text class="ttl" x="310" y="28">finished</text>
-        <g class="list" id="lDone"><rect x="310" y="36" width="120" height="46" rx="10"></rect></g>
-        <text class="job" id="jobDone" x="370" y="64" text-anchor="middle">&mdash;</text>
-        <!-- arrows -->
-        <path class="arr on" id="arrWA" d="M150 59 L170 59"></path>
-        <text class="cmd" x="138" y="100">RPOPLPUSH</text>
-        <path class="arr" id="arrAD" d="M290 59 L310 59"></path>
-        <text class="cmd" x="296" y="100">LREM</text>
-        <!-- the recovery path back to wait -->
-        <path class="arr" id="arrBack" d="M230 82 C 230 150, 90 150, 90 82"></path>
-        <text class="cmd" id="backLbl" x="120" y="148" fill="#5a87c4">moveStalledJobsToWait</text>
-        <!-- verdict -->
-        <text class="ttl" id="mvVerd" x="230" y="190" text-anchor="middle">RPOPLPUSH parked job 7 in active under a lock</text>
-        <text class="ttl" id="mvVerd2" x="230" y="208" text-anchor="middle" fill="#a7c9b1">finish &middot; LREM removes job 7 &rarr; done</text>
-      </svg>
-
-      <div class="geo-readout" id="mvOut" aria-live="polite"></div>
-    </figure>
-  </div>
-
-  <section id="move">
-    <h2>The in-flight move</h2>
-    <div class="prose">
-      <p><code class="inl">RPOP</code> and process is the leak. The job leaves the queue the moment it is popped,
-        before any work has happened; if the worker crashes mid-job &mdash; a deploy, an OOM kill, a power loss &mdash;
-        the job is neither in Redis nor finished. It is lost, with nothing to recover it from.</p>
-      <p>The fix is to never let a job leave Redis until it is done. Instead of popping the job out, move it
-        <em>into a second list</em> &mdash; an in-flight list &mdash; in one atomic step.
-        <code class="inl">RPOPLPUSH source dest</code> (and its modern successor
-        <code class="inl">LMOVE source dest RIGHT LEFT</code>) pops from one list and pushes to another as a single
-        command: the job is in exactly one of the two lists at every instant, never in neither. A job parked in the
-        in-flight list whose worker has died is still <em>there</em> &mdash; it can be found and returned for
-        redelivery.</p>
-      <pre class="code"><span class="cmt"># the leak: a window where the job is in neither list</span>
-job = <span class="op">RPOP</span> queue            <span class="cmt"># job is now out of Redis...</span>
-process(job)                <span class="cmt"># ...if the worker dies HERE, the job is gone</span>
-
-<span class="cmt"># the fix: the job is always in exactly one list</span>
-job = <span class="rdx">RPOPLPUSH</span> queue processing   <span class="cmt"># atomic: leaves `queue`, lands in `processing`</span>
-process(job)                       <span class="cmt"># a crash here leaves the job in `processing`</span>
-<span class="op">LREM</span> processing 1 job              <span class="cmt"># remove only after the work is truly done</span></pre>
-      <p><code class="inl">RPOPLPUSH</code> is the original move command; <code class="inl">LMOVE</code> (Redis 6.2+)
-        generalises it with explicit directions and is the recommended form for new code. Either way the guarantee is
-        the same: there is no instant at which the job exists nowhere.</p>
-    </div>
-
-    <dl class="deflist">
-      <dt>in-flight list</dt><dd>A second list a job is moved <em>into</em> for processing &mdash; EchoMQ's <code class="inl">emq:{queue}:active</code>. A crashed worker leaves the job here, recoverable, not lost.</dd>
-      <dt>RPOPLPUSH</dt><dd>Pop from the tail of one list, push to the head of another, atomically. The job is in exactly one of the two lists at every instant.</dd>
-      <dt>LMOVE</dt><dd>The Redis 6.2+ successor with explicit <code class="inl">RIGHT</code>/<code class="inl">LEFT</code> directions; the recommended form for new code.</dd>
-    </dl>
-
-    <p class="take">Never let a job leave Redis until it is finished: move it into an in-flight list in one atomic step,
-      so a crash leaves it parked and recoverable, never in neither list.</p>
-  </section>
-
-  <section id="idem">
-    <h2>At-least-once and idempotency</h2>
-    <div class="prose">
-      <p>The in-flight move makes redelivery <em>possible</em> &mdash; that is the whole point. But it also makes
-        redelivery <em>inevitable</em> in one case: a worker that finishes the work, then crashes before it can remove
-        the job from the in-flight list. On recovery the job is still in-flight, so it is redelivered and the work runs
-        again.</p>
-      <p>This is the honest cost of never losing a job. <strong>Exactly-once delivery is a lie</strong> &mdash; you
-        cannot both guarantee a job is never lost <em>and</em> guarantee it is never delivered twice, because the
-        acknowledgement itself can be lost. What a reliable queue offers is <strong>at-least-once</strong> delivery: a
-        job is delivered one or more times, never zero. The responsibility moves to the consumer, which must be
-        <strong>idempotent</strong> &mdash; running the same job twice must produce the same effect as running it
-        once.</p>
-      <p>The discipline is to make the <em>effect</em> exactly-once even though the <em>delivery</em> is at-least-once.
-        The standard move is a dedup marker keyed by a stable job id: before the effect runs, claim the marker; if it
-        already exists, the effect has already happened, so skip it.</p>
-      <pre class="code"><span class="cmt"># at-least-once delivery + an idempotent effect = exactly-once effect</span>
-<span class="op">if</span> <span class="rdx">SET</span> dedup:{job_id} 1 <span class="op">NX</span>:          <span class="cmt"># claim the marker; NX = only if absent</span>
-    apply_effect(job)                <span class="cmt"># first delivery: charge the card once</span>
-<span class="op">else</span>:
-    skip()                           <span class="cmt"># a redelivery: marker is set, do nothing</span></pre>
-      <p>A non-idempotent consumer double-charges on every redelivery; an idempotent one charges once, no matter how
-        many times the job arrives. The marker is the difference: the second delivery finds it set and skips the effect.
-        Toggle the marker off below and slide the delivery count up to watch the effects multiply.</p>
-    </div>
-
-    <figure class="fig idem" aria-labelledby="idemTitle">
-      <h4 id="idemTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">At-least-once vs effect-once &middot; N deliveries, the de:{id} marker, how many effects</h4>
-      <div class="controls">
-        <div class="solid-select" id="idemSel" role="group" aria-label="Whether the consumer is idempotent">
-          <button type="button" data-idem="on" data-c="sage" class="active" aria-pressed="true">idempotent (de:{id} marker)</button>
-          <button type="button" data-idem="off" data-c="redis" aria-pressed="false">no marker</button>
-        </div>
-        <div class="fold-ctrl">
-          <label for="idemRange">deliveries</label>
-          <input type="range" id="idemRange" min="1" max="3" step="1" value="2">
-          <span class="val" id="idemVal">2</span>
-        </div>
-      </div>
-
-      <svg viewBox="0 0 460 168" role="img" aria-label="A job delivered up to three times. With the de:id dedup marker on, the first delivery claims the marker and applies the effect once; every later delivery finds the marker and skips, so the effect count stays one no matter how many deliveries. With no marker, every delivery applies the effect, so the effect count equals the delivery count and the card is charged that many times.">
-        <!-- three delivery slots -->
-        <text class="ttl" x="30" y="26">deliveries</text>
-        <g class="slot" id="s1"><rect x="30" y="36" width="110" height="44" rx="9"></rect></g>
-        <text x="85" y="56" text-anchor="middle" id="s1t">deliver 1</text>
-        <text class="mk" id="s1m" x="85" y="72" text-anchor="middle">effect</text>
-        <g class="slot" id="s2"><rect x="150" y="36" width="110" height="44" rx="9"></rect></g>
-        <text x="205" y="56" text-anchor="middle" id="s2t">deliver 2</text>
-        <text class="mk" id="s2m" x="205" y="72" text-anchor="middle">effect</text>
-        <g class="slot" id="s3"><rect x="270" y="36" width="110" height="44" rx="9"></rect></g>
-        <text x="325" y="56" text-anchor="middle" id="s3t">deliver 3</text>
-        <text class="mk" id="s3m" x="325" y="72" text-anchor="middle">effect</text>
-        <!-- tally -->
-        <text class="tot" id="idemTot" x="30" y="124" fill="#a7c9b1">2 deliveries &rarr; 1 effect</text>
-        <text class="ttl" id="idemSub" x="30" y="148">de:{id} marker absorbs the redeliveries &middot; card charged once</text>
-      </svg>
-
-      <div class="geo-readout" id="idemOut" aria-live="polite"></div>
-    </figure>
-
-    <p class="take">Exactly-once delivery is a lie; a reliable queue is at-least-once. A dedup marker keyed by the job
-      id makes the <em>effect</em> happen once across every redelivery.</p>
-  </section>
-
-  <section id="stalled">
-    <h2>Stalled recovery</h2>
-    <div class="prose">
-      <p>A job in the in-flight list whose worker has died must come back. The signal that a worker died is a
-        <strong>lock that expired</strong>: each in-flight job holds a lock with a TTL, and a healthy worker renews it
-        on a heartbeat. When the worker crashes, the heartbeat stops, the lock expires, and the job is now stuck
-        in-flight with no live worker.</p>
-      <p>A separate recovery sweep finds these jobs and returns them to <code class="inl">wait</code> for another
-        worker. It checks the in-flight list, and for each job whose lock has expired, moves it back to the waiting
-        list. The job re-enters the normal pickup path and is delivered again &mdash; at-least-once in action &mdash;
-        to a worker that can finish it. A job is only truly lost if both the recovery sweep and every worker fail at
-        once, which is the failure the lock TTL plus the sweep are designed to bound.</p>
-      <p>The recovery sweep must itself be careful. If it runs the check and the move as two separate steps, two
-        recovery processes can both see the same stalled job and both move it, redelivering it twice over. The atomic
-        form runs the detect-and-move as one step &mdash; one Lua script over the in-flight list, the lock, and the
-        waiting list &mdash; so each stalled job is reclaimed once per sweep. The non-atomic form, where the check and
-        the move are separate round trips, is the cautionary contrast: correct only until two sweeps overlap.</p>
-    </div>
-
-    <div class="bridge">
-      <div class="cell idea">
-        <span class="lbl">detect</span>
-        <p>A stalled job is one in the in-flight list whose lock has expired &mdash; the heartbeat stopped, so no live
-          worker holds it. The expired lock is the death signal.</p>
-      </div>
-      <div class="arrow" aria-hidden="true">+</div>
-      <div class="cell idea">
-        <span class="lbl">then reclaim, atomically</span>
-        <p>Move it back to <code class="inl">wait</code> in one Lua step over the in-flight list, the lock, and the
-          waiting list &mdash; so two overlapping sweeps cannot redeliver the same job twice.</p>
-      </div>
-    </div>
-
-    <p class="take">A job whose worker died is one in the in-flight list with an expired lock; an atomic detect-and-move
-      sweep returns it to <code class="inl">wait</code>, so the job is reclaimed, not abandoned.</p>
-  </section>
-
-  <section id="applied">
-    <h2>In EchoMQ &mdash; the worker path that loses no job</h2>
-    <div class="prose">
-      <p>EchoMQ's worker fetch loop is all three guarantees in real code, in <code class="inl">echo/apps/echomq</code>.
-        The in-flight move is <code class="inl">moveToActive-11.lua</code>: its body runs
-        <code class="inl">rcall("RPOPLPUSH", waitKey, activeKey)</code>, where <code class="inl">waitKey</code> is
-        <code class="inl">emq:{queue}:wait</code> and <code class="inl">activeKey</code> is
-        <code class="inl">emq:{queue}:active</code> (<code class="inl">EchoMQ.Keys.wait/1</code> and
-        <code class="inl">EchoMQ.Keys.active/1</code>). The job leaves <code class="inl">wait</code> and lands in
-        <code class="inl">active</code> under a lock in one atomic script &mdash; a crash leaves it in
-        <code class="inl">active</code>, recoverable, never lost.</p>
-      <pre class="code"><span class="cmt">-- moveToActive-11.lua — the atomic in-flight move (real)</span>
-<span class="op">local</span> waitKey = KEYS[<span class="res">1</span>]      <span class="cmt">-- emq:{queue}:wait</span>
-<span class="op">local</span> activeKey = KEYS[<span class="res">2</span>]    <span class="cmt">-- emq:{queue}:active</span>
-<span class="op">local</span> jobId = <span class="fn gold">rcall</span>(<span class="str">"RPOPLPUSH"</span>, waitKey, activeKey)  <span class="cmt">-- wait -&gt; active, atomically</span></pre>
-      <p>At-least-once with an idempotent effect is the dedup marker <code class="inl">EchoMQ.Keys.dedup/2</code>,
-        which builds <code class="inl">emq:{queue}:de:{id}</code> (<code class="inl">"#{base(ctx)}:de:#{dedup_id}"</code>).
-        A job carrying a deduplication id is dropped if the marker already exists, so the effect runs once across
-        redeliveries. Stalled recovery is <code class="inl">moveStalledJobsToWait-8.lua</code>: it operates over the
-        <code class="inl">stalled</code>, <code class="inl">wait</code>, and <code class="inl">active</code> keys, and
-        for each job in <code class="inl">active</code> whose lock has expired it moves the job back to
-        <code class="inl">wait</code> for another worker. The Go port's non-atomic stalled path &mdash; a separate
-        check followed by a separate move &mdash; is the cautionary contrast to this atomic form, not the recommended
-        one.</p>
-    </div>
-
-    <div class="bridge">
-      <div class="cell idea">
-        <span class="lbl">the pattern</span>
-        <p>A reliable queue moves a job into an in-flight list under a lock, redelivers it at-least-once to an
-          idempotent consumer, and reclaims a crashed job whose lock expired.</p>
-      </div>
-      <div class="arrow" aria-hidden="true">&rarr;</div>
-      <div class="cell elix">
-        <span class="lbl">in EchoMQ</span>
-        <p><code class="inl">moveToActive-11.lua</code>'s <code class="inl">RPOPLPUSH wait&rarr;active</code>,
-          <code class="inl">EchoMQ.Keys.dedup/2</code>'s <code class="inl">emq:{queue}:de:{id}</code> marker, and
-          <code class="inl">moveStalledJobsToWait-8.lua</code> &mdash; the iconic Elixir worker path.</p>
-      </div>
-    </div>
-
-    <p class="take">The naive pop-and-process loses a job on a crash; EchoMQ's atomic move into
-      <code class="inl">active</code>, its <code class="inl">de:{id}</code> dedup marker, and its stalled sweep are the
-      three guarantees that make the queue lose none.</p>
-
-    <div class="door">
-      <span class="lbl">Door &middot; not depth</span>
-      The full worker fetch loop &mdash; the heartbeat manager that renews the lock, the stalled-check coordination
-      across a whole worker pool, and the polyglot concurrency models &mdash; is the dedicated
-      <strong>EchoMQ course</strong>, a living agile-spec course that teaches the protocol in depth. From here, R3
-      opens onto <a href="/echomq/core">E2 &middot; The lifecycle, components &amp; runtimes</a> &mdash; the as-built
-      library and the worker fetch loop. This dive teaches the reliable-queue pattern; that course teaches the engine
-      that runs it.
-    </div>
-  </section>
-
-  <section id="refs">
-    <h2>References</h2>
-    <div class="prose">
-      <p>Where the atomic move that parks a job in the in-flight list is specified, its modern successor, the scripting
-        that runs the multi-key reliable move as one step, and the queue protocol EchoMQ ports.</p>
-    </div>
-    <div class="refs">
-      <div>
-        <h3>Sources</h3>
-        <ul>
-          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the original atomic move that parks a job in the in-flight list, the heart of <code>moveToActive-11.lua</code>.</li>
-          <li><a href="https://redis.io/commands/lmove/">Redis &mdash; <em>LMOVE</em></a> &mdash; the modern successor (Redis 6.2+), with explicit <code>RIGHT</code>/<code>LEFT</code> directions, recommended for new code.</li>
-          <li><a href="https://redis.io/docs/latest/develop/interact/programmability/eval-intro/">Redis &mdash; <em>EVAL / scripting</em></a> &mdash; how the multi-key reliable move and the stalled sweep run as one atomic Lua script.</li>
-          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the wait/active/stalled worker path EchoMQ ports, where the Lua scripts are the protocol.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Related in this course</h3>
-        <ul>
-          <li><a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a> &mdash; the chapter: the whole reliable-queue family.</li>
-          <li><a href="/redis-patterns/queues/states-as-locations">R3 &middot; States as locations</a> &mdash; the next dive: each job state is a Redis list it lives in, and the move between them is the transition.</li>
-          <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a> &mdash; the atomic move the reliable queue is built on: read-decide-write in one indivisible step.</li>
-          <li><a href="/redis-patterns/overview/redis-under-portal">R0.2 &middot; Redis under Portal</a> &mdash; where EchoMQ sits in Portal's reserved Redis tier.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section>
     <nav class="pager" aria-label="Page navigation">
-      <a class="btn ghost" href="/redis-patterns/queues"><span aria-hidden="true">&larr;</span>&nbsp; R3 &middot; Reliable Queues &middot; chapter</a>
-      <span class="spacer"></span>
-      <a class="btn" href="/redis-patterns/queues/states-as-locations">R3 &middot; States as locations <span aria-hidden="true">&rarr;</span></a>
+      <a class="pgx" href="/redis-patterns/queues"><span class="pk">up</span>&#8592; R3 &#183; Reliable Queues</a>
+      <a class="pgx" href="/redis-patterns/queues/states-as-locations"><span class="pk">next</span>R3 &#183; States as locations &#8594;</a>
     </nav>
-  </section>
 
+  </div>
 </main>
 
 <footer class="site-foot">
-  <div class="wrap" style="display:block">
-    <div class="foot-cols">
-      <div>
-        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
-        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+          real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
-      <div>
-        <h4>This chapter</h4>
-        <a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a>
-        <a href="/redis-patterns/queues/states-as-locations">R3 &middot; States as locations</a>
-        <a href="/redis-patterns/queues/the-road-ahead">R3 &middot; The road ahead</a>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/redis-patterns/queues/the-reliable-queue">R3 &#183; The reliable queue</a>
+        <a href="/redis-patterns/queues/states-as-locations">R3 &#183; States as locations</a>
+        <a href="/redis-patterns/queues/the-road-ahead">R3 &#183; The road ahead</a>
       </div>
-      <div>
-        <h4>The course</h4>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
         <a href="/redis-patterns">Course home</a>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
-        <a href="/elixir">Companion &middot; Functional Programming</a>
-        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+        <a href="/echomq/queue">EchoMQ — the Queue pillar</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
       </div>
-    </div>
-    <div class="foot-bottom">
-      <span class="cr">&copy; jonnify</span>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
       <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
         build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
         <dl class="panel">
@@ -643,149 +507,97 @@ process(job)                       <span class="cmt"># a crash here leaves the j
 <script>
 (function () {
   "use strict";
+  document.documentElement.classList.add('js');
 
-  /* ---------- hero: the in-flight move + crash/recover (pure over the finish/crash toggle) ---------- */
-  // Job 7 starts in wait. RPOPLPUSH moves it atomically to active under a lock. On finish, LREM removes it -> done.
-  // On crash, the job stays parked in active (recoverable); its lock expires and moveStalledJobsToWait-8.lua returns
-  // it to wait for another worker. The state after the chosen event is a pure function of the mode.
-  var GOLD = '#f0cd7f', SAGE = '#a7c9b1', REDIS = '#f2948c', BLUE = '#9fc0ea', DIM = '#a39c89';
-  // pure: mode -> { wait, active, done, where, text, verd, verd2, verdColor }
-  function step(mode) {
-    if (mode === 'crash') {
-      return {
-        wait: '7', active: '—', done: '—', where: 'wait', recovered: true,
-        verd: 'worker crashed — job 7 stays parked in active',
-        verd2: 'lock expired → moveStalledJobsToWait returned job 7 to wait',
-        verdColor: BLUE,
-        text: 'RPOPLPUSH parked job 7 in emq:{q}:active under a lock; the worker crashed mid-job. ' +
-          'The job is still in active — recoverable, never lost. Its lock then expired, and ' +
-          'moveStalledJobsToWait-8.lua returned it to emq:{q}:wait for another worker. At-least-once in action.'
-      };
-    }
-    return {
-      wait: '—', active: '—', done: '7', where: 'done', recovered: false,
-      verd: 'RPOPLPUSH parked job 7 in active under a lock',
-      verd2: 'worker finished · LREM removed job 7 → done',
-      verdColor: SAGE,
-      text: 'RPOPLPUSH moved job 7 from emq:{q}:wait into emq:{q}:active under a lock, atomically. ' +
-        'The worker finished the work, then LREM removed job 7 from active → done. ' +
-        'At no instant was job 7 in neither list.'
-    };
-  }
-  function setMove(mode) {
-    var crash = mode === 'crash';
-    var r = step(mode);
-    var lWait = document.getElementById('lWait'), lActive = document.getElementById('lActive'),
-        lDone = document.getElementById('lDone'),
-        jW = document.getElementById('jobWait'), jA = document.getElementById('jobActive'),
-        jD = document.getElementById('jobDone'),
-        arrAD = document.getElementById('arrAD'), arrBack = document.getElementById('arrBack'),
-        verd = document.getElementById('mvVerd'), verd2 = document.getElementById('mvVerd2'),
-        out = document.getElementById('mvOut');
-    if (jW) jW.textContent = r.wait;
-    if (jA) jA.textContent = r.active;
-    if (jD) jD.textContent = r.done;
-    // light the resting place
-    if (lWait) { lWait.classList.toggle('hot', r.where === 'wait'); }
-    if (lActive) { lActive.classList.remove('hot', 'done', 'lost'); }
-    if (lDone) { lDone.classList.toggle('done', r.where === 'done'); }
-    // arrows: finish lights wait->active->done; crash lights the back-to-wait path
-    if (arrAD) arrAD.classList.toggle('on', !crash);
-    if (arrBack) arrBack.classList.toggle('back', crash);
-    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', crash ? REDIS : DIM); }
-    if (verd2) { verd2.textContent = r.verd2; verd2.setAttribute('fill', r.verdColor); }
-    if (out) out.textContent = r.text;
-  }
-  document.querySelectorAll('#mvSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var mode = b.getAttribute('data-mode');
-      document.querySelectorAll('#mvSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+  /* ---------- hero: the recoverable claim (pure over a fixed dataset) ---------- */
+  var QSTEP = {
+    claim:  { active: 'active', mark: true,  text: 'EchoMQ.Jobs.claim/3 — ZPOPMIN emq:{q}:pending takes the oldest JOB, HINCRBY bumps attempts, and ZADD parks it in emq:{q}:active scored by now + lease_ms (server TIME). The job is now leased in active.' },
+    finish: { active: 'done',  mark: false, text: 'EchoMQ.Jobs.complete/5 — the attempts token matches, so the row retires from active to done. The completion is fenced: a stale token would be refused.' },
+    crash:  { active: 'active', mark: true,  text: 'The worker crashed mid-job. The JOB stays leased in emq:{q}:active — recoverable, never lost. Its lease deadline will pass.' },
+    reap:   { active: 'pending', mark: false, text: 'EchoMQ.Jobs.reap/2 — the lease expired by the server clock, so the JOB is ZADDed back to emq:{q}:pending and re-marked pending, ready for another worker. At-least-once in action.' }
+  };
+  var qflow = document.getElementById('qflow');
+  var qButtons = document.querySelectorAll('#qSel button');
+  var qOut = document.getElementById('qOut');
+  var SET_IDS = { pending: 'setPending', active: 'setActive', done: 'setDone' };
+  function selectQ(step) {
+    qButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-step') === step ? 'true' : 'false');
+    });
+    if (qflow) {
+      qflow.classList.toggle('focus', !!step);
+      qflow.querySelectorAll('.step').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-step') === step);
       });
-      setMove(mode);
+      var d = step ? QSTEP[step] : null;
+      Object.keys(SET_IDS).forEach(function (k) {
+        var el = document.getElementById(SET_IDS[k]);
+        if (el) el.classList.toggle('active', !!d && d.active === k);
+      });
+      var mark = document.getElementById('jobMark');
+      if (mark) mark.style.opacity = (!d || d.mark) ? '1' : '.25';
+    }
+    if (qOut) {
+      qOut.innerHTML = step
+        ? '<span class="rk">step &#183;</span> ' + step + '<br>' + QSTEP[step].text
+        : '<span class="rk">readout &#183;</span> Select a step. The job is claimed pending&#8594;active under a lease; finish completes it; a crash leaves it leased; reap returns an expired lease to pending.';
+    }
+  }
+  qButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var step = b.getAttribute('data-step');
+      selectQ(b.getAttribute('aria-pressed') === 'true' ? null : step);
     });
   });
-  setMove('finish'); // initial render — correct without interaction
+  if (qflow) {
+    qflow.querySelectorAll('.step').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectQ(g.getAttribute('data-step')); });
+      g.addEventListener('mouseleave', function () { selectQ(null); });
+    });
+  }
+  selectQ(null);
 
-  /* ---------- content: at-least-once vs effect-once — N deliveries, the de:{id} marker (pure) ---------- */
-  // A job delivered n times (1..3). With the marker ON, the first delivery claims de:{id} and applies the effect; every
-  // later delivery finds the marker and skips, so effects = 1. With the marker OFF, every delivery applies the effect,
-  // so effects = n. The outcome is a pure function of (idem, n).
-  // pure: (idem, n) -> { n, effects, slots:[{label,act}], text }
-  function effects(idem, n) {
-    var slots = [];
-    var count = 0;
-    for (var i = 1; i <= 3; i++) {
-      if (i > n) { slots.push({ on: false, act: false }); continue; }
-      var act = (idem === 'on') ? (i === 1) : true; // marker: only the first delivery fires
+  /* ---------- content: at-least-once vs effect-once over a fixed 3-delivery dataset (pure) ---------- */
+  var N = 3;
+  function effects(idem) {
+    var count = 0, marks = [];
+    for (var i = 1; i <= N; i++) {
+      var act = (idem === 'on') ? (i === 1) : true;
       if (act) count++;
-      slots.push({ on: true, act: act });
+      marks.push(act);
     }
-    var dword = (n === 1 ? 'delivery' : 'deliveries');
-    var redeliver = (n === 2) ? 'delivery 2 finds the marker and skips'
-      : (n === 3) ? 'deliveries 2 and 3 find the marker and skip' : '';
-    var text;
-    if (idem === 'on') {
-      text = n + ' ' + dword + '. Delivery 1 claims emq:{q}:de:{id} and applies the effect; ' +
-        (n === 1 ? 'no redeliveries follow' : redeliver) + ' → ' + count +
-        ' effect, card charged once. At-least-once delivery, exactly-once effect.';
-    } else {
-      text = n + ' ' + dword + ', no de:{id} marker. Every delivery applies the effect → ' +
-        count + ' effect' + (count === 1 ? '' : 's') + ', card charged ' + count + ' time' + (count === 1 ? '' : 's') +
-        '. A non-idempotent consumer double-charges on each redelivery.';
-    }
-    return { n: n, effects: count, slots: slots, text: text };
+    return { count: count, marks: marks };
   }
-  function setIdem(idem, n) {
-    var r = effects(idem, n);
-    for (var i = 1; i <= 3; i++) {
-      var s = r.slots[i - 1];
-      var slot = document.getElementById('s' + i),
-          tl = document.getElementById('s' + i + 't'),
-          mk = document.getElementById('s' + i + 'm');
-      if (!slot) continue;
-      slot.classList.remove('fire', 'skip');
-      if (!s.on) {
-        slot.style.opacity = '.32';
-        if (tl) tl.textContent = '—';
-        if (mk) { mk.textContent = ''; mk.setAttribute('class', 'mk'); }
-        continue;
-      }
-      slot.style.opacity = '1';
-      if (tl) tl.textContent = 'deliver ' + i;
-      if (s.act) { slot.classList.add('fire'); if (mk) { mk.textContent = 'effect'; mk.setAttribute('class', 'mk fire'); } }
-      else { slot.classList.add('skip'); if (mk) { mk.textContent = 'skip'; mk.setAttribute('class', 'mk skip'); } }
+  function setIdem(idem) {
+    document.querySelectorAll('#idemSel button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-idem') === idem ? 'true' : 'false');
+    });
+    var r = effects(idem);
+    for (var i = 1; i <= N; i++) {
+      var slot = document.getElementById('d' + i), mk = document.getElementById('d' + i + 'm');
+      if (!slot || !mk) continue;
+      var fire = r.marks[i - 1];
+      slot.classList.toggle('fire', fire);
+      slot.classList.toggle('skip', !fire);
+      mk.textContent = fire ? 'effect' : 'no-op';
+      mk.setAttribute('class', fire ? 'mk fire' : 'mk skip');
     }
-    var tot = document.getElementById('idemTot'), sub = document.getElementById('idemSub');
+    var tot = document.getElementById('idemTot');
     if (tot) {
-      tot.textContent = r.n + ' deliver' + (r.n === 1 ? 'y' : 'ies') + ' → ' + r.effects + ' effect' + (r.effects === 1 ? '' : 's');
-      tot.setAttribute('fill', (idem === 'on') ? SAGE : REDIS);
+      tot.textContent = N + ' deliveries → ' + r.count + ' effect' + (r.count === 1 ? '' : 's');
+      tot.setAttribute('fill', idem === 'on' ? '#2e7d5b' : '#d6584f');
     }
-    if (sub) sub.textContent = (idem === 'on')
-      ? 'de:{id} marker absorbs the redeliveries · card charged once'
-      : 'no marker · every delivery fires · card charged ' + r.effects + ' time' + (r.effects === 1 ? '' : 's');
     var out = document.getElementById('idemOut');
-    if (out) out.textContent = r.text;
+    if (out) {
+      out.innerHTML = (idem === 'on')
+        ? '<span class="rk">readout &#183;</span> The branded JOB id is the key: delivery 1 applies the effect, deliveries 2 and 3 are no-ops. <b>3 deliveries &#8594; 1 effect</b> — at-least-once delivery, exactly-once effect.'
+        : '<span class="rk">readout &#183;</span> No id key: every delivery applies the effect. <b>3 deliveries &#8594; 3 effects</b> — a non-idempotent consumer repeats the work on each redelivery.';
+    }
   }
-  var idemMode = 'on', idemN = 2;
   document.querySelectorAll('#idemSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      idemMode = b.getAttribute('data-idem');
-      document.querySelectorAll('#idemSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
-      });
-      setIdem(idemMode, idemN);
-    });
+    b.addEventListener('click', function () { setIdem(b.getAttribute('data-idem')); });
   });
-  var idemRange = document.getElementById('idemRange'), idemVal = document.getElementById('idemVal');
-  if (idemRange) {
-    idemRange.addEventListener('input', function () {
-      idemN = parseInt(idemRange.value, 10);
-      if (idemVal) idemVal.textContent = String(idemN);
-      setIdem(idemMode, idemN);
-    });
-  }
-  setIdem('on', 2); // initial render — correct without interaction
+  setIdem('on');
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -793,7 +605,7 @@ process(job)                       <span class="cmt"># a crash here leaves the j
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
   function decodeBranded(id) {
-    if (!id || id.length < 4) return null;
+    if (!id || id.length !== 14) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
     if (snow === null) return null;
     var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
@@ -813,23 +625,5 @@ process(job)                       <span class="cmt"># a crash here leaves the j
 })();
 </script>
 
-<script>
-/* progressive enhancement: mark JS on, then reveal-on-scroll */
-document.documentElement.classList.add('js');
-document.addEventListener('DOMContentLoaded', function () {
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var els = document.querySelectorAll('.reveal');
-  if (reduce || !('IntersectionObserver' in window)) {
-    els.forEach(function (e) { e.classList.add('in'); });
-    return;
-  }
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (en) {
-      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-    });
-  }, { threshold: 0.12 });
-  els.forEach(function (e) { io.observe(e); });
-});
-</script>
 </body>
 </html>

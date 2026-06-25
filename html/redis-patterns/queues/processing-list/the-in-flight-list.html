@@ -1,560 +1,522 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>R3.01.3 · The in-flight list — Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R3.01.3 · The in-flight list is a recovery ledger, not a buffer: a job stays in emq:{queue}:active until an explicit ack, so a worker that dies mid-job leaves its job parked there, found and returnable. Per-worker lists attribute the parked job; the LREM active 1 job ack runs only after the work is truly done, which makes delivery at-least-once. Grounded in EchoMQ's EchoMQ.Keys.active/1 and EchoMQ.Keys.lock/2.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<title>R3.01.3 — The in-flight list · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R3.01.3 · The in-flight list is not a buffer — it is a ledger that holds exactly the jobs being processed right now, so a crashed worker leaves its job found and returnable. The ack runs only after the work is done. Grounded in EchoMQ's real active sorted set: each member of emq:{queue}:active is scored at its lease deadline (the recovery clock), the ack is EchoMQ.Jobs.complete/4 token-fenced on attempts, and EchoMQ.Jobs.reap/2 plus EchoMQ.Stalled reclaim a stalled lease, dead-lettering past the threshold onto the durable floor.">
 <style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
 :root{
-  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
-  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
-  --gold:#d4a85a; --gold-bright:#f0cd7f;
-  --blue:#5a87c4; --blue-bright:#9fc0ea;
-  --sage:#7ba387; --sage-bright:#a7c9b1;
-  --burgundy:#c4504c;
-  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
-  --redis:#d6584f; --redis-bright:#f2948c;
-  --line:#2a3252;
-  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --serif:"PT Serif", Georgia, serif;
-  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --measure:68ch;
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
 }
-*{box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{
-  margin:0; color:var(--cream); background:var(--ink);
-  font-family:var(--serif);
-  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
-  line-height:1.62; letter-spacing:.005em;
-  background-image:
-    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
-    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
-    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
-  background-attachment:fixed;
-}
-body::after{ /* faint vignette for depth */
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
-}
-.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
-  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
-.skip:focus{left:0}
-::selection{background:var(--gold);color:var(--ink)}
-img,svg{max-width:100%}
-a{color:var(--gold-bright);text-decoration:none}
-a:hover{color:var(--cream)}
-hr.rule{border:0;height:1px;margin:2.2rem 0;
-  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
 
-/* ---- layout ---- */
-.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
-main{display:block}
-section{padding:clamp(2.6rem,6vw,4.6rem) 0}
-section + section{border-top:1px solid var(--line)}
-.prose{max-width:var(--measure)}
-.prose p{margin:0 0 1.05rem}
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
 
-/* ---- type ---- */
-h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
-  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
-h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
-h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
-h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
-h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
-.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
-  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
-  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
-.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
-  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
-  max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
-.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
-strong{color:var(--cream);font-weight:700}
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
 
-/* ---- site header / footer ---- */
-.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
-  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
-.site .wrap{display:flex;align-items:center;justify-content:space-between;
-  height:58px;font-family:var(--sans)}
-.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
-  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
-  display:inline-block;transform:translateY(-2px)}
-.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
-  text-transform:uppercase;color:var(--cream-dim)}
-.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
-.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
-  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
-.route-tag a{color:var(--gold);text-decoration:none}
-.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
-.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
-.route-tag .rcur{color:var(--gold-bright)}
-.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
-  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
-.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
-  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
 
-/* ---- hero ---- */
-.hero{padding-top:clamp(3rem,8vw,6rem)}
-.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
-.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
-  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
-  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
-  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
-.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
-  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
-.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
-.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
-.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
 
-/* ---- figures / takeaways ---- */
-.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
-  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
-  padding:clamp(1rem,2.4vw,1.6rem)}
-.fig svg{display:block;width:100%;height:auto}
-.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
-  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
-  padding-left:1rem;border-left:2px solid var(--gold)}
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
 
-/* ---- interactive shells (shared with lesson pages) ---- */
-.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
-.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
-  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
-  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
-.solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
-.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
-.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
-.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
-.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
-.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
-.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
-.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
-.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
-.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
-  background:var(--ink);border:1px solid var(--line);border-radius:10px;
-  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
-.geo-readout .dim{color:var(--cream-dim)}
-.geo-readout b{color:var(--redis-bright)}
-.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
 
-/* ---- ledger diagram ---- */
-.ldg .wkr rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
-.ldg .wkr.dead rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
-.ldg .wkr.live rect{fill:rgba(123,163,135,.12);stroke:#7ba387}
-.ldg text{font-family:var(--sans);fill:#d7cfb9}
-.ldg .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
-.ldg .job{font-family:var(--mono);font-size:13px;font-weight:700;fill:#f0cd7f}
-.ldg .st{font-family:var(--mono);font-size:10px}
-.ldg .arr{stroke:#5a87c4;stroke-width:1.4;fill:none;stroke-dasharray:3 3}
-/* ---- ack diagram ---- */
-.ack .step rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
-.ack .step.on rect{fill:rgba(212,168,90,.12);stroke:#d4a85a}
-.ack .step.ok rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
-.ack .step.bad rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
-.ack text{font-family:var(--mono);fill:#d7cfb9;font-size:11px}
-.ack .ttl{font-family:var(--sans);fill:#a39c89;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
 
-/* ---- code ---- */
-pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
-  background:var(--ink);border:1px solid var(--line);border-radius:12px;
-  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
-pre.code .op{color:var(--elixir-bright)}
-pre.code .fn{color:var(--cream)}
-pre.code .fn.blue{color:var(--blue-bright)}
-pre.code .fn.sage{color:var(--sage-bright)}
-pre.code .fn.gold{color:var(--gold-bright)}
-pre.code .fn.elixir{color:var(--elixir-bright)}
-pre.code .fn.burg{color:#e08f8b}
-pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
-pre.code .res{color:var(--gold-bright)}
-pre.code .str{color:var(--sage-bright)}
-pre.code .cmt{color:var(--cream-dim)}
-code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
-  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
 
-/* ---- pager ---- */
-.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
-  align-items:center;font-family:var(--sans)}
-.pager .p-left{color:var(--cream-dim);font-size:.9rem}
-.pager .spacer{flex:1}
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
 
-/* ---- branded stamp ---- */
-.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
-  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
-  background:var(--ink);user-select:none}
-.stamp:hover{border-color:var(--gold)}
-.stamp .id{color:var(--gold-bright)}
-.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
-  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
 .stamp.open .panel{display:grid}
-.stamp .panel dt{color:var(--cream-dim)}
-.stamp .panel dd{margin:0;color:var(--cream)}
 
-/* ---- reveal (JS-gated; content visible without JS) ---- */
-html.js .reveal{opacity:0;transform:translateY(14px)}
-html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
-@media (prefers-reduced-motion: reduce){
-  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-family:var(--mono);font-size:13px;margin:0 0 18px}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{margin:0;color:var(--b-ink)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
 }
-
-/* ---- responsive ---- */
-@media (max-width:760px){
-  .site nav{display:none}
-  .lede{max-width:none}
-  .take{font-size:1.08rem}
-}
-
-/* ---- module / lesson page additions (additive; shared head) ---- */
-.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
-  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
-.crumbs a{color:var(--cream-soft)}
-.crumbs .sep{opacity:.45}
-.crumbs .here{color:var(--gold)}
-.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
-.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
-.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
-.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
-.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
-.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
-  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
-.bridge .cell.idea .lbl{color:var(--gold)}
-.bridge .cell.elix .lbl{color:var(--redis-bright)}
-.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
-.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
-@media (max-width:760px){
-  .bridge{grid-template-columns:1fr;gap:.7rem}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
   .bridge .arrow{justify-self:center;transform:rotate(90deg)}
 }
-.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
-  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
-.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
-.deflist dd{margin:0;color:var(--cream-soft)}
-.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
-  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
-.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
-  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
-  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
-.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
-.door a{color:var(--gold-bright)}
-/* ---- references ---- */
-.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
-@media(max-width:680px){.refs{grid-template-columns:1fr}}
-.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
-.refs h3:first-child{margin-top:0}
-.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
-.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
-.refs a{color:var(--sage-bright)}
-.refs a:hover{color:var(--cream)}
-.refs em{color:var(--cream-dim);font-style:italic}
-.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the ledger figure (hover-select) ---------- */
+.dfig{width:100%;height:auto;display:block;margin-top:4px}
+.dfig .node rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5;transition:fill .18s ease,stroke .18s ease}
+.dfig .node.dead rect{fill:#f0e3e1;stroke:var(--r-red);stroke-dasharray:4 3}
+.dfig .node.ledger rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.dfig .nlbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.dfig .nsub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.dfig .jb{font:13px var(--mono);font-weight:700;fill:var(--r-red);text-anchor:middle}
+.dfig .step{cursor:pointer;transition:opacity .18s ease}
+.dfig .step .edge{stroke:var(--b-ts);stroke-width:1.6;fill:none;stroke-dasharray:4 3}
+.dfig .step .elbl{font:10px var(--mono);fill:var(--b-ts);text-anchor:middle}
+.dfig.focus .step{opacity:1}
+/* ---------- the ack-timing figure (hover-select) ---------- */
+.afig{width:100%;height:auto;display:block;margin-top:4px}
+.afig .stp rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.afig .stp.ok rect{fill:#e2efe6;stroke:var(--b-node)}
+.afig .stp.crash rect{fill:#f0e3e1;stroke:var(--r-red)}
+.afig .stp.on rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.afig .slbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.afig .ssub{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.afig .av{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the page</a>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
 
-<header class="site">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
-    <nav>
-      <a href="/redis-patterns">Home</a>
-      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/processing-list">processing-list</a><span class="rsep">/</span><span class="rcur">the-in-flight-list</span></span>
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/processing-list">processing-list</a><span class="rsep">/</span><span class="rcur">the-in-flight-list</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#ledger">A record, not a buffer</a>
+      <a href="#recovery">The lease clock</a>
+      <a href="#ack">The ack, when done</a>
+      <a href="#applied">In EchoMQ</a>
+      <a href="#refs">References</a>
     </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main id="main">
+  <div class="wrap">
 
-  <style>
-    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
-    .hero-split .hero{padding-top:0}
-    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
-    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
-    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
-    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
-    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
-    .foot-cols a:hover{color:var(--cream)}
-    .foot-cols .it{color:var(--cream-dim)}
-    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
-    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
-    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
-    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
-  </style>
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/queues/processing-list">Processing list</a>
+          <span class="sep">/</span>
+          <span class="here">The in-flight list</span>
+        </nav>
+        <p class="kicker">R3.01.3 &middot; dive 3</p>
+        <h1>The in-flight <span class="hns">list</span>.</h1>
+        <p class="lede">The in-flight list is not a buffer jobs pass through. It is a ledger: at any instant it holds
+          exactly the jobs being processed right now.</p>
+        <p class="heronote">A job moved into <code>active</code> stays there for the whole duration of the work, and only
+          an explicit acknowledgement removes it. So the list is a live record of in-flight work &mdash; and a worker
+          that dies mid-job leaves its job sitting in the record, found and returnable. EchoMQ scores each member at its
+          lease deadline, so the score names when a job is due back; the ack runs only when the work is truly done.
+          Select a worker dead and read where its job stays.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#ledger">A record, not a buffer</a>
+          <a href="#recovery">The lease clock</a>
+          <a href="#ack">The ack, when done</a>
+          <a href="#applied">In EchoMQ</a>
+          <a href="#refs">References</a>
+        </div>
+      </section>
 
-  <div class="hero-split">
-    <section class="hero">
-      <div class="crumbs">
-        <a href="/redis-patterns">Redis Patterns</a>
-        <span class="sep">/</span>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
-        <span class="sep">/</span>
-        <a href="/redis-patterns/queues/processing-list">Processing list</a>
-        <span class="sep">/</span>
-        <span class="here">The in-flight list</span>
+      <figure class="anatomy" aria-labelledby="dCap">
+        <figcaption id="dCap"><b>The recovery ledger &mdash; a dead worker leaves its job in active.</b> Select the
+          worker's state to read where job 7 stays.</figcaption>
+        <div class="segbar" id="ldgSel" role="group" aria-label="Whether worker 1 is alive or dead">
+          <button type="button" data-state="live" aria-pressed="false">worker 1 alive</button>
+          <button type="button" data-state="dead" aria-pressed="false">worker 1 dead</button>
+        </div>
+        <svg class="dfig" id="dfig" viewBox="0 0 440 190" role="img" aria-label="Worker 1 holds job 7 in the in-flight set emq:{queue}:active, the member scored at its lease deadline. While the worker is alive it renews the lease and finishes, then the ack removes the job. When the worker dies, the job stays in active, recoverable; the lease score passes and reap returns the job to the pending set for another worker.">
+          <g class="node" id="wkrBox"><rect x="16" y="62" width="160" height="56" rx="8"></rect><text class="nlbl" x="96" y="86">worker 1</text><text class="nsub" id="wkrState" x="96" y="104">alive · renewing lease</text></g>
+          <g class="node ledger" id="actBox"><rect x="264" y="62" width="160" height="56" rx="8"></rect><text class="nlbl" x="344" y="84">active set (ledger)</text><text class="jb" id="actJob" x="344" y="104">job 7</text></g>
+          <g class="step" id="recStep"><path class="edge" id="recArr" d="M344 118 C 344 162, 96 162, 96 118" style="opacity:0"></path><text class="elbl" id="recLbl" x="220" y="152" style="opacity:0">reap returns job 7 → pending</text></g>
+          <text class="nsub" id="ldgVerd" x="220" y="182" text-anchor="middle">worker 1 alive · job 7 in the ledger, lease renewed</text>
+        </svg>
+        <div class="readout" id="ldgOut" aria-live="polite"></div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="ledger">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The list is a record, not a buffer</h2>
+        <span class="ssrc">reliable-queue.md.txt &middot; the ledger</span>
       </div>
-      <p class="eyebrow">R3.01.3 &middot; dive 3</p>
-      <h1>The in-flight <span class="ex">list</span></h1>
-      <p class="lede">The in-flight list is not a buffer jobs pass through. It is a ledger: at any instant it holds
-        exactly the jobs being processed right now.</p>
-      <p class="kicker">A job moved into <code class="inl">active</code> stays there for the whole duration of the work,
-        and only an explicit acknowledgement removes it. So the list is a live record of in-flight work &mdash; and a
-        worker that dies mid-job leaves its job sitting in the record, found, attributed, and returnable. Per-worker
-        lists name the holder; the <code class="inl">LREM active 1 job</code> ack runs only when the work is truly done.
-        Toggle a worker dead on the right and watch its job stay in <code class="inl">active</code>, recoverable.</p>
-      <div class="toc-mini" aria-label="On this page">
-        <a href="#ledger">A record, not a buffer</a>
-        <a href="#perworker">Per-worker lists</a>
-        <a href="#ack">The ack, when done</a>
-        <a href="#applied">In EchoMQ</a>
-        <a href="#refs">References</a>
+      <div class="prose">
+        <p>A job moved into <code>active</code> does not pass through &mdash; it stays there for the entire duration of
+          the work, and only an explicit acknowledgement removes it. So <code>active</code> is a live record: every job
+          in it is a job a worker has taken and not yet finished. Reading the list answers a question that matters for
+          reliability &mdash; what work is in flight right now &mdash; without any extra bookkeeping.</p>
+      </div>
+      <pre class="code"><b>emq:{queue}:active</b>  &rarr;  [ job 7, job 6 ]   <span class="cmt"># two jobs in flight, each scored at its lease deadline</span></pre>
+      <div class="prose">
+        <p>This is what makes a crash recoverable. When a worker dies between taking a job and acknowledging it, the job
+          is still in <code>active</code>. Nothing was lost, because nothing removed it. A recovery process reads the set
+          and finds the parked job, exactly because the set is a record of in-flight work and not a transient buffer.</p>
+      </div>
+      <p class="take">The in-flight list is a live record of work in progress; a crashed worker leaves its job in the
+        record, recoverable, because only an explicit ack removes it.</p>
+    </section>
+
+    <section id="recovery">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Per-worker lists, or a lease score</h2>
+        <span class="ssrc">echo_mq/jobs.ex &middot; reap/2</span>
+      </div>
+      <div class="prose">
+        <p>One shared in-flight list works, but it cannot tell which worker holds which job. The classic LIST form gives
+          each worker its own in-flight list: <code>processing:worker1</code>, <code>processing:worker2</code>. A job in
+          <code>processing:worker1</code> is held by worker 1. When worker 1 dies, a recovery monitor reads worker 1's
+          list, finds the parked jobs, and returns them to the waiting list for another worker &mdash;
+          <code>LMOVE processing:worker1 work_queue RIGHT RIGHT</code>. Per-worker lists make the attribution direct: the
+          list name is the worker.</p>
+        <p>A real engine refines the death signal beyond "how long has the job sat here." EchoMQ scores each member of
+          <code>emq:{queue}:active</code> at its lease deadline on the server clock; a member whose score has passed
+          <code>now</code> is a worker that stopped renewing, and <code>EchoMQ.Jobs.reap/2</code> returns it to
+          <code>pending</code>. The lease score is the death signal, so EchoMQ needs no per-worker list &mdash; the
+          ledger's own score names the deadline. R3.03 is the count-thresholded sweep on top.</p>
+      </div>
+
+      <dl class="deflist">
+        <dt>per-worker list</dt><dd>Each worker has its own in-flight list (<code>processing:workerN</code>), so a recovery monitor attributes a parked job to the worker that holds it.</dd>
+        <dt>lease score</dt><dd>EchoMQ scores each <code>active</code> member at its due-back time; a score past <code>now</code> is the death signal, no per-worker list needed.</dd>
+        <dt>recovery ledger</dt><dd>The in-flight set read as a record: exactly the jobs in flight, each with its deadline, found and returnable after a crash.</dd>
+      </dl>
+
+      <p class="take">Name when each parked job is due back &mdash; a per-worker list, or a lease score &mdash; so a
+        recovery sweep returns it; EchoMQ uses the lease score as the death signal.</p>
+    </section>
+
+    <section id="ack">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The ack removes it only when done</h2>
+        <span class="ssrc">reliable-queue.md.txt &middot; complete/4</span>
+      </div>
+      <div class="prose">
+        <p>A job leaves the in-flight list with one command: <code>LREM active 1 job</code> &mdash; remove one occurrence
+          of this job from the list. The discipline is <em>when</em> it runs: only after the work is truly complete. Run
+          it too early &mdash; before the side effect is durable &mdash; and a crash after the ack but before the effect
+          loses the job for real, because the ledger no longer holds it. Run it after the effect, and a crash before the
+          ack leaves the job parked, recoverable, and redelivered.</p>
+      </div>
+      <pre class="code">job = <b>RPOPLPUSH</b> wait active   <span class="cmt"># take the job into the in-flight ledger</span>
+process(job)                  <span class="cmt"># do the work; durable side effect lands here</span>
+<b>LREM</b> active 1 job             <span class="cmt"># ack: remove from the ledger ONLY now</span></pre>
+      <div class="prose">
+        <p>That ordering is what makes delivery at-least-once rather than at-most-once. A job is delivered again if the
+          worker died before the ack, and delivered once if the ack landed &mdash; never zero times. The cost is that a
+          worker which finished the work and died before the ack redelivers the job, which is why R3.02 makes the
+          consumer idempotent. This dive's job is the ledger and the ack; the redelivery cost is the next module's. Slide
+          the crash point and read where the ack ordering protects the job.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="ackCap">
+        <figcaption id="ackCap"><b>Where the crash lands &mdash; ack-after-done protects the job.</b> Select the crash
+          point to light the step and read the verdict.</figcaption>
+        <div class="segbar" id="ackSel" role="group" aria-label="Where the worker crashes relative to the work and the ack">
+          <button type="button" data-at="during" aria-pressed="false">crash during work</button>
+          <button type="button" data-at="after-ack" aria-pressed="false">crash after an early ack</button>
+        </div>
+        <svg class="afig" id="afig" viewBox="0 0 440 130" role="img" aria-label="Three steps: move the job into active, process it, then ack with LREM. A crash during the work leaves the job in active, recoverable, because the ack has not run. An early ack that runs before the work is durable, then a crash, loses the job because the ledger no longer holds it. The correct order is to ack only after the work is done.">
+          <g class="stp" id="aSt1"><rect x="16" y="34" width="124" height="48" rx="8"></rect><text class="slbl" x="78" y="56">RPOPLPUSH</text><text class="ssub" x="78" y="72">into active</text></g>
+          <g class="stp" id="aSt2"><rect x="158" y="34" width="124" height="48" rx="8"></rect><text class="slbl" x="220" y="56">process</text><text class="ssub" x="220" y="72">durable effect</text></g>
+          <g class="stp" id="aSt3"><rect x="300" y="34" width="124" height="48" rx="8"></rect><text class="slbl" x="362" y="56">LREM ack</text><text class="ssub" id="aSt3s" x="362" y="72">after done</text></g>
+          <text class="av" id="ackVerd" x="220" y="110" text-anchor="middle">crash during work · job 7 still in active → recoverable</text>
+        </svg>
+        <div class="readout" id="ackOut" aria-live="polite"></div>
+      </figure>
+
+      <p class="take">The ack is one <code>LREM</code>, and its timing is the rule: remove the job only after the work is
+        durable, which is what makes delivery at-least-once.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>In EchoMQ &mdash; the in-flight ledger under a lease</h2>
+        <span class="ssrc">echo_mq/jobs.ex &middot; stalled.ex</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ's in-flight list is the <code>emq:{queue}:active</code> sorted set, built by
+          <code>EchoMQ.Keyspace.queue_key(queue, "active")</code>, real in <code>echo/apps/echo_mq</code>. Each member is
+          scored at its lease deadline on the server clock, so the score is both the in-flight marker and the recovery
+          clock. The ack is <code>EchoMQ.Jobs.complete/4</code>: it is token-fenced on the row's <code>attempts</code>
+          value, so only the worker that holds the current lease can retire the job &mdash; a worker whose lease was
+          reaped and re-claimed by another worker is refused, and a redelivered completion is a no-op. A crash leaves the
+          id in <code>active</code>, and <code>EchoMQ.Jobs.reap/2</code> returns any member past its lease score to
+          <code>pending</code>.</p>
+      </div>
+      <pre class="code"><span class="cmt">-- the ack and the recovery clock (echo/apps/echo_mq/lib/echo_mq/jobs.ex)</span>
+<span class="cmt">-- complete/4: token-fenced on attempts, only the lease holder may retire the row</span>
+<b>local</b> att = redis.call('HGET', KEYS[2], 'attempts')      <span class="cmt">-- KEYS[2] = the job row</span>
+<b>if</b> att ~= ARGV[2] <b>then</b> <b>return</b> redis.error_reply('EMQSTALE complete token mismatch') <b>end</b>
+redis.call('ZREM', KEYS[1], ARGV[1])                       <span class="cmt">-- KEYS[1] = emq:{queue}:active, remove from the ledger</span>
+<span class="cmt">-- reap/2: any member whose lease score has passed now returns to pending</span></pre>
+      <div class="prose">
+        <p>A job that stalls repeatedly past <code>EchoMQ.Stalled</code>'s <code>max_stalled</code> threshold is not
+          recovered forever: <code>EchoMQ.Stalled.check/3</code> counts each stall on the row's <code>stalled</code>
+          field and, at the threshold, dead-letters the job to <code>emq:{queue}:dead</code>. From the morgue the
+          completion folds onward to the <strong>durable floor</strong> &mdash; the persistence frontier the
+          <a href="/echo-persistence">echo-persistence course</a> follows, where the bus archive lands in the page engine
+          and replicates off-box. The lease score, the reaper, and the archive are the recovery machinery; this dive
+          teaches the ledger and the ack.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>ZADD key score member</code> scores a member of a
+        sorted set; EchoMQ scores each <code>active</code> member at its lease deadline, so a member whose score has
+        passed <code>now</code> is the death signal the reaper reads &mdash;
+        <a href="https://valkey.io/commands/zadd/" rel="noopener">valkey.io/commands/zadd</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>The in-flight list is a recovery ledger: a parked job stays there until an explicit ack, so a crashed worker
+            leaves it found and returnable, and the ack runs only when the work is done.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>emq:{queue}:active</code> is the ledger, each member scored at its lease deadline;
+            <code>EchoMQ.Jobs.complete/4</code> is the token-fenced ack and <code>reap/2</code> returns an expired lease,
+            <code>EchoMQ.Stalled</code> dead-lettering a repeat-staller to the durable floor.</p>
+        </div>
+      </div>
+
+      <p class="take">The in-flight list is a recovery ledger, not a buffer; EchoMQ's <code>active</code> set scored by
+        lease, with the token-fenced <code>complete/4</code> ack and the reaper, is exactly that ledger.</p>
+
+      <div class="doors">
+        <div class="door">
+          <span class="dr">/echomq/queue</span>
+          <h3>A door, not a depth</h3>
+          <p>The reaper that returns an expired lease, the stalled sweep that counts repeated stalls, and the
+            token-fenced ack across a worker pool are the dedicated <strong>EchoMQ course</strong>. From here, open onto
+            <a href="/echomq/queue">the Queue pillar</a> &mdash; the as-built leased state machine. This dive teaches the
+            ledger and the ack.</p>
+        </div>
+        <div class="door">
+          <span class="dr">/echo-persistence</span>
+          <h3>Where a dead-lettered job lands</h3>
+          <p>A job past its stall threshold is dead-lettered, and the completion folds onto the
+            <strong>durability floor</strong> &mdash; the bus archive into the page engine and off-box replication. The
+            durability dial is the subject of <a href="/echo-persistence">the persistence course</a>.</p>
+        </div>
       </div>
     </section>
 
-    <figure class="fig ldg" aria-labelledby="ldgTitle">
-      <h4 id="ldgTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The recovery ledger &middot; a dead worker leaves its job in active</h4>
-      <div class="controls">
-        <div class="solid-select" id="ldgSel" role="group" aria-label="Whether worker 1 is alive or dead">
-          <button type="button" data-state="live" data-c="sage" class="active" aria-pressed="true">worker 1 alive</button>
-          <button type="button" data-state="dead" data-c="redis" aria-pressed="false">worker 1 dead</button>
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/data-types/lists/" rel="noopener">Redis &mdash; <em>Lists</em></a> &mdash; the list as a record of ordered elements, the in-flight ledger read as a record of work.</li>
+            <li><a href="https://redis.io/commands/lrem/" rel="noopener">Redis &mdash; <em>LREM</em></a> &mdash; the ack: remove one occurrence of a job from the in-flight list after the work is done.</li>
+            <li><a href="https://redis.io/commands/rpoplpush/" rel="noopener">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the move that parks a job in the in-flight ledger atomically.</li>
+            <li><a href="https://valkey.io/commands/zadd/" rel="noopener">Valkey &mdash; <em>ZADD</em></a> &mdash; score a member of a sorted set, how EchoMQ records the lease deadline that doubles as the recovery clock.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; Processing list</a><span class="rs">the module hub: the in-flight move</span></li>
+            <li><a href="/redis-patterns/queues/processing-list/list-wait-active">R3.01.1 &middot; List as wait + active</a><span class="rs">the two named places</span></li>
+            <li><a href="/redis-patterns/queues/processing-list/lmove-rpoplpush">R3.01.2 &middot; LMOVE / RPOPLPUSH</a><span class="rs">the atomic move that parks the job in this ledger</span></li>
+            <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a><span class="rs">at-least-once and stalled recovery</span></li>
+            <li><a href="/echomq/queue">/echomq &middot; Queue</a><span class="rs">the leased state machine in depth</span></li>
+            <li><a href="/echo-persistence">/echo-persistence</a><span class="rs">the durability floor a dead-lettered job folds onto</span></li>
+          </ul>
         </div>
       </div>
+    </section>
 
-      <svg viewBox="0 0 460 200" role="img" aria-label="Worker 1 holds job 7 in its in-flight list emq:{queue}:active under a lock. While the worker is alive, it renews the lock and finishes, then the ack removes the job. When the worker dies, its job stays in active, recoverable; the lock expires and a recovery sweep returns the job to the wait list for another worker.">
-        <text class="ttl" x="30" y="26">worker 1</text>
-        <g class="wkr" id="wkrBox"><rect x="30" y="36" width="150" height="52" rx="11"></rect></g>
-        <text class="job" id="wkrState" x="105" y="60" text-anchor="middle">alive · renewing lock</text>
-        <text class="st" id="wkrLock" x="105" y="78" text-anchor="middle">lock fresh</text>
-
-        <text class="ttl" x="280" y="26">emq:{queue}:active (ledger)</text>
-        <g class="wkr" id="actBox"><rect x="280" y="36" width="150" height="52" rx="11"></rect></g>
-        <text class="job" id="actJob" x="355" y="66" text-anchor="middle">job 7</text>
-
-        <path class="arr" id="recArr" d="M355 88 C 355 150, 105 150, 105 88"></path>
-        <text class="ttl" id="recLbl" x="230" y="148" text-anchor="middle" fill="#5a87c4">&nbsp;</text>
-
-        <text class="ttl" id="ldgVerd" x="230" y="185" text-anchor="middle">worker 1 alive · job 7 in the ledger, lock renewed</text>
-      </svg>
-
-      <div class="geo-readout" id="ldgOut" aria-live="polite"></div>
-    </figure>
-  </div>
-
-  <section id="ledger">
-    <h2>The list is a record, not a buffer</h2>
-    <div class="prose">
-      <p>A job moved into <code class="inl">active</code> does not pass through &mdash; it stays there for the entire
-        duration of the work, and only an explicit acknowledgement removes it. So <code class="inl">active</code> is a
-        live record: every job in it is a job a worker has taken and not yet finished. Reading the list answers a
-        question that matters for reliability &mdash; what work is in flight right now &mdash; without any extra
-        bookkeeping.</p>
-      <pre class="code"><span class="rdx">emq:{queue}:active</span>  (LIST)   <span class="cmt"># -&gt; [ job 7, job 6 ]   two jobs in flight</span></pre>
-      <p>This is what makes a crash recoverable. When a worker dies between taking a job and acknowledging it, the job
-        is still in <code class="inl">active</code>. Nothing was lost, because nothing removed it. A recovery process
-        reads the list and finds the parked job, exactly because the list is a record of in-flight work and not a
-        transient buffer.</p>
-    </div>
-    <p class="take">The in-flight list is a live record of work in progress; a crashed worker leaves its job in the
-      record, recoverable, because only an explicit ack removes it.</p>
-  </section>
-
-  <section id="perworker">
-    <h2>Per-worker lists attribute the parked job</h2>
-    <div class="prose">
-      <p>One shared in-flight list works, but it cannot distinguish which worker holds which job. Giving each worker its
-        own in-flight list does: <code class="inl">processing:worker1</code>,
-        <code class="inl">processing:worker2</code>. A job in <code class="inl">processing:worker1</code> is held by
-        worker 1. When worker 1 dies, a recovery monitor reads worker 1's list, finds the parked jobs, and returns them
-        to the waiting list for another worker &mdash;
-        <code class="inl">LMOVE processing:worker1 work_queue RIGHT RIGHT</code>. Per-worker lists make the attribution
-        direct: the list name is the worker.</p>
-      <pre class="code"><span class="rdx">processing:worker1</span>  (LIST)   <span class="cmt"># jobs held by worker 1</span>
-<span class="rdx">processing:worker2</span>  (LIST)   <span class="cmt"># jobs held by worker 2</span></pre>
-      <p>A real engine refines the death signal beyond "how long has the job sat here." EchoMQ marks each in-flight job
-        with a lock that has a TTL, renewed by the live worker on a heartbeat; an expired lock is the death signal, and
-        a stalled sweep returns the job to the waiting list. R3.03 is that sweep. Here the shape is enough: a per-worker
-        list attributes a parked job to the worker that left it.</p>
-    </div>
-
-    <dl class="deflist">
-      <dt>per-worker list</dt><dd>Each worker has its own in-flight list (<code class="inl">processing:workerN</code>), so a recovery monitor attributes a parked job to the worker that holds it.</dd>
-      <dt>recovery ledger</dt><dd>The in-flight list read as a record: exactly the jobs in flight per worker, found and returnable after a crash.</dd>
-      <dt>expired lock</dt><dd>The death signal a real engine uses instead of elapsed time: a live worker renews the lock; an expired lock means no worker holds the job.</dd>
-    </dl>
-
-    <p class="take">Give each worker its own in-flight list so the list name is the holder; a recovery monitor reads a
-      dead worker's list and returns its parked jobs to <code class="inl">wait</code>.</p>
-  </section>
-
-  <section id="ack">
-    <h2>The ack removes it only when done</h2>
-    <div class="prose">
-      <p>A job leaves the in-flight list with one command: <code class="inl">LREM active 1 job</code> &mdash; remove one
-        occurrence of this job from the list. The discipline is <em>when</em> it runs: only after the work is truly
-        complete. Run it too early &mdash; before the side effect is durable &mdash; and a crash after the ack but
-        before the effect loses the job for real, because the ledger no longer holds it. Run it after the effect, and a
-        crash before the ack leaves the job parked, recoverable, and redelivered.</p>
-      <pre class="code">job = <span class="rdx">RPOPLPUSH</span> wait active   <span class="cmt"># take the job into the in-flight ledger</span>
-process(job)                  <span class="cmt"># do the work; durable side effect lands here</span>
-<span class="op">LREM</span> active <span class="res">1</span> job             <span class="cmt"># ack: remove from the ledger ONLY now</span></pre>
-      <p>That ordering is what makes delivery at-least-once rather than at-most-once. A job is delivered again if the
-        worker died before the ack, and delivered once if the ack landed &mdash; never zero times. The cost is that a
-        worker which finished the work and died before the ack redelivers the job, which is why R3.02 makes the consumer
-        idempotent. This dive's job is the ledger and the ack; the redelivery cost is the next module's. Slide the crash
-        point below and watch where the ack ordering protects the job.</p>
-    </div>
-
-    <figure class="fig ack" aria-labelledby="ackTitle">
-      <h4 id="ackTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Where the crash lands &middot; ack-after-done protects the job</h4>
-      <div class="controls">
-        <div class="solid-select" id="ackSel" role="group" aria-label="Where the worker crashes relative to the work and the ack">
-          <button type="button" data-at="during" data-c="sage" class="active" aria-pressed="true">crash during work</button>
-          <button type="button" data-at="after-ack" data-c="redis" aria-pressed="false">crash after an early ack</button>
-        </div>
-      </div>
-
-      <svg viewBox="0 0 460 150" role="img" aria-label="Three steps: move the job into active, process it, then ack with LREM. A crash during the work leaves the job in active, recoverable, because the ack has not run. An early ack that runs before the work is durable, then a crash, loses the job because the ledger no longer holds it. The correct order is to ack only after the work is done.">
-        <text class="ttl" x="30" y="24">move → process → ack</text>
-        <g class="step on" id="st1"><rect x="30" y="36" width="120" height="46" rx="9"></rect></g>
-        <text x="90" y="58" text-anchor="middle" id="st1t">RPOPLPUSH</text>
-        <text x="90" y="73" text-anchor="middle" style="font-size:9px;fill:#a39c89">into active</text>
-        <g class="step" id="st2"><rect x="170" y="36" width="120" height="46" rx="9"></rect></g>
-        <text x="230" y="58" text-anchor="middle" id="st2t">process</text>
-        <text x="230" y="73" text-anchor="middle" style="font-size:9px;fill:#a39c89">durable effect</text>
-        <g class="step" id="st3"><rect x="310" y="36" width="120" height="46" rx="9"></rect></g>
-        <text x="370" y="58" text-anchor="middle" id="st3t">LREM ack</text>
-        <text x="370" y="73" text-anchor="middle" style="font-size:9px;fill:#a39c89" id="st3s">after done</text>
-        <text class="ttl" id="ackVerd" x="30" y="120">crash during work · job 7 still in active → recoverable</text>
-      </svg>
-
-      <div class="geo-readout" id="ackOut" aria-live="polite"></div>
-    </figure>
-
-    <p class="take">The ack is one <code class="inl">LREM</code>, and its timing is the rule: remove the job only after
-      the work is durable, which is what makes delivery at-least-once.</p>
-  </section>
-
-  <section id="applied">
-    <h2>In EchoMQ &mdash; the in-flight ledger under a lock</h2>
-    <div class="prose">
-      <p>EchoMQ's in-flight list is <code class="inl">emq:{queue}:active</code>, built by
-        <code class="inl">EchoMQ.Keys.active/1</code> (<code class="inl">"#{base(ctx)}:active"</code>), real in
-        <code class="inl">echo/apps/echomq</code>. A job is moved into it under a lock named by
-        <code class="inl">EchoMQ.Keys.lock/2</code> (<code class="inl">emq:{queue}:&lt;id&gt;:lock</code>,
-        <code class="inl">"#{job(ctx, job_id)}:lock"</code>), so the parked job is both in the ledger and attributable to
-        its worker. A crash leaves the job in <code class="inl">active</code> with its lock still set; once the lock's
-        TTL expires, the stalled sweep returns it to <code class="inl">wait</code>. The ack that removes a finished job
-        from <code class="inl">active</code> runs only after the work is done.</p>
-      <pre class="code"><span class="cmt">-- moveToActive-11.lua — the job lands in the in-flight ledger, under a lock (real)</span>
-<span class="op">local</span> activeKey = KEYS[<span class="res">2</span>]    <span class="cmt">-- emq:{queue}:active  (EchoMQ.Keys.active/1)</span>
-<span class="op">local</span> jobId = <span class="fn gold">rcall</span>(<span class="str">"RPOPLPUSH"</span>, waitKey, activeKey)  <span class="cmt">-- job parked in the ledger</span>
-<span class="cmt">-- the lock emq:{queue}:&lt;id&gt;:lock (EchoMQ.Keys.lock/2) marks the holding worker</span></pre>
-      <p><code class="inl">{queue}</code> is a documentation placeholder for the queue name
-        (<code class="inl">EchoMQ.Keys.base/1</code> is <code class="inl">"#{prefix}:#{name}"</code>), not the cluster
-        hash-tag <code class="inl">{tag}</code>. The lock manager, the heartbeat that renews the lock, and the stalled
-        sweep that reads expired locks are the dedicated EchoMQ course; this dive teaches the ledger and the ack.</p>
-    </div>
-
-    <div class="bridge">
-      <div class="cell idea">
-        <span class="lbl">the pattern</span>
-        <p>The in-flight list is a recovery ledger: a parked job stays there until an explicit ack, so a crashed worker
-          leaves it found and returnable, and the ack runs only when the work is done.</p>
-      </div>
-      <div class="arrow" aria-hidden="true">&rarr;</div>
-      <div class="cell elix">
-        <span class="lbl">in EchoMQ</span>
-        <p><code class="inl">EchoMQ.Keys.active/1</code> is <code class="inl">emq:{queue}:active</code>, the ledger;
-          <code class="inl">EchoMQ.Keys.lock/2</code> is <code class="inl">emq:{queue}:&lt;id&gt;:lock</code>, the holder
-          mark; an expired lock signals a dead worker for the stalled sweep.</p>
-      </div>
-    </div>
-
-    <p class="take">The in-flight list is a recovery ledger, not a buffer; EchoMQ's
-      <code class="inl">active/1</code> list under the <code class="inl">lock/2</code> key is exactly that ledger and
-      its holder mark.</p>
-
-    <div class="door">
-      <span class="lbl">Door &middot; not depth</span>
-      The lock manager that renews each in-flight job's lock on a heartbeat, the stalled sweep
-      (<code class="inl">moveStalledJobsToWait-8.lua</code>) that reads expired locks and reclaims their jobs, and the
-      stalled-check coordination across a worker pool are the dedicated <strong>EchoMQ course</strong>. From here, this
-      dive opens onto <a href="/echomq/core">E2 &middot; the engine</a> &mdash; the as-built lock manager and the worker
-      fetch loop. This dive teaches the ledger and the ack; that course teaches the recovery machinery.
-    </div>
-  </section>
-
-  <section id="refs">
-    <h2>References</h2>
-    <div class="prose">
-      <p>The list read as a record, the ack that removes a done job, and the move that parks a job in the ledger.</p>
-    </div>
-    <div class="refs">
-      <div>
-        <h3>Sources</h3>
-        <ul>
-          <li><a href="https://redis.io/docs/latest/develop/data-types/lists/">Redis &mdash; <em>Lists</em></a> &mdash; the list as a record of ordered elements, the in-flight ledger read as a record of work.</li>
-          <li><a href="https://redis.io/commands/lrem/">Redis &mdash; <em>LREM</em></a> &mdash; the ack: remove one occurrence of a job from the in-flight list after the work is done.</li>
-          <li><a href="https://redis.io/commands/rpoplpush/">Redis &mdash; <em>RPOPLPUSH</em></a> &mdash; the move that parks a job in the in-flight ledger atomically.</li>
-          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the active-list-plus-lock layout EchoMQ ports.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Related in this course</h3>
-        <ul>
-          <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; Processing list</a> &mdash; the module hub: the in-flight move.</li>
-          <li><a href="/redis-patterns/queues/processing-list/list-wait-active">R3.01.1 &middot; List as wait + active</a> &mdash; the two named lists.</li>
-          <li><a href="/redis-patterns/queues/processing-list/lmove-rpoplpush">R3.01.2 &middot; LMOVE / RPOPLPUSH</a> &mdash; the atomic move that parks the job in this ledger.</li>
-          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; at-least-once and stalled recovery, the guarantees this ledger enables.</li>
-          <li><a href="/echomq/core">E2 &middot; the engine</a> &mdash; the dedicated EchoMQ course: the lock manager and stalled sweep in depth.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <nav class="pager" aria-label="Page navigation">
-      <a class="btn ghost" href="/redis-patterns/queues/processing-list/lmove-rpoplpush"><span aria-hidden="true">&larr;</span>&nbsp; R3.01.2 &middot; LMOVE / RPOPLPUSH</a>
-      <span class="spacer"></span>
-      <a class="btn" href="/redis-patterns/queues/processing-list">R3.01 &middot; Processing list <span aria-hidden="true">&rarr;</span></a>
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/queues/processing-list/lmove-rpoplpush"><span class="pk">prev</span>&#8592; R3.01.2 &middot; LMOVE / RPOPLPUSH</a>
+      <a class="pgx" href="/redis-patterns/queues/processing-list"><span class="pk">up</span>R3.01 &middot; Processing list &#8594;</a>
     </nav>
-  </section>
 
+  </div>
 </main>
 
 <footer class="site-foot">
-  <div class="wrap" style="display:block">
-    <div class="foot-cols">
-      <div>
-        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
-        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
-      <div>
-        <h4>This module</h4>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
         <a href="/redis-patterns/queues/processing-list">R3.01 &middot; Processing list</a>
         <a href="/redis-patterns/queues/processing-list/list-wait-active">R3.01.1 &middot; List as wait + active</a>
         <a href="/redis-patterns/queues/processing-list/lmove-rpoplpush">R3.01.2 &middot; LMOVE / RPOPLPUSH</a>
       </div>
-      <div>
-        <h4>The course</h4>
-        <a href="/redis-patterns">Course home</a>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
-        <a href="/elixir">Companion &middot; Functional Programming</a>
-        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq/queue">EchoMQ — the Queue pillar</a>
+        <a href="/echo-persistence">The persistence floor</a>
+        <a href="/bcs">The Branded Component System</a>
       </div>
-    </div>
-    <div class="foot-bottom">
-      <span class="cr">&copy; jonnify</span>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
       <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
         build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
         <dl class="panel">
@@ -572,107 +534,80 @@ process(job)                  <span class="cmt"># do the work; durable side effe
 <script>
 (function () {
   "use strict";
+  document.documentElement.classList.add('js');
 
-  /* ---------- hero: the recovery ledger — a dead worker leaves its job in active (pure over the state) ---------- */
-  // Worker 1 holds job 7 in emq:{queue}:active under a lock. Alive: it renews the lock and the job is in the ledger.
-  // Dead: the job stays in active (recoverable); the lock expires and a recovery sweep returns it to wait. The view
-  // is a pure function of the worker state.
-  var SAGE = '#a7c9b1', REDIS = '#f2948c', BLUE = '#9fc0ea', DIM = '#a39c89';
-  // pure: state -> { workerText, lockText, recLbl, verd, verdColor, text }
-  function view(state) {
-    if (state === 'dead') {
-      return {
-        workerText: 'dead · no heartbeat', lockText: 'lock expired',
-        recLbl: 'sweep returns job 7 → wait', recArr: true,
-        verd: 'worker 1 dead · job 7 still in active → recoverable',
-        verdColor: REDIS,
-        text: 'Worker 1 died. Job 7 is still in emq:{queue}:active — nothing removed it, so it is found, not lost. ' +
-          'The lock emq:{queue}:<id>:lock then expires, and a recovery sweep returns job 7 to emq:{queue}:wait for ' +
-          'another worker. The ledger is what makes the crash recoverable.'
-      };
+  /* ---------- hero: the recovery ledger — a dead worker leaves its job in active (hover-select) ---------- */
+  var LEDGER = {
+    live: {
+      workerText: 'alive · renewing lease', dead: false, recVisible: false,
+      verd: 'worker 1 alive · job 7 in the ledger, lease renewed',
+      text: 'Worker 1 is alive. Job 7 sits in emq:{queue}:active — the in-flight ledger — its member scored at the ' +
+        'lease deadline the worker pushes forward as it works. When the work finishes, the ack removes job 7 from the ledger.'
+    },
+    dead: {
+      workerText: 'dead · lease score passes', dead: true, recVisible: true,
+      verd: 'worker 1 dead · job 7 still in active → recoverable',
+      text: 'Worker 1 died. Job 7 is still in emq:{queue}:active — nothing removed it, so it is found, not lost. The ' +
+        'member\'s lease score passes now, and reap returns job 7 to emq:{queue}:pending for another worker. The ledger ' +
+        'is what makes the crash recoverable.'
     }
-    return {
-      workerText: 'alive · renewing lock', lockText: 'lock fresh',
-      recLbl: ' ', recArr: false,
-      verd: 'worker 1 alive · job 7 in the ledger, lock renewed',
-      verdColor: SAGE,
-      text: 'Worker 1 is alive. Job 7 sits in emq:{queue}:active — the in-flight ledger — under a fresh lock the ' +
-        'worker renews on a heartbeat. When the work finishes, the ack removes job 7 from the ledger.'
-    };
+  };
+  var dfig = document.getElementById('dfig');
+  var ldgButtons = document.querySelectorAll('#ldgSel button');
+  var wkrBox = document.getElementById('wkrBox');
+  function selectLedger(state) {
+    ldgButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-state') === state ? 'true' : 'false'); });
+    var s = LEDGER[state] || LEDGER.live;
+    if (dfig) dfig.classList.toggle('focus', s.dead);
+    if (wkrBox) wkrBox.classList.toggle('dead', s.dead);
+    var wkrState = document.getElementById('wkrState'), recArr = document.getElementById('recArr'),
+        recLbl = document.getElementById('recLbl'), verd = document.getElementById('ldgVerd'),
+        out = document.getElementById('ldgOut');
+    if (wkrState) wkrState.textContent = s.workerText;
+    if (recArr) recArr.style.opacity = s.recVisible ? '1' : '0';
+    if (recLbl) recLbl.style.opacity = s.recVisible ? '1' : '0';
+    if (verd) verd.textContent = s.verd;
+    if (out) out.innerHTML = '<span class="rk">readout &middot;</span> ' + s.text;
   }
-  function setLedger(state) {
-    var dead = state === 'dead';
-    var r = view(state);
-    var wkrBox = document.getElementById('wkrBox'), actBox = document.getElementById('actBox'),
-        wkrState = document.getElementById('wkrState'), wkrLock = document.getElementById('wkrLock'),
-        recArr = document.getElementById('recArr'), recLbl = document.getElementById('recLbl'),
-        verd = document.getElementById('ldgVerd'), out = document.getElementById('ldgOut');
-    if (wkrState) wkrState.textContent = r.workerText;
-    if (wkrLock) wkrLock.textContent = r.lockText;
-    if (wkrBox) { wkrBox.classList.remove('dead', 'live'); wkrBox.classList.add(dead ? 'dead' : 'live'); }
-    if (actBox) { actBox.classList.remove('dead', 'live'); actBox.classList.add('live'); } // job stays parked either way
-    if (recArr) recArr.style.opacity = dead ? '1' : '0';
-    if (recLbl) recLbl.textContent = dead ? r.recLbl : ' ';
-    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', dead ? REDIS : DIM); }
-    if (out) out.textContent = r.text;
-  }
-  document.querySelectorAll('#ldgSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var state = b.getAttribute('data-state');
-      document.querySelectorAll('#ldgSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
-      });
-      setLedger(state);
-    });
+  ldgButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectLedger(b.getAttribute('data-state')); });
   });
-  setLedger('live'); // initial render — correct without interaction
+  selectLedger('live'); // initial render — correct without interaction
 
-  /* ---------- content: where the crash lands — ack-after-done protects the job (pure over the crash point) ---------- */
-  // Three steps: move into active, process (durable effect), ack with LREM. A crash during work leaves the job in
-  // active, recoverable (the ack has not run). An early ack before the effect, then a crash, loses the job. The
-  // step states and verdict are a pure function of the chosen crash point.
-  function ackView(at) {
-    if (at === 'after-ack') {
-      return {
-        s1: 'ok', s2: 'on', s3: 'bad', ackWhen: 'too early',
-        verd: 'early ack then crash · ledger empty → job 7 lost',
-        verdColor: REDIS,
-        text: 'The ack ran before the effect was durable, removing job 7 from the ledger; then the worker crashed ' +
-          'mid-effect. The ledger no longer holds job 7, so nothing can recover it — an early ack loses the job. ' +
-          'This is at-most-once, the wrong ordering.'
-      };
-    }
-    return {
-      s1: 'ok', s2: 'bad', s3: 'on', ackWhen: 'after done',
+  /* ---------- content: where the crash lands — ack-after-done protects the job (hover-select) ---------- */
+  var ACK = {
+    during: {
+      s1: 'ok', s2: 'crash', s3: 'on', ackWhen: 'after done',
       verd: 'crash during work · job 7 still in active → recoverable',
-      verdColor: SAGE,
-      text: 'The worker crashed during the work, before the LREM ack. Job 7 is still in emq:{queue}:active, found ' +
-        'and returnable — the ack runs only after the work is done, so the ledger still holds the job. This is ' +
+      text: 'The worker crashed during the work, before the LREM ack. Job 7 is still in emq:{queue}:active, found and ' +
+        'returnable — the ack runs only after the work is done, so the ledger still holds the job. This is ' +
         'at-least-once: delivered again, never lost.'
-    };
+    },
+    'after-ack': {
+      s1: 'ok', s2: 'on', s3: 'crash', ackWhen: 'too early',
+      verd: 'early ack then crash · ledger empty → job 7 lost',
+      text: 'The ack ran before the effect was durable, removing job 7 from the ledger; then the worker crashed ' +
+        'mid-effect. The ledger no longer holds job 7, so nothing can recover it — an early ack loses the job. This is ' +
+        'at-most-once, the wrong ordering.'
+    }
+  };
+  var ackButtons = document.querySelectorAll('#ackSel button');
+  function paintStep(el, cls) { if (!el) return; el.classList.remove('ok', 'crash', 'on'); el.classList.add(cls); }
+  function selectAck(at) {
+    ackButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-at') === at ? 'true' : 'false'); });
+    var a = ACK[at] || ACK.during;
+    paintStep(document.getElementById('aSt1'), a.s1);
+    paintStep(document.getElementById('aSt2'), a.s2);
+    paintStep(document.getElementById('aSt3'), a.s3);
+    var s3s = document.getElementById('aSt3s'), verd = document.getElementById('ackVerd'), out = document.getElementById('ackOut');
+    if (s3s) s3s.textContent = a.ackWhen;
+    if (verd) verd.textContent = a.verd;
+    if (out) out.innerHTML = '<span class="rk">readout &middot;</span> ' + a.text;
   }
-  function setAck(at) {
-    var dead = at === 'after-ack';
-    var r = ackView(at);
-    var st1 = document.getElementById('st1'), st2 = document.getElementById('st2'), st3 = document.getElementById('st3'),
-        st3s = document.getElementById('st3s'), verd = document.getElementById('ackVerd'),
-        out = document.getElementById('ackOut');
-    function paint(el, cls) { if (!el) return; el.classList.remove('on', 'ok', 'bad'); el.classList.add(cls); }
-    paint(st1, r.s1); paint(st2, r.s2); paint(st3, r.s3);
-    if (st3s) st3s.textContent = r.ackWhen;
-    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', dead ? REDIS : SAGE); }
-    if (out) out.textContent = r.text;
-  }
-  document.querySelectorAll('#ackSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var at = b.getAttribute('data-at');
-      document.querySelectorAll('#ackSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
-      });
-      setAck(at);
-    });
+  ackButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectAck(b.getAttribute('data-at')); });
   });
-  setAck('during'); // initial render — correct without interaction
+  selectAck('during'); // initial render — correct without interaction
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -680,7 +615,7 @@ process(job)                  <span class="cmt"># do the work; durable side effe
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
   function decodeBranded(id) {
-    if (!id || id.length < 4) return null;
+    if (!id || id.length !== 14) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
     if (snow === null) return null;
     var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
@@ -695,28 +630,10 @@ process(job)                  <span class="cmt"># do the work; durable side effe
       put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
     var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
     stamp.addEventListener('click', toggle);
-    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
   }
 })();
 </script>
 
-<script>
-/* progressive enhancement: mark JS on, then reveal-on-scroll */
-document.documentElement.classList.add('js');
-document.addEventListener('DOMContentLoaded', function () {
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var els = document.querySelectorAll('.reveal');
-  if (reduce || !('IntersectionObserver' in window)) {
-    els.forEach(function (e) { e.classList.add('in'); });
-    return;
-  }
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (en) {
-      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-    });
-  }, { threshold: 0.12 });
-  els.forEach(function (e) { io.observe(e); });
-});
-</script>
 </body>
 </html>

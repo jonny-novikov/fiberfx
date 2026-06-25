@@ -1,550 +1,456 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R3.05.1 · The busy-poll cost · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R3.05.1 — the busy-poll cost. A worker that takes the next job by polling runs RPOP wait; if nil, sleep(interval); repeat. Every empty poll is a wasted round-trip, and a job waits on average about half the interval before pickup. The interval is the only dial and has no good setting: short cuts latency but multiplies round-trips, long cuts round-trips but lengthens latency. The contrast is EchoMQ's blocking marker fetch (do_wait_for_job/3 running BZPOPMIN emq:{queue}:marker), the same form the Go port's empty-queue worker loop replaces with a time.Sleep poll.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="description" content="R3.05.1 — the spin no interval fixes. A worker that takes the next job by polling pays a wasted round-trip on every empty poll and adds about half an interval of pickup latency; the interval is the only dial and has no good setting. The contrast is EchoMQ's parked consumer — EchoMQ.Consumer.park/1 running BLPOP emq:{queue}:wake. Grounded in echo/apps/echo_mq.">
 <style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
 :root{
-  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
-  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
-  --gold:#d4a85a; --gold-bright:#f0cd7f;
-  --blue:#5a87c4; --blue-bright:#9fc0ea;
-  --sage:#7ba387; --sage-bright:#a7c9b1;
-  --burgundy:#c4504c;
-  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
-  --redis:#d6584f; --redis-bright:#f2948c;
-  --line:#2a3252;
-  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --serif:"PT Serif", Georgia, serif;
-  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --measure:68ch;
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
 }
-*{box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{
-  margin:0; color:var(--cream); background:var(--ink);
-  font-family:var(--serif);
-  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
-  line-height:1.62; letter-spacing:.005em;
-  background-image:
-    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
-    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
-    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
-  background-attachment:fixed;
-}
-body::after{ /* faint vignette for depth */
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
-}
-.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
-  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50}
 .skip:focus{left:0}
-::selection{background:var(--gold);color:var(--ink)}
-img,svg{max-width:100%}
-a{color:var(--gold-bright);text-decoration:none}
-a:hover{color:var(--cream)}
-hr.rule{border:0;height:1px;margin:2.2rem 0;
-  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
 
-/* ---- layout ---- */
-.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
-main{display:block}
-section{padding:clamp(2.6rem,6vw,4.6rem) 0}
-section + section{border-top:1px solid var(--line)}
-.prose{max-width:var(--measure)}
-.prose p{margin:0 0 1.05rem}
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
 
-/* ---- type ---- */
-h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
-  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
-h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
-h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
-h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
-h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
-.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
-  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
-  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
-.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
-  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
-  max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
-.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
-strong{color:var(--cream);font-weight:700}
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
 
-/* ---- site header / footer ---- */
-.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
-  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
-.site .wrap{display:flex;align-items:center;justify-content:space-between;
-  height:58px;font-family:var(--sans)}
-.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
-  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
-  display:inline-block;transform:translateY(-2px)}
-.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
-  text-transform:uppercase;color:var(--cream-dim)}
-.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
-.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
-  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
-.route-tag a{color:var(--gold);text-decoration:none}
-.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
-.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
-.route-tag .rcur{color:var(--gold-bright)}
-.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
-  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
-.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
-  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
 
-/* ---- hero ---- */
-.hero{padding-top:clamp(3rem,8vw,6rem)}
-.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
-.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
-  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
-  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
-  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
-.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
-  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
-.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
-.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
-.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
 
-/* ---- figures / takeaways ---- */
-.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
-  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
-  padding:clamp(1rem,2.4vw,1.6rem)}
-.fig svg{display:block;width:100%;height:auto}
-.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
-  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
-  padding-left:1rem;border-left:2px solid var(--gold)}
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.fold{display:flex;align-items:center;gap:14px;margin:6px 0 12px;font-family:var(--mono);font-size:13px;color:var(--b-dim)}
+.fold label{min-width:9rem;color:var(--b-ink)}
+.fold input[type=range]{flex:1;accent-color:var(--r-red);height:2px}
+.fold .val{color:var(--r-red);font-weight:700;min-width:4rem;text-align:right}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.booknote{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-top:12px;max-width:78ch}
 
-/* ---- interactive shells (shared with lesson pages) ---- */
-.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
-.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
-  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
-  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
-.solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
-.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
-.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
-.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
-.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
-.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
-.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
-.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
-.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
-.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
-  background:var(--ink);border:1px solid var(--line);border-radius:10px;
-  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
-.geo-readout .dim{color:var(--cream-dim)}
-.geo-readout b{color:var(--redis-bright)}
-.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---------- the poll-cost figure (hover-select) ---------- */
+.pflow{width:100%;height:auto;display:block;margin-top:4px}
+.pflow .lane{fill:var(--b-card);stroke:var(--b-line)}
+.pflow .axis{stroke:var(--b-line);stroke-width:1}
+.pflow text{font-family:var(--mono);fill:var(--b-ink);font-size:11px}
+.pflow .ttl{fill:var(--b-dim);font-size:11px}
+.pflow .jt{fill:var(--b-ts);font-size:10.5px}
+.pflow .step{cursor:pointer;transition:opacity .18s ease}
+.pflow .step .bar{stroke-width:2.4}
+.pflow .step.empty .bar{stroke:var(--b-dim)}
+.pflow .step.pick .bar{stroke:var(--b-node);stroke-width:3}
+.pflow .step .elbl{fill:var(--b-dim);font-size:10px;text-anchor:middle}
+.pflow.focus .step{opacity:.25}
+.pflow.focus .step.on{opacity:1}
 
-/* ---- poll-cost diagram ---- */
-.pb .lane rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
-.pb .poll-tick{fill:#5a87c4;transition:fill .18s ease}
-.pb .poll-tick.waste{fill:#d6584f}
-.pb .poll-tick.hit{fill:#7ba387}
-.pb text{font-family:var(--sans);fill:#d7cfb9}
-.pb .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
-.pb .jt{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
-.pb .axis{stroke:#2a3252;stroke-width:1}
-/* ---- the trade chart ---- */
-.tr .bar.lat{fill:rgba(214,88,79,.55);transition:height .2s ease,y .2s ease}
-.tr .bar.rt{fill:rgba(90,135,196,.55);transition:height .2s ease,y .2s ease}
-.tr .pick rect{fill:none;stroke:#f0cd7f;stroke-width:1.6}
-.tr .grid{stroke:#2a3252;stroke-width:1;stroke-dasharray:2 3}
-.tr text{font-family:var(--sans);fill:#d7cfb9;font-size:11px}
-.tr .ax{font-family:var(--mono);fill:#a39c89;font-size:10px}
+/* ---------- frozen / code ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
 
-/* ---- code ---- */
-pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
-  background:var(--ink);border:1px solid var(--line);border-radius:12px;
-  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
-pre.code .op{color:var(--elixir-bright)}
-pre.code .fn{color:var(--cream)}
-pre.code .fn.blue{color:var(--blue-bright)}
-pre.code .fn.sage{color:var(--sage-bright)}
-pre.code .fn.gold{color:var(--gold-bright)}
-pre.code .fn.elixir{color:var(--elixir-bright)}
-pre.code .fn.burg{color:#e08f8b}
-pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
-pre.code .res{color:var(--gold-bright)}
-pre.code .str{color:var(--sage-bright)}
-pre.code .cmt{color:var(--cream-dim)}
-code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
-  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
 
-/* ---- pager ---- */
-.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
-  align-items:center;font-family:var(--sans)}
-.pager .p-left{color:var(--cream-dim);font-size:.9rem}
-.pager .spacer{flex:1}
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
 
-/* ---- branded stamp ---- */
-.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
-  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
-  background:var(--ink);user-select:none}
-.stamp:hover{border-color:var(--gold)}
-.stamp .id{color:var(--gold-bright)}
-.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
-  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+/* ---------- doors / vnote / bridge ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+div.door:hover{box-shadow:none}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
 .stamp.open .panel{display:grid}
-.stamp .panel dt{color:var(--cream-dim)}
-.stamp .panel dd{margin:0;color:var(--cream)}
 
-/* ---- reveal (JS-gated; content visible without JS) ---- */
-html.js .reveal{opacity:0;transform:translateY(14px)}
-html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
-@media (prefers-reduced-motion: reduce){
-  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
 }
-
-/* ---- responsive ---- */
-@media (max-width:760px){
-  .site nav{display:none}
-  .lede{max-width:none}
-  .take{font-size:1.08rem}
-}
-
-/* ---- module / lesson page additions (additive; shared head) ---- */
-.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
-  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
-.crumbs a{color:var(--cream-soft)}
-.crumbs .sep{opacity:.45}
-.crumbs .here{color:var(--gold)}
-.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
-.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
-.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
-.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
-.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
-.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
-  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
-.bridge .cell.idea .lbl{color:var(--gold)}
-.bridge .cell.elix .lbl{color:var(--redis-bright)}
-.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
-.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
-@media (max-width:760px){
-  .bridge{grid-template-columns:1fr;gap:.7rem}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
   .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
 }
-.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
-  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
-.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
-.deflist dd{margin:0;color:var(--cream-soft)}
-.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
-  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
-.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
-  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
-  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
-.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
-.door a{color:var(--gold-bright)}
-/* ---- references ---- */
-.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
-@media(max-width:680px){.refs{grid-template-columns:1fr}}
-.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
-.refs h3:first-child{margin-top:0}
-.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
-.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
-.refs a{color:var(--sage-bright)}
-.refs a:hover{color:var(--cream)}
-.refs em{color:var(--cream-dim);font-style:italic}
-.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the page</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
-<header class="site">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
-    <nav>
-      <a href="/redis-patterns">Home</a>
-      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/blocking-vs-polling">blocking-vs-polling</a><span class="rsep">/</span><span class="rcur">the-busy-poll-cost</span></span>
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/blocking-vs-polling">blocking-vs-polling</a><span class="rsep">/</span><span class="rcur">the-busy-poll-cost</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#loop">The polling loop</a>
+      <a href="#dial">The interval</a>
+      <a href="#echomq">On EchoMQ</a>
+      <a href="#refs">References</a>
     </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main id="main">
+  <div class="wrap">
 
-  <style>
-    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
-    .hero-split .hero{padding-top:0}
-    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
-    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
-    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
-    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
-    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
-    .foot-cols a:hover{color:var(--cream)}
-    .foot-cols .it{color:var(--cream-dim)}
-    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
-    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
-    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
-    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
-  </style>
-
-  <div class="hero-split">
     <section class="hero">
-      <div class="crumbs">
+      <nav class="crumbs" aria-label="Breadcrumb">
         <a href="/redis-patterns">Redis Patterns</a>
         <span class="sep">/</span>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a>
         <span class="sep">/</span>
         <a href="/redis-patterns/queues/blocking-vs-polling">Blocking vs polling</a>
         <span class="sep">/</span>
         <span class="here">The busy-poll cost</span>
+      </nav>
+      <p class="kicker">R3.05.1 &#183; Blocking vs polling &#8212; dive 1</p>
+      <h1>The busy-poll <span class="hns">cost</span>.</h1>
+      <p class="lede">A worker that takes the next job by polling pays a wasted round-trip on every empty poll and
+        about half an interval of pickup latency. The interval is the only dial, and it has no good setting.</p>
+      <p class="heronote">Grounding: the polling loop the source's <code>Blocking Variant</code> section replaces &#183;
+        the contrast is the real Elixir <code>EchoMQ.Consumer.park/1</code> (<code>BLPOP emq:{queue}:wake</code>,
+        <code>echo/apps/echo_mq</code>) &#8212; "park, don't poll."</p>
+
+      <figure class="anatomy" aria-labelledby="traceCap">
+        <figcaption id="traceCap"><b>Trace one poll, empty or pick.</b> Select an outcome to light it and read the
+          round trip it makes.</figcaption>
+        <div class="segbar" id="traceSel" role="group" aria-label="Which poll outcome to trace">
+          <button type="button" data-poll="empty" aria-pressed="false">an empty poll</button>
+          <button type="button" data-poll="pick" aria-pressed="false">a poll that picks</button>
+        </div>
+        <svg class="pflow" id="pflow" viewBox="0 0 460 150" role="img" aria-label="A worker timeline with two checks. The first check finds the queue empty and returns nil, a wasted round trip. The second check, after the job arrives, returns the job. Select an outcome to light it; the readout names the round trips and the work done.">
+          <text class="ttl" x="30" y="22">worker &#183; two checks</text>
+          <g><rect class="lane" x="30" y="32" width="400" height="34" rx="8"></rect></g>
+          <line class="axis" x1="30" y1="86" x2="430" y2="86"></line>
+          <g class="step empty" data-poll="empty"><line class="bar" x1="140" y1="34" x2="140" y2="64"></line><text class="elbl" x="140" y="80">empty</text><text class="elbl" x="140" y="28">pop &#8594; nil</text></g>
+          <g class="step pick" data-poll="pick"><line class="bar" x1="320" y1="34" x2="320" y2="64"></line><text class="elbl" x="320" y="80">pick</text><text class="elbl" x="320" y="28">pop &#8594; job</text></g>
+        </svg>
+        <div class="readout" id="traceOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a poll
+          outcome. An empty poll is a wasted round trip; a pick returns a job.</div>
+        <p class="booknote">Static verdicts &#8212; an empty poll &#8594; one round trip, no work &#183; a pick &#8594;
+          one round trip, one job, but the job waited in the gap before this poll.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="loop">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The polling loop</h2>
+        <span class="ssrc">reliable-queue.md.txt &#183; the loop replaced</span>
       </div>
-      <p class="eyebrow">R3.05.1 &middot; dive 1</p>
-      <h1>The busy-poll <span class="ex">cost</span></h1>
-      <p class="lede">A worker that waits by polling pays a wasted round-trip on every empty queue and picks a job up to
-        one interval late.</p>
-      <p class="kicker">The loop is plain: pop the work list; if the result is nil, sleep a fixed interval; repeat. The
-        interval is the only dial, and it cannot be set well &mdash; a short one cuts latency but multiplies the empty
-        round-trips, a long one cuts the round-trips but lengthens pickup latency. Set the arrival rate and the interval
-        on the right and read the empty polls, the average pickup latency, and the round-trips per second.</p>
-      <div class="toc-mini" aria-label="On this page">
-        <a href="#loop">The polling loop</a>
-        <a href="#latency">The latency a poll adds</a>
-        <a href="#trade">No interval wins</a>
-        <a href="#applied">In EchoMQ</a>
-        <a href="#refs">References</a>
+      <div class="prose">
+        <p>The naive wait is a spin. Each pass sends a pop command and, when the queue is empty, gets a nil back. That
+          nil is a <strong>wasted round-trip</strong> &mdash; a full command-and-reply over the wire for no work. The
+          worker then sleeps the interval and tries again. The work of <em>checking</em> whether a job exists is paid
+          separately from the work of <em>doing</em> the job, and on an idle queue only the checking happens.</p>
+      </div>
+      <pre class="code"><span class="cmt"># the polling loop: spin, sleep, retry — every nil pass is a wasted round-trip</span>
+loop:
+  job = pop work_queue -&gt; processing
+  <span class="cmt">if</span> job == nil:
+    sleep(interval)          <span class="cmt"># burn the interval, then poll again</span>
+    <span class="cmt">continue</span>
+  process(job)</pre>
+      <div class="prose">
+        <p>The second cost is latency. A job rarely arrives exactly when the worker polls. It arrives in the gap
+          between two polls and waits the rest of that gap before the next poll picks it up, so average pickup latency
+          is about <strong>half the interval</strong>.</p>
+      </div>
+      <dl class="deflist">
+        <dt>empty poll</dt><dd>A pop that returns nil. One round trip, no work &#8212; pure overhead on an idle queue.</dd>
+        <dt>pickup latency</dt><dd>The time a job waits between arriving and the next poll &#8212; up to one interval, about half on average.</dd>
+        <dt>interval</dt><dd>The sleep between polls. The only dial, and the one that sets the two costs against each other.</dd>
+      </dl>
+      <p class="take">A polling loop pays a wasted round trip on every empty poll and adds about half an interval of
+        pickup latency &mdash; two costs, paid at the same time.</p>
+    </section>
+
+    <section id="dial">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The interval has no good setting</h2>
+        <span class="ssrc">no value is cheap on both axes</span>
+      </div>
+      <div class="prose">
+        <p>The interval is the single knob, and it sets the two costs against each other. A <strong>short</strong>
+          interval cuts pickup latency but multiplies the empty round-trips on an idle queue &mdash; a 50 ms interval
+          is twenty polls a second per worker, almost all of them empty. A <strong>long</strong> interval cuts the
+          round-trips but lengthens pickup latency &mdash; a 1 s interval is one poll a second, but a job can wait up
+          to a full second before pickup.</p>
+        <p>No value is cheap on both axes, because polling charges for checking and for doing as two separate things.
+          Slide the interval below over a fixed window and an arrival rate; the readout computes the empty polls,
+          the average pickup latency, and the round-trips per second. There is no minimum that satisfies both.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="calcCap">
+        <figcaption id="calcCap"><b>The poll-cost calculator.</b> Set the interval and the arrival rate; the readout
+          runs the cost over a one-second window.</figcaption>
+        <div class="fold">
+          <label for="intRange">poll interval (ms)</label>
+          <input type="range" id="intRange" min="50" max="1000" step="50" value="200">
+          <span class="val" id="intVal">200</span>
+        </div>
+        <div class="fold">
+          <label for="arrRange">jobs / second</label>
+          <input type="range" id="arrRange" min="0" max="20" step="1" value="2">
+          <span class="val" id="arrVal">2</span>
+        </div>
+        <div class="readout" id="calcOut" aria-live="polite"></div>
+        <p class="booknote">Static verdicts &#8212; short interval &#8594; low latency, many empty polls &#183; long
+          interval &#8594; few polls, high latency. No setting is cheap on both.</p>
+      </figure>
+
+      <p class="take">The interval dials latency against round-trips and there is no minimum that satisfies both: the
+        wasteful end and the laggy end are the only choices polling offers.</p>
+    </section>
+
+    <section id="echomq">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The way off the trade &mdash; park</h2>
+        <span class="ssrc">consumer.ex &#183; park/1</span>
+      </div>
+      <div class="prose">
+        <p>The only way off the trade is to stop checking on a cadence at all &mdash; to park until there is something
+          to do. <code>EchoMQ.Consumer</code> does that: its loop drains the ring, then parks on
+          <code>BLPOP emq:{queue}:wake &lt;beat&gt;</code> instead of sleeping. There is no spin and no empty round
+          trip, and a wake returns it the instant work is admitted &mdash; pickup latency near zero, not half an
+          interval. The beat is the timeout, so the loop still runs its reap and promote pump on a cadence; the wake
+          handles the fresh arrivals.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A pop on an empty list returns nil immediately, so a
+        polling loop must add its own sleep to avoid a tight spin &mdash; the blocking forms remove that sleep by
+        parking the connection on the server &mdash;
+        <a href="https://valkey.io/commands/blpop/" rel="noopener">valkey.io/commands/blpop</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A pop/sleep loop pays a wasted round trip on every empty poll and about half an interval of pickup
+            latency; the interval dials one cost against the other, and no setting wins.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Consumer</code> does not poll. Its loop drains the ring, then parks on
+            <code>BLPOP emq:{queue}:wake &lt;beat&gt;</code> &mdash; no spin, no empty round trips, and a wake returns
+            it the instant work is admitted.</p>
+        </div>
+      </div>
+      <p class="take">Polling has no good interval; the next dive builds the blocking park that removes the spin
+        entirely.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; the spin no interval fixes</h2>
+        <span class="ssrc">next &#8594; R3.05.2</span>
+      </div>
+      <div class="prose">
+        <p>A polling loop pops, and on nil sleeps the interval and retries. Every empty pass is a wasted round trip,
+          and a job waits up to one interval before pickup. The interval is the only dial, and it trades latency
+          against round-trips with no value cheap on both. The next dive replaces the spin with a blocking pop that
+          parks the connection until work arrives.</p>
       </div>
     </section>
 
-    <figure class="fig pb" aria-labelledby="pcTitle">
-      <h4 id="pcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The poll-cost calculator &middot; one job arrival over a 1000&nbsp;ms window</h4>
-      <div class="controls">
-        <div class="fold-ctrl">
-          <label for="pcArrive">job arrives</label>
-          <input type="range" id="pcArrive" min="50" max="950" step="20" value="330">
-          <span class="val" id="pcArriveVal">330ms</span>
-        </div>
-        <div class="fold-ctrl">
-          <label for="pcInt">poll interval</label>
-          <input type="range" id="pcInt" min="50" max="500" step="50" value="200">
-          <span class="val" id="pcIntVal">200ms</span>
-        </div>
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
       </div>
-
-      <svg viewBox="0 0 460 150" role="img" aria-label="A one-second worker timeline. The worker polls every interval milliseconds. A job arrives at the chosen time. Each poll before the arrival is a wasted empty poll, shown red; the first poll after the arrival picks the job up, shown green; the gap between arrival and that poll is the pickup latency. The readout reports the wasted polls, the pickup latency, and the round-trips per second.">
-        <text class="ttl" x="30" y="24">polling worker timeline (1000 ms)</text>
-        <g class="lane" id="pcLane"><rect x="30" y="34" width="400" height="38" rx="9"></rect></g>
-        <line class="axis" x1="30" y1="90" x2="430" y2="90"></line>
-        <line id="pcArrLine" x1="162" y1="34" x2="162" y2="98" stroke="#f0cd7f" stroke-width="1.5" stroke-dasharray="3 3"></line>
-        <text class="jt" id="pcArrLbl" x="162" y="112" text-anchor="middle">job</text>
-        <g id="pcTicks"></g>
-        <text class="ttl" id="pcVerd" x="230" y="138" text-anchor="middle">&mdash;</text>
-      </svg>
-
-      <div class="geo-readout" id="pcOut" aria-live="polite"></div>
-    </figure>
-  </div>
-
-  <section id="loop">
-    <h2>The polling loop</h2>
-    <div class="prose">
-      <p>The naive wait is a spin. The worker pops the work list; an empty queue returns nil; the worker sleeps, then
-        polls again.</p>
-      <pre class="code"><span class="cmt"># the polling loop — RPOP, sleep, retry</span>
-<span class="op">loop</span>:
-  job = <span class="rdx">RPOP</span> wait              <span class="cmt"># nil when the queue is empty</span>
-  <span class="op">if</span> job == nil:
-    sleep(interval)            <span class="cmt"># burn the interval, then poll again</span>
-    <span class="op">continue</span>
-  process(job)                <span class="cmt"># a job arrived — run it</span></pre>
-      <p>Every pass that returns nil is a <strong>wasted round-trip</strong>: a command sent to Redis and a nil sent
-        back, for no work. On a queue that is empty most of the time, that is the steady state &mdash; the worker spends
-        its life asking an empty queue whether it is still empty. A short interval makes that question cheap to ask but
-        asks it constantly; the round-trips pile up while nothing happens.</p>
-    </div>
-    <p class="take">Every empty poll is a wasted round-trip. On an idle queue the polling worker burns round-trips at the
-      poll rate, doing no work for each one.</p>
-  </section>
-
-  <section id="latency">
-    <h2>The latency a poll adds</h2>
-    <div class="prose">
-      <p>A job rarely arrives exactly when the worker polls. It arrives somewhere in the gap between two polls, and
-        waits the rest of the gap before the next poll picks it up. Over many arrivals, the wait averages about
-        <strong>half the interval</strong>.</p>
-      <pre class="code"><span class="cmt"># a job arrives between two polls and waits for the next one</span>
-poll        poll        poll        poll
- |           |     <span class="res">↑</span>      |           |
- |&lt;-- interval --&gt;|       |           |
-                  job arrives here, waits ~½ interval for the next poll
-
-<span class="cmt"># average pickup latency over uniform arrivals</span>
-avg_latency  ≈  interval / 2</pre>
-      <p>A 100&nbsp;ms interval adds about 50&nbsp;ms of average pickup latency on top of the work itself. The interval is
-        a floor on responsiveness that no amount of worker speed removes: the job is already in Redis, but the worker
-        will not look until its next scheduled poll.</p>
-    </div>
-    <p class="take">A polled job waits, on average, about half the interval before pickup &mdash; a responsiveness floor
-      the interval sets, independent of how fast the worker runs.</p>
-  </section>
-
-  <section id="trade">
-    <h2>No interval wins</h2>
-    <div class="prose">
-      <p>The two costs pull against each other on the one dial. Shorten the interval to cut latency and the empty
-        round-trips multiply; lengthen it to cut the round-trips and pickup latency grows. There is no value that is
-        cheap on both axes, because polling pays for <em>checking</em> whether work exists separately from <em>doing</em>
-        the work. Sweep the interval below and watch the latency bar fall as the round-trips bar climbs &mdash; no
-        setting puts both low.</p>
-    </div>
-
-    <figure class="fig tr" aria-labelledby="trTitle">
-      <h4 id="trTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The interval trade &middot; average latency vs round-trips per second on an idle queue</h4>
-      <div class="controls">
-        <div class="fold-ctrl">
-          <label for="trInt">poll interval</label>
-          <input type="range" id="trInt" min="50" max="1000" step="50" value="200">
-          <span class="val" id="trIntVal">200ms</span>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; lists, pops, and why a polling loop needs an explicit sleep.</li>
+            <li><a href="https://valkey.io/commands/lpop/" rel="noopener">Valkey &mdash; <em>LPOP</em></a> &mdash; the non-blocking pop a polling loop spins on; nil on an empty list.</li>
+            <li><a href="https://valkey.io/commands/blpop/" rel="noopener">Valkey &mdash; <em>BLPOP</em></a> &mdash; the blocking alternative that removes the interval and the empty round-trips.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/queues/blocking-vs-polling">R3.05 &#183; Blocking vs polling</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &#183; Blocking pop</a><span class="rs">the next dive: the primitive that removes the spin</span></li>
+            <li><a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the Queue pillar: the consumer loop in depth</span></li>
+          </ul>
         </div>
       </div>
+    </section>
 
-      <svg viewBox="0 0 460 200" role="img" aria-label="Two bars track the trade as the poll interval changes. The red latency bar is about half the interval and grows as the interval lengthens. The blue round-trips-per-second bar is one over the interval and shrinks as the interval lengthens. The two bars move in opposite directions, so no interval puts both low. The gold outline marks the current interval.">
-        <line class="grid" x1="60" y1="40" x2="430" y2="40"></line>
-        <line class="grid" x1="60" y1="90" x2="430" y2="90"></line>
-        <line class="grid" x1="60" y1="140" x2="430" y2="140"></line>
-        <text class="ax" x="56" y="44" text-anchor="end">high</text>
-        <text class="ax" x="56" y="144" text-anchor="end">low</text>
-        <rect class="bar lat" id="trLat" x="150" y="90" width="58" height="50"></rect>
-        <text x="179" y="160" text-anchor="middle" id="trLatTxt">latency</text>
-        <text class="ax" x="179" y="174" text-anchor="middle" id="trLatVal">100 ms</text>
-        <rect class="bar rt" id="trRt" x="252" y="90" width="58" height="50"></rect>
-        <text x="281" y="160" text-anchor="middle">round-trips/s</text>
-        <text class="ax" x="281" y="174" text-anchor="middle" id="trRtVal">5 /s</text>
-        <text class="ax" id="trTradeLbl" x="245" y="194" text-anchor="middle">shorten → less latency, more round-trips &middot; lengthen → the reverse</text>
-      </svg>
-
-      <div class="geo-readout" id="trOut" aria-live="polite"></div>
-    </figure>
-
-    <p class="take">Latency is about half the interval; round-trips per second are one over it. The two move in opposite
-      directions on the one dial, so no interval is cheap on both &mdash; the fix is to stop polling.</p>
-  </section>
-
-  <section id="applied">
-    <h2>In EchoMQ &mdash; the contrast the rest of the module removes</h2>
-    <div class="prose">
-      <p>EchoMQ's worker does not run this loop on an idle queue. When no job is immediately available, it parks on a
-        blocking fetch &mdash; <code class="inl">EchoMQ.Worker.do_wait_for_job/3</code> runs
-        <code class="inl">BZPOPMIN emq:{queue}:marker timeout</code> on a dedicated blocking connection &mdash; so it
-        spends no round-trips while idle and picks a job up the instant the producer rings the marker. The polling loop
-        above is what that blocking fetch replaces.</p>
-      <p>It is also what the Go port's empty-queue worker loop does:
-        <code class="inl">apps/echomq-go/pkg/echomq/worker_impl.go</code> runs
-        <code class="inl">time.Sleep(100 * time.Millisecond)</code> / <code class="inl">time.Sleep(time.Second)</code>
-        when the queue is empty &mdash; a fixed-interval poll, the cross-runtime contrast to the marker block. The next
-        two dives build the blocking primitive and the marker handshake that remove the cost.</p>
-      <pre class="code"><span class="cmt">// worker_impl.go — the Go worker loop polls with a fixed sleep (the contrast, NOT the marker block)</span>
-<span class="op">if</span> err == redis.Nil {
-    <span class="fn blue">time.Sleep</span>(<span class="res">100</span> * time.Millisecond)   <span class="cmt">// empty queue → wait a fixed interval, then poll again</span>
-    <span class="op">continue</span>
-}</pre>
-    </div>
-
-    <div class="bridge">
-      <div class="cell idea">
-        <span class="lbl">the pattern</span>
-        <p>Wait-by-polling pays a wasted round-trip on every empty poll and adds about half an interval of pickup
-          latency. The interval dials one cost against the other and never makes both cheap.</p>
-      </div>
-      <div class="arrow" aria-hidden="true">&rarr;</div>
-      <div class="cell elix">
-        <span class="lbl">in EchoMQ</span>
-        <p>The worker blocks on <code class="inl">BZPOPMIN emq:{queue}:marker</code> via
-          <code class="inl">do_wait_for_job/3</code> instead, spending no idle round-trips. The Go port's
-          <code class="inl">time.Sleep</code> empty-queue loop is the polling form this module replaces.</p>
-      </div>
-    </div>
-
-    <p class="take">The cost is paid twice and dialled once; EchoMQ's worker blocks on the marker rather than polling, so
-      the next two dives build the primitive and the handshake that remove it.</p>
-
-    <div class="door">
-      <span class="lbl">Door &middot; not depth</span>
-      The full worker fetch loop &mdash; how the loop branches between an immediate fetch and a blocking wait, and how
-      each runtime parks &mdash; is the dedicated <strong>EchoMQ course</strong>. From here, R3.05 opens onto
-      <a href="/echomq/core">E2 &middot; the engine</a>, the as-built worker fetch loop. This dive teaches the cost of
-      polling; that course teaches the engine that avoids it.
-    </div>
-  </section>
-
-  <section id="refs">
-    <h2>References</h2>
-    <div class="prose">
-      <p>The non-blocking pop the loop spins on, the blocking move that removes the interval, and the queue protocol that
-        parks on the marker instead.</p>
-    </div>
-    <div class="refs">
-      <div>
-        <h3>Sources</h3>
-        <ul>
-          <li><a href="https://redis.io/commands/rpop/">Redis &mdash; <em>RPOP</em></a> &mdash; the non-blocking pop the polling loop spins on, returning nil on an empty queue.</li>
-          <li><a href="https://redis.io/commands/blmove/">Redis &mdash; <em>BLMOVE</em></a> &mdash; the blocking move that removes the poll interval, built in the next dive.</li>
-          <li><a href="https://redis.io/docs/latest/develop/use/patterns/">Redis &mdash; <em>Patterns</em></a> &mdash; the Redis patterns index, home of the reliable-queue and blocking-consumer guidance.</li>
-          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the marker-based worker wait EchoMQ ports in place of the poll.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Related in this course</h3>
-        <ul>
-          <li><a href="/redis-patterns/queues/blocking-vs-polling">R3.05 &middot; Blocking vs polling</a> &mdash; the module hub.</li>
-          <li><a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &middot; Blocking pop</a> &mdash; the primitive that removes the poll interval and the wasted round-trips.</li>
-          <li><a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &middot; The marker wake-up</a> &mdash; the EchoMQ marker handshake that wakes the worker.</li>
-          <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; The processing list</a> &mdash; the wait/active lists the worker pops from.</li>
-          <li><a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a> &mdash; the chapter.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <nav class="pager" aria-label="Page navigation">
-      <a class="btn ghost" href="/redis-patterns/queues/blocking-vs-polling"><span aria-hidden="true">&larr;</span>&nbsp; R3.05 &middot; Blocking vs polling</a>
-      <span class="spacer"></span>
-      <a class="btn" href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &middot; Blocking pop <span aria-hidden="true">&rarr;</span></a>
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/queues/blocking-vs-polling"><span class="pk">previous</span>&#8592; R3.05 &#183; Blocking vs polling</a>
+      <a class="pgx" href="/redis-patterns/queues/blocking-vs-polling/blocking-pop"><span class="pk">next</span>R3.05.2 &#183; Blocking pop &#8594;</a>
     </nav>
-  </section>
 
+  </div>
 </main>
 
 <footer class="site-foot">
-  <div class="wrap" style="display:block">
-    <div class="foot-cols">
-      <div>
-        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
-        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+          real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
-      <div>
-        <h4>This module</h4>
-        <a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &middot; The busy-poll cost</a>
-        <a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &middot; Blocking pop</a>
-        <a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &middot; The marker wake-up</a>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &#183; The busy-poll cost</a>
+        <a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &#183; Blocking pop</a>
+        <a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &#183; The wake-up doorbell</a>
       </div>
-      <div>
-        <h4>The course</h4>
-        <a href="/redis-patterns">Course home</a>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
-        <a href="/elixir">Companion &middot; Functional Programming</a>
-        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
       </div>
-    </div>
-    <div class="foot-bottom">
-      <span class="cr">&copy; jonnify</span>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
       <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
         <dl class="panel">
           <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
           <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
@@ -560,104 +466,73 @@ avg_latency  ≈  interval / 2</pre>
 <script>
 (function () {
   "use strict";
+  document.documentElement.classList.add('js');
 
-  /* ---------- hero: the poll-cost calculator (pure over arrival + interval) ---------- */
-  // A 1000ms window. The worker polls every `interval` ms. A job arrives at `arrive` ms. Polls before the arrival are
-  // wasted empty polls; the first poll at or after the arrival picks it up; the gap is the pickup latency. The wasted
-  // polls, the pickup latency, and the round-trips/sec are a pure function of (arrive, interval).
-  var WIN = 1000, X0 = 30, W = 400;
-  function xOf(t) { return X0 + W * (t / WIN); }
-  // pure: (arrive, interval) -> { ticks:[{t,kind}], wasted, pickup, latency, rtps, text, verd }
-  function poll(arrive, interval) {
-    var ticks = [], pickup = null;
-    for (var t = interval; t <= WIN; t += interval) {
-      if (pickup === null && t >= arrive) { ticks.push({ t: t, kind: 'hit' }); pickup = t; }
-      else if (t < arrive) { ticks.push({ t: t, kind: 'waste' }); }
-      else { ticks.push({ t: t, kind: 'idle' }); }
+  /* ---------- Interactive 1: trace one poll, empty or pick (hover-select, pure) ---------- */
+  function tracePoll(outcome) {
+    if (outcome === 'empty') {
+      return 'pop emq:{queue}:wait -> nil (queue empty). Round trips: 1. Work done: none. The worker now sleeps the interval. This pass is pure overhead.';
     }
-    var wasted = ticks.filter(function (k) { return k.kind === 'waste'; }).length;
-    var latency = (pickup === null) ? null : pickup - arrive;
-    var rtps = Math.round(1000 / interval);
-    var pickStr = (pickup === null) ? 'not within the window' : pickup + ' ms';
-    var latStr = (latency === null) ? 'over a window' : latency + ' ms';
-    return {
-      ticks: ticks, wasted: wasted, pickup: pickup, latency: latency, rtps: rtps,
-      verd: interval + ' ms interval · ' + wasted + ' wasted poll' + (wasted === 1 ? '' : 's') + ' · pickup at ' + pickStr,
-      text: 'The worker polls every ' + interval + ' ms. The job arrived at ' + arrive + ' ms and was picked up at ' +
-        pickStr + ' — ' + latStr + ' of pickup latency. ' + wasted + ' empty poll' + (wasted === 1 ? '' : 's') +
-        ' ran before it arrived, each a wasted round-trip; the loop runs about ' + rtps + ' round-trips/sec while idle.'
-    };
+    return 'pop emq:{queue}:wait -> job (claimed). Round trips: 1. Work done: 1 job. But the job arrived in the gap before this poll and waited there — up to one interval — before being picked up.';
   }
-  function renderPc(arrive, interval) {
-    var r = poll(arrive, interval);
-    var line = document.getElementById('pcArrLine'), lbl = document.getElementById('pcArrLbl');
-    var ax = xOf(arrive).toFixed(1);
-    if (line) { line.setAttribute('x1', ax); line.setAttribute('x2', ax); }
-    if (lbl) { lbl.setAttribute('x', ax); lbl.textContent = 'job @' + arrive + 'ms'; }
-    var g = document.getElementById('pcTicks');
-    if (g) {
-      var frag = '';
-      r.ticks.forEach(function (k) {
-        var x = xOf(k.t).toFixed(1);
-        var cls = (k.kind === 'waste') ? 'poll-tick waste' : (k.kind === 'hit') ? 'poll-tick hit' : 'poll-tick';
-        var op = (k.kind === 'idle') ? '0.28' : '1';
-        frag += '<circle class="' + cls + '" cx="' + x + '" cy="53" r="5" opacity="' + op + '"></circle>';
+  var pflow = document.getElementById('pflow');
+  var traceButtons = document.querySelectorAll('#traceSel button');
+  var traceOut = document.getElementById('traceOut');
+  function selectPoll(outcome) {
+    traceButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-poll') === outcome ? 'true' : 'false');
+    });
+    if (pflow) {
+      pflow.classList.toggle('focus', !!outcome);
+      pflow.querySelectorAll('.step').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-poll') === outcome);
       });
-      g.innerHTML = frag;
     }
-    var verd = document.getElementById('pcVerd');
-    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', r.wasted > 0 ? '#f2948c' : '#a7c9b1'); }
-    var out = document.getElementById('pcOut');
-    if (out) out.textContent = r.text;
+    if (traceOut) {
+      traceOut.innerHTML = outcome
+        ? '<span class="rk">trace &#183;</span> ' + tracePoll(outcome)
+        : '<span class="rk">readout &#183;</span> Select a poll outcome. An empty poll is a wasted round trip; a pick returns a job.';
+    }
   }
-  var pcArrive = 330, pcInterval = 200;
-  var pcArr = document.getElementById('pcArrive'), pcArrV = document.getElementById('pcArriveVal'),
-      pcInt = document.getElementById('pcInt'), pcIntV = document.getElementById('pcIntVal');
-  if (pcArr) pcArr.addEventListener('input', function () {
-    pcArrive = parseInt(pcArr.value, 10); if (pcArrV) pcArrV.textContent = pcArrive + 'ms'; renderPc(pcArrive, pcInterval);
+  traceButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var outcome = b.getAttribute('data-poll');
+      selectPoll(b.getAttribute('aria-pressed') === 'true' ? null : outcome);
+    });
   });
-  if (pcInt) pcInt.addEventListener('input', function () {
-    pcInterval = parseInt(pcInt.value, 10); if (pcIntV) pcIntV.textContent = pcInterval + 'ms'; renderPc(pcArrive, pcInterval);
-  });
-  renderPc(330, 200); // initial render — correct without interaction
+  if (pflow) {
+    pflow.querySelectorAll('.step').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectPoll(g.getAttribute('data-poll')); });
+      g.addEventListener('mouseleave', function () { selectPoll(null); });
+    });
+  }
 
-  /* ---------- content: the interval trade (pure over interval) ---------- */
-  // On an idle queue, average pickup latency ≈ interval/2 and round-trips/sec ≈ 1000/interval. As the interval grows,
-  // latency rises and round-trips fall — opposite directions. Both bar heights are pure functions of the interval.
-  var BASE_Y = 140, MAX_H = 100; // bar baseline and max pixel height
-  // pure: interval -> { latency, rtps, latH, rtH, text }
-  function trade(interval) {
-    var latency = interval / 2;            // ms, 25..500
-    var rtps = 1000 / interval;            // /s, 1..20
-    var latH = Math.round(MAX_H * (latency / 500)); // 500ms latency = full bar
-    var rtH = Math.round(MAX_H * (rtps / 20));      // 20/s = full bar
-    var verdict;
-    if (interval <= 100) verdict = 'short interval: low latency, but the round-trips pile up on an idle queue';
-    else if (interval >= 600) verdict = 'long interval: few round-trips, but pickup latency is high';
-    else verdict = 'a middling interval is middling on both — neither cost is low';
-    return {
-      latency: latency, rtps: rtps, latH: latH, rtH: rtH,
-      text: 'A ' + interval + ' ms interval: average pickup latency ≈ ' + latency + ' ms, and the idle loop runs ≈ ' +
-        rtps.toFixed(rtps < 10 ? 1 : 0) + ' round-trips/sec. ' + verdict + '. The two costs move in opposite directions, ' +
-        'so no interval is cheap on both.'
-    };
+  /* ---------- Interactive 2: the poll-cost calculator (pure over a fixed window) ---------- */
+  var WINDOW = 1000; // ms
+  var intRange = document.getElementById('intRange'), intVal = document.getElementById('intVal');
+  var arrRange = document.getElementById('arrRange'), arrVal = document.getElementById('arrVal');
+  var calcOut = document.getElementById('calcOut');
+  // pure: (interval, jobsPerSec) -> readout text
+  function pollCost(interval, jobsPerSec) {
+    var pollsPerWindow = Math.floor(WINDOW / interval);
+    var picks = Math.min(jobsPerSec, pollsPerWindow);   // at most one job per poll
+    var empties = Math.max(0, pollsPerWindow - picks);
+    var rtPerSec = Math.round(1000 / interval);
+    var avgLat = Math.round(interval / 2);
+    return 'interval ' + interval + ' ms, ' + jobsPerSec + ' job(s)/s over a 1000 ms window: ' +
+      pollsPerWindow + ' poll(s), of which ' + empties + ' empty (wasted round trips). ' +
+      'Round trips/s while idle: ' + rtPerSec + '. Average pickup latency: about ' + avgLat + ' ms (half the interval).';
   }
-  function renderTr(interval) {
-    var r = trade(interval);
-    var lat = document.getElementById('trLat'), rt = document.getElementById('trRt');
-    if (lat) { lat.setAttribute('height', r.latH); lat.setAttribute('y', BASE_Y - r.latH); }
-    if (rt) { rt.setAttribute('height', r.rtH); rt.setAttribute('y', BASE_Y - r.rtH); }
-    var lv = document.getElementById('trLatVal'), rv = document.getElementById('trRtVal');
-    if (lv) lv.textContent = r.latency + ' ms';
-    if (rv) rv.textContent = r.rtps.toFixed(r.rtps < 10 ? 1 : 0) + ' /s';
-    var out = document.getElementById('trOut');
-    if (out) out.textContent = r.text;
+  function renderCalc() {
+    var interval = parseInt(intRange.value, 10);
+    var jobs = parseInt(arrRange.value, 10);
+    if (intVal) intVal.textContent = String(interval);
+    if (arrVal) arrVal.textContent = String(jobs);
+    if (calcOut) calcOut.innerHTML = '<span class="rk">cost &#183;</span> ' + pollCost(interval, jobs);
   }
-  var trInt = document.getElementById('trInt'), trIntV = document.getElementById('trIntVal');
-  if (trInt) trInt.addEventListener('input', function () {
-    var v = parseInt(trInt.value, 10); if (trIntV) trIntV.textContent = v + 'ms'; renderTr(v);
-  });
-  renderTr(200); // initial render — correct without interaction
+  if (intRange) intRange.addEventListener('input', renderCalc);
+  if (arrRange) arrRange.addEventListener('input', renderCalc);
+  renderCalc(); // initial render — correct without interaction
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -665,7 +540,7 @@ avg_latency  ≈  interval / 2</pre>
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
   function decodeBranded(id) {
-    if (!id || id.length < 4) return null;
+    if (!id || id.length !== 14) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
     if (snow === null) return null;
     var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
@@ -685,23 +560,5 @@ avg_latency  ≈  interval / 2</pre>
 })();
 </script>
 
-<script>
-/* progressive enhancement: mark JS on, then reveal-on-scroll */
-document.documentElement.classList.add('js');
-document.addEventListener('DOMContentLoaded', function () {
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var els = document.querySelectorAll('.reveal');
-  if (reduce || !('IntersectionObserver' in window)) {
-    els.forEach(function (e) { e.classList.add('in'); });
-    return;
-  }
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (en) {
-      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-    });
-  }, { threshold: 0.12 });
-  els.forEach(function (e) { io.observe(e); });
-});
-</script>
 </body>
 </html>

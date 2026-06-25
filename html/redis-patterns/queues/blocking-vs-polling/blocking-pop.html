@@ -1,546 +1,458 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R3.05.2 · Blocking pop · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R3.05.2 — the blocking pop. BLMOVE, BRPOPLPUSH, or BZPOPMIN with a timeout park the connection on the Redis server until an element is available or the timeout elapses, so there is no poll interval and no wasted round-trip. The cost is the connection: a blocking call ties it up, so a command on the same connection waits behind the block. EchoMQ parks the block on a dedicated blocking connection (EchoMQ.RedisConnection.blocking_connection/1) — do_wait_for_job/3 runs BZPOPMIN emq:{queue}:marker timeout there — leaving the worker's main command connection free for fetches and acknowledgements.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="description" content="R3.05.2 — park the connection, wake on arrival. A blocking pop (BLMOVE, BRPOPLPUSH, or BLPOP with a timeout) parks the connection until an element arrives or the timeout elapses — no interval, no wasted round-trips. The cost is a tied-up connection, which a dedicated connector lane keeps off the drain lane. Grounded in EchoMQ.Consumer.park/1 running BLPOP emq:{queue}:wake, echo/apps/echo_mq.">
 <style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
 :root{
-  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
-  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
-  --gold:#d4a85a; --gold-bright:#f0cd7f;
-  --blue:#5a87c4; --blue-bright:#9fc0ea;
-  --sage:#7ba387; --sage-bright:#a7c9b1;
-  --burgundy:#c4504c;
-  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
-  --redis:#d6584f; --redis-bright:#f2948c;
-  --line:#2a3252;
-  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --serif:"PT Serif", Georgia, serif;
-  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --measure:68ch;
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
 }
-*{box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{
-  margin:0; color:var(--cream); background:var(--ink);
-  font-family:var(--serif);
-  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
-  line-height:1.62; letter-spacing:.005em;
-  background-image:
-    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
-    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
-    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
-  background-attachment:fixed;
-}
-body::after{ /* faint vignette for depth */
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
-}
-.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
-  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50}
 .skip:focus{left:0}
-::selection{background:var(--gold);color:var(--ink)}
-img,svg{max-width:100%}
-a{color:var(--gold-bright);text-decoration:none}
-a:hover{color:var(--cream)}
-hr.rule{border:0;height:1px;margin:2.2rem 0;
-  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
 
-/* ---- layout ---- */
-.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
-main{display:block}
-section{padding:clamp(2.6rem,6vw,4.6rem) 0}
-section + section{border-top:1px solid var(--line)}
-.prose{max-width:var(--measure)}
-.prose p{margin:0 0 1.05rem}
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
 
-/* ---- type ---- */
-h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
-  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
-h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
-h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
-h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
-h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
-.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
-  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
-  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
-.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
-  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
-  max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
-.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
-strong{color:var(--cream);font-weight:700}
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
 
-/* ---- site header / footer ---- */
-.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
-  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
-.site .wrap{display:flex;align-items:center;justify-content:space-between;
-  height:58px;font-family:var(--sans)}
-.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
-  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
-  display:inline-block;transform:translateY(-2px)}
-.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
-  text-transform:uppercase;color:var(--cream-dim)}
-.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
-.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
-  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
-.route-tag a{color:var(--gold);text-decoration:none}
-.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
-.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
-.route-tag .rcur{color:var(--gold-bright)}
-.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
-  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
-.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
-  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
 
-/* ---- hero ---- */
-.hero{padding-top:clamp(3rem,8vw,6rem)}
-.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
-.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
-  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
-  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
-  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
-.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
-  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
-.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
-.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
-.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
 
-/* ---- figures / takeaways ---- */
-.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
-  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
-  padding:clamp(1rem,2.4vw,1.6rem)}
-.fig svg{display:block;width:100%;height:auto}
-.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
-  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
-  padding-left:1rem;border-left:2px solid var(--gold)}
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.booknote{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-top:12px;max-width:78ch}
 
-/* ---- interactive shells (shared with lesson pages) ---- */
-.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
-.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
-  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
-  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
-.solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
-.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
-.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
-.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
-.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
-.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
-.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
-.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
-.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
-.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
-  background:var(--ink);border:1px solid var(--line);border-radius:10px;
-  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
-.geo-readout .dim{color:var(--cream-dim)}
-.geo-readout b{color:var(--redis-bright)}
-.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---------- the connection-state figure (hover-select) ---------- */
+.cstate{width:100%;height:auto;display:block;margin-top:4px}
+.cstate rect.lane{fill:var(--b-card);stroke:var(--b-line)}
+.cstate text{font-family:var(--mono);fill:var(--b-ink);font-size:11px}
+.cstate .ttl{fill:var(--b-dim);font-size:11px}
+.cstate .seg{cursor:pointer;transition:opacity .18s ease}
+.cstate .seg rect{stroke-width:1.4}
+.cstate .seg.idle rect{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.cstate .seg.blocked rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.cstate .seg.work rect{fill:#dff0e2;stroke:var(--b-node)}
+.cstate .seg .slbl{text-anchor:middle;font-size:10px;fill:var(--b-ink)}
+.cstate.focus .seg{opacity:.3}
+.cstate.focus .seg.on{opacity:1}
 
-/* ---- connection-state diagram ---- */
-.cs .conn rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
-.cs .conn.blocked rect{fill:rgba(90,135,196,.16);stroke:#5a87c4}
-.cs .conn.free rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
-.cs .conn.queued rect{fill:rgba(214,88,79,.14);stroke:#d6584f}
-.cs text{font-family:var(--sans);fill:#d7cfb9}
-.cs .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
-.cs .st{font-family:var(--mono);font-size:12px;font-weight:700}
-.cs .arr{stroke:#5a87c4;stroke-width:1.4;fill:none;stroke-dasharray:3 3}
+/* ---------- frozen / code ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
 
-/* ---- code ---- */
-pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
-  background:var(--ink);border:1px solid var(--line);border-radius:12px;
-  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
-pre.code .op{color:var(--elixir-bright)}
-pre.code .fn{color:var(--cream)}
-pre.code .fn.blue{color:var(--blue-bright)}
-pre.code .fn.sage{color:var(--sage-bright)}
-pre.code .fn.gold{color:var(--gold-bright)}
-pre.code .fn.elixir{color:var(--elixir-bright)}
-pre.code .fn.burg{color:#e08f8b}
-pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
-pre.code .res{color:var(--gold-bright)}
-pre.code .str{color:var(--sage-bright)}
-pre.code .cmt{color:var(--cream-dim)}
-code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
-  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
 
-/* ---- pager ---- */
-.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
-  align-items:center;font-family:var(--sans)}
-.pager .p-left{color:var(--cream-dim);font-size:.9rem}
-.pager .spacer{flex:1}
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
 
-/* ---- branded stamp ---- */
-.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
-  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
-  background:var(--ink);user-select:none}
-.stamp:hover{border-color:var(--gold)}
-.stamp .id{color:var(--gold-bright)}
-.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
-  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+/* ---------- doors / vnote / bridge ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+div.door:hover{box-shadow:none}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
 .stamp.open .panel{display:grid}
-.stamp .panel dt{color:var(--cream-dim)}
-.stamp .panel dd{margin:0;color:var(--cream)}
 
-/* ---- reveal (JS-gated; content visible without JS) ---- */
-html.js .reveal{opacity:0;transform:translateY(14px)}
-html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
-@media (prefers-reduced-motion: reduce){
-  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
 }
-
-/* ---- responsive ---- */
-@media (max-width:760px){
-  .site nav{display:none}
-  .lede{max-width:none}
-  .take{font-size:1.08rem}
-}
-
-/* ---- module / lesson page additions (additive; shared head) ---- */
-.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
-  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
-.crumbs a{color:var(--cream-soft)}
-.crumbs .sep{opacity:.45}
-.crumbs .here{color:var(--gold)}
-.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
-.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
-.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
-.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
-.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
-.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
-  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
-.bridge .cell.idea .lbl{color:var(--gold)}
-.bridge .cell.elix .lbl{color:var(--redis-bright)}
-.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
-.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
-@media (max-width:760px){
-  .bridge{grid-template-columns:1fr;gap:.7rem}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
   .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
 }
-.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
-  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
-.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
-.deflist dd{margin:0;color:var(--cream-soft)}
-.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
-  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
-.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
-  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
-  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
-.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
-.door a{color:var(--gold-bright)}
-/* ---- references ---- */
-.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
-@media(max-width:680px){.refs{grid-template-columns:1fr}}
-.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
-.refs h3:first-child{margin-top:0}
-.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
-.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
-.refs a{color:var(--sage-bright)}
-.refs a:hover{color:var(--cream)}
-.refs em{color:var(--cream-dim);font-style:italic}
-.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the page</a>
+<a class="skip" href="#main">Skip to the lesson</a>
 
-<header class="site">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
-    <nav>
-      <a href="/redis-patterns">Home</a>
-      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/blocking-vs-polling">blocking-vs-polling</a><span class="rsep">/</span><span class="rcur">blocking-pop</span></span>
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/blocking-vs-polling">blocking-vs-polling</a><span class="rsep">/</span><span class="rcur">blocking-pop</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#prims">The primitives</a>
+      <a href="#conn">The connection cost</a>
+      <a href="#echomq">On EchoMQ</a>
+      <a href="#refs">References</a>
     </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main id="main">
+  <div class="wrap">
 
-  <style>
-    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
-    .hero-split .hero{padding-top:0}
-    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
-    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
-    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
-    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
-    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
-    .foot-cols a:hover{color:var(--cream)}
-    .foot-cols .it{color:var(--cream-dim)}
-    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
-    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
-    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
-    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
-  </style>
-
-  <div class="hero-split">
     <section class="hero">
-      <div class="crumbs">
+      <nav class="crumbs" aria-label="Breadcrumb">
         <a href="/redis-patterns">Redis Patterns</a>
         <span class="sep">/</span>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
+        <a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a>
         <span class="sep">/</span>
         <a href="/redis-patterns/queues/blocking-vs-polling">Blocking vs polling</a>
         <span class="sep">/</span>
         <span class="here">Blocking pop</span>
+      </nav>
+      <p class="kicker">R3.05.2 &#183; Blocking vs polling &#8212; dive 2</p>
+      <h1>Blocking <span class="hns">pop</span>.</h1>
+      <p class="lede">A blocking pop parks the connection until an element arrives or the timeout elapses &mdash; no
+        poll interval, no wasted round-trips. The cost is the connection, which a dedicated lane keeps off the work.</p>
+      <p class="heronote">Grounding: the source's <code>Blocking Variant</code> &#183; the real Elixir
+        <code>EchoMQ.Consumer.park/1</code> parks on <code>BLPOP emq:{queue}:wake &lt;beat&gt;</code> on a dedicated
+        connector lane (the moduledoc: "a dedicated connector &#8212; blocking verbs get their own lane"),
+        <code>echo/apps/echo_mq</code>.</p>
+
+      <figure class="anatomy" aria-labelledby="stateCap">
+        <figcaption id="stateCap"><b>The blocking connection's life &#8212; idle, then a park, then work.</b> Hover or
+          select a segment to read what the connection is doing.</figcaption>
+        <div class="segbar" id="stateSel" role="group" aria-label="Which connection segment to read">
+          <button type="button" data-seg="idle" aria-pressed="false">before the call</button>
+          <button type="button" data-seg="blocked" aria-pressed="false">parked on BLPOP</button>
+          <button type="button" data-seg="work" aria-pressed="false">returned, draining</button>
+        </div>
+        <svg class="cstate" id="cstate" viewBox="0 0 460 130" role="img" aria-label="A single connection's timeline in three segments. First it is idle before the blocking call. Then it parks on BLPOP on the wake key, occupied but sending nothing. Then a wake returns it and it drains a job. Select a segment to read its state.">
+          <text class="ttl" x="30" y="22">blocking connection &#183; one cycle</text>
+          <rect class="lane" x="30" y="32" width="400" height="40" rx="8"></rect>
+          <g class="seg idle" data-seg="idle"><rect x="36" y="38" width="96" height="28" rx="5"></rect><text class="slbl" x="84" y="56">idle</text></g>
+          <g class="seg blocked" data-seg="blocked"><rect x="138" y="38" width="200" height="28" rx="5"></rect><text class="slbl" x="238" y="56">parked (BLPOP wake)</text></g>
+          <g class="seg work" data-seg="work"><rect x="344" y="38" width="80" height="28" rx="5"></rect><text class="slbl" x="384" y="56">drain</text></g>
+          <text class="ttl" x="138" y="88">wake at the park's start of work</text>
+        </svg>
+        <div class="readout" id="stateOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a segment.
+          The connection is idle, then parked on the wake key, then draining the returned job.</div>
+        <p class="booknote">Static verdicts &#8212; parked &#8594; 1 round trip outstanding, zero traffic until a wake
+          &#183; returned &#8594; the wake closes the BLPOP and the drain begins.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="prims">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The blocking primitives</h2>
+        <span class="ssrc">reliable-queue.md.txt &#183; Blocking Variant</span>
       </div>
-      <p class="eyebrow">R3.05.2 &middot; dive 2</p>
-      <h1>Blocking <span class="ex">pop</span></h1>
-      <p class="lede">A blocking pop parks the connection on the server until work arrives, removing the interval and the
-        wasted round-trips at once.</p>
-      <p class="kicker">The primitive is <code class="inl">BLMOVE</code>, <code class="inl">BRPOPLPUSH</code>, or
-        <code class="inl">BZPOPMIN</code> with a timeout: the call does not return until an element is available or the
-        timeout fires. The cost is the connection &mdash; while it is parked, a command on the same connection waits
-        behind the block. Set how long until a job arrives and the timeout on the right, and read what woke the block and
-        how many round-trips it used.</p>
-      <div class="toc-mini" aria-label="On this page">
-        <a href="#primitive">The primitive</a>
-        <a href="#removes">What blocking removes</a>
-        <a href="#conn">The connection cost</a>
-        <a href="#applied">In EchoMQ</a>
-        <a href="#refs">References</a>
+      <div class="prose">
+        <p>The source's reliable-queue loop replaces its pop/sleep spin with a blocking move:</p>
+      </div>
+      <pre class="code">BLMOVE work_queue processing:worker1 RIGHT LEFT 30</pre>
+      <div class="prose">
+        <p><code>BLMOVE</code> atomically moves an element from the work list to the processing list, parking the
+          connection for up to thirty seconds if the work list is empty. <code>BRPOPLPUSH</code> is the older form of
+          the same move. <code>BLPOP</code> is the simplest blocking pop: it removes and returns the first element of a
+          list, parking until one is pushed or the timeout fires. All three share the property that matters: <strong>no
+          poll interval and no empty round-trips</strong> &mdash; the call returns the instant there is work, or once
+          on the timeout.</p>
+      </div>
+      <dl class="deflist">
+        <dt>BLMOVE</dt><dd>The modern blocking move; atomically transfers an element work &#8594; processing, parks if empty.</dd>
+        <dt>BRPOPLPUSH</dt><dd>The older blocking move <code>BLMOVE</code> replaces; same transfer, fixed directions.</dd>
+        <dt>BLPOP</dt><dd>The simplest blocking pop; removes and returns the first element, or parks until one is pushed.</dd>
+      </dl>
+      <p class="take">A blocking primitive parks the connection until an element arrives or the timeout elapses &mdash;
+        no interval, no empty round-trips, by construction.</p>
+    </section>
+
+    <section id="conn">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The cost is the connection</h2>
+        <span class="ssrc">one shared lane vs a dedicated one</span>
+      </div>
+      <div class="prose">
+        <p>A blocking call occupies its connection for the whole park. A command sent on the <em>same</em> connection
+          waits behind the block, so a worker that parks on its only connection cannot also fetch or acknowledge. The
+          discipline is a <strong>dedicated</strong> connection for the block: the blocking connection parks on the
+          wake key and does nothing else; the command connection drains the ring, runs the claim, and settles the job.
+          The two never contend, so a long park never stalls a fetch.</p>
+        <p>Choose a connection layout below; the readout runs a settle command while a block is parked and reports
+          whether it stalls.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="laneCap">
+        <figcaption id="laneCap"><b>One shared connection, or two lanes.</b> Select a layout; the readout settles a
+          job while a block is parked.</figcaption>
+        <div class="segbar" id="laneSel" role="group" aria-label="Which connection layout">
+          <button type="button" data-lane="shared" aria-pressed="true">one shared connection</button>
+          <button type="button" data-lane="dedicated" aria-pressed="false">a dedicated blocking lane</button>
+        </div>
+        <div class="readout" id="laneOut" aria-live="polite"></div>
+        <p class="booknote">Static verdicts &#8212; shared &#8594; the settle waits behind the park &#183; dedicated
+          &#8594; the settle runs at once on the free lane.</p>
+      </figure>
+
+      <p class="take">A blocking call ties up its connection for the park; a dedicated blocking lane keeps the drain
+        and settle lane free, so a long park never stalls the work.</p>
+    </section>
+
+    <section id="echomq">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The park, in EchoMQ</h2>
+        <span class="ssrc">consumer.ex &#183; park/1</span>
+      </div>
+      <div class="prose">
+        <p>The consumer's loop is reap &#8594; promote &#8594; drain &#8594; park, repeating. The park is one blocking
+          call with the beat as its timeout, on the consumer's dedicated connector lane:</p>
+      </div>
+      <pre class="code"><span class="cmt"># EchoMQ.Consumer.park/1 — park on the wake key for one beat, then loop (real, Elixir)</span>
+defp park(s) <span class="cmt">do</span>
+  secs = :erlang.float_to_binary(s.beat_ms / 1000, decimals: 3)
+  wake = Keyspace.queue_key(s.queue, <b>"wake"</b>)          <span class="cmt"># emq:{queue}:wake</span>
+  _ = Connector.command(s.conn, [<b>"BLPOP"</b>, wake, secs], s.beat_ms + 2_000)
+  :ok
+<span class="cmt">end</span></pre>
+      <div class="prose">
+        <p>The <code>BLPOP</code> returns one of two ways: a wake token was pushed (work was admitted &mdash; drain
+          it), or the beat elapsed (run the reap/promote pump, then park again). Either way the connection spent the
+          idle time parked, not polling. The beat (<code>:beat_ms</code>, default 1000) is the timeout, so the loop
+          always re-runs its pump within one beat and is never parked forever; the lease the claim holds is bounded by
+          <code>:lease_ms</code> (default 30 000).</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>BLPOP</code> is the blocking variant of
+        <code>LPOP</code>: when the list is empty it parks the client until another client pushes an element, or the
+        timeout elapses; the engine serves exactly one of several blocked clients per push, in park order &mdash;
+        <a href="https://valkey.io/commands/blpop/" rel="noopener">valkey.io/commands/blpop</a>.</p>
+
+      <div class="door">
+        <span class="dr">door &#183; the consumer loop in depth</span>
+        <h3>The dedicated connector lane</h3>
+        <p>The connector pool, the blocking lane discipline (Appendix B), and the full reap-promote-drain-park loop are
+          the <a href="/echomq/queue">/echomq/queue</a> Queue pillar &mdash; "door, not depth."</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A blocking pop with a timeout parks the connection until work arrives &mdash; no interval, no wasted
+            round-trips &mdash; at the cost of a tied-up connection, kept off the working one by a dedicated lane.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Consumer.park/1</code> runs <code>BLPOP emq:{queue}:wake &lt;beat&gt;</code> on a dedicated
+            connector lane; the command lane stays free to claim and settle. The beat bounds the park; a wake returns
+            it early.</p>
+        </div>
+      </div>
+      <p class="take">EchoMQ parks on <code>BLPOP</code> with the beat as the timeout on a dedicated lane; the next dive
+        walks the wake handshake that rings the doorbell.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; park, do not spin</h2>
+        <span class="ssrc">next &#8594; R3.05.3</span>
+      </div>
+      <div class="prose">
+        <p>A blocking pop removes the interval and the empty round-trips: the connection parks until work arrives or the
+          timeout fires. The cost is the tied-up connection, kept off the drain lane by a dedicated blocking lane.
+          EchoMQ parks on <code>BLPOP emq:{queue}:wake</code> with the beat as the timeout. The next dive shows the
+          producer side that rings the wake key.</p>
       </div>
     </section>
 
-    <figure class="fig cs" aria-labelledby="bpTitle">
-      <h4 id="bpTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The blocking call &middot; the connection state until an element arrives or the timeout</h4>
-      <div class="controls">
-        <div class="fold-ctrl">
-          <label for="bpArrive">job arrives in</label>
-          <input type="range" id="bpArrive" min="0" max="60" step="5" value="12">
-          <span class="val" id="bpArriveVal">12s</span>
-        </div>
-        <div class="fold-ctrl">
-          <label for="bpTo">timeout</label>
-          <input type="range" id="bpTo" min="5" max="60" step="5" value="30">
-          <span class="val" id="bpToVal">30s</span>
-        </div>
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
       </div>
-
-      <svg viewBox="0 0 460 156" role="img" aria-label="A connection issues BZPOPMIN with a timeout and parks in the BLOCKED state. If a job arrives before the timeout, the block is woken by the element, returns the popped marker, and the connection becomes free. If the timeout elapses first, the block returns nil and the connection becomes free with no job. The state bar fills to whichever event comes first, and the readout reports what woke the block and how many round-trips it used.">
-        <text class="ttl" x="30" y="24">blocking connection · BZPOPMIN marker, timeout</text>
-        <g class="conn blocked" id="bpConn"><rect x="30" y="34" width="400" height="40" rx="9"></rect></g>
-        <rect id="bpFill" x="30" y="34" width="160" height="40" rx="9" fill="rgba(90,135,196,.28)"></rect>
-        <text class="st" id="bpState" x="230" y="59" text-anchor="middle" fill="#9fc0ea">BLOCKED — parked on the server</text>
-        <line id="bpEvt" x1="190" y1="30" x2="190" y2="86" stroke="#f0cd7f" stroke-width="1.5" stroke-dasharray="3 3"></line>
-        <text class="ttl" id="bpEvtLbl" x="190" y="100" text-anchor="middle" fill="#f0cd7f">woke</text>
-        <text class="ttl" id="bpVerd" x="230" y="132" text-anchor="middle">&mdash;</text>
-        <text class="ttl" id="bpRt" x="230" y="148" text-anchor="middle" fill="#a7c9b1">round-trips used: 1</text>
-      </svg>
-
-      <div class="geo-readout" id="bpOut" aria-live="polite"></div>
-    </figure>
-  </div>
-
-  <section id="primitive">
-    <h2>The primitive</h2>
-    <div class="prose">
-      <p>A blocking command does not return immediately on an empty input. It parks the connection on the server until an
-        element arrives or a timeout elapses. Three forms cover the reliable queue:</p>
-      <pre class="code"><span class="rdx">BLMOVE</span>     wait active RIGHT LEFT 30   <span class="cmt"># block until wait has an element, then move it; 30s timeout</span>
-<span class="rdx">BRPOPLPUSH</span> wait active 30              <span class="cmt"># the older blocking move (Redis &lt; 6.2)</span>
-<span class="rdx">BZPOPMIN</span>   marker 30                   <span class="cmt"># block until the marker ZSET has a member, then pop the lowest</span></pre>
-      <p>Each parks for up to the timeout. <code class="inl">BLMOVE</code> and <code class="inl">BRPOPLPUSH</code> block
-        on the work list itself and move an element when one arrives; <code class="inl">BZPOPMIN</code> blocks on a
-        sorted set and pops its lowest-scored member. EchoMQ uses the <code class="inl">BZPOPMIN</code> form on a marker
-        ZSET &mdash; the next dive &mdash; but the shape is the same: park, then wake on arrival.</p>
-    </div>
-    <dl class="deflist">
-      <dt>BLMOVE</dt><dd>The modern blocking move (Redis 6.2+): block until the source list has an element, then move it to the destination, atomically.</dd>
-      <dt>BRPOPLPUSH</dt><dd>The older blocking reliable-queue pop, the form <code class="inl">BLMOVE</code> succeeds; same park-then-move shape.</dd>
-      <dt>BZPOPMIN</dt><dd>Block on a sorted set until a member is added, then pop the lowest-scored member; the form EchoMQ parks on, over the marker ZSET.</dd>
-      <dt>timeout</dt><dd>An upper bound on the park, so the call returns even when no element arrives &mdash; not a poll interval.</dd>
-    </dl>
-    <p class="take">A blocking pop parks the connection on the server until an element arrives or the timeout fires; the
-      three forms differ only in what they park on &mdash; a work list or a marker ZSET.</p>
-  </section>
-
-  <section id="removes">
-    <h2>What blocking removes</h2>
-    <div class="prose">
-      <p>Against the polling loop, the blocking pop removes both costs the interval traded between. There is no poll
-        interval, so a job is picked up the moment it arrives, not up to one interval later &mdash; pickup latency is
-        effectively zero. There are no empty round-trips, because the call does not return until there is work or the
-        timeout fires.</p>
-      <pre class="code"><span class="cmt"># polling: many round-trips, ~½-interval latency</span>
-poll → nil → sleep → poll → nil → sleep → … → poll → job
-
-<span class="cmt"># blocking: one round-trip, ~0 latency</span>
-park ─────────────────────────── job arrives → return</pre>
-      <p>The timeout is not a poll interval: it is an upper bound on the park, so the worker can return to re-check its
-        own liveness and is never blocked forever. A short timeout still costs nothing while idle &mdash; re-issuing a
-        block is not a busy spin, because the time between blocks is spent parked, not spent sending empty commands.</p>
-    </div>
-    <p class="take">Blocking removes the interval and the empty round-trips at once: a job is picked up the instant it
-      arrives, in one round-trip, and the timeout only bounds the park.</p>
-  </section>
-
-  <section id="conn">
-    <h2>The connection cost</h2>
-    <div class="prose">
-      <p>The block has one price. While a connection is parked on <code class="inl">BZPOPMIN</code>, it is busy &mdash; a
-        command sent on the <em>same</em> connection waits behind the block until it returns. A worker that blocked on
-        its only connection could not fetch the job, renew a lock, or acknowledge a result while parked. Switch the
-        comparator below to one shared connection and send a command: it queues behind the block. Switch to a dedicated
-        blocking connection and the same command runs at once.</p>
-      <pre class="code"><span class="cmt"># one shared connection — the block starves the other commands</span>
-conn: <span class="rdx">BZPOPMIN</span> marker 30     <span class="cmt"># parked…</span>
-conn: <span class="op">SET</span> lock …             <span class="cmt"># …waits behind the block, cannot run</span>
-
-<span class="cmt"># a dedicated blocking connection — the main connection stays free</span>
-block_conn: <span class="rdx">BZPOPMIN</span> marker 30   <span class="cmt"># parks here</span>
-main_conn:  <span class="op">SET</span> lock …           <span class="cmt"># runs immediately on the free connection</span></pre>
-    </div>
-
-    <figure class="fig cs" aria-labelledby="cnTitle">
-      <h4 id="cnTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Shared vs dedicated connection &middot; can a command run while the worker is parked?</h4>
-      <div class="controls">
-        <div class="solid-select" id="cnSel" role="group" aria-label="One shared connection or a dedicated blocking connection">
-          <button type="button" data-mode="shared" data-c="redis" class="active" aria-pressed="true">one shared connection</button>
-          <button type="button" data-mode="dedicated" data-c="sage" aria-pressed="false">dedicated blocking connection</button>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/blpop/" rel="noopener">Valkey &mdash; <em>BLPOP</em></a> &mdash; block until an element is pushed to a list; the park EchoMQ's consumer makes.</li>
+            <li><a href="https://redis.io/commands/blmove" rel="noopener">Redis &mdash; <em>BLMOVE</em></a> &mdash; the modern blocking reliable-queue pop the source uses.</li>
+            <li><a href="https://redis.io/commands/brpoplpush" rel="noopener">Redis &mdash; <em>BRPOPLPUSH</em></a> &mdash; the older blocking reliable-queue pop, the move BLMOVE replaces.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; blocking commands and why each blocking call needs its own connection.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/queues/blocking-vs-polling">R3.05 &#183; Blocking vs polling</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &#183; The busy-poll cost</a><span class="rs">the previous dive: the cost this removes</span></li>
+            <li><a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &#183; The wake-up doorbell</a><span class="rs">the next dive: ringing the wake key</span></li>
+            <li><a href="/redis-patterns/queues">R3 &#183; Reliable Queues</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the Queue pillar: the dedicated connector lane in depth</span></li>
+          </ul>
         </div>
       </div>
+    </section>
 
-      <svg viewBox="0 0 460 160" role="img" aria-label="The worker holds connections and parks a blocking BZPOPMIN. With one shared connection, the block holds it and a SET lock command sent on the same connection queues behind the block, shown red. With a dedicated blocking connection, the block parks on the blocking connection while the main connection stays free, so the SET lock command runs at once, shown green. The selected mode marks each connection's state.">
-        <text class="ttl" x="30" y="24">blocking BZPOPMIN marker</text>
-        <g class="conn blocked" id="cnBlock"><rect x="30" y="34" width="180" height="40" rx="9"></rect></g>
-        <text class="st" id="cnBlockSt" x="120" y="59" text-anchor="middle" fill="#9fc0ea">parked</text>
-        <text class="ttl" x="250" y="24">SET lock (a main-line command)</text>
-        <g class="conn" id="cnCmd"><rect x="250" y="34" width="180" height="40" rx="9"></rect></g>
-        <text class="st" id="cnCmdSt" x="340" y="59" text-anchor="middle">&mdash;</text>
-        <path class="arr" id="cnArr" d="M210 54 L250 54"></path>
-        <text class="ttl" id="cnVerd" x="230" y="118" text-anchor="middle">&mdash;</text>
-        <text class="ttl" id="cnSub" x="230" y="136" text-anchor="middle" fill="#a39c89">&mdash;</text>
-      </svg>
-
-      <div class="geo-readout" id="cnOut" aria-live="polite"></div>
-    </figure>
-
-    <p class="take">A blocking call ties up its connection for the whole park; a command on the same connection queues
-      behind it. A dedicated blocking connection keeps the main one free.</p>
-  </section>
-
-  <section id="applied">
-    <h2>In EchoMQ &mdash; the dedicated blocking connection</h2>
-    <div class="prose">
-      <p>EchoMQ's worker parks on the dedicated connection by design.
-        <code class="inl">EchoMQ.RedisConnection.blocking_connection/1</code> &mdash; documented as <em>"a dedicated
-        blocking connection for operations like BRPOPLPUSH or BZPOPMIN"</em> &mdash; hands the worker a connection used
-        only for the block. The blocking-fetch internals <code class="inl">EchoMQ.Worker.wait_for_job/2</code> &rarr;
-        <code class="inl">do_wait_for_job/3</code> run the <code class="inl">BZPOPMIN emq:{queue}:marker timeout</code>
-        on that connection, and <code class="inl">do_wait_for_job/3</code> returns <code class="inl">:job_available</code>
-        when a marker arrived or <code class="inl">:timeout</code> when the park elapsed. The worker's main command
-        connection is untouched while it is parked, so it fetches the woken job and runs the rest of the lifecycle
-        without waiting behind the block.</p>
-      <pre class="code"><span class="cmt"># EchoMQ.Worker.do_wait_for_job/3 — park on the marker ZSET on the blocking connection (real)</span>
-<span class="op">case</span> <span class="fn blue">Redix.command</span>(conn, [<span class="str">"BZPOPMIN"</span>, marker_key, timeout_seconds], timeout: :infinity) <span class="op">do</span>
-  {<span class="res">:ok</span>, <span class="res">nil</span>}                  <span class="op">-&gt;</span> <span class="res">:timeout</span>         <span class="cmt"># the park elapsed, no job</span>
-  {<span class="res">:ok</span>, [_key, _member, _sc]} <span class="op">-&gt;</span> <span class="res">:job_available</span>   <span class="cmt"># a marker arrived → a job is available</span>
-<span class="op">end</span></pre>
-    </div>
-
-    <div class="bridge">
-      <div class="cell idea">
-        <span class="lbl">the pattern</span>
-        <p>Block on a primitive with a timeout to remove the poll interval and the empty round-trips, and park the block
-          on a connection set aside for it so the main connection stays free.</p>
-      </div>
-      <div class="arrow" aria-hidden="true">&rarr;</div>
-      <div class="cell elix">
-        <span class="lbl">in EchoMQ</span>
-        <p>The worker runs <code class="inl">BZPOPMIN emq:{queue}:marker</code> in
-          <code class="inl">do_wait_for_job/3</code> over <code class="inl">blocking_connection/1</code>, a connection used
-          only for the block, with the main connection free for the fetch.</p>
-      </div>
-    </div>
-
-    <p class="take">The pattern says block on a primitive with a timeout on a connection set aside for it; in EchoMQ that
-      is <code class="inl">BZPOPMIN</code> on the marker over <code class="inl">blocking_connection/1</code>, with the
-      main connection free for the fetch.</p>
-
-    <div class="door">
-      <span class="lbl">Door &middot; not depth</span>
-      The blocking connection's full lifecycle &mdash; how it is created, registered, closed, and reconnected, and how
-      each runtime manages its connection pool &mdash; is the dedicated <strong>EchoMQ course</strong>. From here,
-      R3.05.2 opens onto <a href="/echomq/core">E2 &middot; the engine</a>, the as-built worker fetch loop and its
-      connections. This dive teaches the blocking pop; that course teaches the engine that parks on it.
-    </div>
-  </section>
-
-  <section id="refs">
-    <h2>References</h2>
-    <div class="prose">
-      <p>The three blocking pops behind the wait &mdash; the modern move, its older form, and the marker pop EchoMQ parks
-        on &mdash; and the queue protocol that runs them on a dedicated connection.</p>
-    </div>
-    <div class="refs">
-      <div>
-        <h3>Sources</h3>
-        <ul>
-          <li><a href="https://redis.io/commands/blmove/">Redis &mdash; <em>BLMOVE</em></a> &mdash; the modern blocking move that parks on the work list until an element arrives.</li>
-          <li><a href="https://redis.io/commands/brpoplpush/">Redis &mdash; <em>BRPOPLPUSH</em></a> &mdash; the older blocking reliable-queue pop, the form <code>BLMOVE</code> succeeds.</li>
-          <li><a href="https://redis.io/commands/bzpopmin/">Redis &mdash; <em>BZPOPMIN</em></a> &mdash; block on a sorted set until a member is added, then pop the lowest-scored; the form EchoMQ parks on.</li>
-          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the blocking worker wait, on a dedicated connection, that EchoMQ ports.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Related in this course</h3>
-        <ul>
-          <li><a href="/redis-patterns/queues/blocking-vs-polling">R3.05 &middot; Blocking vs polling</a> &mdash; the module hub.</li>
-          <li><a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &middot; The busy-poll cost</a> &mdash; the polling loop the blocking pop removes.</li>
-          <li><a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &middot; The marker wake-up</a> &mdash; the producer's <code>ZADD</code> that wakes the parked <code>BZPOPMIN</code>.</li>
-          <li><a href="/redis-patterns/queues/processing-list">R3.01 &middot; The processing list</a> &mdash; the wait/active lists the woken worker fetches from.</li>
-          <li><a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a> &mdash; the chapter.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <nav class="pager" aria-label="Page navigation">
-      <a class="btn ghost" href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost"><span aria-hidden="true">&larr;</span>&nbsp; R3.05.1 &middot; The busy-poll cost</a>
-      <span class="spacer"></span>
-      <a class="btn" href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &middot; The marker wake-up <span aria-hidden="true">&rarr;</span></a>
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost"><span class="pk">previous</span>&#8592; R3.05.1 &#183; The busy-poll cost</a>
+      <a class="pgx" href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up"><span class="pk">next</span>R3.05.3 &#183; The wake-up doorbell &#8594;</a>
     </nav>
-  </section>
 
+  </div>
 </main>
 
 <footer class="site-foot">
-  <div class="wrap" style="display:block">
-    <div class="foot-cols">
-      <div>
-        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
-        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+          real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
-      <div>
-        <h4>This module</h4>
-        <a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &middot; The busy-poll cost</a>
-        <a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &middot; Blocking pop</a>
-        <a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &middot; The marker wake-up</a>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost">R3.05.1 &#183; The busy-poll cost</a>
+        <a href="/redis-patterns/queues/blocking-vs-polling/blocking-pop">R3.05.2 &#183; Blocking pop</a>
+        <a href="/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up">R3.05.3 &#183; The wake-up doorbell</a>
       </div>
-      <div>
-        <h4>The course</h4>
-        <a href="/redis-patterns">Course home</a>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
-        <a href="/elixir">Companion &middot; Functional Programming</a>
-        <a href="/echomq/core">The EchoMQ course &middot; the engine</a>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
       </div>
-    </div>
-    <div class="foot-bottom">
-      <span class="cr">&copy; jonnify</span>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
       <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
         build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
         <dl class="panel">
@@ -558,113 +470,64 @@ main_conn:  <span class="op">SET</span> lock …           <span class="cmt"># r
 <script>
 (function () {
   "use strict";
+  document.documentElement.classList.add('js');
 
-  /* ---------- hero: the blocking call's connection state (pure over arrival + timeout) ---------- */
-  // A BZPOPMIN parks the connection in BLOCKED. Whichever comes first decides the outcome: a job arriving in `arrive`
-  // seconds wakes the block (woke-by element), or the `timeout` elapses first (woke-by timeout). One round-trip either
-  // way. The fill fraction, the woken-at, the wake cause, and the readout are pure functions of (arrive, timeout).
-  var X0 = 30, W = 400;
-  // pure: (arrive, timeout) -> { wokeAt, by, frac, text, verd }
-  function block(arrive, timeout) {
-    var by = (arrive <= timeout) ? 'element' : 'timeout';
-    var wokeAt = Math.min(arrive, timeout);
-    var frac = (timeout === 0) ? 0 : wokeAt / timeout;
-    var text;
-    if (by === 'element') {
-      text = 'The connection parked on BZPOPMIN emq:{queue}:marker. A job arrived after ' + arrive + ' s — before the ' +
-        timeout + ' s timeout — so the block was woken by the element, returned the popped marker, and the connection ' +
-        'became free. 1 round-trip, no poll interval, ~0 ms of extra pickup latency.';
-    } else {
-      text = 'The connection parked on BZPOPMIN emq:{queue}:marker. No job arrived within the ' + timeout + ' s ' +
-        'timeout, so the block returned nil (do_wait_for_job/3 → :timeout) and the connection became free with no job. ' +
-        'The worker re-checks liveness and parks again. Still 1 round-trip — no busy spin while idle.';
-    }
-    return { wokeAt: wokeAt, by: by, frac: frac, text: text,
-      verd: 'woke after ' + wokeAt + ' s · by ' + (by === 'element' ? 'an arriving job' : 'the timeout') };
+  /* ---------- Interactive 1: the blocking connection's life (hover-select, pure) ---------- */
+  function stateText(seg) {
+    if (seg === 'idle') return 'The connection is idle, between cycles. No command outstanding, no work in hand.';
+    if (seg === 'blocked') return 'The connection is parked on BLPOP emq:{queue}:wake. One round trip is outstanding; it sends nothing more and consumes no traffic until a wake token is pushed or the beat elapses.';
+    return 'A wake closed the BLPOP. The connection returns and the consumer drains the ring with Lanes.claim — the work segment of the cycle.';
   }
-  function renderBp(arrive, timeout) {
-    var r = block(arrive, timeout);
-    var fill = document.getElementById('bpFill'), evt = document.getElementById('bpEvt'),
-        evtLbl = document.getElementById('bpEvtLbl'), conn = document.getElementById('bpConn'),
-        st = document.getElementById('bpState'), verd = document.getElementById('bpVerd'),
-        out = document.getElementById('bpOut');
-    var w = Math.max(2, Math.round(W * r.frac));
-    if (fill) fill.setAttribute('width', w);
-    var ex = (X0 + w).toFixed(1);
-    if (evt) { evt.setAttribute('x1', ex); evt.setAttribute('x2', ex); }
-    if (evtLbl) {
-      evtLbl.setAttribute('x', Math.min(420, Math.max(40, X0 + w)));
-      evtLbl.textContent = (r.by === 'element') ? 'job arrived' : 'timeout';
-      evtLbl.setAttribute('fill', (r.by === 'element') ? '#a7c9b1' : '#f2948c');
-    }
-    if (conn) { conn.classList.remove('blocked', 'free', 'queued'); conn.classList.add('free'); }
-    if (fill) fill.setAttribute('fill', (r.by === 'element') ? 'rgba(123,163,135,.30)' : 'rgba(214,88,79,.24)');
-    if (st) { st.textContent = (r.by === 'element') ? 'WOKEN — element popped, connection free' : 'WOKEN — timeout, connection free';
-      st.setAttribute('fill', (r.by === 'element') ? '#a7c9b1' : '#f2948c'); }
-    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', (r.by === 'element') ? '#a7c9b1' : '#f2948c'); }
-    if (out) out.textContent = r.text;
-  }
-  var bpArrive = 12, bpTo = 30;
-  var bpA = document.getElementById('bpArrive'), bpAV = document.getElementById('bpArriveVal'),
-      bpT = document.getElementById('bpTo'), bpTV = document.getElementById('bpToVal');
-  if (bpA) bpA.addEventListener('input', function () {
-    bpArrive = parseInt(bpA.value, 10); if (bpAV) bpAV.textContent = bpArrive + 's'; renderBp(bpArrive, bpTo);
-  });
-  if (bpT) bpT.addEventListener('input', function () {
-    bpTo = parseInt(bpT.value, 10); if (bpTV) bpTV.textContent = bpTo + 's'; renderBp(bpArrive, bpTo);
-  });
-  renderBp(12, 30); // initial render — correct without interaction
-
-  /* ---------- content: shared vs dedicated connection (pure over mode) ---------- */
-  // With one shared connection, the block holds it and a SET lock command queues behind the block. With a dedicated
-  // blocking connection, the block parks on the blocking connection and the main connection runs SET lock at once. The
-  // command's state is a pure function of the mode.
-  // pure: mode -> { cmdState, runs, verd, sub, text }
-  function conn(mode) {
-    if (mode === 'dedicated') {
-      return {
-        cmdState: 'runs now', runs: true,
-        verd: 'dedicated: the block parks on the blocking connection',
-        sub: 'the main connection is free · SET lock runs at once',
-        text: 'A dedicated blocking connection parks the BZPOPMIN; the worker\'s main connection is untouched. ' +
-          'SET lock runs immediately on the main connection — the worker fetches, renews locks, and acknowledges ' +
-          'while still parked on the marker. This is EchoMQ.RedisConnection.blocking_connection/1.'
-      };
-    }
-    return {
-      cmdState: 'queued', runs: false,
-      verd: 'shared: the block holds the only connection',
-      sub: 'SET lock waits behind the block until it returns',
-      text: 'One shared connection is parked on BZPOPMIN, so it is busy. SET lock sent on the same connection ' +
-        'queues behind the block and cannot run until the block returns — the worker cannot renew a lock or ' +
-        'acknowledge a result while parked. The block starves the other commands.'
-    };
-  }
-  function renderCn(mode) {
-    var r = conn(mode);
-    var cmd = document.getElementById('cnCmd'), cmdSt = document.getElementById('cnCmdSt'),
-        arr = document.getElementById('cnArr'), verd = document.getElementById('cnVerd'),
-        sub = document.getElementById('cnSub'), out = document.getElementById('cnOut'),
-        blockSt = document.getElementById('cnBlockSt');
-    if (cmd) { cmd.classList.remove('free', 'queued'); cmd.classList.add(r.runs ? 'free' : 'queued'); }
-    if (cmdSt) { cmdSt.textContent = r.cmdState; cmdSt.setAttribute('fill', r.runs ? '#a7c9b1' : '#f2948c'); }
-    if (blockSt) blockSt.textContent = (mode === 'dedicated') ? 'parked (blocking conn)' : 'parked (holds the conn)';
-    if (arr) arr.setAttribute('stroke', r.runs ? '#7ba387' : '#d6584f');
-    if (verd) { verd.textContent = r.verd; verd.setAttribute('fill', r.runs ? '#a7c9b1' : '#f2948c'); }
-    if (sub) sub.textContent = r.sub;
-    if (out) out.textContent = r.text;
-  }
-  var cnMode = 'shared';
-  document.querySelectorAll('#cnSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      cnMode = b.getAttribute('data-mode');
-      document.querySelectorAll('#cnSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+  var cstate = document.getElementById('cstate');
+  var stateButtons = document.querySelectorAll('#stateSel button');
+  var stateOut = document.getElementById('stateOut');
+  function selectState(seg) {
+    stateButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-seg') === seg ? 'true' : 'false');
+    });
+    if (cstate) {
+      cstate.classList.toggle('focus', !!seg);
+      cstate.querySelectorAll('.seg').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-seg') === seg);
       });
-      renderCn(cnMode);
+    }
+    if (stateOut) {
+      stateOut.innerHTML = seg
+        ? '<span class="rk">state &#183;</span> ' + stateText(seg)
+        : '<span class="rk">readout &#183;</span> Select a segment. The connection is idle, then parked on the wake key, then draining the returned job.';
+    }
+  }
+  stateButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var seg = b.getAttribute('data-seg');
+      selectState(b.getAttribute('aria-pressed') === 'true' ? null : seg);
     });
   });
-  renderCn('shared'); // initial render — correct without interaction
+  if (cstate) {
+    cstate.querySelectorAll('.seg').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectState(g.getAttribute('data-seg')); });
+      g.addEventListener('mouseleave', function () { selectState(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: shared vs dedicated connection (pure) ---------- */
+  var laneButtons = document.querySelectorAll('#laneSel button');
+  var laneOut = document.getElementById('laneOut');
+  // pure: layout -> readout text
+  function laneVerdict(layout) {
+    if (layout === 'dedicated') {
+      return 'Two lanes. The blocking lane is parked on BLPOP emq:{queue}:wake. A settle (Jobs.complete) sent on the command lane runs at once — the lanes never contend. Settle latency: immediate.';
+    }
+    return 'One shared connection, parked on BLPOP emq:{queue}:wake. A settle (Jobs.complete) sent on the same connection waits behind the block until it returns. Settle latency: stalled until the park ends.';
+  }
+  function renderLane(layout) {
+    laneButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-lane') === layout ? 'true' : 'false'); });
+    if (laneOut) laneOut.innerHTML = '<span class="rk">settle &#183;</span> ' + laneVerdict(layout);
+  }
+  laneButtons.forEach(function (b) {
+    b.addEventListener('click', function () { renderLane(b.getAttribute('data-lane')); });
+  });
+  renderLane('shared'); // initial render — correct without interaction
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -672,7 +535,7 @@ main_conn:  <span class="op">SET</span> lock …           <span class="cmt"># r
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
   function decodeBranded(id) {
-    if (!id || id.length < 4) return null;
+    if (!id || id.length !== 14) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
     if (snow === null) return null;
     var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
@@ -692,23 +555,5 @@ main_conn:  <span class="op">SET</span> lock …           <span class="cmt"># r
 })();
 </script>
 
-<script>
-/* progressive enhancement: mark JS on, then reveal-on-scroll */
-document.documentElement.classList.add('js');
-document.addEventListener('DOMContentLoaded', function () {
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var els = document.querySelectorAll('.reveal');
-  if (reduce || !('IntersectionObserver' in window)) {
-    els.forEach(function (e) { e.classList.add('in'); });
-    return;
-  }
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (en) {
-      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-    });
-  }, { threshold: 0.12 });
-  els.forEach(function (e) { io.observe(e); });
-});
-</script>
 </body>
 </html>

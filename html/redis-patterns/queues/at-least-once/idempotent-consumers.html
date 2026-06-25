@@ -1,298 +1,222 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>R3.02.2 · Idempotent consumers · Redis Patterns Applied · jonnify</title>
-<meta name="description" content="R3.02.2 · At-least-once delivery hands the consumer a job that may arrive twice; the fix is an idempotent effect — running the same job twice produces the same result as once. A naturally idempotent SET or set-membership needs no guard; a non-idempotent INCR or charge needs a dedup marker claimed with SET NX keyed by a stable job id. Worked example: a Portal enrollment, where the roster is a set (naturally idempotent) and the seat decrement is guarded by an NX marker, so enrolling a student twice equals enrolled once. Distinct from EchoMQ's producer-side EchoMQ.Keys.dedup/2.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<meta name="description" content="R3.02.2 — make the consumer idempotent so a redelivery changes nothing: a naturally idempotent effect (SET, set membership) needs no guard; a non-idempotent counter needs an NX marker keyed by a stable id. Worked example: a codemojex guess — Codemojex.ScoreWorker scores the same emojis to the same GES, and the per-game attempt count rides on a marker keyed by the branded JOB id, so scoring a guess twice equals scoring it once.">
 <style>
+/* ============ The redis contract sheet ============ */
 :root{
-  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
-  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
-  --gold:#d4a85a; --gold-bright:#f0cd7f;
-  --blue:#5a87c4; --blue-bright:#9fc0ea;
-  --sage:#7ba387; --sage-bright:#a7c9b1;
-  --burgundy:#c4504c;
-  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
-  --redis:#d6584f; --redis-bright:#f2948c;
-  --line:#2a3252;
-  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --serif:"PT Serif", Georgia, serif;
-  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --measure:68ch;
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
 }
-*{box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{
-  margin:0; color:var(--cream); background:var(--ink);
-  font-family:var(--serif);
-  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
-  line-height:1.62; letter-spacing:.005em;
-  background-image:
-    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
-    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
-    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
-  background-attachment:fixed;
-}
-body::after{ /* faint vignette for depth */
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
-}
-.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
-  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50}
 .skip:focus{left:0}
-::selection{background:var(--gold);color:var(--ink)}
-img,svg{max-width:100%}
-a{color:var(--gold-bright);text-decoration:none}
-a:hover{color:var(--cream)}
-hr.rule{border:0;height:1px;margin:2.2rem 0;
-  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
 
-/* ---- layout ---- */
-.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
-main{display:block}
-section{padding:clamp(2.6rem,6vw,4.6rem) 0}
-section + section{border-top:1px solid var(--line)}
-.prose{max-width:var(--measure)}
-.prose p{margin:0 0 1.05rem}
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
 
-/* ---- type ---- */
-h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
-  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
-h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
-h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
-h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
-h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
-.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
-  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
-  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
-.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
-  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
-  max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
-.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
-strong{color:var(--cream);font-weight:700}
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
 
-/* ---- site header / footer ---- */
-.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
-  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
-.site .wrap{display:flex;align-items:center;justify-content:space-between;
-  height:58px;font-family:var(--sans)}
-.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
-  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
-  display:inline-block;transform:translateY(-2px)}
-.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
-  text-transform:uppercase;color:var(--cream-dim)}
-.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
-.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
-  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
-.route-tag a{color:var(--gold);text-decoration:none}
-.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
-.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
-.route-tag .rcur{color:var(--gold-bright)}
-.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
-  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
-.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
-  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
 
-/* ---- hero ---- */
-.hero{padding-top:clamp(3rem,8vw,6rem)}
-.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
-.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
-  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
-  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
-  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
-.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
-  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
-.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
-.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
-.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
 
-/* ---- figures / takeaways ---- */
-.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
-  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
-  padding:clamp(1rem,2.4vw,1.6rem)}
-.fig svg{display:block;width:100%;height:auto}
-.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
-  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
-  padding-left:1rem;border-left:2px solid var(--gold)}
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);margin-top:10px;max-width:78ch}
+.booknote code{font-size:.92em}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
 
-/* ---- interactive shells (shared with lesson pages) ---- */
-.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
-.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
-  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
-  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
-.solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
-.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
-.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
-.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
-.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
-.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
-.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
-.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
-.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
-.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
-  background:var(--ink);border:1px solid var(--line);border-radius:10px;
-  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
-.geo-readout .dim{color:var(--cream-dim)}
-.geo-readout b{color:var(--redis-bright)}
-.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---------- the replay figure (hover-select) ---------- */
+.enr{width:100%;height:auto;display:block;margin-top:4px}
+.enr .box rect{fill:var(--b-card);stroke:var(--b-node);stroke-width:1.5;transition:.18s ease}
+.enr .nlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.enr .big{font:16px var(--mono);font-weight:700;text-anchor:middle}
+.enr .ttl{font:11px var(--mono);fill:var(--b-dim)}
+.enr .verd{font:11px var(--mono);fill:var(--b-node)}
 
-/* ---- code ---- */
-pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
-  background:var(--ink);border:1px solid var(--line);border-radius:12px;
-  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
-pre.code .op{color:var(--elixir-bright)}
-pre.code .fn{color:var(--cream)}
-pre.code .fn.blue{color:var(--blue-bright)}
-pre.code .fn.sage{color:var(--sage-bright)}
-pre.code .fn.gold{color:var(--gold-bright)}
-pre.code .fn.elixir{color:var(--elixir-bright)}
-pre.code .fn.burg{color:#e08f8b}
-pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
-pre.code .res{color:var(--gold-bright)}
-pre.code .str{color:var(--sage-bright)}
-pre.code .cmt{color:var(--cream-dim)}
-code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
-  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+/* ---------- the SET-vs-INCR figure (hover-select) ---------- */
+.ctr{width:100%;height:auto;display:block;margin-top:4px}
+.ctr .effect{cursor:pointer}
+.ctr .cell rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.5;transition:.18s ease}
+.ctr.focus .cell{opacity:.4}
+.ctr.focus .cell.on{opacity:1}
+.ctr .cell.nat.on rect{fill:#e6efe6;stroke:var(--b-node)}
+.ctr .cell.acc.on rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.ctr .nlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.ctr .res{font:13px var(--mono);font-weight:700;text-anchor:middle}
+.ctr .ttl{font:11px var(--mono);fill:var(--b-dim)}
 
-/* ---- pager ---- */
-.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
-  align-items:center;font-family:var(--sans)}
-.pager .p-left{color:var(--cream-dim);font-size:.9rem}
-.pager .spacer{flex:1}
+/* ---------- pre/code ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+pre.code .str{color:var(--b-node)}
 
-/* ---- branded stamp ---- */
-.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
-  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
-  background:var(--ink);user-select:none}
-.stamp:hover{border-color:var(--gold)}
-.stamp .id{color:var(--gold-bright)}
-.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
-  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+
+/* ---------- bridge / door / vnote ---------- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink);margin:0 0 6px}
+a.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
 .stamp.open .panel{display:grid}
-.stamp .panel dt{color:var(--cream-dim)}
-.stamp .panel dd{margin:0;color:var(--cream)}
 
-/* ---- reveal (JS-gated; content visible without JS) ---- */
-html.js .reveal{opacity:0;transform:translateY(14px)}
-html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
-@media (prefers-reduced-motion: reduce){
-  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
 }
-
-/* ---- responsive ---- */
-@media (max-width:760px){
-  .site nav{display:none}
-  .lede{max-width:none}
-  .take{font-size:1.08rem}
-}
-
-/* ---- module / lesson page additions (additive; shared head) ---- */
-.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
-  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
-.crumbs a{color:var(--cream-soft)}
-.crumbs .sep{opacity:.45}
-.crumbs .here{color:var(--gold)}
-.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
-.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
-.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
-.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
-.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
-.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
-  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
-.bridge .cell.idea .lbl{color:var(--gold)}
-.bridge .cell.elix .lbl{color:var(--redis-bright)}
-.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
-.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
-@media (max-width:760px){
-  .bridge{grid-template-columns:1fr;gap:.7rem}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
   .bridge .arrow{justify-self:center;transform:rotate(90deg)}
 }
-.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
-  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
-.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
-.deflist dd{margin:0;color:var(--cream-soft)}
-.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
-  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
-.door{font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);
-  border:1px solid var(--line);border-left:3px solid var(--redis);border-radius:0 12px 12px 0;
-  padding:1rem 1.2rem;margin:1.6rem 0 0;background:linear-gradient(180deg,rgba(214,88,79,.06),rgba(10,14,26,.2))}
-.door .lbl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;
-  text-transform:uppercase;color:var(--redis-bright);display:block;margin:0 0 .5rem}
-.door a{color:var(--gold-bright)}
-/* ---- references ---- */
-.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
-@media(max-width:680px){.refs{grid-template-columns:1fr}}
-.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
-.refs h3:first-child{margin-top:0}
-.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
-.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
-.refs a{color:var(--sage-bright)}
-.refs a:hover{color:var(--cream)}
-.refs em{color:var(--cream-dim);font-style:italic}
-.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
 </style>
 </head>
 <body>
 <a class="skip" href="#main">Skip to the page</a>
 
-<header class="site">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
-    <nav>
-      <a href="/redis-patterns">Home</a>
-      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/at-least-once">at-least-once</a><span class="rsep">/</span><span class="rcur">idempotent-consumers</span></span>
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/queues">queues</a><span class="rsep">/</span><a href="/redis-patterns/queues/at-least-once">at-least-once</a><span class="rsep">/</span><span class="rcur">idempotent-consumers</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#natural">Naturally idempotent</a>
+      <a href="#marker">The NX marker</a>
+      <a href="#guess">The codemojex guess</a>
+      <a href="#producer">Producer admission</a>
+      <a href="#refs">References</a>
     </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main>
+  <div class="wrap">
 
-  <style>
-    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
-    .hero-split .hero{padding-top:0}
-    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
-    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
-    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
-    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
-    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
-    .foot-cols a:hover{color:var(--cream)}
-    .foot-cols .it{color:var(--cream-dim)}
-    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
-    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
-    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
-    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
-    /* the enrollment replay — roster (a set) + seat count under the marker */
-    .enr .box rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
-    .enr .box.ok rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
-    .enr .box.bad rect{fill:rgba(214,88,79,.16);stroke:#d6584f}
-    .enr text{font-family:var(--mono);fill:#d7cfb9;font-size:12px}
-    .enr .ttl{font-family:var(--sans);fill:#a39c89;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-    .enr .num{font-family:var(--serif-display);font-size:22px;font-weight:600;fill:#f0cd7f}
-    .enr .roster{font-weight:700;fill:#a7c9b1}
-    /* the SET vs INCR contrast */
-    .ctr .cell rect{fill:#10162b;stroke:#2a3252;transition:.18s ease}
-    .ctr .cell.nat rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
-    .ctr .cell.acc rect{fill:rgba(214,88,79,.14);stroke:#d6584f}
-    .ctr text{font-family:var(--mono);fill:#d7cfb9;font-size:12px}
-    .ctr .ttl{font-family:var(--sans);fill:#a39c89;font-size:11px;letter-spacing:.05em;text-transform:uppercase}
-    .ctr .res{font-family:var(--serif-display);font-size:18px;font-weight:600}
-  </style>
-
-  <div class="hero-split">
     <section class="hero">
-      <div class="crumbs">
+      <nav class="crumbs" aria-label="Breadcrumb">
         <a href="/redis-patterns">Redis Patterns</a>
         <span class="sep">/</span>
         <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
@@ -300,257 +224,271 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
         <a href="/redis-patterns/queues/at-least-once">At-least-once</a>
         <span class="sep">/</span>
         <span class="here">Idempotent consumers</span>
+      </nav>
+      <p class="kicker">R3.02.2 &#183; At-least-once &mdash; dive 2</p>
+      <h1>Idempotent <span class="hns">consumers</span>.</h1>
+      <p class="lede">Score twice, scored once. At-least-once delivery hands the consumer a job that may arrive again; an
+        idempotent effect runs once however many times the job arrives.</p>
+      <p class="heronote">The fix for a duplicate delivery is not exactly-once transport &mdash; that is impossible
+        &mdash; but an idempotent effect: running the same job twice produces the same result as once. A codemojex guess
+        is the cleanest case: scoring the same emojis writes the same <code>GES</code>, and the one accumulating part,
+        the per-game attempt count, takes a marker. Select a delivery count below, then read the <code>GES</code> write
+        and the attempt count hold.</p>
+
+      <figure class="anatomy" aria-labelledby="enrCap">
+        <figcaption id="enrCap"><b>Score one guess, then replay.</b> Select a delivery count; the readout runs the
+          replay and reports the GES write and the attempt count.</figcaption>
+        <div class="segbar" id="enrSel" role="group" aria-label="How many times the guess job is delivered">
+          <button type="button" data-times="1" aria-pressed="true">deliver once</button>
+          <button type="button" data-times="2" aria-pressed="false">replay (twice)</button>
+          <button type="button" data-times="3" aria-pressed="false">replay (3x)</button>
+        </div>
+        <svg class="enr" id="enrSvg" viewBox="0 0 460 170" role="img" aria-label="Score a guess job. The scoring writes a GES keyed by the game and player and is naturally idempotent, so a redelivery writes the same GES: one guess however many deliveries arrive. The per-game attempt count starts at 0 and is guarded by an NX marker keyed by the branded JOB id, so it counts once on the first delivery and is skipped on every redelivery, ending at 1. Score twice equals scored once.">
+          <text class="ttl" x="30" y="22">GES write (game + player — naturally idempotent)</text>
+          <g class="box" id="gesBox"><rect x="30" y="30" width="180" height="48" rx="9"></rect></g>
+          <text class="big" id="gesT" x="120" y="60" fill="#2e7d5b">1 GES</text>
+          <text class="ttl" x="250" y="22">attempt count (NX marker guards INCR)</text>
+          <g class="box" id="attBox"><rect x="250" y="30" width="180" height="48" rx="9"></rect></g>
+          <text class="big" id="attT" x="340" y="60" fill="#2e7d5b">1</text>
+          <text class="ttl" x="30" y="108" id="enrLine">delivered 1&times; &middot; one GES written &middot; one attempt counted</text>
+          <text class="verd" id="enrVerd" x="30" y="142">score twice = scored once: the GES write absorbs the redelivery, the marker guards the count</text>
+        </svg>
+        <div class="readout" id="enrOut" aria-live="polite"></div>
+        <p class="booknote">Static verdicts &mdash; any delivery count &#8594; 1 GES (the write is naturally
+          idempotent) and 1 attempt (the marker guards the count).</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="natural">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Naturally idempotent effects</h2>
+        <span class="ssrc">reliable-queue.md.txt &#183; the idempotency line</span>
       </div>
-      <p class="eyebrow">R3.02 &middot; dive 2</p>
-      <h1>Idempotent <span class="ex">consumers</span></h1>
-      <p class="lede">Enroll twice, enrolled once. At-least-once delivery hands the consumer a job that may arrive
-        again; an idempotent effect runs once however many times the job arrives.</p>
-      <p class="kicker">The fix for a duplicate delivery is not exactly-once transport &mdash; that is impossible
-        &mdash; but an idempotent effect: running the same job twice produces the same result as once. A Portal
-        enrollment is the cleanest case: the roster is a set, so adding a student already on it is a no-op, while the
-        one non-idempotent part, the seat count, takes a dedup marker. Enroll student S in course C on the right, then
-        replay the job, and read the roster and seat count hold.</p>
-      <div class="toc-mini" aria-label="On this page">
-        <a href="#natural">Naturally idempotent</a>
-        <a href="#marker">The NX marker</a>
-        <a href="#enroll">The Portal enrollment</a>
-        <a href="#producer">Producer dedup</a>
-        <a href="#refs">References</a>
+      <div class="prose">
+        <p>An effect is idempotent when applying it twice changes nothing the second time. <code>SET key value</code> is
+          the clearest case: it overwrites to the same value however many times it runs, so a redelivered job that sets
+          the same value is harmless. Set membership is another &mdash; adding a member already in the set is a no-op.
+          Writing a row by a fixed primary key with an upsert is idempotent; so is sending mail keyed by a dedup id the
+          provider honours.</p>
+        <p>A naturally idempotent consumer needs no extra machinery. The redelivery runs the effect again, the effect
+          produces the same state, and at-least-once delivery has already become an exactly-once effect at no cost. The
+          discipline is to recognise which effects are naturally idempotent and lean on them &mdash; choosing a
+          <code>SET</code> over an <code>INCR</code>, an upsert over a blind insert &mdash; before reaching for a
+          marker.</p>
+      </div>
+      <pre class="code"><span class="cmt"># naturally idempotent — a redelivery changes nothing</span>
+<b>SET</b> game:G:secret &lt;value&gt;       <span class="cmt"># run once or twice: the secret is the same either way</span>
+<b>SADD</b> room:R:players PLR0...      <span class="cmt"># add a member already in the set: a no-op</span></pre>
+      <p class="take">The cheapest idempotency is the effect that is already idempotent: a <code>SET</code> or a set add
+        absorbs a redelivery for free. Reach for those before reaching for a marker.</p>
+    </section>
+
+    <section id="marker">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Non-idempotent effects need a marker</h2>
+        <span class="ssrc">redis.io/commands/set &#183; NX</span>
+      </div>
+      <div class="prose">
+        <p>The hard cases are effects where the second run <em>does</em> change the state. <code>INCR counter</code> is
+          the canonical one &mdash; two deliveries increment it twice. A card charge, a row insert with a fresh id, an
+          outbound message without a dedup id: each accumulates on every redelivery. A non-idempotent consumer
+          double-counts on the duplicate the previous dive proved is structural.</p>
+        <p>The guard is a marker keyed by a stable id. Before the effect runs, claim the marker with <code>SET &hellip;
+          NX</code> &mdash; set only if absent. If the claim succeeds, this is the first delivery: run the effect. If the
+          claim fails, the marker is already set, so the effect already ran on an earlier delivery: skip it. The marker
+          carries the exactly-once decision that the effect itself cannot.</p>
+        <p>Hover or select an effect below to compare a naturally idempotent <code>SET</code> against an accumulating
+          <code>INCR</code> over two deliveries; the readout names where the marker is needed.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="ctrCap">
+        <figcaption id="ctrCap"><b>Two deliveries &middot; SET versus INCR.</b> Hover an effect; the readout runs both
+          deliveries and reports the end state.</figcaption>
+        <div class="segbar" id="ctrSel" role="group" aria-label="Which effect to inspect over two deliveries">
+          <button type="button" data-fx="nat" aria-pressed="true">a naturally idempotent SET</button>
+          <button type="button" data-fx="acc" aria-pressed="false">an accumulating INCR</button>
+        </div>
+        <svg class="ctr focus" id="ctrSvg" viewBox="0 0 460 160" role="img" aria-label="A job delivered twice. The naturally idempotent SET writes the same value both times, ending at the same value, idempotent for free. The INCR accumulates: with no marker it increments twice; guarded by an NX marker keyed by the job id the second delivery finds the marker and skips, so it increments once. Hover an effect to read its end state.">
+          <g class="cell nat effect" id="setCell" data-fx="nat"><rect x="30" y="32" width="180" height="58" rx="9"></rect></g>
+          <text class="ttl" x="120" y="26" text-anchor="middle">SET key v (naturally idempotent)</text>
+          <text class="nlbl" x="120" y="58">deliver 1: v &middot; deliver 2: v</text>
+          <text class="res" id="setRes" x="120" y="78" fill="#2e7d5b">= v &middot; idempotent for free</text>
+          <g class="cell acc effect" id="incCell" data-fx="acc"><rect x="250" y="32" width="180" height="58" rx="9"></rect></g>
+          <text class="ttl" x="340" y="26" text-anchor="middle">INCR counter (accumulates)</text>
+          <text class="nlbl" id="incSteps" x="340" y="58">deliver 1: +1 &middot; deliver 2: +1</text>
+          <text class="res" id="incRes" x="340" y="78" fill="#b23b2e">counter = 2</text>
+          <text class="ttl" id="ctrSub" x="30" y="124">a SET is safe to redeliver as-is; an INCR needs the NX marker to be redeliver-safe</text>
+        </svg>
+        <div class="readout" id="ctrOut" aria-live="polite"></div>
+        <p class="booknote">Static verdicts &mdash; SET &#8594; same value both deliveries, no marker &#183; INCR with no
+          marker &#8594; counter = 2 &#183; INCR under an NX marker &#8594; counter = 1.</p>
+      </figure>
+
+      <pre class="code"><span class="cmt"># a non-idempotent effect, guarded by an NX marker keyed by the stable job id</span>
+<b>if</b> SET seen:JOB0... 1 NX PX 86400000:    <span class="cmt"># claim the marker; NX = only if absent</span>
+    count_the_attempt()                  <span class="cmt"># first delivery: count once</span>
+<b>else</b>:
+    skip()                               <span class="cmt"># a redelivery: the marker is set, do nothing</span></pre>
+
+      <p class="take">A naturally idempotent effect is redeliver-safe as-is; an accumulating one is not, and an
+        <code>NX</code> marker keyed by the job id is what makes it so &mdash; best-effort, not a transaction.</p>
+    </section>
+
+    <section id="guess">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The worked example &mdash; a codemojex guess</h2>
+        <span class="ssrc">echo/apps/codemojex &#183; ScoreWorker</span>
+      </div>
+      <div class="prose">
+        <p>A codemojex guess is the cleanest illustration. A player submits six emojis;
+          <code>Codemojex.Guesses.submit/3</code> mints a branded <code>JOB</code> id, charges the wallet, and enqueues
+          the job on the player's lane (<code>Lanes.enqueue</code>). The scoring consumer is the authority:
+          <code>Codemojex.ScoreWorker.handle/1</code> drains the lane, reads the game's secret through the cache, scores
+          the six emojis with the pure linear engine, and writes a <code>GES</code> guess. The scoring itself is
+          naturally idempotent &mdash; the same secret and the same six emojis produce the same score every time the job
+          runs.</p>
+        <p>The one part that accumulates is the per-game attempt counter, an <code>INCR</code> on
+          <code>cm:&lt;game&gt;:attempts</code>. Counting an attempt on every redelivery would over-count. That is the
+          <code>INCR</code>-shaped effect, and a marker keyed by the stable <code>JOB</code> id is what makes it
+          redeliver-safe: claim <code>seen:&lt;JOB&gt;</code> with <code>SET &hellip; NX</code>; on the first delivery
+          the claim succeeds and the attempt is counted once; on a redelivery the claim fails and the count is skipped.
+          The score rides on its natural idempotency; the attempt count rides on the marker. Score twice, scored
+          once.</p>
+        <p><code>ScoreWorker</code> carries the discipline at its boundary too: a guess for an unknown game answers
+          <code>:ok</code> &mdash; a drop, never a retry loop. A redelivery that no longer maps to a live game settles
+          cleanly rather than looping, because the consumer treats the same identity the same way each time it
+          handles it.</p>
+      </div>
+      <pre class="code"><span class="cmt"># Codemojex.ScoreWorker.handle/1 — score the guess, write a GES (real, trimmed)</span>
+<b>def</b> handle(%{id: job_id, payload: payload, group: player}) <b>do</b>
+  {:guess, game, ^player, emojis} = :erlang.binary_to_term(payload)
+  <b>case</b> Cache.fetch_game(game) <b>do</b>
+    %{secret: secret} = g -&gt;
+      s   = Scoring.score(secret, emojis)            <span class="cmt"># naturally idempotent: same secret + emojis -> same score</span>
+      gid = EchoData.BrandedId.generate!(<span class="str">"GES"</span>)
+      Store.put_guess(gid, %{game: game, player: player, emojis: emojis, points: s.total})
+      Cmd.incr(<span class="str">"cm:"</span> &lt;&gt; game &lt;&gt; <span class="str">":attempts"</span>) |&gt; Wire.run(conn)   <span class="cmt"># accumulating — guard with a marker</span>
+    _ -&gt; :ok                                          <span class="cmt"># unknown game: a drop, never a retry loop</span>
+  <b>end</b>
+<b>end</b></pre>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Absorb at-least-once redelivery by making the consumer's effect idempotent &mdash; natural idempotency
+            where the effect allows it, an <code>NX</code> marker where it does not.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">in a codemojex guess</span>
+          <p>The scoring is naturally idempotent (same secret and emojis, same <code>GES</code>), the per-game attempt
+            count is guarded by an <code>NX</code> marker keyed by the <code>JOB</code> id, and an unknown game answers
+            <code>:ok</code> &mdash; so scoring a guess twice equals scoring it once.</p>
+        </div>
+      </div>
+
+      <p class="take">Score twice, scored once: the <code>GES</code> write absorbs the redelivery, the marker guards the
+        attempt count, and an unknown game settles to <code>:ok</code> rather than looping.</p>
+    </section>
+
+    <section id="producer">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>A note on producer-side admission</h2>
+        <span class="ssrc">echo_mq/jobs.ex &#183; enqueue</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ refuses a duplicate at <em>enqueue</em>, and it is a different mechanism from the consumer marker
+          above. <code>EchoMQ.Jobs.enqueue/4</code> runs one idempotent script whose first guard after the kind check is
+          <code>if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end</code> &mdash; two enqueues of the same branded
+          <code>JOB</code> id collapse to one row, and the host reads the <code>0</code> as <code>{:ok,
+          :duplicate}</code>. That is <strong>producer-side</strong> admission; it stops two enqueues of the same id
+          from both creating work. It does not make a single in-flight job exactly-once at the consumer, because the
+          recovery path can still redeliver a job that entered the queue once. The consumer marker in this dive is
+          claimed at <em>effect-time</em>, keyed by the job's identity, and is what absorbs that redelivery. Two markers,
+          two moments &mdash; the third dive separates them in full.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>SET &hellip; NX PX &lt;ms&gt;</code> claims the marker
+        and gives it an expiry in one command, so the guard cannot leave an immortal key if the consumer dies between
+        two commands. <a href="https://valkey.io/commands/set/" rel="noopener">valkey.io/commands/set</a></p>
+
+      <a class="door" href="/echomq/queue">
+        <span class="dr">/echomq/queue</span>
+        <h3>The lifecycle the consumer settles into</h3>
+        <p>The acknowledge/finish lifecycle that closes an in-flight job out &mdash; <code>Jobs.complete</code>, the
+          <code>attempts</code> fence, the lane the worker drains &mdash; is the <strong>EchoMQ Queue pillar</strong>.
+          This dive teaches the idempotent consumer; that pillar teaches the lifecycle the consumer acknowledges into.</p>
+      </a>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/commands/set/" rel="noopener">Redis &mdash; <em>SET</em></a><span class="rs">the <code>NX</code> and <code>PX</code> options behind the effect-time idempotency marker</span></li>
+            <li><a href="https://valkey.io/commands/sadd/" rel="noopener">Valkey &mdash; <em>SADD</em></a><span class="rs">the set add whose membership is a no-op on a redelivery</span></li>
+            <li><a href="https://redis.io/glossary/redis-queue/" rel="noopener">Redis &mdash; <em>Redis queue</em></a><span class="rs">the queue and its delivery-guarantee overview</span></li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/queues/at-least-once">R3.02 &middot; At-least-once</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/queues/at-least-once/at-least-once-semantics">R3.02.1 &middot; At-least-once semantics</a><span class="rs">why the duplicate the marker absorbs is structural</span></li>
+            <li><a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie</a><span class="rs">producer admission versus consumer idempotency</span></li>
+            <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a><span class="rs">the family in one place</span></li>
+            <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a><span class="rs">the atomic SET … NX claim under the marker</span></li>
+          </ul>
+        </div>
       </div>
     </section>
 
-    <figure class="fig enr" aria-labelledby="enrTitle">
-      <h4 id="enrTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Enroll S in C, then replay &middot; roster (a set) &middot; seat count (under the marker)</h4>
-      <div class="controls">
-        <div class="solid-select" id="enrSel" role="group" aria-label="How many times the enroll job is delivered">
-          <button type="button" data-times="1" data-c="sage" class="active" aria-pressed="true">deliver once</button>
-          <button type="button" data-times="2" data-c="gold" aria-pressed="false">replay (twice)</button>
-          <button type="button" data-times="3" data-c="gold" aria-pressed="false">replay (3x)</button>
-        </div>
-      </div>
-
-      <svg viewBox="0 0 460 180" role="img" aria-label="Enroll student S in course C. The roster is a set, so adding S a second time is a no-op: S appears once however many deliveries arrive. The seat count starts at 30 and is guarded by an NX marker keyed by the student-course pair, so it decrements once on the first delivery and is skipped on every redelivery, ending at 29. Enroll twice equals enrolled once.">
-        <text class="ttl" x="30" y="26">roster (SADD course:C — a set)</text>
-        <g class="box ok" id="rosterBox"><rect x="30" y="34" width="180" height="50" rx="10"></rect></g>
-        <text class="roster" id="rosterT" x="120" y="64" text-anchor="middle">{ S }</text>
-        <text class="ttl" x="250" y="26">seats left (NX marker guards DECR)</text>
-        <g class="box ok" id="seatBox"><rect x="250" y="34" width="180" height="50" rx="10"></rect></g>
-        <text class="num" id="seatT" x="340" y="68" text-anchor="middle">29</text>
-        <text class="ttl" x="30" y="116" id="enrLine">delivered 1× · S enrolled once · 1 seat taken</text>
-        <text class="ttl" id="enrVerd" x="30" y="150" fill="#a7c9b1">enroll twice = enrolled once: the set absorbs the roster, the marker guards the seat</text>
-      </svg>
-
-      <div class="geo-readout" id="enrOut" aria-live="polite"></div>
-    </figure>
-  </div>
-
-  <section id="natural">
-    <h2>Naturally idempotent effects</h2>
-    <div class="prose">
-      <p>An effect is idempotent when applying it twice changes nothing the second time. <code class="inl">SET key value</code>
-        is the clearest case: it overwrites to the same value however many times it runs, so a redelivered job that sets
-        the same value is harmless. Set membership is another &mdash; adding a member already in the set is a no-op.
-        Writing a row by a fixed primary key with an upsert is idempotent; so is sending mail keyed by a dedup id the
-        provider honours.</p>
-      <p>A naturally idempotent consumer needs no extra machinery. The redelivery runs the effect again, the effect
-        produces the same state, and at-least-once delivery has already become an exactly-once effect at no cost. The
-        discipline is to <em>recognise</em> which effects are naturally idempotent and lean on them &mdash; choosing a
-        <code class="inl">SET</code> over an <code class="inl">INCR</code>, an upsert over a blind insert &mdash; before
-        reaching for a marker.</p>
-      <pre class="code"><span class="cmt"># naturally idempotent — a redelivery changes nothing</span>
-<span class="rdx">SET</span> user:42:status <span class="str">"active"</span>     <span class="cmt"># run once or twice: the status is "active" either way</span>
-<span class="rdx">SADD</span> course:7:roster user:42    <span class="cmt"># add a member already in the set: a no-op</span></pre>
-    </div>
-    <p class="take">The cheapest idempotency is the effect that is already idempotent: a <code class="inl">SET</code> or
-      a set add absorbs a redelivery for free. Reach for those before reaching for a marker.</p>
-  </section>
-
-  <section id="marker">
-    <h2>Non-idempotent effects need a marker</h2>
-    <div class="prose">
-      <p>The hard cases are effects where the second run <em>does</em> change the state. <code class="inl">INCR counter</code>
-        is the canonical one &mdash; two deliveries increment it twice. A card charge, a row insert with a fresh id, an
-        outbound message without a dedup id: each accumulates on every redelivery. A non-idempotent consumer
-        double-charges on the duplicate the previous dive proved is structural.</p>
-      <p>The guard is a dedup marker keyed by a stable job id. Before the effect runs, claim the marker with
-        <code class="inl">SET &hellip; NX</code> &mdash; set only if absent. If the claim succeeds, this is the first
-        delivery: run the effect. If the claim fails, the marker is already set, so the effect already ran on an earlier
-        delivery: skip it. The marker carries the exactly-once decision that the effect itself cannot.</p>
-      <pre class="code"><span class="cmt"># non-idempotent effect, guarded by an NX marker keyed by a stable job id</span>
-<span class="op">if</span> <span class="rdx">SET</span> dedup:{job_id} 1 <span class="op">NX PX</span> 86400000:   <span class="cmt"># claim the marker; NX = only if absent</span>
-    charge_card(job)                       <span class="cmt"># first delivery: charge once</span>
-<span class="op">else</span>:
-    skip()                                 <span class="cmt"># a redelivery: the marker is set, do nothing</span></pre>
-      <p>The marker needs a TTL (<code class="inl">PX</code>) long enough to outlive the redelivery window but bounded so
-        the key does not live forever. The marker and the effect are not atomic &mdash; a crash between the
-        <code class="inl">SET NX</code> and the effect leaves the marker set and the effect un-run &mdash; so the guard is
-        a best-effort reduction of duplicates for effects that cannot be made naturally idempotent, not a hard
-        transaction. Where the effect can be made naturally idempotent, prefer that.</p>
-    </div>
-
-    <figure class="fig ctr" aria-labelledby="ctrTitle">
-      <h4 id="ctrTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two deliveries &middot; a naturally idempotent SET vs an accumulating INCR</h4>
-      <div class="controls">
-        <div class="solid-select" id="ctrSel" role="group" aria-label="Whether the non-idempotent INCR is guarded by an NX marker">
-          <button type="button" data-guard="off" data-c="redis" class="active" aria-pressed="true">INCR with no marker</button>
-          <button type="button" data-guard="on" data-c="sage" aria-pressed="false">INCR guarded by NX</button>
-        </div>
-      </div>
-
-      <svg viewBox="0 0 460 168" role="img" aria-label="A job delivered twice. The naturally idempotent SET writes the same value both times, ending at the same value: idempotent for free. The INCR accumulates: with no marker it increments twice; guarded by an NX marker the second delivery finds the marker and skips, so it increments once.">
-        <text class="ttl" x="30" y="26">SET key v (naturally idempotent)</text>
-        <g class="cell nat" id="setCell"><rect x="30" y="34" width="180" height="56" rx="10"></rect></g>
-        <text x="120" y="58" text-anchor="middle">deliver 1: v · deliver 2: v</text>
-        <text class="res" id="setRes" x="120" y="78" text-anchor="middle" fill="#a7c9b1">= v · idempotent for free</text>
-        <text class="ttl" x="250" y="26">INCR counter (accumulates)</text>
-        <g class="cell acc" id="incCell"><rect x="250" y="34" width="180" height="56" rx="10"></rect></g>
-        <text x="340" y="58" text-anchor="middle" id="incSteps">deliver 1: +1 · deliver 2: +1</text>
-        <text class="res" id="incRes" x="340" y="78" text-anchor="middle" fill="#f2948c">counter = 2</text>
-        <text class="ttl" id="ctrLine" x="30" y="124">no marker · the INCR runs on every delivery · counter climbs with each redelivery</text>
-        <text class="ttl" id="ctrSub" x="30" y="148">a SET is safe to redeliver as-is; an INCR needs the NX marker to be redeliver-safe</text>
-      </svg>
-
-      <div class="geo-readout" id="ctrOut" aria-live="polite"></div>
-    </figure>
-
-    <p class="take">A naturally idempotent effect is redeliver-safe as-is; an accumulating one is not, and an
-      <code class="inl">NX</code> marker keyed by the job id is what makes it so &mdash; best-effort, not a transaction.</p>
-  </section>
-
-  <section id="enroll">
-    <h2>The worked example &mdash; a Portal enrollment</h2>
-    <div class="prose">
-      <p>Enrollment is naturally idempotent, and it is the cleanest illustration. Enrolling student S in course C twice
-        must equal enrolling once: S is on the roster either way, and the seat is taken once. The roster is a set
-        &mdash; set membership is idempotent &mdash; so a redelivered enroll job that adds S to the roster a second time
-        is a no-op. The enrollment is recorded against a stable pair (student, course), so a second record collapses
-        onto the first.</p>
-      <p>The one part that is not naturally idempotent is the seat count: decrementing it on every delivery would
-        over-count the seats taken. That is the <code class="inl">INCR</code>-shaped effect, and it takes the marker.
-        Claim <code class="inl">dedup:{enroll:S:C} 1 NX</code>; on the first delivery the claim succeeds and the seat
-        count decrements once; on a redelivery the claim fails and the decrement is skipped. The roster membership rides
-        on its natural idempotency; the seat count rides on the marker. Enroll twice, enrolled once: S present once, one
-        seat taken.</p>
-      <p>Portal's enrollment is event-sourced through the <code class="inl">Portal.Engine</code> boundary; the
-        not-already-enrolled check in <code class="inl">authorize/2</code> runs against the folded state, so a second
-        enroll for the same (student, course) is rejected as <code class="inl">:already_enrolled</code> rather than
-        recorded twice &mdash; the engine's own idempotency on the same identity. The queue-side marker and the
-        engine-side check are two layers of the same discipline: make the <em>effect</em> of a redelivered enroll equal
-        the effect of one enroll.</p>
-    </div>
-
-    <div class="bridge">
-      <div class="cell idea">
-        <span class="lbl">the pattern</span>
-        <p>Absorb at-least-once redelivery by making the consumer's effect idempotent &mdash; natural idempotency where
-          the effect allows it, an <code class="inl">NX</code> marker where it does not.</p>
-      </div>
-      <div class="arrow" aria-hidden="true">&rarr;</div>
-      <div class="cell elix">
-        <span class="lbl">in a Portal enrollment</span>
-        <p>The roster membership is a set (naturally idempotent), the seat decrement is guarded by an
-          <code class="inl">NX</code> marker keyed by the (student, course) pair, and
-          <code class="inl">authorize/2</code> rejects a second enroll as <code class="inl">:already_enrolled</code>
-          &mdash; so enrolling a student twice equals enrolling once.</p>
-      </div>
-    </div>
-
-    <p class="take">Enroll twice, enrolled once: the roster set absorbs the redelivery, the marker guards the seat, and
-      the engine's not-already-enrolled check is the same idempotency restated at the boundary.</p>
-  </section>
-
-  <section id="producer">
-    <h2>A note on producer-side dedup</h2>
-    <div class="prose">
-      <p>EchoMQ carries its own deduplication key, and it is a different mechanism from the consumer marker above.
-        <code class="inl">EchoMQ.Keys.dedup/2</code> builds <code class="inl">emq:{queue}:de:{id}</code> and
-        deduplicates at <em>enqueue</em> &mdash; a producer enqueuing two jobs with the same deduplication id has the
-        second dropped. That is <strong>producer-side</strong> dedup; it stops two identical jobs from entering the
-        queue. It does not make a single in-flight job exactly-once at the consumer, because the recovery path can still
-        redeliver a job that entered the queue once. The consumer marker in this dive is claimed at <em>effect-time</em>,
-        keyed by the job's identity, and is what absorbs that redelivery. Two keys, two moments &mdash; the third dive
-        separates them in full.</p>
-      <pre class="code"><span class="cmt"># EchoMQ.Keys.dedup/2 — producer-side, dedups at enqueue (real, and NOT consumer exactly-once)</span>
-<span class="op">def</span> <span class="fn gold">dedup</span>(ctx, dedup_id), <span class="op">do</span>: <span class="str">"#{base(ctx)}:de:#{dedup_id}"</span>   <span class="cmt"># emq:my_queue:de:&lt;id&gt;</span></pre>
-    </div>
-
-    <p class="take">Producer dedup keyed at enqueue and consumer idempotency keyed at effect-time are two different keys
-      for two different moments; the consumer marker, not <code class="inl">de:{id}</code>, is what makes the effect
-      exactly-once.</p>
-
-    <div class="door">
-      <span class="lbl">Door &middot; not depth</span>
-      The acknowledge/finish lifecycle that closes an in-flight job out &mdash; and the heartbeat and lock TTL behind
-      it &mdash; is the dedicated <strong>EchoMQ course</strong>. From here, R3.02 opens onto
-      <a href="/echomq/lifecycle">E6 &middot; the lifecycle</a>. This dive teaches the idempotent consumer; that
-      course teaches the lifecycle the consumer acknowledges into.
-    </div>
-  </section>
-
-  <section id="refs">
-    <h2>References</h2>
-    <div class="prose">
-      <p>The Redis command behind the effect-time idempotency marker, the list substrate the at-least-once move runs
-        over, and the queue protocol EchoMQ ports.</p>
-    </div>
-    <div class="refs">
-      <div>
-        <h3>Sources</h3>
-        <ul>
-          <li><a href="https://redis.io/commands/set/">Redis &mdash; <em>SET</em></a> &mdash; the <code>NX</code> and <code>PX</code> options behind the effect-time idempotency marker.</li>
-          <li><a href="https://redis.io/docs/latest/develop/data-types/lists/">Redis &mdash; <em>Lists</em></a> &mdash; the queue substrate the at-least-once move runs over.</li>
-          <li><a href="https://redis.io/glossary/redis-queue/">Redis &mdash; <em>Redis queue</em></a> &mdash; the queue and its delivery-guarantee overview.</li>
-          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; custom job ids and deduplication, the worker path EchoMQ ports.</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Related in this course</h3>
-        <ul>
-          <li><a href="/redis-patterns/queues/at-least-once">R3.02 &middot; At-least-once</a> &mdash; the module hub.</li>
-          <li><a href="/redis-patterns/queues/at-least-once/at-least-once-semantics">R3.02.1 &middot; At-least-once semantics</a> &mdash; why the duplicate the marker absorbs is structural.</li>
-          <li><a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie</a> &mdash; producer dedup versus consumer idempotency.</li>
-          <li><a href="/redis-patterns/queues/the-reliable-queue">R3 &middot; The reliable queue</a> &mdash; the family in one place.</li>
-          <li><a href="/redis-patterns/coordination/atomic-updates">R2.01 &middot; Atomic updates</a> &mdash; the atomic <code class="inl">SET &hellip; NX</code> claim under the marker.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <nav class="pager" aria-label="Page navigation">
-      <a class="btn ghost" href="/redis-patterns/queues/at-least-once/at-least-once-semantics"><span aria-hidden="true">&larr;</span>&nbsp; R3.02.1 &middot; At-least-once semantics</a>
-      <span class="spacer"></span>
-      <a class="btn" href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie <span aria-hidden="true">&rarr;</span></a>
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/queues/at-least-once/at-least-once-semantics"><span class="pk">previous</span>&#8592; R3.02.1 &middot; At-least-once semantics</a>
+      <a class="pgx" href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie"><span class="pk">next</span>R3.02.3 &middot; Why exactly-once is a lie &#8594;</a>
     </nav>
-  </section>
 
+  </div>
 </main>
 
 <footer class="site-foot">
-  <div class="wrap" style="display:block">
-    <div class="foot-cols">
-      <div>
-        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
-        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
-      <div>
-        <h4>This module</h4>
-        <a href="/redis-patterns/queues/at-least-once">R3.02 &middot; At-least-once &middot; hub</a>
-        <a href="/redis-patterns/queues/at-least-once/at-least-once-semantics">R3.02.1 &middot; At-least-once semantics</a>
-        <a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &middot; Why exactly-once is a lie</a>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/queues/at-least-once">R3.02 &#183; At-least-once &#183; hub</a>
+        <a href="/redis-patterns/queues/at-least-once/at-least-once-semantics">R3.02.1 &#183; At-least-once semantics</a>
+        <a href="/redis-patterns/queues/at-least-once/why-exactly-once-is-a-lie">R3.02.3 &#183; Why exactly-once is a lie</a>
       </div>
-      <div>
-        <h4>The course</h4>
-        <a href="/redis-patterns">Course home</a>
-        <a href="/redis-patterns/queues">R3 &middot; Reliable Queues</a>
-        <a href="/elixir">Companion &middot; Functional Programming</a>
-        <a href="/echomq/lifecycle">The EchoMQ course &middot; the lifecycle</a>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq/queue">EchoMQ — the Queue pillar</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
       </div>
-    </div>
-    <div class="foot-bottom">
-      <span class="cr">&copy; jonnify</span>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
       <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
-        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
         <dl class="panel">
           <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
           <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
@@ -566,102 +504,73 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 <script>
 (function () {
   "use strict";
+  document.documentElement.classList.add('js');
 
-  /* ---------- hero: the Portal enrollment replay (pure over delivery count) ---------- */
-  // Enroll S in C, delivered t times (1..3). The roster is a set, so S appears once however many deliveries arrive.
-  // The seat count starts at SEATS and is guarded by an NX marker keyed by (S,C): it decrements on delivery 1 only,
-  // ending at SEATS-1 for any t >= 1. The outcome is a pure function of t.
-  var SEATS = 30, SAGE = '#a7c9b1', GOLD = '#f0cd7f';
-  // pure: t -> { roster, seatsLeft, taken, line, verd, text }
-  function enroll(t) {
-    var rosterCount = 1;             // a set: S is present exactly once for any t >= 1
-    var taken = 1;                   // the NX marker fires on delivery 1 only
-    var seatsLeft = SEATS - taken;   // 29 for any t >= 1
-    var line = 'delivered ' + t + '× · S enrolled once · ' + taken + ' seat taken';
-    var verd, text;
-    if (t === 1) {
-      verd = 'one delivery · S on the roster, 1 seat taken';
-      text = 'Deliver once. SADD adds S to the roster (a set), the NX marker fires once and the seat count drops ' +
-        SEATS + ' → ' + seatsLeft + '. One enroll, one effect.';
+  /* ---------- Interactive 1: score a guess, then replay (pure over delivery count) ---------- */
+  // One guess job delivered n times. The GES write is keyed by (game, player) and is naturally idempotent, so it stays
+  // at one GES however many deliveries arrive. The per-game attempt count is guarded by an NX marker keyed by the JOB
+  // id, so it counts once on the first delivery and is skipped after. Both are pure functions of n.
+  function replay(n) {
+    var line = 'delivered ' + n + '× · one GES written · one attempt counted';
+    var text;
+    if (n === 1) {
+      text = '1 delivery. ScoreWorker scores the emojis and writes one GES keyed by (game, player); it claims seen:JOB with SET NX and counts the attempt once. 1 GES, 1 attempt.';
     } else {
-      verd = 'enroll ' + t + '× = enrolled once: the set absorbs the roster, the marker guards the seat';
-      text = 'Delivered ' + t + '× (a replay). The roster is a set, so adding S again is a no-op — S appears once. ' +
-        'The seat decrement is guarded by dedup:{enroll:S:C} (SET NX): delivery 1 claims it and decrements ' + SEATS +
-        ' → ' + seatsLeft + '; deliveries 2' + (t === 3 ? ' and 3' : '') + ' find the marker and skip. Enroll twice = enrolled once.';
+      text = n + ' deliveries. Each delivery scores to the same GES (the write is keyed by game and player, naturally idempotent), so still 1 GES. The first delivery claims seen:JOB and counts the attempt; the other ' + (n - 1) + ' find the marker and skip. 1 GES, 1 attempt. Score ' + (n === 2 ? 'twice' : n + ' times') + ' = scored once.';
     }
-    return { roster: rosterCount, seatsLeft: seatsLeft, taken: taken, line: line, verd: verd, text: text };
+    return { line: line, ges: 1, att: 1, text: text };
   }
-  function setEnroll(t) {
-    var r = enroll(t);
-    var rosterT = document.getElementById('rosterT'), seatT = document.getElementById('seatT'),
-        line = document.getElementById('enrLine'), verd = document.getElementById('enrVerd'),
-        out = document.getElementById('enrOut'),
-        rosterBox = document.getElementById('rosterBox'), seatBox = document.getElementById('seatBox');
-    if (rosterT) rosterT.textContent = '{ S }';
-    if (seatT) seatT.textContent = String(r.seatsLeft);
+  function setReplay(n) {
+    var r = replay(n);
+    document.querySelectorAll('#enrSel button').forEach(function (b) {
+      b.setAttribute('aria-pressed', parseInt(b.getAttribute('data-times'), 10) === n ? 'true' : 'false');
+    });
+    var gesT = document.getElementById('gesT'), attT = document.getElementById('attT'),
+        line = document.getElementById('enrLine'), out = document.getElementById('enrOut');
+    if (gesT) gesT.textContent = r.ges + ' GES';
+    if (attT) attT.textContent = String(r.att);
     if (line) line.textContent = r.line;
-    if (verd) verd.textContent = r.verd;
-    if (rosterBox) { rosterBox.classList.remove('bad'); rosterBox.classList.add('ok'); }
-    if (seatBox) { seatBox.classList.remove('bad'); seatBox.classList.add('ok'); }
-    if (out) out.textContent = r.text;
+    if (out) out.innerHTML = '<span class="rk">replay ·</span> ' + r.text;
   }
   document.querySelectorAll('#enrSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var t = parseInt(b.getAttribute('data-times'), 10);
-      document.querySelectorAll('#enrSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
-      });
-      setEnroll(t);
-    });
+    b.addEventListener('click', function () { setReplay(parseInt(b.getAttribute('data-times'), 10)); });
+    b.addEventListener('mouseenter', function () { setReplay(parseInt(b.getAttribute('data-times'), 10)); });
   });
-  setEnroll(1); // initial render — correct without interaction
+  setReplay(1); // initial render — correct without interaction
 
-  /* ---------- content: SET (natural) vs INCR (accumulating, optionally NX-guarded) over two deliveries (pure) ---------- */
-  // Two deliveries. The SET writes the same value both times → one value, idempotent for free. The INCR with no guard
-  // increments twice → counter = 2; guarded by an NX marker the second delivery skips → counter = 1. Pure over guard.
-  // pure: guard -> { counter, steps, line, sub, text }
-  function contrast(guard) {
-    if (guard === 'on') {
-      return {
-        counter: 1, steps: 'deliver 1: +1 · deliver 2: skip',
-        line: 'NX marker on · the INCR runs on delivery 1, the redelivery finds the marker and skips · counter = 1',
-        sub: 'the SET is idempotent for free; the guarded INCR now matches it — one effect across two deliveries',
-        text: 'Two deliveries. The SET writes the same value both times → one value, idempotent for free. The INCR is ' +
-          'guarded by an NX marker: delivery 1 claims it and increments to 1; delivery 2 finds the marker and skips → ' +
-          'counter = 1. The guard makes the accumulating effect redeliver-safe.'
-      };
+  /* ---------- Interactive 2: SET vs INCR over two deliveries (pure over effect) ---------- */
+  function effectOf(fx) {
+    if (fx === 'acc') {
+      return { sub: 'an INCR runs on every delivery; with no marker the counter climbs with each redelivery',
+        text: 'INCR counter, two deliveries, no marker: deliver 1 → +1, deliver 2 → +1, counter = 2. The accumulating effect double-counts on the structural duplicate. An NX marker keyed by the job id makes it redeliver-safe: the second delivery finds the marker and skips, counter = 1.' };
     }
-    return {
-      counter: 2, steps: 'deliver 1: +1 · deliver 2: +1',
-      line: 'no marker · the INCR runs on every delivery · counter climbs with each redelivery',
-      sub: 'a SET is safe to redeliver as-is; an INCR needs the NX marker to be redeliver-safe',
-      text: 'Two deliveries. The SET writes the same value both times → one value, idempotent for free. The INCR has ' +
-        'no marker: every delivery increments it → counter = 2. The accumulating effect double-counts on the ' +
-        'redelivery, so it needs the NX marker.'
-    };
+    return { sub: 'a SET writes the same value both deliveries; it is redeliver-safe with no marker',
+      text: 'SET key v, two deliveries: deliver 1 → v, deliver 2 → v, end state = v. The effect is naturally idempotent, so a redelivery changes nothing and no marker is needed.' };
   }
-  function setContrast(guard) {
-    var r = contrast(guard);
-    var incSteps = document.getElementById('incSteps'), incRes = document.getElementById('incRes'),
-        line = document.getElementById('ctrLine'), sub = document.getElementById('ctrSub'),
-        out = document.getElementById('ctrOut'), incCell = document.getElementById('incCell');
-    if (incSteps) incSteps.textContent = r.steps;
-    if (incRes) { incRes.textContent = 'counter = ' + r.counter; incRes.setAttribute('fill', r.counter === 1 ? SAGE : '#f2948c'); }
-    if (incCell) { incCell.classList.remove('acc', 'nat'); incCell.classList.add(r.counter === 1 ? 'nat' : 'acc'); }
-    if (line) line.textContent = r.line;
+  var ctrSvg = document.getElementById('ctrSvg');
+  function setEffect(fx) {
+    var r = effectOf(fx);
+    document.querySelectorAll('#ctrSel button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-fx') === fx ? 'true' : 'false');
+    });
+    if (ctrSvg) {
+      ctrSvg.querySelectorAll('.cell').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-fx') === fx);
+      });
+    }
+    var sub = document.getElementById('ctrSub'), out = document.getElementById('ctrOut');
     if (sub) sub.textContent = r.sub;
-    if (out) out.textContent = r.text;
+    if (out) out.innerHTML = '<span class="rk">readout ·</span> ' + r.text;
   }
   document.querySelectorAll('#ctrSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var guard = b.getAttribute('data-guard');
-      document.querySelectorAll('#ctrSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
-      });
-      setContrast(guard);
-    });
+    b.addEventListener('click', function () { setEffect(b.getAttribute('data-fx')); });
   });
-  setContrast('off'); // initial render — correct without interaction
+  if (ctrSvg) {
+    ctrSvg.querySelectorAll('.effect').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { setEffect(g.getAttribute('data-fx')); });
+    });
+  }
+  setEffect('nat'); // initial render — correct without interaction
 
   /* ---------- Branded Snowflake decoder ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -669,7 +578,7 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
   function decodeBranded(id) {
-    if (!id || id.length < 4) return null;
+    if (!id || id.length !== 14) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
     if (snow === null) return null;
     var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
@@ -689,23 +598,5 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 })();
 </script>
 
-<script>
-/* progressive enhancement: mark JS on, then reveal-on-scroll */
-document.documentElement.classList.add('js');
-document.addEventListener('DOMContentLoaded', function () {
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var els = document.querySelectorAll('.reveal');
-  if (reduce || !('IntersectionObserver' in window)) {
-    els.forEach(function (e) { e.classList.add('in'); });
-    return;
-  }
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (en) {
-      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-    });
-  }, { threshold: 0.12 });
-  els.forEach(function (e) { io.observe(e); });
-});
-</script>
 </body>
 </html>

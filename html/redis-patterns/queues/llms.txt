@@ -1,31 +1,31 @@
 # R3 · Reliable Queues — Redis Patterns Applied
 
-> The heart of the EchoMQ grounding: a job is never lost — moved into an in-flight list under a lock, delivered at
-> least once to an idempotent consumer, reclaimed if its worker dies, transitioned atomically, and picked up without
-> busy-polling. Grounded in EchoMQ's real worker fetch loop (the iconic Elixir app echo/apps/echomq). The pivot
-> chapter; it surveys the course direction through R8 and opens the door into the living EchoMQ course. Served at
-> /redis-patterns/queues. The chapter is fully built: three orientation dives plus the six granular modules
-> R3.01–R3.06.
+> The heart of the EchoMQ grounding: a job is never lost — leased into an active set, delivered at least once to an
+> idempotent consumer, reclaimed if its worker dies, transitioned atomically in one EVALSHA, and picked up without
+> busy-polling. Grounded in the real Elixir bus echo/apps/echo_mq (EchoMQ.{Jobs,Consumer,Stalled,Lanes,Keyspace}),
+> worked through the codemojex consumer (echo/apps/codemojex). The pivot chapter; it surveys the course direction
+> through R8 and opens the door into the EchoMQ course and the durable persistence floor. Served at
+> /redis-patterns/queues. Fully built: three orientation dives plus the six granular modules R3.01–R3.06.
 
 ## The chapter — three deep dives (built)
 
-- [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue): the reliable-queue family in one place — RPOPLPUSH wait→active under a lock (moveToActive-11.lua), at-least-once + de:{id} idempotency (EchoMQ.Keys.dedup/2), stalled reclaim (moveStalledJobsToWait-8.lua).
-- [R3 · States as locations](/redis-patterns/queues/states-as-locations): the lifecycle as one atomic Lua move — states are Redis locations, moveToFinished-14.lua is one EVALSHA (EchoMQ.Scripts.execute_raw/4), and emq:{queue}:marker + BZPOPMIN replaces busy-polling.
-- [R3 · The road ahead](/redis-patterns/queues/the-road-ahead): where the queue goes next — the arc R3→R8 and the door into the living EchoMQ course (R3 → E2/E5/E6, per echomq.toc.md).
+- [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue): the reliable-queue family in one place — the leased claim into emq:{queue}:active (EchoMQ.Jobs.claim/3, the inline @claim Lua), the branded JOB id as the at-least-once idempotency key, stalled reclaim (EchoMQ.Stalled.check/3).
+- [R3 · States as locations](/redis-patterns/queues/states-as-locations): the lifecycle as one atomic Lua move — states are emq:{queue}: keyspace locations, EchoMQ.Jobs.complete/5 transitions a job in one EVALSHA (EchoMQ.Connector.eval/5, EVALSHA→NOSCRIPT), the gated branded JOB id at EchoMQ.Keyspace.job_key/2.
+- [R3 · The road ahead](/redis-patterns/queues/the-road-ahead): where the queue goes next — the arc R3→R8, the door into the EchoMQ course (/echomq/queue), and the durable floor (/echo-persistence) where a trimmed/dead-lettered job lands (EchoStore.StreamArchive → EchoStore.Graft).
 
 ## The granular modules — each a hub + three dives (the workshop is a capstone, no dives)
 
-- [R3.01 · Processing list](/redis-patterns/queues/processing-list): move a job into an in-flight list so a crash is recoverable — the wait/active LISTs, the atomic RPOPLPUSH/LMOVE transfer (moveToActive-11.lua), the in-flight list as the recovery ledger. Dives: list-wait-active · lmove-rpoplpush · the-in-flight-list. (built)
-- [R3.02 · At-least-once](/redis-patterns/queues/at-least-once): delivery guarantees and why consumers must be idempotent — at-least-once semantics, idempotent consumers, why exactly-once is a lie; grounded in producer-side de:{id} dedup (EchoMQ.Keys.dedup/2). Dives: at-least-once-semantics · idempotent-consumers · why-exactly-once-is-a-lie. (built)
-- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery): reclaim jobs whose worker died — lock-expiry detection, two-phase mark/recover, the atomic moveStalledJobsToWait-8.lua sweep vs the non-atomic Go loop. Dives: lock-expiry-detection · two-phase-mark-recover · atomic-vs-non-atomic. (built)
-- [R3.04 · Atomic state machine](/redis-patterns/queues/atomic-state-machine): the whole lifecycle as one atomic Lua move — states are Redis locations, moveToFinished-14.lua transitions a job (drop the lock, record the result, fetch the next) in one EVALSHA (EchoMQ.Scripts.move_to_finished/7), with the EVALSHA→NOSCRIPT→EVAL fallback. Dives: states-as-locations · read-decide-write-in-one-evalsha · evalsha-and-noscript. (built)
-- [R3.05 · Blocking vs polling](/redis-patterns/queues/blocking-vs-polling): stop busy-polling the queue — the busy-poll cost, the blocking pop, the marker wake-up; a worker blocks on emq:{queue}:marker with BZPOPMIN (EchoMQ.Worker.wait_for_job/2) and wakes when a job add runs ZADD marker, vs the Go time.Sleep poll. Dives: the-busy-poll-cost · blocking-pop · the-marker-wake-up. (built)
-- [R3.06 · Workshop](/redis-patterns/queues/workshop): the capstone — a reliable Portal enrollment-job queue assembling R3.01–R3.05 (wait → active under a lock → finish, with stalled recovery and the marker). At-least-once delivery plus Portal's already-idempotent enroll (Portal.Enrollment.enroll/2, the :already_enrolled guard) is exactly-once-in-effect. Applied design — Portal does not run on EchoMQ today. No dives. (built)
+- [R3.01 · Processing list](/redis-patterns/queues/processing-list): move a job into the in-flight set so a crash is recoverable — the pending/active sets, the atomic leased claim (EchoMQ.Jobs.claim/3, @claim: ZPOPMIN pending → HINCRBY attempts → HSET active → ZADD active <now+lease_ms>), the active set as the recovery ledger. Dives: list-wait-active · lmove-rpoplpush · the-in-flight-list. (built)
+- [R3.02 · At-least-once](/redis-patterns/queues/at-least-once): delivery guarantees and why consumers must be idempotent — at-least-once semantics, idempotent consumers, why exactly-once is a lie; grounded in the branded JOB id as the idempotency key (the @enqueue EXISTS refusal) + the attempts fence on EchoMQ.Jobs.complete/5. Dives: at-least-once-semantics · idempotent-consumers · why-exactly-once-is-a-lie. (built)
+- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery): reclaim jobs whose worker died — lease-expiry detection by the server clock (TIME), two-phase mark/recover, the atomic EchoMQ.Stalled.check/3 sweep (@sweep_stalled, max_stalled → dead-letter to emq:{q}:dead → the durable floor) vs a non-atomic app-side loop. Dives: lock-expiry-detection · two-phase-mark-recover · atomic-vs-non-atomic. (built)
+- [R3.04 · Atomic state machine](/redis-patterns/queues/atomic-state-machine): the whole lifecycle as one atomic Lua move — states are emq:{queue}: locations, EchoMQ.Jobs (enqueue→claim→complete/retry/fail) transitions a job in one EVALSHA via the inline EchoMQ.Script.new/2 (EchoMQ.Connector.eval/5, EVALSHA→NOSCRIPT→SCRIPT LOAD), with the gated branded JOB id. Dives: states-as-locations · read-decide-write-in-one-evalsha · evalsha-and-noscript. (built)
+- [R3.05 · Blocking vs polling](/redis-patterns/queues/blocking-vs-polling): stop busy-polling the queue — the busy-poll cost, the blocking pop, the wake-up; a consumer parks on BLPOP emq:{queue}:wake (EchoMQ.Consumer.park/1, a capped LIST woken by the admit LPUSH/LTRIM), with EchoMQ.Metronome the per-pool beat (:lease_ms 30_000, :beat_ms 1_000). Dives: the-busy-poll-cost · blocking-pop · the-marker-wake-up. (built)
+- [R3.06 · Workshop](/redis-patterns/queues/workshop): the capstone — a reliable codemojex guess-command queue assembling R3.01–R3.05 (Codemojex.Guesses.submit/3 mints a branded JOB → EchoMQ.Lanes.enqueue/5 on the player lane → EchoMQ.Consumer drains via Lanes.claim/3 → Codemojex.ScoreWorker.handle/1, with stalled recovery and the wake). At-least-once delivery plus the idempotent consumer is exactly-once-in-effect; trimmed history archives to the durable floor (EchoStore.StreamArchive). No dives. (built)
 
-## The door to EchoMQ
+## The doors
 
-R3 opens onto the living EchoMQ course (a depth course that tracks the EMQ build rung by rung): E2 · The lifecycle, components & runtimes (/echomq/core) · E5 · Batches (/echomq/batches) · E6 · Lifecycle controls (/echomq/lifecycle). Served as the EchoMQ build lands.
+R3 opens onto the EchoMQ course — the Queue pillar, the bus internals rung by rung: E2 · The Queue (/echomq/queue) — the lifecycle, jobs/lanes/consumer, batches, flows, lifecycle controls. And onto the durable persistence floor (/echo-persistence): where a trimmed or dead-lettered job lands (EchoStore.StreamArchive → EchoStore.Graft → Tigris), the narrative of bcs.5.md.
 
 ## Up
 
-- [Course home](/redis-patterns) · [R2 · Coordination](/redis-patterns/coordination) · next: R4 · Time, Delay & Priority (soon)
+- [Course home](/redis-patterns) · [R2 · Coordination](/redis-patterns/coordination) · next: [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority)
