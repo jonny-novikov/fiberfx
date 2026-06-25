@@ -130,7 +130,7 @@ runtime's own. The next dive reads where EchoMQ lands: the door from Redis Patte
 - [Valkey — Documentation](https://valkey.io/docs/) — the BSD-licensed, foundation-governed store EchoMQ is backed by; the substrate of record.
 - [Valkey — EVALSHA](https://valkey.io/commands/evalsha/) — the load-once, run-by-SHA dispatch the L3 executor uses to run an L2 script.
 - [Redis — Keyspace & hash tags](https://redis.io/docs/) — cluster key routing by the hashtag inside `{...}`, the L1 mechanism the `{q}` brace uses.
-- [DragonflyDB — Server flags](https://www.dragonflydb.io/docs/managing-dragonfly/flags) — `--lock_on_hashtags`: the thread-per-shard placement the declared-key, per-queue-hashtag keyspace is built for.
+- [Valkey — Cluster specification](https://valkey.io/topics/cluster-spec/) — the `{hashtag}`→hash-slot routing the declared-key, per-queue-hashtag keyspace is built for: every key of a queue on one slot, where a multi-key script is legal.
 
 ### Related in this course
 - [Overview](/echomq/overview) — the chapter this dive belongs to; the three pillars over one wire.

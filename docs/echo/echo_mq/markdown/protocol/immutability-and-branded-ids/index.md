@@ -12,9 +12,10 @@ hold it:
 
 1. **The immutable line** — the keys and the field names are fixed. A renamed field or key prefix in one speaker makes
    the row invisible to every other speaker. So the layer below the line does not change underneath a reader.
-2. **The branded-id gate** — a job's id is a 14-byte branded Snowflake under the `JOB` namespace, and the `@enqueue`
-   script refuses any id that is not `JOB`-namespaced (`string.sub(ARGV[1], 1, 3) ~= 'JOB'` → `EMQKIND`). Identity is
-   checked at the wire, in Lua, before a row is written.
+2. **The branded-id gate** — a job's id is a 14-byte branded Snowflake (a 3-character uppercase namespace + 11 Base62)
+   under the `JOB` namespace — typed, ordered, placed (`hash32`) and conformant — and the `@enqueue` script refuses any
+   id that is not `JOB`-namespaced (`string.sub(ARGV[1], 1, 3) ~= 'JOB'` → `EMQKIND`). Identity is checked at the wire,
+   in Lua, before a row is written.
 3. **The version fence** — a single reserved key, `{emq}:version`, carries the wire's identity string. The connector
    reads it before the first command and refuses to run against a store whose value disagrees.
 

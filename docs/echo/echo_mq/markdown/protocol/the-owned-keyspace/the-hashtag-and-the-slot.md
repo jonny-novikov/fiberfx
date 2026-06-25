@@ -97,8 +97,8 @@ multi-key Lua. Next: the reserve that sits beside every queue.
 - Redis — Cluster specification (hash slots) — `https://redis.io/docs/` — the 16384-slot model and the CRC16-of-hashtag
   routing rule the slot computation follows.
 - Valkey — Documentation — `https://valkey.io/docs/` — the cluster store the slot routes within; the substrate of record.
-- DragonflyDB — Server flags — `https://www.dragonflydb.io/docs/managing-dragonfly/flags` — `--lock_on_hashtags`, the
-  thread-per-shard placement the per-queue hashtag unlocks.
+- Valkey — CLUSTER KEYSLOT — `https://valkey.io/commands/cluster-keyslot/` — ask the server which hash slot a key
+  routes to; every key sharing the per-queue `{q}` hashtag returns the same slot.
 
 ### Related in this course
 - `/echomq/protocol/the-owned-keyspace` — the module hub.

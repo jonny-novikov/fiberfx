@@ -47,6 +47,14 @@ ack, and visibility patterns this state machine makes concrete; **R4 · Time, de
 (`/redis-patterns/time-delay-priority`) — the delayed/scheduled jobs the schedule set carries. **R6 · Flow control**
 (orchestration) lands in the Flows module (R6 not yet built — named, not linked).
 
+## The durable floor (the door to Echo Persistence)
+
+A queue keeps its history in memory until a system decides how much to keep. What it trims is not lost:
+`EchoStore.StreamArchive` folds the trimmed segments into the durable `EchoStore.Graft` floor — CubDB's append-only
+B-tree, on to Tigris object storage — deep history without resident memory, readable beside the live tail. The fold
+itself is real code (`echo/apps/echo_store/lib/echo_store/{stream_archive,graft}.ex`); the durable floor is taught in
+full in Echo Persistence (`/echo-persistence`), narrated in the manuscript at `docs/echo/bcs/bcs.3.md` B3.3 / `bcs.5.md`.
+
 ## References
 
 ### Sources
@@ -60,4 +68,5 @@ ack, and visibility patterns this state machine makes concrete; **R4 · Time, de
 - The Protocol (`/echomq/protocol`) — the substrate the Queue runs on.
 - Overview (`/echomq/overview`) — the chapter that frames the three pillars.
 - redis-patterns R3 · Queues (`/redis-patterns/queues`) — the near side of the door.
+- Echo Persistence (`/echo-persistence`) — the durable floor a trimmed queue history folds into.
 - The Branded Component System (`/bcs`) — the architecture the wire belongs to.

@@ -12,6 +12,12 @@ the program canon it grounds in is under [`../`](../) (`emq.design.md` / `emq.ro
 > teaching, the three-state living-status, and all version framing are **retired** (see "What changed"). The course is
 > now **one shipped system, three pillars**, taught Elixir-canonical, as shipped.
 
+> **BCS-calibrated (2026-06-25).** The **Protocol** and **Queue** pillars are aligned to the new BCS direction
+> (`docs/echo/bcs/bcs.N.md`): the Protocol carries the refined branded-id canon on the immutability contract, and the
+> Queue's durability-frontier pages open the **`/echo-persistence`** door (the durable floor below the bus —
+> `EchoStore.StreamArchive` → `EchoStore.Graft` → Tigris). Structure unchanged; defer to the **`bcs-writer`** skill
+> for the cross-cutting facts.
+
 ## One system, three pillars
 
 EchoMQ is one Valkey-native, Branded-Component-System bus you own end to end — canonical in Elixir. Below the language

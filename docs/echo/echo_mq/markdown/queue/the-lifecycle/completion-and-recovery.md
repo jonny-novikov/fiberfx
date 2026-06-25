@@ -135,6 +135,14 @@ end
 - The implementation (echo_mq): `@complete` token-fences the terminal; `@retry` parks or dead-letters with `last_error`;
   `@reap` returns lapsed leases to pending on the server clock; `reprocess_job/3` re-enters a dead job.
 
+## The durable floor (the door to Echo Persistence)
+
+A completed row is deleted and a dead-lettered job keeps its `last_error` in the morgue, but neither has to stay
+resident forever. When a queue trims its history, `EchoStore.StreamArchive` folds the trimmed segments into the durable
+`EchoStore.Graft` floor — CubDB's append-only B-tree, on to Tigris — deep history without resident memory, readable
+beside the live tail. The fold is real code (`echo/apps/echo_store/lib/echo_store/{stream_archive,graft}.ex`); the
+durable floor is taught in full in Echo Persistence (`/echo-persistence`), per `docs/echo/bcs/bcs.3.md` B3.3 / `bcs.5.md`.
+
 ## References
 
 ### Sources
@@ -148,3 +156,4 @@ end
 - `/echomq/queue/the-lifecycle/claim-and-the-lease` — the lease and the token the fence checks.
 - `/echomq/protocol/the-lua-layer` — the Lua layer these transitions are scripts in.
 - `/redis-patterns/queues` — the reliable-queue pattern this implements.
+- `/echo-persistence` — the durable floor a dead-lettered job and a trimmed segment fold into.

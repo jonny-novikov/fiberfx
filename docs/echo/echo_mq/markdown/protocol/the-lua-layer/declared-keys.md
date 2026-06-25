@@ -9,8 +9,9 @@
 
 Every key a script touches is **declared in `KEYS[]`**. The script constructs none from data; the host builds them and
 passes them in. `ARGV` carries values only. This is the law of the Lua layer — `EchoMQ.Script`'s own moduledoc states
-it: *every key a script touches is declared in KEYS; ARGV carries values only.* The discipline is what makes the wire
-portable to a thread-per-shard engine, and it is what keeps the keyspace the single owner of where data lives.
+it: *every key a script touches is declared in KEYS; ARGV carries values only.* The discipline is what keeps every key
+of a queue on one Valkey Cluster slot — where a multi-key script is legal — and it is what keeps the keyspace the single
+owner of where data lives.
 
 ## The worked example — the host builds, the script declares
 
@@ -60,10 +61,12 @@ return 1
 2. **The keyspace stays the single owner of address.** If a script built a key from data, the rule for *where* a job
    lives would be split between the keyspace and the script. Declaring keys keeps that rule in one place —
    `EchoMQ.Keyspace`.
-3. **Thread-per-shard placement.** A multithreaded engine like Dragonfly places a script on a thread by its declared
-   key set (`--lock_on_hashtags`). A key constructed inside the script is invisible to that placement — so an
-   undeclared key is not portable to a thread-per-shard engine. Conformance is phrased against Valkey; the declared-key
-   discipline is what makes the multithreaded placement reachable.
+3. **Hash-slot placement.** Valkey Cluster routes every key to one of its 16384 hash slots by the `{hashtag}` inside
+   the key — the CRC16 of the bytes between the braces. A multi-key script is legal only when *all* its keys live in
+   the same slot; otherwise the server refuses it with `CROSSSLOT`. Declaring every key in `KEYS[]` and applying the
+   per-queue `{q}` hashtag keeps every key of a queue in one slot, where the script is co-located and legal. A key
+   constructed from data inside the script can hash to a *different* slot — and break the script. Conformance is phrased
+   against Valkey; the declared-key discipline is what keeps the script on its slot.
 
 ## The pairing — the pattern → the implementation
 
@@ -75,8 +78,8 @@ return 1
 ## Recap
 
 Declared keys is the law: the host builds every key, the script touches only `KEYS[]`, values ride `ARGV`. It keeps
-atomicity sound on a cluster, keeps the keyspace the single owner of address, and keeps the wire portable to a
-thread-per-shard engine. The next dive reads how the declared-keys script is dispatched — loaded once, run by SHA.
+atomicity sound on a cluster, keeps the keyspace the single owner of address, and keeps every key of a queue on one
+Valkey Cluster slot — where the script is legal. The next dive reads how the declared-keys script is dispatched — loaded once, run by SHA.
 
 ## References
 
@@ -85,8 +88,8 @@ thread-per-shard engine. The next dive reads how the declared-keys script is dis
 - Redis — *Keyspace & hash tags* — `https://redis.io/docs/` — cluster routing by the hashtag inside `{...}`, which the
   declared keys must share to stay atomic.
 - Valkey — *Documentation* — `https://valkey.io/docs/` — the substrate of record; Redis-semantics Lua and slot routing.
-- DragonflyDB — *Server flags* — `https://www.dragonflydb.io/docs/managing-dragonfly/flags` — `--lock_on_hashtags`, the
-  thread-per-shard placement the declared keys enable.
+- Valkey — *Cluster specification* — `https://valkey.io/topics/cluster-spec/` — the `{hashtag}`→hash-slot routing
+  (CRC16 of the bytes in the braces) and the CROSSSLOT rule the declared keys keep a script clear of.
 
 ### Related in this course
 - `/echomq/protocol/the-lua-layer` — the module this dive belongs to.

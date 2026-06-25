@@ -28,7 +28,7 @@ Three properties make the Lua layer a protocol rather than a convenience:
 | Dive | Teaches | Real grounding |
 |---|---|---|
 | **scripts-are-the-protocol** | the two-beat form: the `@enqueue` handle, then its decoded Lua body — the `EMQKIND` gate, `EXISTS` idempotency, `HSET` the row, `ZADD` pending | `EchoMQ.Jobs` `@enqueue` (real Lua) + `enqueue/4` |
-| **declared-keys** | every key passed in `KEYS[]`, none constructed in-script — and why this is the law (thread-per-shard placement) | the `KEYS[1]`/`KEYS[2]` contract in `@enqueue`; `enqueue/4` building the keys host-side |
+| **declared-keys** | every key passed in `KEYS[]`, none constructed in-script — and why this is the law (one Valkey Cluster slot per queue) | the `KEYS[1]`/`KEYS[2]` contract in `@enqueue`; `enqueue/4` building the keys host-side |
 | **evalsha-dispatch** | load-once, run-by-SHA: `EchoMQ.Script.new/2` (SHA1 precomputed) + `EchoMQ.Connector.eval/5` (EVALSHA-first, NOSCRIPT fallback) | `EchoMQ.Script.new/2`, `EchoMQ.Connector.eval/5` |
 
 ## The interactive
@@ -54,8 +54,8 @@ SHA. The three dives read the `@enqueue` script in two beats, the declared-keys 
 - Valkey — *EVALSHA* — `https://valkey.io/commands/evalsha/` — load-once, run-by-SHA dispatch of a declared-keys script.
 - Redis — *EVAL* — `https://redis.io/commands/eval/` — atomic server-side scripting, the mechanism the Lua layer is.
 - Valkey — *Documentation* — `https://valkey.io/docs/` — the substrate of record EchoMQ is backed by.
-- DragonflyDB — *Server flags* — `https://www.dragonflydb.io/docs/managing-dragonfly/flags` — `--lock_on_hashtags`, the
-  thread-per-shard placement the declared-key discipline is built for.
+- Valkey — *Cluster specification* — `https://valkey.io/topics/cluster-spec/` — the `{hashtag}`→hash-slot routing the
+  declared-key discipline is built for: every key of a queue on one slot, where a multi-key script is legal.
 
 ### Related in this course
 - `/echomq/protocol` — the chapter this module belongs to.

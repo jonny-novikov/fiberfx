@@ -88,6 +88,15 @@ logic.
 The lease is a score; a checkpoint moves it; a cancel is a message a handler chooses to honour; recovery counts how many
 times a job has stalled before it gives up on it. Control over the worker in hand is three small, fenced moves.
 
+## The durable floor (the door to Echo Persistence)
+
+When the sweep gives up on a poison job it dead-letters it, kept for inspection. A checkpoint and a dead-letter are both
+moments worth keeping past memory: when a queue trims its history, `EchoStore.StreamArchive` folds the trimmed segments
+into the durable `EchoStore.Graft` floor (CubDB's append-only B-tree, on to Tigris) — deep history without resident
+memory, readable beside the live tail. The fold is real code
+(`echo/apps/echo_store/lib/echo_store/{stream_archive,graft}.ex`); the durable floor is taught in full in Echo
+Persistence (`/echo-persistence`), per `docs/echo/bcs/bcs.3.md` B3.3 / `bcs.5.md`.
+
 ## References
 
 ### Sources
@@ -101,3 +110,4 @@ times a job has stalled before it gives up on it. Control over the worker in han
 - /echomq/queue/lifecycle-controls — the module hub.
 - /echomq/protocol — the keyspace and the Lua layer these controls run on.
 - /redis-patterns/time-delay-priority — the lease/recover family.
+- /echo-persistence — the durable floor a dead-lettered, trimmed job folds into.

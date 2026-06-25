@@ -127,6 +127,15 @@ One job, three moves on the happy path; two more on the failure fork; one for re
 and a counter that ticks to zero. The whole machine is four sorted sets and one row hash, and every transition is
 one atomic script.
 
+## The durable floor (the door to Echo Persistence)
+
+The job traced above lives in memory: a completed row is deleted, a dead one is retained, a trimmed segment is gone.
+None of it has to vanish. When a queue trims its history, `EchoStore.StreamArchive` folds the trimmed segments into the
+durable `EchoStore.Graft` floor (CubDB's append-only B-tree, on to Tigris) — deep history without resident memory,
+readable beside the live tail. The fold is real code (`echo/apps/echo_store/lib/echo_store/{stream_archive,graft}.ex`);
+the durable floor is taught in full in Echo Persistence (`/echo-persistence`), per `docs/echo/bcs/bcs.3.md` B3.3 /
+`bcs.5.md`.
+
 ## References
 
 ### Sources
@@ -148,3 +157,4 @@ one atomic script.
 - /echomq/queue/flows — Flows (orchestration over the queue).
 - /echomq/queue/flows/parent-and-children — the flow shape and the atomic land.
 - /redis-patterns/queues — redis-patterns · Reliable Queues (the near side of the door).
+- /echo-persistence — the durable floor a trimmed, retained job folds into.

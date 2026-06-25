@@ -99,8 +99,8 @@ course; this course hands the Queue, the Bus, and the Cache to every system buil
 - Valkey — Documentation (`https://valkey.io/docs/`) — the substrate of record EchoMQ is backed by.
 - Redis — EVALSHA (`https://redis.io/commands/evalsha/`) — the load-once, run-by-SHA dispatch the wire runs its
   scripts with.
-- DragonflyDB — Server flags (`https://www.dragonflydb.io/docs/managing-dragonfly/flags`) — the thread-per-shard
-  engine the declared-key, per-queue-hashtag keyspace is built for.
+- Valkey — Cluster specification (`https://valkey.io/topics/cluster-spec/`) — the `{hashtag}`→hash-slot routing
+  the declared-key, per-queue-hashtag keyspace is built for: every key of a queue on one slot, where a multi-key script is legal.
 - llmstxt.org — The llms.txt convention (`https://llmstxt.org/`) — the machine-readable map format the course follows.
 
 ### Related in this course

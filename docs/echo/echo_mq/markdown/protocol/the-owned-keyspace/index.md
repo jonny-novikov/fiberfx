@@ -55,8 +55,8 @@ reserve.
 ### Sources
 - Valkey — Documentation — `https://valkey.io/docs/` — the store the keys are written to; the substrate of record.
 - Redis — Keyspace & cluster hash tags — `https://redis.io/docs/` — cluster key routing by the hashtag inside `{...}`.
-- DragonflyDB — Server flags — `https://www.dragonflydb.io/docs/managing-dragonfly/flags` — `--lock_on_hashtags`, the
-  thread-per-shard placement the per-queue hashtag is built for.
+- Valkey — Cluster specification — `https://valkey.io/topics/cluster-spec/` — the `{hashtag}`→hash-slot routing the
+  per-queue hashtag is built for: every key of a queue on one slot, where a multi-key script is legal.
 
 ### Related in this course
 - `/echomq/protocol` — the chapter this module belongs to.

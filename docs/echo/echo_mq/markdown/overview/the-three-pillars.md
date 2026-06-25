@@ -154,8 +154,8 @@ is the next dive.
   script runs through.
 - Valkey — *Documentation* (`https://valkey.io/docs/`) — the BSD-licensed, foundation-governed store EchoMQ is
   backed by — the substrate of record.
-- DragonflyDB — *Server flags* (`https://www.dragonflydb.io/docs/managing-dragonfly/flags`) — the thread-per-shard
-  engine the declared-key, per-queue-hashtag keyspace is built for.
+- Valkey — *Cluster specification* (`https://valkey.io/topics/cluster-spec/`) — the `{hashtag}`→hash-slot routing
+  the declared-key, per-queue-hashtag keyspace is built for: every key of a queue on one slot, where a multi-key script is legal.
 
 ### Related in this course
 

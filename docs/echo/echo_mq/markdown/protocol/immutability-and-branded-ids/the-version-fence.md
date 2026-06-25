@@ -2,7 +2,7 @@
 
 > Route: `/echomq/protocol/immutability-and-branded-ids/the-version-fence` · surface: **dive**.
 > Grounding: **real code** in `echo/apps/echo_wire` + `echo/apps/echo_mq`. **No `[RECONCILE]` markers.**
-> Discipline note: the wire constant `echomq:2.0.0` appears ONLY as a quoted code value in the fence extract — never
+> Discipline note: the wire constant `echomq:2.4.2` appears ONLY as a quoted code value in the fence extract — never
 > as a course-version label, never as a release name.
 
 ## The fact
@@ -43,7 +43,7 @@ The fence, run at connect (the wire constant is a quoted code value):
 # constant, not a label. The fence reads {emq}:version once: a match runs,
 # an absent key is claimed with SET NX then re-read to confirm the claim,
 # and a present-but-different value refuses the connection.
-@wire_version "echomq:2.0.0"
+@wire_version "echomq:2.4.2"
 
 defp fence(sock, buf) do
   vkey = Keyspace.version_key()

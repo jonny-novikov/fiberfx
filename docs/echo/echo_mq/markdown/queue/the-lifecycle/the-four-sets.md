@@ -78,6 +78,14 @@ because the set already holds the answer.
 - The implementation (echo_mq): four sorted sets keyed by `queue_key/2`, members the branded ids, so byte order is mint
   order and `browse/3` + `pending_size/2` read the set with no index.
 
+## The durable floor (the door to Echo Persistence)
+
+The `dead` set is the only finished-and-retained state — a job kept for inspection, in memory. Retention does not have
+to mean resident: when a queue trims its history, `EchoStore.StreamArchive` folds the trimmed segments into the durable
+`EchoStore.Graft` floor (CubDB's append-only B-tree, on to Tigris), keeping deep history off-heap and readable beside
+the live tail. The fold is real code (`echo/apps/echo_store/lib/echo_store/{stream_archive,graft}.ex`); the durable
+floor is taught in full in Echo Persistence (`/echo-persistence`), per `docs/echo/bcs/bcs.3.md` B3.3 / `bcs.5.md`.
+
 ## References
 
 ### Sources
@@ -91,3 +99,4 @@ because the set already holds the answer.
 - `/echomq/protocol/the-owned-keyspace` — where the four set keys are built.
 - `/echomq/protocol/immutability-and-branded-ids` — the branded id whose bytes are mint order.
 - `/redis-patterns/queues` — states as locations, the pattern this implements.
+- `/echo-persistence` — the durable floor a trimmed, retained history folds into.

@@ -5,11 +5,24 @@
 
 ## The fact
 
-A job's identity is not a number the caller picks. It is a **14-byte branded id**: a three-letter uppercase namespace
-followed by an eleven-character Base62 encoding of a Snowflake. For a job the namespace is `JOB`. The branding is not
-decoration — it is checked at the wire, in the Lua script, before a row is ever written. The first line of the
-`@enqueue` script reads the first three bytes of the id and refuses anything that is not `JOB`. An id from the wrong
-namespace is rejected with the `EMQKIND` error class and never reaches a key.
+A job's identity is not a number the caller picks. It is a **14-byte branded id**: a **three-character uppercase
+namespace** followed by an **eleven-character Base62** encoding of a 63-bit Snowflake. For a job the namespace is `JOB`.
+The name carries the weight a type used to — four properties: it is **typed** (the namespace declares the domain class
+on the wire), **ordered** (the text sorts as its mint instant sorts), **placed** (one function,
+`EchoData.BrandedId.hash32/1`, locates a row from the identity alone — `placement("USR0KHTOWnGLuC")` is `234878118`),
+and **conformant** (one source of truth makes encode and decode identical across the runtimes). The runtime asserts
+these at boot — `self_check!/0` in `branded_id.ex` compares the native and pure code paths against the contract's
+vectors, source truths not measurements:
+
+```
+placement("USR0KHTOWnGLuC")  ->  234878118              -- native and pure agree
+parse("USR0NgWEfAEJfs")      ->  {:ok, "USR", 320636799581945856}
+decode("USRzzzzzzzzzzz")     ->  :error                 -- an overflow is refused, not wrapped
+```
+
+The branding is not decoration — it is checked at the wire, in the Lua script, before a row is ever written. The first
+line of the `@enqueue` script reads the first three bytes of the id (the typed property) and refuses anything that is
+not `JOB`. An id from the wrong namespace is rejected with the `EMQKIND` error class and never reaches a key.
 
 This is identity enforced where it counts: on the server, atomically, as part of the same script that writes the row.
 A caller cannot smuggle a bare integer, a UUID, or another component's id into the job keyspace. The gate is three
