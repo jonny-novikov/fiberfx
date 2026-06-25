@@ -27,10 +27,10 @@ The Dockerfile builds Valkey from source with `MALLOC=jemalloc` (the bundled 5.3
 Deploy:
 
 ```bash
-fly apps create codemojex-valkey
-fly volumes create valkey_data --region iad --size 3 -a codemojex-valkey
-fly secrets set VALKEY_PASSWORD="$(openssl rand -hex 32)" -a codemojex-valkey
-fly deploy -a codemojex-valkey --build-arg VALKEY_VERSION=8.1.1
+fly apps create echo-valkey
+fly volumes create valkey_data --region fra --size 3 -a echo-valkey
+fly secrets set VALKEY_PASSWORD="$(openssl rand -hex 32)" -a echo-valkey
+fly deploy -a echo-valkey --build-arg VALKEY_VERSION=8.1.1
 ```
 
 ```bash

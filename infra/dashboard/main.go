@@ -1,7 +1,7 @@
 // codemojex-dashboard — a Gin web server that fronts pgweb (Postgres browser)
 // and a native Valkey monitor behind one HTTPS surface.
 //
-// Topology: this app reaches codemojex-db and echo-valkey over Fly's private
+// Topology: this app reaches echo-postgres and echo-valkey over Fly's private
 // 6PN. It runs pgweb as a supervised child process under the URL prefix /db, so
 // pgweb owns /db/* (its own assets and API included) with no collision against
 // this server's own routes. No PgBouncer: the connection counts here and in the
@@ -39,7 +39,7 @@ const (
 type config struct {
 	dashUser    string
 	dashPass    string
-	pgwebDBURL  string // postgres://codemojex_ro:...@codemojex-db.internal:5432/codemojex?sslmode=disable
+	pgwebDBURL  string // postgres://codemojex_ro:...@echo-postgres.internal:5432/codemojex?sslmode=disable
 	valkeyAddr  string // echo-valkey.internal:6390
 }
 

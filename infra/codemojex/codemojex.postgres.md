@@ -54,7 +54,7 @@ Two pieces of the ownership the custom node entails are not optional for a walle
 
 ## Networking
 
-The node is private by construction. The `fly.toml` declares no public service, and the conf binds the wildcard, so on Fly the machine has no public address and answers only on the organization's 6PN, on by default for apps in one organization [14]. The Phoenix app reaches it at `codemojex-postgres.internal:5432`, and nothing outside the organization can. The password is injected at first boot from a Fly secret, never written into an image layer.
+The node is private by construction. The `fly.toml` declares no public service, and the conf binds the wildcard, so on Fly the machine has no public address and answers only on the organization's 6PN, on by default for apps in one organization [14]. The Phoenix app reaches it at `echo-postgres.internal:5432`, and nothing outside the organization can. The password is injected at first boot from a Fly secret, never written into an image layer.
 
 ## Boundaries
 

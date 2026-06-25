@@ -2,13 +2,13 @@
 
 A Gin web server that fronts **pgweb** (Postgres browser) and a native **Valkey
 monitor** behind one HTTPS surface, with a **Svelte** frontend. It reaches
-`codemojex-db` and `echo-valkey` over Fly's private 6PN and exposes only its own
+`echo-postgres` and `echo-valkey` over Fly's private 6PN and exposes only its own
 site, behind HTTP basic auth.
 
 ## Why no PgBouncer
 
 Both `Codemojex` (the game, via Ecto) and this dashboard connect to
-`codemojex-db` directly over the 6PN. Each has its own bounded pool, and the sum
+`echo-postgres` directly over the 6PN. Each has its own bounded pool, and the sum
 is far under Postgres `max_connections`. There is no external Postgres client and
 nothing to multiplex, so a pooler would add a hop and the transaction-mode
 prepared-statement caveat for no gain. Ecto's `DBConnection` is already the pool.
@@ -28,7 +28,7 @@ browser ──HTTPS──> Gin (:8080, basic auth)
                      ├── /api/valkey/*      Valkey monitor (valkey-go)
                      └── /db/*  ──proxy──>  pgweb child (:8081, --prefix=/db/)
                                   │
-        codemojex-db.internal:5432 (6PN)   echo-valkey.internal:6390 (6PN)
+        echo-postgres.internal:5432 (6PN)   echo-valkey.internal:6390 (6PN)
 ```
 
 ## Layout
@@ -61,7 +61,7 @@ docker build -t codemojex-dashboard .
 | Var | Example |
 |---|---|
 | `DASH_USER` / `DASH_PASS` | `ops` / a generated secret |
-| `PGWEB_DATABASE_URL` | `postgres://codemojex_ro:…@codemojex-db.internal:5432/codemojex?sslmode=disable` |
+| `PGWEB_DATABASE_URL` | `postgres://codemojex_ro:…@echo-postgres.internal:5432/codemojex?sslmode=disable` |
 | `VALKEY_ADDRESS` | `echo-valkey.internal:6390` |
 
 The `codemojex_ro` role is the read-only login created in
