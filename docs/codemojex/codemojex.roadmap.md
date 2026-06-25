@@ -64,6 +64,12 @@ Money is real and a game carries a server-side secret, so both live on the Postg
 | `SHR` | share token | a referral or share token, for attribution |
 | `AEV` | analytics event | an append-only, one-way observation |
 
+> This is the **forward** catalog. The **as-built** game uses nine of these brands —
+> `PLR`/`ROM`/`GAM`/`GES`/`EMS`/`TXN`/`JOB`/`NOT`/`CMD` — with one player entity (`PLR`); the account/persona
+> split (`USR`/`PLR`), `SES` sessions, `RMP` membership, the `BNK` bank, and the commerce/growth/analytics
+> brands land with their `cm.4+` systems. The as-built nine are the namespace table in
+> [`codemojex.design.md`](./codemojex.design.md).
+
 ## Golden Rooms
 
 Golden Rooms are a blind mode of the engine. A player submits a sequence and receives no per-guess feedback; the room accrues a pool over its life (for example a day or two), closes on the timer, and settles once, paying the top players whose combinations were closest. The mode is carried by policy, so it adds no new namespaces:
@@ -130,34 +136,155 @@ Every module is grounded in the `codemojex` app in the repository: the rules in 
 
 ## Build order and status
 
-The app today is a skeleton that fits the real EchoMQ, EchoData, Ecto, and Phoenix interfaces; the six modules turn it into the complete, running game with both modes. The order is B7.1 through B7.6, each module a landing and three dives, each page held to the A+ gates and relinked to its predecessor as it ships. The chapter landing is written; the modules follow. The feature list is in `codemojex.specs.md`; the technical draft and open questions are in `codemojex.architecture.md`.
+The app today is a running game on the real EchoMQ, EchoData, Ecto, and Phoenix interfaces; the six modules turn it into the complete, taught game with both modes. The order is B7.1 through B7.6, each module a landing and three dives, each page held to the A+ gates and relinked to its predecessor as it ships. The chapter landing is written; the modules follow. The feature catalog (the systems still to build) is below in [§ The feature catalog](#the-feature-catalog); the binding design and the open questions are in [`codemojex.design.md`](./codemojex.design.md).
 
 ## The engine build ladder (spec-driven rungs `cm.N`)
 
 > The section above (B7.1–B7.6) is the **course chapter** — the teaching arc over the built game. The
 > ladder below is the **build ladder** — the spec-driven rungs that construct the engine, authored under
-> `docs/codemojex/specs/`. The model the rungs build is `codemojex.game-model.design.md` (the from-scratch
-> game-engine data model: the `GAM` game entity, the type/policy discriminator, linear-only scoring, and
-> the blind/sealed Golden mode). The slugs are `cm.N` (distinct from the course `B7.x`).
+> `docs/codemojex/specs/`. The model the rungs build is canonized in [`codemojex.design.md`](./codemojex.design.md)
+> (the `GAM` game entity, the type/policy discriminator, linear-only scoring, and the blind/sealed Golden
+> mode); the deep design-phase record is archived at
+> [`specs/progress/codemojex-game-rename.game-model.design.md`](./specs/progress/codemojex-game-rename.game-model.design.md).
+> The slugs are `cm.N` (distinct from the course `B7.x`).
 
 A new game mode is configuration on the same branded entities, so the ladder builds the **settled core
 first** (buildable now), then the **blind Golden mode** (its forks ruled before its rung builds):
 
 | Rung | Scope | Teaches (course) | Status |
 |---|---|---|---|
-| **cm.1 — the founding core** | the fresh Ecto schema (one clean initial create) · the `GAM` game entity (round→game rename, code + wire) · the type/policy discriminator + the `games_type` CHECK · **linear scoring, the bonus-tier economy removed** · the dev-DB reinitialization · classic live mode end-to-end | B7.1 · B7.2 · B7.3 · B7.4 (the linear scale) | **triad authored** (`specs/cm.1.{md,stories.md,llms.md}`); **build-grade — builds now** |
-| **cm.2 — classic hardening** (optional) | any classic-mode polish cm.1 defers; may fold into cm.1 if thin | B7.3 · B7.6 | structure proposed; fold-or-split is a Director call |
-| **cm.3 — blind Golden** | feedback `none` + the privacy withholding · commit-reveal (`commitment`/`nonce`/`revealed_ms`) · sealed top-K settlement from the pool · the reduced set · the `revealing`/`settling` states | B7.2.3 · B7.4.3 · the Golden Rooms § | **waits on Arms V-7 (scoring), V-8 (states), V-9 (gating seam)** — triad fans out after the rulings |
-| **cm.4+ — the deferred systems** | the `BNK` bank + rake · `RMP` membership + the anonymized leaderboard · `SES` sessions / verified `initData` · commerce · growth · analytics | B7.5 · B7.6 + beyond | named here; out of the game-model design's scope |
+| **cm.1 — the founding core** | the fresh Ecto schema (one clean initial create) · the `GAM` game entity (round→game rename, code + wire) · the type/policy discriminator + the `games_type` CHECK · **linear scoring, the bonus-tier economy removed** · the dev-DB reinitialization · classic live mode end-to-end | B7.1 · B7.2 · B7.3 · B7.4 (the linear scale) | ✅ **SHIPPED** (`specs/cm.1.{md,stories.md,llms.md}`) — built + committed via the `codemojex-game-rename` rung |
+| **cm.2 — classic hardening** (optional) | any classic-mode polish cm.1 defers; folded into cm.1 | B7.3 · B7.6 | folded into cm.1 — no separate rung |
+| **cm.3 — blind Golden** | feedback `none` + the privacy withholding · commit-reveal (`commitment`/`nonce`/`revealed_ms`) · sealed top-K settlement from the pool (the stored `payout_split`) · the per-game reduced set (`cell_count`/`cell_codes`) · the `revealing`/`settling` states | B7.2.3 · B7.4.3 · the Golden Rooms § | ✅ **SHIPPED** (`specs/cm.3.{md,stories.md,llms.md}`) — Arms V-7/V-8/V-14/V-15/V-16 ruled (D-15/D-16), built + committed via the `codemojex-game-rename` rung |
+| **cm.4+ — the deferred systems** | the `BNK` bank + rake · `RMP` membership + the anonymized leaderboard · `SES` sessions / verified `initData` · commerce · growth · analytics | B7.5 · B7.6 + beyond | 📋 named below (§ The feature catalog); out of the core engine's scope |
 
 The gate is the codemojex app gate (`TMPDIR=/tmp mix compile --warnings-as-errors` + `mix test
 --include valkey` on Valkey `:6390` + Postgres, plus the fresh-schema reinitialization on the
-schema-landing rung). cm.1 builds **independent of cm.3's open forks** — the settled core touches no
-blind/golden path, so it is build-grade while cm.3's contracts wait on the Operator. The per-rung
-audit ledgers live in `docs/codemojex/specs/progress/`.
+schema-landing rung). cm.1 (the settled core) and cm.3 (the blind/sealed Golden flow) **both shipped
+on one schema** through the `codemojex-game-rename` rung — the founding core landed the six-table
+model + the three brand re-bases (`RND`→`GAM`, `RMM`→`ROM`, `USR`→`PLR`) + classic mode, and the
+blind flow landed the commit-reveal + sealed top-K on the same `games` columns. The per-rung audit
+ledgers (and the rung's design-phase deliverable) live archived in `docs/codemojex/specs/progress/`.
+The process that ships a rung is the **Codemojex Program** ([`program/codemojex.program.md`](./program/codemojex.program.md)).
 
 > A note on the tier `[RECONCILE]`: B7.4.2 ("the uniform twenty-point gaps form thirty tiers, the live
 > leaderboard's ladder") and B7.3 ("tier claims") above still describe the **first-mover bonus-tier
 > mechanic the engine removes** (Operator-ruled: linear score only, no bonus tiers). These course lines
-> are a tracked reconcile owed **after** the build aligns the code — recorded here so the drift is not
-> mistaken for the as-built engine.
+> are a tracked reconcile owed — recorded here so the drift is not mistaken for the as-built engine,
+> which scores linearly with no tiers.
+
+## The feature catalog
+
+The features that compose the complete game, grouped by system. The Game system is a generic Mastermind
+engine; the classic live room and the Golden Room are two modes of it, selected by policy — so reaching
+the whole game is a matter of building these features, not new identity types. The **engine core**
+(rooms/modes, the Mastermind engine, games + guesses, the blind Golden mode, the commit-reveal secret,
+the three-currency transactional wallet, the classic + blind API) is **SHIPPED** on the nine as-built
+brands; the systems below it marks 📋 are the **forward** `cm.4+` work.
+
+> **Identity reconcile.** The as-built game re-based its single player entity to **`PLR`** (the
+> `codemojex-game-rename` rung retired `USR`). The forward identity split named below — account (`USR`) /
+> persona (`PLR`) / session (`SES`) / membership (`RMP`) — is the **deferred elaboration** that lands with
+> the `SES`/`RMP` systems; today one `PLR` is the account, the persona, and the wallet owner. The catalog
+> keeps the forward vocabulary so the target shape is on record.
+
+### Identity and access 📋
+
+- Verify Telegram `initData` and mint a short-lived session (`SES`) bound to an account (`USR`).
+- Bind an account to a Telegram account id; one persona (`PLR`) per account to start.
+- Resolve `PLR` and the account once, at session mint, and carry both in the session, so no request traverses the link mid-call.
+
+### Player ✅ (core) / 📋 (profile)
+
+- A `PLR` profile: display name, avatar, lifetime statistics.
+- Name each player's guess lane by `PLR`, so the bus rotates service per persona.
+
+### Rooms and modes ✅
+
+- A `ROM` template: emoji set, duration, guess fee, paid or free, seed pool, and a mode.
+- Two modes at launch: classic (live feedback) and golden (blind).
+- A `ROM` carries the four engine policies: feedback, scoring, settlement, economy.
+- 📋 A reified membership (`RMP`) with lifecycle (joined, active, left, banned) and a per-game display alias.
+
+### The Mastermind engine ✅
+
+- One secret, guess, and distance core shared by every mode.
+- A feedback policy: `score` (0 to 600) or `none`.
+- A scoring policy: linear distance (the one value today; one function for both modes).
+- A settlement policy: `live` (close on a perfect score or the timer) or `sealed` (one batch at close, top K).
+- An economy policy: the per-guess currency path and the payout curve.
+- A `GAM` that carries its type, the four policies, the secret, the commitment, the timer, and its state.
+
+### Games and guesses ✅
+
+- The `GAM` state machine: scheduled, open, active, revealing, settling, settled, voided (CHECK-bounded).
+- A guess (`GES`): six codes validated against the keyboard, with locked positions overlaid.
+- Charge the currency path before accepting a guess; enqueue the guess as a job on the `PLR` lane.
+- One consumer scores against the secret; the host never scores.
+- Classic mode broadcasts the result; blind mode stores the guess and reveals nothing.
+- Position locking, held in Valkey per player per game, persisting across guesses.
+
+### Golden Rooms (the blind mode) ✅
+
+- Accept guesses with no per-guess feedback for the room's life.
+- Use a reduced emoji set (a per-game `cell_count` snapshot) to keep the space tractable without hints.
+- Close on the timer; run one settlement pass over all guesses; pay the top K from the pool by the stored `payout_split`.
+- An all-pay attempt economy: a per-attempt fee is sunk whether or not a player places.
+- 📋 An anonymized leaderboard: generated neutral names and avatars (lands with `RMP`).
+
+### Provably-fair secret (commit-reveal) ✅
+
+- At room open, publish a commitment — SHA-256(secret ‖ nonce), lowercase hex — over the secret and a nonce on the `GAM`.
+- Keep the secret and the nonce server-side and sealed for the room's life.
+- At close, reveal the secret and the nonce, and expose them so a player can recompute the commitment and verify it.
+- Score settlement against the revealed secret; the commitment binds the server to the secret it fixed at open.
+
+### Economy and the bank ✅ (wallet) / 📋 (bank)
+
+- Three currencies: keys (paid rooms, bought with Stars), clips (free rooms, no value, excluded from the available balance), diamonds (prizes, convert to keys at ten to one).
+- A transactional wallet: a row lock, the non-negative check, a paired ledger row, all or nothing; the paid and free paths never cross.
+- 📋 A `BNK` escrow per game: the pool accrues from fees and pays out at settlement (today the pool lives on the game's own `prize_pool`).
+- 📋 A published platform rake; the remainder of the pool pays the board.
+- Settlement that is pure and idempotent, so a re-run pays identically.
+
+### Commerce 📋
+
+- A package catalog (`PKG`): bundles of keys for Telegram Stars.
+- A purchase order (`ORD`) with state: created, pending, paid, fulfilled, failed, refunded.
+- A payment ledger (`OTX`) for Stars, kept separate from the currency ledger (`TXN`).
+- Inbound webhooks (`WHK`): idempotent, processed once, driving `ORD` and `OTX`.
+- On paid, credit keys to the wallet as a `TXN`.
+
+### Growth 📋
+
+- Share and referral tokens (`SHR`): who shared what, and the redemptions.
+- A disclosed bonus on redemption, granted through the economy, never a direct write.
+
+### Analytics 📋
+
+- An append-only event stream (`AEV`), emitted by every system, one-way.
+- Never authoritative; rebuildable by replay.
+- Powering the admin dashboards and live counters.
+
+### API and realtime ✅
+
+- A JSON API through the `Codemojex` facade and the privacy-safe views.
+- Commands over REST: auth, lobby, join, submit guess (accepted, not scored on the request), buy, convert.
+- A live channel per game for classic rooms: results, leaderboard, timer, and state changes.
+- For blind rooms, a channel that carries state and timer only, with no results until the one fat `revealed` event at close.
+
+### LiveAdmin 📋
+
+- Rooms and packages management; emoji set and sprite uploads (`EMS`, `RSC`).
+- A live board of active games with state, pool, and player counts.
+- Treasury: the bank, payouts, the rake, refunds.
+- Commerce: orders, payments, the webhook log, reconciliation.
+- Players and moderation: ban through membership status.
+- Analytics dashboards over the `AEV` stream.
+
+### Anti-abuse and integrity ✅ (engine) / 📋 (policy)
+
+- Golden Rooms break feedback-driven clicker bots: with no per-guess signal, a bot cannot hill-climb toward the secret.
+- The all-pay economy gives blind farming a negative expected value.
+- The commitment removes the rigged-secret vector.
+- House participation and pool balancing are a decision for the Chief Architect and legal review; the default is transparent margin levers — a published rake, a capped or guaranteed pool, a minimum-participant threshold before a real pool forms — not undisclosed house players. The open questions are recorded in [`codemojex.design.md`](./codemojex.design.md) (§ Open questions).

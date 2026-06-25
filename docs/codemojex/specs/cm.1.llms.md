@@ -13,10 +13,11 @@
 
 ## 1. References — read these first (paths first)
 
-- **The model design** `docs/codemojex/codemojex.game-model.design.md` — §3 (the schema, every column
-  type/null/default/CHECK), §6 (the code-wiring map, file by file), §7 (the `Scoring.score/2` return),
-  §8 (the reinitialization). **This is the primary reference.**
-- **The token-class rename map** `docs/codemojex/codemojex-game-rename.brief.md` §4 — the exact `file:line`
+- **The model design** `docs/codemojex/specs/progress/codemojex-game-rename.game-model.design.md` — §3
+  (the schema, every column type/null/default/CHECK), §6 (the code-wiring map, file by file), §7 (the
+  `Scoring.score/2` return), §8 (the reinitialization). **This is the primary reference.** (The as-built
+  design is `docs/codemojex/codemojex.design.md`.)
+- **The token-class rename map** `docs/codemojex/specs/progress/codemojex-game-rename.brief.md` §4 — the exact `file:line`
   for every `round`→`game` site, classified by token class (entity / api / wire / BIF-English). Use it
   for the rename half; **the column removals + the type/policy additions are this rung's addition on top.**
 - **The spec body** `cm.1.md` (the deliverables + the invariants) and **the stories** `cm.1.stories.md`

@@ -17,10 +17,13 @@
 > **Source of truth:** this body is authoritative; `cm.1.stories.md` (acceptance) and `cm.1.llms.md`
 > (the build brief) derive from it. When a derived file disagrees, this body wins.
 >
-> **Design canon:** `docs/codemojex/codemojex.game-model.design.md` (the model — §3 schema, §6 code
-> wiring, §8 reinitialization, §12 the rung ladder). The token-class rename map is the Venus-1 brief
-> `docs/codemojex/codemojex-game-rename.brief.md` §4. The forward product canon is
-> `codemojex.architecture.md` / `codemojex.roadmap.md` / `codemojex.specs.md`.
+> **Design canon:** the as-built design is [`codemojex.design.md`](../codemojex.design.md); the deep
+> design-phase model (§3 schema, §6 code wiring, §8 reinitialization, §12 the rung ladder) is archived at
+> [`progress/codemojex-game-rename.game-model.design.md`](./progress/codemojex-game-rename.game-model.design.md).
+> The token-class rename map is the Venus-1 brief
+> [`progress/codemojex-game-rename.brief.md`](./progress/codemojex-game-rename.brief.md) §4. The forward
+> product canon is [`codemojex.roadmap.md`](../codemojex.roadmap.md) (the feature catalog) +
+> [`codemojex.design.md`](../codemojex.design.md).
 >
 > **Framing discipline (propagate):** no gendered pronouns for agents; no perceptual or interior-state
 > verbs (sees / wants / notices); no first-person narration. State surfaces as contracts.

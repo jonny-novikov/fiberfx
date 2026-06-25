@@ -11,8 +11,9 @@ description: >-
   (Venus-Postgres) fanned out over the relational redesign. The team is GENERIC (the venus / mars / apollo
   charters, no codemojex-* role skills); the "codemojex facts" block below is the pre-loaded context.
   The INPUT is the rung's docs/codemojex/specs/<rung>.{md,stories.md,llms.md} triad (+ a <rung>.prompt.md
-  runbook or a named build brief like docs/codemojex/codemojex-game-rename.brief.md; else Venus authors the
-  brief inline); the canon is docs/codemojex/codemojex.game-model.design.md + codemojex.roadmap.md.
+  runbook or a named build brief; else Venus authors the
+  brief inline); the canon is docs/codemojex/codemojex.design.md + codemojex.roadmap.md, and the ship
+  process is docs/codemojex/program/codemojex.program.md.
   Triggers: "ship cm.1", "codemojex-ship <rung>", "run/launch the cm.N pipeline", "as Director fan out the
   codemojex lead-team". Do NOT use for the echo_mq bus (/echo-mq-ship), the echo_graft engine (/graft-ship),
   the static-HTML courses (the *-course-writer skills), or generic documents.
@@ -38,8 +39,9 @@ pre-loaded**: it adds nothing to the laws — it binds them to the codemojex app
    `asdf current` re-probe). The dual-architect method is `docs/aaw/aaw.architect-approach.md`.
 3. **the rung's spec** — `docs/codemojex/specs/<rung>.{md,stories.md,llms.md}` (authoritative body) + its
    `.prompt.md` runbook **if it exists**, else a named build brief (`codemojex-game-rename.brief.md`) **or** Venus
-   authors the build brief inline in Stage 1 — + the canon `docs/codemojex/codemojex.game-model.design.md` (the
-   data-model redesign) + the single roadmap `docs/codemojex/codemojex.roadmap.md` (the `cm.N` ladder).
+   authors the build brief inline in Stage 1 — + the canon `docs/codemojex/codemojex.design.md` (the binding
+   design — the engine, the six-table model) + the single roadmap `docs/codemojex/codemojex.roadmap.md` (the
+   `cm.N` ladder); a continuing scope's design-phase deliverable is archived under `specs/progress/`.
 
 ## Arguments & scope
 
@@ -151,7 +153,7 @@ fewer (under-staffing a HIGH rung skips the mandatory Apollo).
 
 ## The codemojex facts (the pre-loaded context for the peers)
 
-- **The game** (canon `codemojex.game-model.design.md` + `codemojex.roadmap.md`) — a Telegram emoji-guessing game
+- **The game** (canon `codemojex.design.md` + `codemojex.roadmap.md`) — a Telegram emoji-guessing game
   on the BCS stack: a **room** (`ROM`, a long-lived template carrying duration / emoji-set / fee / pool / type) in
   which a **game** (`GAM`, one play with a server-side `secret`, a timer, a prize pool) is played; **players**
   (`PLR`) spend currencies (keys / clips / diamonds) tracked by an append-only `transactions` (`TXN`) ledger;
@@ -181,7 +183,8 @@ fewer (under-staffing a HIGH rung skips the mandatory Apollo).
 ## 0. Bootstrap (Director, before any spawn)
 
 Read the rung's spec triad (+ its `.prompt.md` or named brief, if present) + the canon
-`codemojex.game-model.design.md` + the roadmap + `echo/CLAUDE.md` + **the `/x-mode` skill**. Declare the mode
+`codemojex.design.md` + the roadmap + the program (`program/codemojex.program.md`) + `echo/CLAUDE.md` +
+**the `/x-mode` skill**. Declare the mode
 (**Flat-L2**) and **triage the topology router** (Duo / Trio / Squad) from the rung's **risk tier × build-state**,
 recording the chosen tier as the **formation `tool_x_decision`**. Deep-reason the rung (the `/x-mode` §0: the 5W,
 the solution space incl. a do-nothing baseline, the invariants as runnable gates — the residual-grep, the
@@ -269,12 +272,14 @@ finding into a role charter (one guardrail per finding). Do not push unless aske
 - The laws + pipeline: `.claude/commands/x.md` + the `/x-mode` skill. The charters the peers wrap:
   `.claude/agents/{venus,mars,apollo}.md`. The dual-architect method: `docs/aaw/aaw.architect-approach.md`.
 - The umbrella build guide (the gate ladder, `TMPDIR=/tmp mix`, Valkey 6390, asdf re-probe): `echo/CLAUDE.md`.
-- The canon + the single roadmap + the dashboards: `docs/codemojex/codemojex.game-model.design.md` ·
-  `docs/codemojex/codemojex.roadmap.md` · `docs/codemojex/codemojex.design.md` ·
-  `docs/codemojex/codemojex.architecture.md` · `docs/codemojex/codemojex.ops.md` ·
-  `docs/codemojex/codemojex.progress.md`.
+- The canon + the single roadmap + the dashboard: `docs/codemojex/codemojex.design.md` (the binding design —
+  engine, six-table model, state machine, open questions) · `docs/codemojex/codemojex.roadmap.md` (the `cm.N`
+  ladder + the forward feature catalog) · `docs/codemojex/codemojex.progress.md` (the as-built dashboard).
+- The program (the pipeline + the topology router + the gate ladder + the per-agent calibrations):
+  `docs/codemojex/program/codemojex.program.md` + `docs/codemojex/program/codemojex.{venus,mars,apollo}.md`.
 - The specs (source of truth): `docs/codemojex/specs/<rung>.{md,stories.md,llms.md}` (+ `<rung>.prompt.md` if
-  present) + a named build brief (`docs/codemojex/codemojex-game-rename.brief.md`).
+  present); a continuing scope's build brief + its design-phase deliverables + its run-ledger live archived
+  under `docs/codemojex/specs/progress/` (e.g. `codemojex-game-rename.{brief,game-model.design,progress}.md`).
 - The code (the boundary): `echo/apps/codemojex/` (`lib/` + `lib/codemojex_web/` + `priv/repo/migrations/` +
   `test/`).
 - The run's audit trail: the rung's `<scope>.progress.md` (+ `.registry.json`) + `mcp__aaw__status`.

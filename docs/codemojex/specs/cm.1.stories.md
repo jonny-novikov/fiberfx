@@ -151,10 +151,10 @@ the mint site, the word `player` unchanged everywhere.*
   `:no_player` atom. No `kind: "USR"` cache literal exists.
 - **Invariants:** INV-1; the brand-vs-word law — the grep is over `\bUSR\b`, never the word `player`.
 
-> **NOTE on the `docs` grep:** `codemojex.specs.md` legitimately names `USR` as a **distinct** entity (the
-> auth account vs the `PLR` persona — specs.md:9–11). So the docs acceptance is `\bRMM\b|\bRND\b` → 0 in
-> `docs/codemojex` (player rows in the design.md mirror flip to `PLR`); a residual account-sense `USR` in
-> specs.md is **correct**, not a miss.
+> **NOTE on the `docs` grep:** the roadmap's forward feature catalog legitimately names `USR` as a
+> **distinct** entity (the auth account vs the `PLR` persona). So the docs acceptance is `\bRMM\b|\bRND\b`
+> → 0 in `docs/codemojex` (player rows in the design.md mirror flip to `PLR`); a residual account-sense
+> `USR` in the roadmap's forward catalog is **correct**, not a miss.
 
 ---
 

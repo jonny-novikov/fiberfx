@@ -15,10 +15,11 @@
 
 ## 1. References — read these first (paths first)
 
-- **The model design** `docs/codemojex/codemojex.game-model.design.md` — §3.8 (the blind mechanics, each
-  grounded line-by-line in the canon), §3.5 (the `games` columns cm.1 landed), §5.1 (the blind keyspace),
-  §6.3/§6.6/§6.8 (the lifecycle close branch + the privacy widening + the settle), §10.2 (the ruled Arms).
-  **This is the primary reference.**
+- **The model design** `docs/codemojex/specs/progress/codemojex-game-rename.game-model.design.md` — §3.8
+  (the blind mechanics, each grounded line-by-line in the canon), §3.5 (the `games` columns cm.1 landed),
+  §5.1 (the blind keyspace), §6.3/§6.6/§6.8 (the lifecycle close branch + the privacy widening + the
+  settle), §10.2 (the ruled Arms). **This is the primary reference.** (The as-built design is
+  `docs/codemojex/codemojex.design.md`.)
 - **The spec body** `cm.3.md` (the deliverables G1–G5 + the invariants) and **the stories**
   `cm.3.stories.md` (the acceptance gates).
 - **cm.1** (the shipped founding core) — the schema, the renamed `Codemojex.Schemas.Game`, the

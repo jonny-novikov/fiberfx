@@ -13,10 +13,13 @@
 > build brief) derive from it. When a derived file disagrees, this body wins. The stories + brief are
 > authored once the §"Open mechanics" Arms are ruled, so their contracts are fixed, not guessed.
 >
-> **Design canon:** `docs/codemojex/codemojex.game-model.design.md` §3.8 (the blind mechanics, each
-> grounded line-by-line in `architecture.md` / `specs.md` / `roadmap.md`) + §5.1 (the keyspace) + §10.2
-> (the open Arms). The product canon is `codemojex.architecture.md` ("Provably-fair secret", "Data flow —
-> a Golden Room", "Anonymization") / `codemojex.specs.md:36,46–56` / `codemojex.roadmap.md` B7.1.3/B7.4.1.
+> **Design canon:** the as-built design is [`codemojex.design.md`](../codemojex.design.md) (the blind mode,
+> the commit-reveal secret, the sealed top-K); the deep design-phase model (§3.8 the blind mechanics, §5.1
+> the keyspace, §10.2 the ruled Arms) is archived at
+> [`progress/codemojex-game-rename.game-model.design.md`](./progress/codemojex-game-rename.game-model.design.md).
+> The product canon is [`codemojex.design.md`](../codemojex.design.md) ("The engine", "Privacy and
+> fairness", "Open questions") + [`codemojex.roadmap.md`](../codemojex.roadmap.md) (Golden Rooms · the
+> feature catalog).
 >
 > **Builds on cm.1.** cm.1 is the founding core (the fresh schema **with the four blind columns +
 > `cell_codes` + `payout_split` present**, the three brand re-bases, classic live mode). cm.3 depends on
