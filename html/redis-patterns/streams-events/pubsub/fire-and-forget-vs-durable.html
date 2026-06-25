@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R5.03.1 — Fire-and-forget vs durable · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R5.03.1 dive: a PUBLISH and an XADD make opposite promises about a consumer who is not there yet. PUBLISH reaches present subscribers and returns a subscriber count it cannot interpret; XADD appends a durable entry and returns its id. EchoMQ.Events.publish discards the count — at-most-once, stated; EchoMQ.Stream.append returns {:ok, branded}, the durable receipt. Grounded in echo/apps/echo_mq — events.ex, stream.ex, with codemojex the consumer.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the timeline figure (hover-select) ---------- */
+.tflow{width:100%;height:auto;display:block;margin-top:4px}
+.tflow .axis{stroke:var(--b-line);stroke-width:1.2}
+.tflow .rlbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:end}
+.tflow .ev{fill:var(--b-node)}
+.tflow .evlbl{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.tflow .row{cursor:pointer;transition:opacity .18s ease}
+.tflow .row .mk rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.2}
+.tflow .row .mk text{font:9px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.tflow.focus .row{opacity:.24}
+.tflow.focus .row.on{opacity:1}
+.tflow.focus .row.on .mk rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+/* ---------- the return-value figure (hover-select) ---------- */
+.rflow{width:100%;height:auto;display:block;margin-top:4px}
+.rflow .call rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4}
+.rflow .call .cl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle;font-weight:700}
+.rflow .ret{cursor:pointer;transition:opacity .18s ease}
+.rflow .ret rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.rflow .ret text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.rflow .ret .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.rflow.focus .ret{opacity:.24}
+.rflow.focus .ret.on{opacity:1}
+.rflow.focus .ret.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+.rflow.focus .ret.on .edge{stroke:var(--r-red);stroke-width:2.6}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/streams-events">streams-events</a><span class="rsep">/</span><a href="/redis-patterns/streams-events/pubsub">pubsub</a><span class="rsep">/</span><span class="rcur">fire-and-forget-vs-durable</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#publish">A PUBLISH</a>
+      <a href="#xadd">An XADD</a>
+      <a href="#events">Events</a>
+      <a href="#gap">The gap</a>
+      <a href="#applied">Applied</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/streams-events">R5 &#183; Streams &amp; Events</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/streams-events/pubsub">Pub/Sub vs Streams</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Fire-and-forget vs durable</span>
+      </nav>
+      <p class="kicker">R5.03.1 &#183; Pub/Sub vs Streams &#8212; dive</p>
+      <h1>Fire-and-forget vs durable <span class="hns">&#8212; what the log remembers</span>.</h1>
+      <p class="lede">A <code>PUBLISH</code> and an <code>XADD</code> look alike from the caller, but they make
+      opposite promises about a consumer who is not there yet. A publish reaches the subscribers present at that
+      instant and <b>nobody else</b>; the log remembers an append for the reader who <b>arrives a minute later</b>.
+      This dive sits the two side by side &#8212; and reads the gap between them.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/events.ex &#183; publish/5 (PUBLISH
+      emq:{q}:events, the discarded subscriber count) and stream.ex &#183; append/4 (the {:ok, branded} receipt) &#8212;
+      at-most-once against durable.</p>
+
+      <figure class="anatomy" aria-labelledby="tlCap">
+        <figcaption id="tlCap"><b>One event, two channels, a late reader.</b> Select a channel to follow what a
+        reader who connects <em>after</em> the event sees. The green dot is when the event happens; the reader joins
+        to its right.</figcaption>
+        <div class="segbar" id="tlSel" role="group" aria-label="Select a channel">
+          <button type="button" data-ch="pub" aria-pressed="false">PUBLISH &#183; Events</button>
+          <button type="button" data-ch="add" aria-pressed="false">XADD &#183; Stream</button>
+        </div>
+        <svg class="tflow" id="tlflow" viewBox="0 0 460 150" role="img" aria-label="A time axis runs left to right. The event happens near the middle as a green dot, and a reader joins to the right of it. On the PUBLISH row the reader joins after the publish and sees nothing — the message was not stored. On the XADD row the entry sits in the log and the reader reads it on joining. Select a row to highlight it.">
+          <circle class="ev" cx="220" cy="16" r="5"></circle>
+          <text class="evlbl" x="220" y="11">event</text>
+          <line x1="220" y1="24" x2="220" y2="138" stroke="#2e7d5b" stroke-width="1" stroke-dasharray="3 3"></line>
+          <text class="evlbl" x="350" y="11">reader joins</text>
+          <line x1="350" y1="24" x2="350" y2="138" stroke="#68705f" stroke-width="1" stroke-dasharray="2 4"></line>
+          <line class="axis" x1="96" y1="62" x2="440" y2="62"></line>
+          <line class="axis" x1="96" y1="116" x2="440" y2="116"></line>
+
+          <g class="row" data-ch="pub">
+            <text class="rlbl" x="88" y="66">PUBLISH</text>
+            <g class="mk"><rect x="186" y="50" width="68" height="22" rx="3"></rect><text x="220" y="65">sent now</text></g>
+            <g class="mk"><rect x="316" y="50" width="68" height="22" rx="3"></rect><text x="350" y="65">sees none</text></g>
+          </g>
+          <g class="row" data-ch="add">
+            <text class="rlbl" x="88" y="120">XADD</text>
+            <g class="mk"><rect x="186" y="104" width="68" height="22" rx="3"></rect><text x="220" y="119">appended</text></g>
+            <g class="mk"><rect x="262" y="104" width="48" height="22" rx="3"></rect><text x="286" y="119">in log</text></g>
+            <g class="mk"><rect x="316" y="104" width="68" height="22" rx="3"></rect><text x="350" y="119">reads it</text></g>
+          </g>
+        </svg>
+        <div class="readout" id="tlOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a channel. A
+        reader who joins after the event sees nothing on the publish &#8212; it was not stored &#8212; but reads the
+        entry on the Stream, because the log kept it.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="publish">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>What a PUBLISH guarantees</h2>
+        <span class="ssrc">valkey &#183; publish</span>
+      </div>
+      <div class="prose">
+        <p><code>PUBLISH channel payload</code> is a delivery, not a store. Valkey sends the payload to every
+        connection subscribed to <code>channel</code> at the moment of the call and returns an integer &#8212; the
+        number of subscribers it reached. That integer is the whole receipt, and it is weak: a publish that reaches
+        <code>0</code> returns <code>0</code>, which the sender cannot tell apart from a healthy delivery without
+        out-of-band knowledge of who should be listening. There is no buffer behind the channel and no cursor in
+        front of it. A subscriber that connects one millisecond after the publish sees nothing of it; a subscriber
+        that drops for a heartbeat and reconnects has missed whatever published while it was gone.</p>
+        <p>This is <strong>at-most-once</strong>: a present subscriber receives a message zero or one times, and the
+        message is never held for an absent one. It is the right promise for a signal whose value is <em>now</em>
+        &#8212; a live progress tick, a presence ping, a cache-invalidation nudge &#8212; where a missed message
+        means only that the next one supersedes it. It is the wrong promise for anything that must be remembered. The
+        trap is that the API hides the difference: <code>PUBLISH</code> looks like it sent something durable, and the
+        returned count looks like a confirmation.</p>
+      </div>
+      <p class="take">A publish reaches present subscribers and stores nothing. Its return value &#8212; a subscriber
+      count &#8212; cannot tell a delivery to nobody from a delivery to one. At-most-once, by construction.</p>
+    </section>
+
+    <section id="xadd">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>What an XADD keeps</h2>
+        <span class="ssrc">valkey &#183; xadd</span>
+      </div>
+      <div class="prose">
+        <p><code>XADD key * field value &hellip;</code> is a store with a delivery on top. Valkey appends the entry,
+        assigns it a monotonic id, and keeps it in the log until a retention policy removes it. The return value is
+        that id &#8212; a durable handle the caller keeps, not a count it has to interpret. A reader reads with
+        <code>XRANGE</code> from any position: the start of the log (<code>-</code>), a saved cursor, or only-new
+        (<code>&gt;</code> under a consumer group). So a reader that was absent reads what it missed, a reader that
+        crashed resumes from its cursor, and a reader rebuilding state replays from <code>-</code>. The log is the
+        source of truth, and the id is how every reader agrees on order.</p>
+        <p>The cost of that durability is memory and a retention decision &#8212; a log that only grows is a leak, so
+        a Stream needs a trim policy where a channel needs nothing. That cost is the subject of R5.02's trimming
+        dive. Here the point is narrower: where a publish answers a subscriber count and forgets, an append answers a
+        receipt and remembers.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="retCap">
+        <figcaption id="retCap"><b>What each call hands back.</b> Select a call to read its return value and what the
+        caller can do with it. A count cannot be replayed; a receipt can be read back.</figcaption>
+        <div class="segbar" id="retSel" role="group" aria-label="Select a call">
+          <button type="button" data-rt="pub" aria-pressed="false">PUBLISH returns</button>
+          <button type="button" data-rt="add" aria-pressed="false">XADD returns</button>
+        </div>
+        <svg class="rflow" id="retflow" viewBox="0 0 460 150" role="img" aria-label="Two calls on the left, PUBLISH and XADD, each pointing to its return value on the right. PUBLISH points to a subscriber count, which cannot be read back. XADD points to a branded entry id, a durable receipt the caller keeps and a reader can read. Select a call to trace its return.">
+          <g class="call"><rect x="34" y="40" width="120" height="30" rx="6"></rect><text class="cl" x="94" y="59">PUBLISH ch payload</text></g>
+          <g class="call"><rect x="34" y="92" width="120" height="30" rx="6"></rect><text class="cl" x="94" y="111">XADD key * &hellip;</text></g>
+
+          <g class="ret" data-rt="pub">
+            <path class="edge" d="M154 55 C240 55 250 55 312 55" marker-end="url(#rar)"></path>
+            <rect x="314" y="40" width="128" height="30" rx="5"></rect><text x="378" y="55">subscriber count</text><text x="378" y="66" style="fill:var(--b-dim);font-size:8.5px">0 == reached nobody</text>
+          </g>
+          <g class="ret" data-rt="add">
+            <path class="edge" d="M154 107 C240 107 250 107 312 107" marker-end="url(#rar)"></path>
+            <rect x="314" y="92" width="128" height="30" rx="5"></rect><text x="378" y="107">branded entry id</text><text x="378" y="118" style="fill:var(--b-dim);font-size:8.5px">durable &#183; read back later</text>
+          </g>
+          <defs><marker id="rar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#d6584f"></path></marker></defs>
+        </svg>
+        <div class="readout" id="retOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a call. A
+        publish returns a subscriber count &#8212; weak, and <code>0</code> when nobody heard. An append returns the
+        entry's id &#8212; a durable receipt a reader can read back from the log.</div>
+      </figure>
+      <p class="take">A publish hands back a count it cannot interpret. An append hands back an id the log keeps
+      &#8212; a receipt, not a confirmation, and the difference is durability.</p>
+    </section>
+
+    <section id="events">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>EchoMQ &#8212; the count discarded, the receipt kept</h2>
+        <span class="ssrc">events.ex &#183; publish/5 &#183; stream.ex &#183; append/4</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoMQ.Events</code> does not pretend the channel is durable.
+        <code>publish(conn, queue, event, job_id, extra \\ [])</code> gates the id at the key builder, encodes the
+        cjson payload, and issues <code>PUBLISH emq:{q}:events</code> &#8212; best-effort, a no-op when no one is
+        listening. The returned subscriber count is discarded on purpose: retrying a publish that reached zero
+        subscribers would not change the promise, because there is still no store behind the channel.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/events.ex &#183; publish/5, the subscriber count discarded<span class="tag">verbatim</span></figcaption>
+        <pre>case Connector.command(conn, ["PUBLISH", channel(queue), payload]) do
+  {:ok, _n} -&gt; :ok            <span class="fd">&#8592; the subscriber count, discarded — best-effort</span>
+  other -&gt; other
+end</pre>
+      </figure>
+      <div class="prose">
+        <p><code>EchoMQ.Stream.append/4</code> is the durable contrast on the same bus. It mints an
+        <code>EVT</code>-branded record id host-side, appends the <code>XADD</code>, and returns
+        <code>{:ok, branded}</code> &#8212; the moduledoc puts it plainly: the branded id <em>is</em> the receipt. The
+        entry now exists in the log and stays there until retention removes it.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/stream.ex &#183; append_id/5, the branded id returned as the receipt<span class="tag">verbatim</span></figcaption>
+        <pre>case Connector.command(conn, parts) do
+  {:ok, id} when is_binary(id) -&gt; {:ok, branded}   <span class="fd">&#8592; the receipt: the branded id</span>
+  {:ok, {:error_reply, @id_too_small}} -&gt; {:error, :nonmonotonic}
+  {:ok, {:error_reply, msg}} -&gt; {:error, {:error_reply, msg}}
+  {:error, _} = err -&gt; err
+end</pre>
+      </figure>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>PUBLISH</code> answers an integer reply &#8212; the
+      count of clients that received the message &#8212; while <code>XADD</code> answers the new entry's id string,
+      a value a later <code>XRANGE</code> can read back &#8212; <a href="https://valkey.io/commands/xadd/" rel="noopener">valkey.io/commands/xadd</a>.</p>
+    </section>
+
+    <section id="gap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The gap &#8212; the no-live-subscriber case</h2>
+        <span class="ssrc">the difference, in one event</span>
+      </div>
+      <div class="prose">
+        <p>Put one event through both channels with no subscriber present, and the difference is the whole module in
+        miniature. The publish reaches a subscriber count of zero and is gone &#8212; there is nowhere it could have
+        been stored. The append writes an entry that sits in the log, and the reader who connects a minute later
+        reads it in full. Neither is wrong; they are different promises. The publish is a doorbell that only the
+        people home hear; the append is a letter in the box that waits for whoever checks the mail.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A <code>PUBLISH</code> with no live subscriber is lost &#8212; at-most-once, nothing stored. An
+          <code>XADD</code> with no reader is read the moment a reader arrives &#8212; the log kept it.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>Append the event to the durable Stream so the record exists and can be replayed; publish a lighter
+          notification on Events so a live view reacts at once. The Stream is the system of record; the publish is
+          the live nudge.</p>
+        </div>
+      </div>
+      <p class="take">One event, two channels: the publish forgets the instant no one is listening; the append is
+      held for the reader who arrives later. Use both &#8212; durable for the record, live for the reaction.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The pattern, applied</h2>
+        <span class="ssrc">echo/apps/codemojex</span>
+      </div>
+      <div class="prose">
+        <p>In codemojex (<code>echo/apps/codemojex</code>) a round-settled event takes exactly that dual path. The
+        settlement is appended to the round's durable Stream with <code>EchoMQ.Stream.append/4</code>, so the
+        <code>{:ok, branded}</code> receipt records that it happened and a feed reader can replay the round or resume
+        after a restart. A lighter "round settled" notification is published on <code>EchoMQ.Events</code> so a live
+        Telegram view updates the instant the round closes. A player who is not watching at that instant misses the
+        live nudge &#8212; and loses nothing, because the durable Stream still holds the settlement for the feed that
+        reads it later. Durable where the record matters, live where the reaction does.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/bus">
+          <span class="dr">/echomq/bus</span>
+          <h3>Both channels, in depth</h3>
+          <p>The Bus pillar teaches the broadcast channel and the retained, replayable log end to end: the events
+          seam, the consumer-group loop, and the receipt the writer returns.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>The Stream Tier in the manuscript</h3>
+          <p>Part B3 builds the bus the durable channel runs on: the <code>emq:{q}:</code> keyspace, jobs and lanes,
+          and the Stream Tier the receipt is written to.</p>
+        </a>
+        <a class="door" href="/echo-persistence">
+          <span class="dr">/echo-persistence</span>
+          <h3>Where the durable log endures</h3>
+          <p>What the Stream retains is bounded by retention; trimmed segments fold into the Graft floor on CubDB and
+          on to Tigris &#8212; the durability dial taught in full.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/publish/" rel="noopener">Valkey &mdash; <em>PUBLISH</em></a> &mdash; sends to present subscribers, returns the count reached; no subscriber means a no-op, nothing stored.</li>
+            <li><a href="https://valkey.io/topics/pubsub/" rel="noopener">Valkey &mdash; <em>Pub/Sub</em></a> &mdash; the fire-and-forget channel and its at-most-once delivery.</li>
+            <li><a href="https://valkey.io/commands/xadd/" rel="noopener">Valkey &mdash; <em>XADD</em></a> &mdash; appends a durable entry with a monotonic id and returns it; the receipt a publish has no equivalent of.</li>
+            <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the retained, replayable log the append writes to.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/streams-events/pubsub">R5.03 &#183; Pub/Sub vs Streams</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/streams-events/pubsub/the-choosing-rule">R5.03.2 &#183; The choosing rule</a><span class="rs">when each promise is the one you need</span></li>
+            <li><a href="/redis-patterns/streams-events/pubsub/the-dedicated-blocking-connection">R5.03.3 &#183; The dedicated blocking connection</a><span class="rs">the operational cost the publish side carries</span></li>
+            <li><a href="/redis-patterns/streams-events/streams-consumer-patterns">R5.02 &#183; Stream consumer patterns</a><span class="rs">reading the durable log reliably</span></li>
+            <li><a href="/echomq/bus">/echomq/bus</a><span class="rs">the broadcast channel and the retained log in depth</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/streams-events/pubsub"><span class="pk">up</span>&#8592; R5.03 &#183; Pub/Sub vs Streams</a>
+      <a class="pgx" href="/redis-patterns/streams-events/pubsub/the-choosing-rule"><span class="pk">next</span>R5.03.2 &#183; The choosing rule &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/streams-events/pubsub/fire-and-forget-vs-durable">R5.03.1 &#183; Fire-and-forget vs durable</a>
+        <a href="/redis-patterns/streams-events/pubsub/the-choosing-rule">R5.03.2 &#183; The choosing rule</a>
+        <a href="/redis-patterns/streams-events/pubsub/the-dedicated-blocking-connection">R5.03.3 &#183; The dedicated blocking connection</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: the late-reader timeline (pure lookup over a fixed dataset) ---------- */
+  var TL = {
+    pub: { sees: 'a reader who joins after the publish sees nothing — it was not stored', why: 'the channel has no buffer; the message reached present subscribers only' },
+    add: { sees: 'a reader who joins after the append reads the entry from the log', why: 'the entry was retained with an id; XRANGE reads it back from any position' }
+  };
+  function describeTl(ch) {
+    var s = TL[ch];
+    if (!s) return '';
+    return '<span class="rk">the late reader &#183;</span> <b>' + s.sees + '</b><br>' +
+      '<span class="rk">why &#183;</span> ' + s.why;
+  }
+  wireHoverSelect('tlflow', '#tlSel button', 'tlOut', 'data-ch', '.row', describeTl,
+    '<span class="rk">readout &#183;</span> Select a channel. A reader who joins after the event sees nothing on the publish &#8212; it was not stored &#8212; but reads the entry on the Stream, because the log kept it.');
+
+  /* ---------- Interactive 2: the return values (pure lookup over a fixed dataset) ---------- */
+  var RET = {
+    pub: { val: 'a subscriber count (integer) — 0 when it reached nobody', use: 'cannot be read back; indistinguishable from a delivery to one' },
+    add: { val: 'the branded entry id — a 14-byte durable handle', use: 'a receipt the caller keeps; a reader reads the entry back from the log' }
+  };
+  function describeRet(rt) {
+    var s = RET[rt];
+    if (!s) return '';
+    return '<span class="rk">returns &#183;</span> <b>' + s.val + '</b><br>' +
+      '<span class="rk">what you can do &#183;</span> ' + s.use;
+  }
+  wireHoverSelect('retflow', '#retSel button', 'retOut', 'data-rt', '.ret', describeRet,
+    '<span class="rk">readout &#183;</span> Select a call. A publish returns a subscriber count &#8212; weak, and <code>0</code> when nobody heard. An append returns the entry\'s id &#8212; a durable receipt a reader can read back from the log.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

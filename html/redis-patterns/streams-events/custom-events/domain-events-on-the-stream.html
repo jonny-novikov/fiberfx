@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R5.04.1 — Domain events on the stream · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R5.04.1 · A stream is identified by its name, so each kind of domain event can have its own — a room-opened stream, a guess-scored stream, a game-settled stream, each an independent append-only log read by exactly the readers that care about it. Grounded in EchoMQ's real Stream Tier: EchoMQ.Stream.append/4 takes a caller-chosen name and issues XADD emq:{q}:stream:<name>, minting an EVT-branded record id; one brand per stream (EchoMQ.Stream.Id.evt?/1) keeps the id sort equal to mint order. Worked through codemojex's room, guess, and settle events.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+.door.floor{border-left-color:var(--b-node)}
+.door.floor .dr{color:var(--b-node)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the channels figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.chfig{width:100%;height:auto;display:block;margin-top:4px}
+.chfig .lane{cursor:pointer;transition:opacity .18s ease}
+.chfig .lane rect.bar{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.chfig .lane .ent rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.2}
+.chfig .ll{font:11px var(--mono);font-weight:700;fill:var(--b-ink)}
+.chfig .et{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.chfig .end{font:10px var(--mono);fill:var(--b-dim)}
+.chfig.focus .lane{opacity:.26}
+.chfig.focus .lane.on{opacity:1}
+.chfig.focus .lane.on rect.bar{fill:var(--r-red-tint);stroke:var(--r-red)}
+.chfig.focus .lane.on .ent rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.chfig.focus .lane.on .ll{fill:var(--r-red)}
+/* ---------- the kind-door figure (hover-select) ---------- */
+.kdfig{width:100%;height:auto;display:block;margin-top:4px}
+.kdfig .row{cursor:pointer;transition:opacity .18s ease}
+.kdfig .row rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.kdfig .bid{font:12px var(--mono);font-weight:700;text-anchor:middle}
+.kdfig .ns{font:11px var(--mono);font-weight:700;fill:var(--b-ns);text-anchor:middle}
+.kdfig .verd{font:10px var(--mono);text-anchor:middle}
+.kdfig .row.ok rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.kdfig .row.no rect{fill:#efe6e4;stroke:var(--b-dim);stroke-dasharray:4 3}
+.kdfig .row.ok .verd{fill:var(--r-red)}
+.kdfig .row.no .verd{fill:var(--b-dim)}
+.kdfig.focus .row{opacity:.3}
+.kdfig.focus .row.on{opacity:1}
+.kdfig .door{font:10px var(--mono);fill:var(--b-ts);text-anchor:middle}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/streams-events">streams-events</a><span class="rsep">/</span><a href="/redis-patterns/streams-events/custom-events">custom-events</a><span class="rsep">/</span><span class="rcur">domain-events-on-the-stream</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#channel">The name is the channel</a>
+      <a href="#order">One brand per stream</a>
+      <a href="#facts">The events are facts</a>
+      <a href="#applied">In EchoMQ</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/streams-events/custom-events">Custom events</a>
+          <span class="sep">/</span>
+          <span class="here">Domain events on the stream</span>
+        </nav>
+        <p class="kicker">R5.04.1 &middot; dive 1</p>
+        <h1>Domain events on the <span class="hns">stream</span>.</h1>
+        <p class="lede">A stream is identified by its name, so each kind of domain event can have its own &mdash; one
+          append-only log per channel, read by exactly the readers that care about it.</p>
+        <p class="heronote">Append a <code>room-opened</code> to one stream, a <code>guess-scored</code> to another, a
+          <code>game-settled</code> to a third, and three independent logs follow. A reader of one feed reads one stream; it
+          does not page through a combined log to find its events. Select an event type; the readout names what its stream
+          holds and who folds it.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#channel">The name is the channel</a>
+          <a href="#order">One brand per stream</a>
+          <a href="#facts">The events are facts</a>
+          <a href="#applied">In EchoMQ</a>
+          <a href="#refs">References</a>
+        </div>
+      </section>
+
+      <figure class="anatomy" aria-labelledby="chCap">
+        <figcaption id="chCap"><b>A named stream is a domain-event channel.</b> Select an event type; the readout names what
+          its stream holds and who reads it.</figcaption>
+        <div class="segbar" id="chSel" role="group" aria-label="Which domain-event type's named stream to highlight">
+          <button type="button" data-ch="room-opened" aria-pressed="false">room-opened</button>
+          <button type="button" data-ch="guess-scored" aria-pressed="false">guess-scored</button>
+          <button type="button" data-ch="game-settled" aria-pressed="false">game-settled</button>
+        </div>
+        <svg class="chfig" id="chfig" viewBox="0 0 440 200" role="img" aria-label="Three named streams: room-opened, guess-scored, and game-settled, each its own append-only log of entries. A reader of one feed reads one stream and does not page through the others. Selecting an event type highlights its stream and names what it holds; the readout reports the channel.">
+          <text class="end" x="20" y="20">three named streams &middot; one per type</text>
+          <g class="lane" id="laneRoom" data-ch="room-opened">
+            <rect class="bar" x="20" y="32" width="400" height="42" rx="7"></rect>
+            <text class="ll" x="32" y="48">room-opened</text>
+            <g class="ent"><rect x="170" y="38" width="76" height="30" rx="5"></rect><text class="et" x="208" y="57">room ROM…</text></g>
+            <g class="ent"><rect x="254" y="38" width="76" height="30" rx="5"></rect><text class="et" x="292" y="57">room ROM…</text></g>
+            <g class="ent"><rect x="338" y="38" width="76" height="30" rx="5"></rect><text class="et" x="376" y="57">room ROM…</text></g>
+          </g>
+          <g class="lane" id="laneGuess" data-ch="guess-scored">
+            <rect class="bar" x="20" y="84" width="400" height="42" rx="7"></rect>
+            <text class="ll" x="32" y="100">guess-scored</text>
+            <g class="ent"><rect x="170" y="90" width="76" height="30" rx="5"></rect><text class="et" x="208" y="109">total 480</text></g>
+            <g class="ent"><rect x="254" y="90" width="76" height="30" rx="5"></rect><text class="et" x="292" y="109">total 320</text></g>
+            <g class="ent"><rect x="338" y="90" width="76" height="30" rx="5"></rect><text class="et" x="376" y="109">total 600</text></g>
+          </g>
+          <g class="lane" id="laneSettle" data-ch="game-settled">
+            <rect class="bar" x="20" y="136" width="400" height="42" rx="7"></rect>
+            <text class="ll" x="32" y="152">game-settled</text>
+            <g class="ent"><rect x="254" y="142" width="76" height="30" rx="5"></rect><text class="et" x="292" y="161">winner PLR…</text></g>
+            <g class="ent"><rect x="338" y="142" width="76" height="30" rx="5"></rect><text class="et" x="376" y="161">pot 60</text></g>
+          </g>
+        </svg>
+        <div class="readout" id="chOut" aria-live="polite"><span class="rk">readout &middot;</span> Select an event type. Each
+          domain-event type has its own named stream &mdash; one append-only log per channel.</div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="channel">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The name is the channel</h2>
+        <span class="ssrc">domain-events-on-the-stream.md &middot; one log per type</span>
+      </div>
+      <div class="prose">
+        <p><code>XADD key field value &hellip;</code> appends to the stream named <code>key</code>, creating it on first
+          append. Choose the key by the event type and the key <em>is</em> the channel: every <code>room-opened</code> event
+          lands on the <code>room-opened</code> stream, every <code>guess-scored</code> on the <code>guess-scored</code>
+          stream. A reader of one feed reads one stream; it does not filter a combined log to find its events.</p>
+      </div>
+      <pre class="code"><b>XADD</b> room-opened   * room ROM0Nk2&hellip;  set animals  fee 1     <span class="cmt"># -&gt; "&hellip;000-0"</span>
+<b>XADD</b> guess-scored  * game GAM0Nk3&hellip;  player PLR0&hellip;  total 480 <span class="cmt"># -&gt; "&hellip;000-0" (a separate log)</span>
+<b>XADD</b> game-settled  * game GAM0Nk3&hellip;  winner PLR0&hellip;  pot 60    <span class="cmt"># -&gt; "&hellip;000-0"</span></pre>
+      <div class="prose">
+        <p>A new event type costs a new name and nothing else &mdash; no shared table to migrate, no enum to extend. The cost
+          of one stream per type is a key per type; the buy is a focused log per feed, so a reader's range read returns only
+          its own events in order.</p>
+      </div>
+      <p class="take">The key is the channel: append a domain event to the stream named for its type, and one focused,
+        append-only log per channel follows.</p>
+    </section>
+
+    <section id="order">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>One brand per stream keeps order sound</h2>
+        <span class="ssrc">domain-events-on-the-stream.md &middot; the kind door</span>
+      </div>
+      <div class="prose">
+        <p>Each entry carries a time-ordered id, and a later append always carries a larger id than an earlier one &mdash;
+          within one stream. The order holds because the entries are minted by a single writer in increasing order; the id
+          sort, the entry order, and the write order are the same sequence. Across two streams the ids are independent
+          &mdash; <code>room-opened</code> and <code>guess-scored</code> each start their own sequence &mdash; so a reader
+          folds one stream at a time, in that stream's order.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="kdCap">
+        <figcaption id="kdCap"><b>One brand per stream &mdash; the kind door admits one namespace.</b> Select a record id;
+          the readout reports whether the stream admits it.</figcaption>
+        <div class="segbar" id="kdSel" role="group" aria-label="Which record id to test against the stream's kind door">
+          <button type="button" data-id="evt" aria-pressed="false">EVT0&hellip; (admitted)</button>
+          <button type="button" data-id="ord" aria-pressed="false">ORD0&hellip; (wrong kind)</button>
+          <button type="button" data-id="bad" aria-pressed="false">not-branded</button>
+        </div>
+        <svg class="kdfig" id="kdfig" viewBox="0 0 440 150" role="img" aria-label="The stream's kind door admits one branded namespace, EVT. A record id beginning EVT is admitted and ordered. A well-formed id of another namespace, ORD, is refused as the wrong kind. A non-branded string is refused as malformed. Selecting an id reports the door's verdict; admitting one namespace is what keeps byte order equal to mint order.">
+          <text class="door" x="220" y="20">the stream admits one brand: EVT</text>
+          <g class="row" id="rowEvt" data-id="evt"><rect x="40" y="34" width="360" height="30" rx="6"></rect><text class="ns" x="78" y="54">EVT</text><text class="bid" x="200" y="54">EVT0&hellip;xY9Wvvcd</text><text class="verd" x="360" y="54">admitted</text></g>
+          <g class="row" id="rowOrd" data-id="ord"><rect x="40" y="72" width="360" height="30" rx="6"></rect><text class="ns" x="78" y="92">ORD</text><text class="bid" x="200" y="92">ORD0&hellip;xY9Wvvcd</text><text class="verd" x="360" y="92">wrong kind</text></g>
+          <g class="row" id="rowBad" data-id="bad"><rect x="40" y="110" width="360" height="30" rx="6"></rect><text class="ns" x="78" y="130">&mdash;</text><text class="bid" x="200" y="130">not-branded</text><text class="verd" x="360" y="130">malformed</text></g>
+        </svg>
+        <div class="readout" id="kdOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a record id. The
+          stream admits one brand &mdash; <code>EVT</code> &mdash; so byte order equals mint order; a foreign or malformed id
+          is refused at the door, before any wire.</div>
+      </figure>
+
+      <p class="take">A stream admits one brand, so its byte-ordered ids stay in mint order; the kind door refuses a foreign
+        or malformed id before any wire, and the writer mints its own, so a wrong kind cannot slip in.</p>
+    </section>
+
+    <section id="facts">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The events are facts, like any event-sourced log</h2>
+        <span class="ssrc">domain-events-on-the-stream.md &middot; immutable, append-only</span>
+      </div>
+      <div class="prose">
+        <p>A domain event is a fact that happened: a room was opened, a guess scored 480, a game settled to a winner. It is
+          appended once, never edited, never deleted as a correction &mdash; a correction is a new event. The streams grow
+          forward only, and any view over them is a fold of the facts. Custom events change <em>what</em> the facts are, not
+          the rule that they are immutable and append-only.</p>
+      </div>
+      <p class="take">A domain event is a fact appended once and never edited; custom events change which facts are recorded,
+        not that they are immutable and grow forward only.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>In EchoMQ &mdash; append/4 and the caller-chosen name</h2>
+        <span class="ssrc">echo_mq/stream.ex &middot; append/4 &middot; stream/id.ex &middot; evt?/1</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoMQ.Stream.append(conn, queue, name, fields)</code> is the writer, and the <code>name</code> is the
+          domain-event channel. It mints an <code>EVT</code>-branded record id host-side, derives the explicit
+          <code>XADD</code> id from it, and issues
+          <code>XADD emq:{q}:stream:&lt;name&gt; &lt;xadd_id&gt; id &lt;branded&gt; &lt;fields&hellip;&gt;</code>, returning
+          <code>{:ok, branded}</code> &mdash; the branded id as the receipt. The key is
+          <code>emq:{q}:stream:&lt;name&gt;</code> via <code>EchoMQ.Keyspace.queue_key/2</code>, so each named stream of one
+          queue shares that queue's <code>{q}</code> hash-tag slot.</p>
+      </div>
+      <pre class="code"><span class="cmt"># EchoMQ.Stream.append/4 — name as the domain-event channel (real)</span>
+<b>EchoMQ.Stream.append</b>(conn, "cm", "room-opened",  [{"room", room}, {"set", "animals"}])
+<b>EchoMQ.Stream.append</b>(conn, "cm", "guess-scored", [{"game", game}, {"player", player}, {"total", "480"}])
+<span class="cmt">#  mints an EVT id; XADD emq:{cm}:stream:room-opened &lt;xadd_id&gt; id &lt;branded&gt; room … set animals</span>
+<span class="cmt">#  -&gt; {:ok, "EVT0Nk2…"}    (the branded id is the receipt)</span></pre>
+      <div class="prose">
+        <p>One brand per stream is enforced at the door. <code>EchoMQ.Stream.Id.evt?/1</code> is the kind predicate, and
+          <code>EchoMQ.Stream.append_id/5</code> raises before any wire if a caller supplies a record id of the wrong
+          namespace. That single-brand rule is what keeps the order theorem sound: base-62 byte order equals integer order
+          only within one namespace, so a stream that admits one brand (<code>EVT</code>) keeps its byte-ordered ids in mint
+          order. <code>append/4</code> mints its own <code>EVT</code> id, so a wrong kind there cannot occur.</p>
+        <p>The worked consumer is <strong>codemojex</strong> (<code>echo/apps/codemojex</code>), a Telegram emoji-guessing
+          game on this stack. Its lifecycle produces the domain events: <code>Codemojex.Rooms.create_room/3</code> opens a
+          room (a <code>ROM</code>) and the first joiner starts a game (a <code>GAM</code>);
+          <code>Codemojex.Guesses.submit/3</code> enqueues a guess as a <code>JOB</code> on the player's <code>PLR</code>
+          lane, which the consumer scores with <code>Codemojex.Scoring.score/2</code>; the game settles to a winner. Each of
+          those &mdash; room opened, guess scored, game settled &mdash; is one domain event appended to its own named stream,
+          so the activity feed and the results view each fold their own channel.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A stream is created automatically when the first entry is
+        added to it, so a new domain-event channel is one <code>XADD</code> to a new key &mdash; no declaration step &mdash;
+        <a href="https://valkey.io/commands/xadd/" rel="noopener">valkey.io/commands/xadd</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A stream is named, so each domain-event type gets its own; one append-only log per channel, read by the readers
+            that care about it.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Stream.append/4</code> takes a caller-chosen <code>name</code> &rarr;
+            <code>XADD emq:{q}:stream:&lt;name&gt;</code>; <code>EchoMQ.Stream.Id</code> admits one brand (<code>EVT</code>)
+            per stream, keeping the id sort equal to mint order. The codemojex room / guess / settle events are one channel
+            each.</p>
+        </div>
+      </div>
+      <p class="take">Redis names a stream by its key; EchoMQ makes that name the domain-event channel and admits one brand
+        per stream, so each channel is a focused, mint-ordered log.</p>
+
+      <div class="doors">
+        <div class="door">
+          <span class="dr">/echomq/bus</span>
+          <h3>A door, not a depth &mdash; the EchoMQ Bus pillar</h3>
+          <p>This dive cites the named append as proof the domain-event channel ships. The consumer-group reader and the
+            polyglot seam that consume those channels are the subject of the dedicated <strong>EchoMQ course</strong>. Open
+            onto <a href="/echomq/bus">the Bus pillar</a> &mdash; the broadcast and the retained, replayable log.</p>
+        </div>
+        <div class="door">
+          <span class="dr">/bcs/bus</span>
+          <h3>The Stream Tier in the manuscript</h3>
+          <p>The figures here are drawn from the Branded Component System bus chapter. As <a href="/bcs/bus">B3, the bus</a>
+            puts it: the stream keys are born braced and branded like every other key on the bus, and one brand per stream
+            is what makes the entry order, the id sort, and the mint order one sequence.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/xadd/" rel="noopener">Valkey &mdash; <em>XADD</em></a> &mdash; append an entry to a named stream, creating it on first append; one stream per domain-event type.</li>
+            <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the stream as an append-only log identified by its key.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{q}</code> hash tag co-locates a queue's named streams on one of the 16384 slots.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/streams-events/custom-events">R5.04 &middot; Custom events &amp; projections</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/streams-events/custom-events/windowed-aggregation">R5.04.2 &middot; Windowed aggregation</a><span class="rs">folding a window of one channel into a projection</span></li>
+            <li><a href="/redis-patterns/streams-events/custom-events/reserved-name-discipline">R5.04.3 &middot; Reserved-name discipline</a><span class="rs">the reserved id field and key suffixes</span></li>
+            <li><a href="/redis-patterns/streams-events/streams-event-sourcing">R5.01 &middot; Event sourcing on Streams</a><span class="rs">the append-only log this reapplies to user-defined events</span></li>
+            <li><a href="/echomq/bus">/echomq &middot; Bus</a><span class="rs">the retained, replayable log in depth</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/streams-events/custom-events"><span class="pk">up</span>&#8592; R5.04 &middot; Custom events</a>
+      <a class="pgx" href="/redis-patterns/streams-events/custom-events/windowed-aggregation"><span class="pk">next</span>R5.04.2 &middot; Windowed aggregation &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/streams-events/custom-events">R5.04 &middot; Custom events &amp; projections</a>
+        <a href="/redis-patterns/streams-events/custom-events/windowed-aggregation">R5.04.2 &middot; Windowed aggregation</a>
+        <a href="/redis-patterns/streams-events/custom-events/reserved-name-discipline">R5.04.3 &middot; Reserved-name discipline</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq/bus">EchoMQ — the Bus pillar</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0OGHHvgKf7B</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- hero: a named stream is a domain-event channel (pure over the event type) ---------- */
+  var CHANNELS = {
+    'room-opened': {
+      lane: 'laneRoom',
+      text: 'The room-opened stream holds one entry per room opened — room ROM…, the set, the fee. A reader of how many ' +
+        'rooms opened this hour folds this stream alone; it never pages through guesses or settlements.'
+    },
+    'guess-scored': {
+      lane: 'laneGuess',
+      text: 'The guess-scored stream holds one entry per scored guess — the game, the player, the total. The activity ' +
+        'feed and the per-player running total each fold this stream, into different shapes, without touching the others.'
+    },
+    'game-settled': {
+      lane: 'laneSettle',
+      text: 'The game-settled stream holds one entry per settled game — the game, the winner, the pot. The day’s ' +
+        'results view folds this stream alone; a new event type would be a new name, not a new table.'
+    }
+  };
+  var chfig = document.getElementById('chfig');
+  var chButtons = document.querySelectorAll('#chSel button');
+  var chOut = document.getElementById('chOut');
+  var chLanes = ['laneRoom', 'laneGuess', 'laneSettle'];
+  function selectChannel(ch) {
+    chButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-ch') === ch ? 'true' : 'false');
+    });
+    if (chfig) chfig.classList.toggle('focus', !!ch);
+    var lane = ch && CHANNELS[ch] ? CHANNELS[ch].lane : null;
+    chLanes.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('on', id === lane);
+    });
+    if (ch && CHANNELS[ch]) {
+      if (chOut) chOut.innerHTML = '<span class="rk">readout &middot;</span> ' + CHANNELS[ch].text;
+    } else if (chOut) {
+      chOut.innerHTML = '<span class="rk">readout &middot;</span> Select an event type. Each domain-event type has its own ' +
+        'named stream — one append-only log per channel.';
+    }
+  }
+  chButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var ch = b.getAttribute('data-ch');
+      selectChannel(b.getAttribute('aria-pressed') === 'true' ? null : ch);
+    });
+  });
+  if (chfig) {
+    chfig.querySelectorAll('.lane').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectChannel(g.getAttribute('data-ch')); });
+      g.addEventListener('mouseleave', function () { selectChannel(null); });
+    });
+  }
+
+  /* ---------- content: the kind door admits one brand (pure over the id) ---------- */
+  // The stream admits one branded namespace, EVT. An EVT id is admitted and ordered; a well-formed ORD id is the wrong
+  // kind; a non-branded string is malformed. The highlighted row and verdict are a pure function of the selected id.
+  var IDS = {
+    evt: {
+      row: 'rowEvt', cls: 'ok',
+      text: 'EVT0…xY9Wvvcd is the admitted namespace. EchoMQ.Stream.Id.evt?/1 returns true, the id is mapped to its ' +
+        'XADD id, and it sorts in mint order — base-62 byte order equals integer order within the one namespace.'
+    },
+    ord: {
+      row: 'rowOrd', cls: 'no',
+      text: 'ORD0…xY9Wvvcd is well-formed but the wrong kind. EchoMQ.Stream.append_id/5 raises before any wire — admitting ' +
+        'a second namespace would break the byte-order-equals-mint-order step, so a foreign brand is refused at the door.'
+    },
+    bad: {
+      row: 'rowBad', cls: 'no',
+      text: 'not-branded is not a branded id at all. The kind door reports malformed and the writer raises before any ' +
+        'wire; a stream entry id must be a valid branded id of the admitted namespace.'
+    }
+  };
+  var kdfig = document.getElementById('kdfig');
+  var kdButtons = document.querySelectorAll('#kdSel button');
+  var kdOut = document.getElementById('kdOut');
+  var kdRows = ['rowEvt', 'rowOrd', 'rowBad'];
+  function selectId(key) {
+    kdButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-id') === key ? 'true' : 'false');
+    });
+    if (kdfig) kdfig.classList.toggle('focus', !!key);
+    var rec = key && IDS[key] ? IDS[key] : null;
+    kdRows.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('on', rec && rec.row === id);
+    });
+    if (rec) {
+      if (kdOut) kdOut.innerHTML = '<span class="rk">readout &middot;</span> ' + rec.text;
+    } else if (kdOut) {
+      kdOut.innerHTML = '<span class="rk">readout &middot;</span> Select a record id. The stream admits one brand — EVT — ' +
+        'so byte order equals mint order; a foreign or malformed id is refused at the door, before any wire.';
+    }
+  }
+  kdButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-id');
+      selectId(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (kdfig) {
+    kdfig.querySelectorAll('.row').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectId(g.getAttribute('data-id')); });
+      g.addEventListener('mouseleave', function () { selectId(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

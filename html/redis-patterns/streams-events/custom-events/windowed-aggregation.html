@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R5.04.2 — Windowed aggregation · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R5.04.2 · A projection is a fold scoped to a slice of the log: take the entries between two instants and reduce them to one shape a view needs. Because a stream entry id begins with the millisecond it was added, a DateTime becomes a range bound, so a time window is an id range and the projection is the fold over it. Grounded in EchoMQ's real Stream Tier: EchoMQ.Stream.read_window/6 reads a closed [t0,t1] window and read_since/5 a half-open [t0,∞) one, deriving exact bounds with minid_floor/1 and maxid_ceil/1; worked through codemojex's windowed activity feed beside the running board.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+.door.floor{border-left-color:var(--b-node)}
+.door.floor .dr{color:var(--b-node)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the window-edges figure (hover-select) ---------- */
+.wnfig{width:100%;height:auto;display:block;margin-top:4px}
+.wnfig .ent rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.wnfig .ent.in rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.wnfig .ent.out rect{fill:var(--b-card);stroke:var(--b-line);stroke-dasharray:3 3}
+.wnfig .et{font:10px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.wnfig .em{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.wnfig .ent.out .et{fill:var(--b-dim)}
+.wnfig .win{fill:var(--r-red-tint);opacity:.26}
+.wnfig .edge{stroke:var(--r-red);stroke-width:1.8}
+.wnfig .edgeo{stroke:var(--r-red);stroke-width:1.8;stroke-dasharray:3 3}
+.wnfig .el{font:10px var(--mono);font-weight:700;fill:var(--r-red);text-anchor:middle}
+.wnfig .end{font:10px var(--mono);fill:var(--b-dim)}
+/* ---------- the fold figure ---------- */
+.fdfig{width:100%;height:auto;display:block;margin-top:4px}
+.fdfig .evt{cursor:pointer;transition:opacity .18s ease}
+.fdfig .evt rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4}
+.fdfig .evt.applied rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.fdfig .et{font:11px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.fdfig .ep{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.fdfig .acc rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.5}
+.fdfig .al{font:11px var(--mono);fill:var(--b-ts);text-anchor:middle}
+.fdfig .av{font:13px var(--mono);font-weight:700;fill:var(--r-red);text-anchor:middle}
+.fdfig .arr{stroke:var(--b-dim);stroke-width:1.4;fill:none;marker-end:url(#fdah)}
+.fdfig.focus .evt{opacity:.32}
+.fdfig.focus .evt.on{opacity:1}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/streams-events">streams-events</a><span class="rsep">/</span><a href="/redis-patterns/streams-events/custom-events">custom-events</a><span class="rsep">/</span><span class="rcur">windowed-aggregation</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#range">Time is an id range</a>
+      <a href="#fold">The fold over the window</a>
+      <a href="#snapshot">Recompute, or snapshot</a>
+      <a href="#applied">In EchoMQ</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/streams-events/custom-events">Custom events</a>
+          <span class="sep">/</span>
+          <span class="here">Windowed aggregation</span>
+        </nav>
+        <p class="kicker">R5.04.2 &middot; dive 2</p>
+        <h1>Windowed <span class="hns">aggregation</span>.</h1>
+        <p class="lede">A projection is a fold scoped to a slice of the log: take the entries between two instants and reduce
+          them to the one shape a view needs &mdash; a count, a total, a tally.</p>
+        <p class="heronote">Because a stream entry id begins with the millisecond it was added, a <code>DateTime</code>
+          becomes a range bound: "the events of the last hour" is an id range, and the projection is the fold over it. The
+          floor id <code>&lt;ms&gt;-0</code> and the ceiling id <code>&lt;ms&gt;-&lt;max-seq&gt;</code> make the edges exact.
+          Select a window; the readout names which entries fall inside it.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#range">Time is an id range</a>
+          <a href="#fold">The fold over the window</a>
+          <a href="#snapshot">Recompute, or snapshot</a>
+          <a href="#applied">In EchoMQ</a>
+          <a href="#refs">References</a>
+        </div>
+      </section>
+
+      <figure class="anatomy" aria-labelledby="wnCap">
+        <figcaption id="wnCap"><b>A time window is an id range &mdash; the edges are exact.</b> Select a window over the log;
+          the readout names which entries fall inside it.</figcaption>
+        <div class="segbar" id="wnSel" role="group" aria-label="Which time window to apply to the log">
+          <button type="button" data-win="closed" aria-pressed="false">[t0, t1] closed</button>
+          <button type="button" data-win="since" aria-pressed="false">[t0, &infin;) half-open</button>
+        </div>
+        <svg class="wnfig" id="wnfig" viewBox="0 0 440 150" role="img" aria-label="Five entries on a timeline minted before t0, at t0, between t0 and t1, at t1, and after t1. A closed window [t0, t1] includes the entries at t0, between, and at t1, and excludes the one before t0 and the one after t1 — both edges exact via the floor id ms-0 and the ceiling id ms-max-seq. A half-open window [t0, infinity) includes everything from t0 onward and excludes only the one before t0. The readout names the included entries.">
+          <text class="end" x="20" y="20">oldest</text>
+          <text class="end" x="420" y="20" text-anchor="end">newest</text>
+          <rect class="win" id="winBox" x="92" y="34" width="232" height="58" rx="6"></rect>
+          <g class="ent" id="w0"><rect x="22" y="44" width="56" height="38" rx="5"></rect><text class="et" x="50" y="62">e&#8320;</text><text class="em" x="50" y="76">&lt; t0</text></g>
+          <g class="ent" id="w1"><rect x="94" y="44" width="56" height="38" rx="5"></rect><text class="et" x="122" y="62">e&#8321;</text><text class="em" x="122" y="76">at t0</text></g>
+          <g class="ent" id="w2"><rect x="166" y="44" width="56" height="38" rx="5"></rect><text class="et" x="194" y="62">e&#8322;</text><text class="em" x="194" y="76">mid</text></g>
+          <g class="ent" id="w3"><rect x="238" y="44" width="56" height="38" rx="5"></rect><text class="et" x="266" y="62">e&#8323;</text><text class="em" x="266" y="76">at t1</text></g>
+          <g class="ent" id="w4"><rect x="310" y="44" width="56" height="38" rx="5"></rect><text class="et" x="338" y="62">e&#8324;</text><text class="em" x="338" y="76">&gt; t1</text></g>
+          <line class="edge" x1="92" y1="30" x2="92" y2="96"></line>
+          <text class="el" x="92" y="108">t0 floor ms-0</text>
+          <line class="edge" id="edgeT1" x1="324" y1="30" x2="324" y2="96"></line>
+          <text class="el" id="edgeT1l" x="324" y="108">t1 ceil ms-max</text>
+        </svg>
+        <div class="readout" id="wnOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a window. A closed
+          window keeps the entries at and between the two instants; a half-open window keeps everything from <code>t0</code>
+          onward &mdash; both lower edges exact at the floor id.</div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="range">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Time is an id range</h2>
+        <span class="ssrc">windowed-aggregation.md &middot; the floor and the ceiling</span>
+      </div>
+      <div class="prose">
+        <p>A stream entry id is <code>&lt;milliseconds&gt;-&lt;sequence&gt;</code>. The leading milliseconds make the id a
+          clock: an instant maps to an id, and an id range expresses a time range. To read everything in a closed window
+          <code>[t0, t1]</code>, form the smallest id at <code>t0</code> &mdash; <code>&lt;t0-in-ms&gt;-0</code> &mdash; and
+          the largest id at <code>t1</code> &mdash; <code>&lt;t1-in-ms&gt;-&lt;max-seq&gt;</code> &mdash; and range between
+          them. To read everything from an instant onward, range from the floor id to <code>+</code>.</p>
+      </div>
+      <pre class="code"><b>XRANGE</b> guess-scored 1719312000000-0 1719315600000-0   <span class="cmt"># closed [t0, t1]</span>
+<b>XRANGE</b> guess-scored 1719312000000-0 +                 <span class="cmt"># half-open [t0, &infin;)</span></pre>
+      <div class="prose">
+        <p>The floor id <code>&lt;ms&gt;-0</code> is the lowest id at that millisecond, so the lower edge is exact: an entry
+          minted at the instant is in, one minted a millisecond earlier is out. The ceiling id
+          <code>&lt;ms&gt;-&lt;max-seq&gt;</code> is the highest id at that millisecond, so the upper edge is exact too: an
+          entry at <code>t1</code> reads back, one a millisecond later does not.</p>
+      </div>
+      <p class="take">A time window is an id range because the entry id is a clock; the floor id and the ceiling id make both
+        edges exact to the millisecond.</p>
+    </section>
+
+    <section id="fold">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>A projection is the fold over the window</h2>
+        <span class="ssrc">windowed-aggregation.md &middot; recompute, never maintain</span>
+      </div>
+      <div class="prose">
+        <p>With the window read, the projection is the same fold as any event-sourced rebuild &mdash; start with an empty
+          accumulator, apply each entry in order &mdash; but scoped to the window and shaped for one question. A per-room
+          count folds <code>room-opened</code> to a map; a running total folds <code>guess-scored</code> to a sum; the day's
+          results fold <code>game-settled</code> to a list. The fold is deterministic in the entries, so the projection is
+          recomputed from the log, never a separate table kept in sync.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="fdCap">
+        <figcaption id="fdCap"><b>The projection is the fold of the windowed entries.</b> Step the fold over the
+          <code>guess-scored</code> window; the accumulator is the running total after each entry.</figcaption>
+        <div class="segbar" id="fdSel" role="group" aria-label="How far the fold has applied the windowed entries">
+          <button type="button" data-step="0" aria-pressed="false">empty</button>
+          <button type="button" data-step="1" aria-pressed="false">+ 480</button>
+          <button type="button" data-step="2" aria-pressed="false">+ 320</button>
+          <button type="button" data-step="3" aria-pressed="false">+ 600</button>
+        </div>
+        <svg class="fdfig" id="fdfig" viewBox="0 0 440 170" role="img" aria-label="Three guess-scored entries inside a window, with totals 480, 320, and 600, fold one at a time into an accumulator that sums them. Empty starts the sum at 0. Applying 480 makes 480; applying 320 makes 800; applying 600 makes 1400. The accumulator after the last applied entry is the projection — the running total over the window.">
+          <defs><marker id="fdah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--b-dim)"></path></marker></defs>
+          <g class="evt" id="ev1" data-step="1"><rect x="20" y="22" width="120" height="38" rx="6"></rect><text class="et" x="80" y="40">total 480</text><text class="ep" x="80" y="54">guess-scored</text></g>
+          <g class="evt" id="ev2" data-step="2"><rect x="20" y="66" width="120" height="38" rx="6"></rect><text class="et" x="80" y="84">total 320</text><text class="ep" x="80" y="98">guess-scored</text></g>
+          <g class="evt" id="ev3" data-step="3"><rect x="20" y="110" width="120" height="38" rx="6"></rect><text class="et" x="80" y="128">total 600</text><text class="ep" x="80" y="142">guess-scored</text></g>
+          <path class="arr" d="M148 66 L300 82"></path>
+          <g class="acc"><rect x="300" y="58" width="124" height="50" rx="8"></rect><text class="al" x="362" y="80">projection (sum)</text><text class="av" id="accVal" x="362" y="100">0</text></g>
+        </svg>
+        <div class="readout" id="fdOut" aria-live="polite"><span class="rk">readout &middot;</span> Step the fold. The
+          accumulator starts at <b>0</b>; applying 480, 320, 600 sums the window's totals to the projection &mdash;
+          recomputed from the log, never a stored total kept in sync.</div>
+      </figure>
+
+      <p class="take">A projection is the deterministic fold of the windowed entries; many projections fold the same window
+        into different shapes, each recomputed and never stale.</p>
+    </section>
+
+    <section id="snapshot">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Recompute, or snapshot</h2>
+        <span class="ssrc">windowed-aggregation.md &middot; the cost of a long window</span>
+      </div>
+      <div class="prose">
+        <p>A projection is recomputable, which is its strength: change the shape and re-fold, and the answer is right. The
+          cost is that folding a long window is work proportional to its entries. Where a rollup is read far more often than
+          its window changes, fold once and cache the result, or bound the window with retention
+          (<a href="/redis-patterns/streams-events/streams-consumer-patterns">R5.02</a>) so the replay stays short.
+          Recomputing a stable projection on every read is the waste to avoid; recomputing it when the inputs change is
+          exactly the point.</p>
+      </div>
+      <p class="take">Recompute a projection when its inputs change; cache a snapshot or trim the window when a stable rollup
+        is read far more often than it changes.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>In EchoMQ &mdash; read_window/6 and read_since/5</h2>
+        <span class="ssrc">echo_mq/stream.ex &middot; read_window/6 &middot; minid_floor/1 &middot; maxid_ceil/1</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ derives the window bounds host-side so the wire only ever sees an <code>&lt;ms&gt;-&lt;seq&gt;</code> id,
+          never a raw integer. <code>EchoMQ.Stream.read_window(conn, queue, name, t0, t1, count)</code> reads the closed
+          <code>[t0, t1]</code> window; <code>EchoMQ.Stream.read_since(conn, queue, name, t0, count)</code> reads the
+          half-open <code>[t0, &infin;)</code> window. Both delegate to the range read and return
+          <code>{branded, fields_map}</code> tuples in mint order &mdash; the input to the fold.</p>
+      </div>
+      <pre class="code"><span class="cmt"># EchoMQ.Stream.read_window/6 — a closed mint-time window to fold (real)</span>
+<b>EchoMQ.Stream.read_window</b>(conn, "cm", "guess-scored",
+  ~U[2024-06-25 12:00:00Z], ~U[2024-06-25 13:00:00Z])
+<span class="cmt">#  from = minid_floor(t0)  -&gt;  "&lt;ms&gt;-0"            (lowest id at t0)</span>
+<span class="cmt">#  to   = maxid_ceil(t1)   -&gt;  "&lt;ms&gt;-&lt;max-seq&gt;"    (highest id at t1)</span>
+<span class="cmt">#  XRANGE emq:{cm}:stream:guess-scored &lt;ms&gt;-0 &lt;ms&gt;-&lt;max-seq&gt;</span>
+<span class="cmt">#  -&gt; {:ok, [{branded, fields_map}, …]}            mint order, [t0, t1] — fold to a projection</span>
+
+<span class="cmt"># everything from an instant onward, half-open [t0, ∞)</span>
+<b>EchoMQ.Stream.read_since</b>(conn, "cm", "guess-scored", ~U[2024-06-25 12:00:00Z])
+<span class="cmt">#  from = minid_floor(t0), to = "+"</span></pre>
+      <div class="prose">
+        <p><code>minid_floor/1</code> turns <code>t0</code> into <code>"&lt;ms&gt;-0"</code> and <code>maxid_ceil/1</code>
+          turns <code>t1</code> into <code>"&lt;ms&gt;-&lt;max-seq&gt;"</code>, where the milliseconds is the real Unix
+          millisecond of the instant (<code>DateTime.to_unix(dt, :millisecond)</code>) and the sequence is the maximal
+          22-bit tail. So a <code>read_window</code> returns exactly the entries whose <code>EVT</code> mint instant falls in
+          <code>[t0, t1]</code>, which equals reading the whole stream and filtering by mint instant &mdash; the window is a
+          server-side filter via the bounds, and <code>read_window/6</code> raises before any wire on an inverted window
+          (<code>t1</code> before <code>t0</code>). The returned tuples fold to the projection: a per-window count of room
+          openings, a per-player running total of scores, the settled games of the day.</p>
+        <p>In <strong>codemojex</strong> (<code>echo/apps/codemojex</code>), the score worker scores each guess with
+          <code>Codemojex.Scoring.score/2</code> and records the player's best with <code>Codemojex.Board.record/3</code>;
+          the leaderboard <code>Codemojex.Board.top/2</code> is the live rank. A windowed read of the
+          <code>guess-scored</code> channel folds to the recent activity feed &mdash; the last hour's scores &mdash; while
+          the board holds the all-time rank; the two are different projections of the same play, one a windowed fold of the
+          log, one a running aggregate.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>An <code>XRANGE</code> reads entries in id order between an
+        inclusive start and end, and a bare <code>&lt;ms&gt;</code> bound is read as <code>&lt;ms&gt;-0</code> &mdash; which
+        is exactly how a millisecond instant becomes the floor id of a windowed read &mdash;
+        <a href="https://valkey.io/commands/xrange/" rel="noopener">valkey.io/commands/xrange</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A projection is a fold scoped to a time window; time is an id range because the entry id carries the
+            millisecond.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Stream.read_window/6</code> reads a closed <code>[t0, t1]</code> window and <code>read_since/5</code>
+            a half-open <code>[t0, &infin;)</code> one, deriving exact bounds with <code>minid_floor/1</code> and
+            <code>maxid_ceil/1</code>; the mint-ordered tuples fold to the projection &mdash; codemojex's windowed activity
+            feed beside the running board.</p>
+        </div>
+      </div>
+      <p class="take">Redis ranges a stream by id; EchoMQ turns a <code>DateTime</code> window into exact id bounds and hands
+        back the entries in mint order &mdash; the projection is the fold over them.</p>
+
+      <div class="doors">
+        <div class="door floor">
+          <span class="dr">/echo-persistence</span>
+          <h3>A door, not a depth &mdash; the persistence floor</h3>
+          <p>A windowed history does not grow without bound: a log is trimmed under a retention policy, and what is trimmed
+            folds into the durable page tier and, beyond it, to remote object storage behind a create-only commit fence.
+            That floor &mdash; the single-writer engine, the lazy reader, and the durability dial a system turns from "hold
+            nothing" to "commit-per-record + replicate off-box" &mdash; is the subject of
+            <a href="/echo-persistence">the EchoStore persistence course</a>.</p>
+        </div>
+        <div class="door">
+          <span class="dr">/echomq/bus</span>
+          <h3>The Bus pillar that owns the stream</h3>
+          <p>The time-travel reads in full, the consumer-group read that resumes from a saved cursor, and the archive fold
+            consumer are the subject of the dedicated <strong>EchoMQ course</strong>. From here, open onto
+            <a href="/echomq/bus">the Bus pillar</a> &mdash; the retained, replayable log and its readers.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/xrange/" rel="noopener">Valkey &mdash; <em>XRANGE</em></a> &mdash; the <code>&lt;ms&gt;-&lt;seq&gt;</code> id range and the time-bounded read folded to a projection.</li>
+            <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the entry id as a clock, an instant mapping to an id.</li>
+            <li><a href="https://valkey.io/commands/xlen/" rel="noopener">Valkey &mdash; <em>XLEN</em></a> &mdash; the number of entries a fold must apply, the size a window bounds the work against.</li>
+            <li><a href="https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying" rel="noopener">Kreps, J. &mdash; <em>The Log</em></a> &mdash; many projections folded from one shared log.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/streams-events/custom-events">R5.04 &middot; Custom events &amp; projections</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/streams-events/custom-events/domain-events-on-the-stream">R5.04.1 &middot; Domain events on the stream</a><span class="rs">the named channel a projection folds</span></li>
+            <li><a href="/redis-patterns/streams-events/custom-events/reserved-name-discipline">R5.04.3 &middot; Reserved-name discipline</a><span class="rs">the reserved id field and key suffixes</span></li>
+            <li><a href="/redis-patterns/streams-events/streams-event-sourcing/the-cursor">R5.01.3 &middot; The cursor</a><span class="rs">the entry id as a time bound, reapplied to a window</span></li>
+            <li><a href="/echo-persistence">/echo-persistence</a><span class="rs">the durable floor a trimmed window folds into</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/streams-events/custom-events/domain-events-on-the-stream"><span class="pk">prev</span>&#8592; R5.04.1 &middot; Domain events on the stream</a>
+      <a class="pgx" href="/redis-patterns/streams-events/custom-events/reserved-name-discipline"><span class="pk">next</span>R5.04.3 &middot; Reserved-name discipline &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/streams-events/custom-events">R5.04 &middot; Custom events &amp; projections</a>
+        <a href="/redis-patterns/streams-events/custom-events/domain-events-on-the-stream">R5.04.1 &middot; Domain events on the stream</a>
+        <a href="/redis-patterns/streams-events/custom-events/reserved-name-discipline">R5.04.3 &middot; Reserved-name discipline</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq/bus">EchoMQ — the Bus pillar</a>
+        <a href="/echo-persistence">EchoStore — the persistence floor</a>
+        <a href="/bcs">The Branded Component System</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- hero: a time window is an id range, edges exact (pure over the window) ---------- */
+  // Five entries: before t0, at t0, mid, at t1, after t1. A closed window [t0, t1] includes at-t0, mid, at-t1; a
+  // half-open window [t0, ∞) includes at-t0, mid, at-t1, after-t1. The in-window set + box + t1 edge are a pure
+  // function of the window key.
+  var WN_ENTRIES = [
+    { id: 'w0', label: '< t0' }, { id: 'w1', label: 'at t0' }, { id: 'w2', label: 'mid' },
+    { id: 'w3', label: 'at t1' }, { id: 'w4', label: '> t1' }
+  ];
+  var WN = {
+    closed: { in: [1, 2, 3], box: [92, 232], edgeX: 324, edgeDash: false, edgeL: 't1 ceil ms-max',
+      text: 'The closed window [t0, t1] includes e₁ at t0, e₂ mid, and e₃ at t1 — and excludes e₀ before t0 and e₄ after ' +
+        't1. Both edges are exact: the floor id ms-0 at t0 and the ceiling id ms-max-seq at t1.' },
+    since:  { in: [1, 2, 3, 4], box: [92, 318], edgeX: 410, edgeDash: true, edgeL: '+ (live top)',
+      text: 'The half-open window [t0, ∞) includes everything from t0 onward — e₁, e₂, e₃, and e₄ — and excludes only e₀ ' +
+        'before t0. The lower edge is the floor id ms-0 at t0; the upper edge is +, the live top.' }
+  };
+  var wnfig = document.getElementById('wnfig');
+  var wnButtons = document.querySelectorAll('#wnSel button');
+  var wnOut = document.getElementById('wnOut');
+  var winBox = document.getElementById('winBox');
+  var edgeT1 = document.getElementById('edgeT1');
+  var edgeT1l = document.getElementById('edgeT1l');
+  function selectWn(key) {
+    wnButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-win') === key ? 'true' : 'false');
+    });
+    var w = WN[key];
+    WN_ENTRIES.forEach(function (e, i) {
+      var el = document.getElementById(e.id);
+      if (!el) return;
+      el.classList.toggle('in', w.in.indexOf(i) !== -1);
+      el.classList.toggle('out', w.in.indexOf(i) === -1);
+    });
+    if (winBox) { winBox.setAttribute('x', w.box[0]); winBox.setAttribute('width', w.box[1]); }
+    if (edgeT1) {
+      edgeT1.setAttribute('x1', w.edgeX); edgeT1.setAttribute('x2', w.edgeX);
+      edgeT1.setAttribute('class', w.edgeDash ? 'edgeo' : 'edge');
+    }
+    if (edgeT1l) { edgeT1l.setAttribute('x', Math.min(w.edgeX, 408)); edgeT1l.textContent = w.edgeL; }
+    if (wnOut) wnOut.innerHTML = '<span class="rk">readout &middot;</span> ' + w.text;
+  }
+  wnButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectWn(b.getAttribute('data-win')); });
+  });
+  selectWn('closed'); // initial render — correct without interaction
+
+  /* ---------- content: the projection is the fold of the windowed entries (pure over the step) ---------- */
+  // Three windowed guess-scored totals 480, 320, 600 fold into a running sum. The sum after N applied entries is a
+  // pure function of N: 0 -> 0, 1 -> 480, 2 -> 800, 3 -> 1400.
+  var FD = [
+    { id: 'ev1', total: 480 }, { id: 'ev2', total: 320 }, { id: 'ev3', total: 600 }
+  ];
+  // pure: step (0..3) -> running sum
+  function sumTo(step) {
+    var s = 0;
+    for (var i = 0; i < step && i < FD.length; i++) s += FD[i].total;
+    return s;
+  }
+  var fdfig = document.getElementById('fdfig');
+  var fdButtons = document.querySelectorAll('#fdSel button');
+  var fdOut = document.getElementById('fdOut');
+  var accVal = document.getElementById('accVal');
+  function selectFold(step) {
+    fdButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', parseInt(b.getAttribute('data-step'), 10) === step ? 'true' : 'false');
+    });
+    if (fdfig) fdfig.classList.toggle('focus', step > 0);
+    FD.forEach(function (e, i) {
+      var el = document.getElementById(e.id);
+      if (!el) return;
+      el.classList.toggle('applied', i < step);
+      el.classList.toggle('on', i === step - 1);
+    });
+    if (accVal) accVal.textContent = String(sumTo(step));
+    if (fdOut) {
+      if (step === 0) {
+        fdOut.innerHTML = '<span class="rk">readout &middot;</span> The accumulator is 0 — no entries applied yet. The ' +
+          'projection is the fold of the windowed entries from here.';
+      } else {
+        var applied = FD.slice(0, step).map(function (e) { return String(e.total); }).join(' + ');
+        fdOut.innerHTML = '<span class="rk">readout &middot;</span> Applied ' + applied + ' = ' + sumTo(step) +
+          '. The projection is the running total over the window after ' + step + ' entr' +
+          (step === 1 ? 'y' : 'ies') + ' — recomputed from the log, never a stored total kept in sync.';
+      }
+    }
+  }
+  fdButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectFold(parseInt(b.getAttribute('data-step'), 10)); });
+  });
+  if (fdfig) {
+    fdfig.querySelectorAll('.evt').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectFold(parseInt(g.getAttribute('data-step'), 10)); });
+    });
+    fdfig.addEventListener('mouseleave', function () { selectFold(0); });
+  }
+  selectFold(0); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>
