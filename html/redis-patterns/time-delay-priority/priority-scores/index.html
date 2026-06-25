@@ -1,625 +1,574 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>R4.03 · Priority with composite scores — Redis Patterns Applied · jonnify</title>
-<meta name="description" content="The R4.03 module hub: priority with composite scores. A sorted set orders by score, then lexicographically within an equal score; pack the priority tier and the arrival order into one numeric score and one sorted set becomes a priority queue. Three dives — packing two keys in one score, FIFO within a tier, and consuming with ZPOPMIN — grounded in EchoMQ's emq:{queue}:prioritized set, scored by getPriorityScore's priority × 0x100000000 + INCR pc in addPrioritizedJob-9.lua and popped smallest-first by ZPOPMIN in moveToActive-11.lua.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<title>R4.03 — Priority with composite scores · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R4.03 module hub: priority with composite scores. A sorted set orders by score, then lexicographically within an equal score; pack the priority tier and the arrival order into one numeric score and one sorted set becomes a priority queue. Three dives — packing two keys in one score, FIFO within a tier, and consuming with ZPOPMIN. Applied to the real EchoMQ bus, which retired numeric per-job priority by design: precedence lives on the lane as fair-share weight (EchoMQ.Lanes.weight, wclaim), arrival is the branded id's mint order, and codemojex enqueues on a fair lane per chat.">
 <style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
 :root{
-  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
-  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
-  --gold:#d4a85a; --gold-bright:#f0cd7f;
-  --blue:#5a87c4; --blue-bright:#9fc0ea;
-  --sage:#7ba387; --sage-bright:#a7c9b1;
-  --burgundy:#c4504c;
-  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
-  --redis:#d6584f; --redis-bright:#f2948c;
-  --line:#2a3252;
-  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
-  --serif:"PT Serif", Georgia, serif;
-  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
-  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --measure:68ch;
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
 }
-*{box-sizing:border-box}
-html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{
-  margin:0; color:var(--cream); background:var(--ink);
-  font-family:var(--serif);
-  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
-  line-height:1.62; letter-spacing:.005em;
-  background-image:
-    radial-gradient(1100px 560px at 50% -8%, rgba(214,88,79,.12), transparent 60%),
-    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
-    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
-  background-attachment:fixed;
-}
-body::after{ /* faint vignette for depth */
-  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
-  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
-}
-.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
-  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
-.skip:focus{left:0}
-::selection{background:var(--gold);color:var(--ink)}
-img,svg{max-width:100%}
-a{color:var(--gold-bright);text-decoration:none}
-a:hover{color:var(--cream)}
-hr.rule{border:0;height:1px;margin:2.2rem 0;
-  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
 
-/* ---- layout ---- */
-.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
-main{display:block}
-section{padding:clamp(2.6rem,6vw,4.6rem) 0}
-section + section{border-top:1px solid var(--line)}
-.prose{max-width:var(--measure)}
-.prose p{margin:0 0 1.05rem}
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
 
-/* ---- type ---- */
-h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
-  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
-h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
-h1 .ex{color:var(--redis-bright);font-style:italic;font-weight:500}
-h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
-h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
-.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
-  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
-  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
-.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
-.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
-  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
-  max-width:46ch;margin:0 0 1.6rem}
-.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
-.math{font-family:var(--serif);font-style:italic;color:var(--redis-bright);white-space:nowrap}
-strong{color:var(--cream);font-weight:700}
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
 
-/* ---- site header / footer ---- */
-.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
-  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
-.site .wrap{display:flex;align-items:center;justify-content:space-between;
-  height:58px;font-family:var(--sans)}
-.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
-  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
-.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
-  display:inline-block;transform:translateY(-2px)}
-.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
-  text-transform:uppercase;color:var(--cream-dim)}
-.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
-.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
-  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
-.route-tag a{color:var(--gold);text-decoration:none}
-.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
-.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
-.route-tag .rcur{color:var(--gold-bright)}
-.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
-  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
-.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
-  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
 
-/* ---- hero ---- */
-.hero{padding-top:clamp(3rem,8vw,6rem)}
-.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
-.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
-  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
-  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
-  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
-.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
-  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
-.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
-.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
-.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
 
-/* ---- figures / takeaways ---- */
-.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
-  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
-  padding:clamp(1rem,2.4vw,1.6rem)}
-.fig svg{display:block;width:100%;height:auto}
-.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
-  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
-  padding-left:1rem;border-left:2px solid var(--gold)}
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
 
-/* ---- interactive shells (shared with lesson pages) ---- */
-.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
-.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
-  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
-  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
-.solid-select button:hover{border-color:var(--cream-dim)}
-.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
-.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
-.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
-.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
-.solid-select button.active[data-c="redis"]{background:var(--redis-bright)}
-.fold-ctrl{display:flex;align-items:center;gap:1rem;margin:.2rem 0;font-family:var(--sans)}
-.fold-ctrl label{min-width:7.5rem;font-size:.86rem;color:var(--cream-soft);letter-spacing:.03em}
-.fold-ctrl input[type=range]{flex:1;accent-color:var(--gold);height:2px}
-.fold-ctrl .val{font-family:var(--mono);color:var(--gold-bright);min-width:2.5rem;text-align:right}
-.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
-  background:var(--ink);border:1px solid var(--line);border-radius:10px;
-  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
-.geo-readout .dim{color:var(--cream-dim)}
-.geo-readout b{color:var(--redis-bright)}
-.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
 
-/* ---- priority ladder diagram ---- */
-.pl .slot rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease}
-.pl .slot.head rect{fill:rgba(214,88,79,.18);stroke:#d6584f}
-.pl .slot.t1 rect{fill:rgba(90,135,196,.14);stroke:#5a87c4}
-.pl .slot.t2 rect{fill:rgba(123,163,135,.14);stroke:#7ba387}
-.pl text{font-family:var(--sans);fill:#d7cfb9}
-.pl .ttl{font-family:var(--mono);fill:#a39c89;font-size:11px;letter-spacing:.04em}
-.pl .job{font-family:var(--mono);font-size:12px;font-weight:700;fill:#f0cd7f}
-.pl .sc{font-family:var(--mono);font-size:9px;fill:#a39c89}
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
 
-/* ---- code ---- */
-pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
-  background:var(--ink);border:1px solid var(--line);border-radius:12px;
-  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
-pre.code .op{color:var(--elixir-bright)}
-pre.code .fn{color:var(--cream)}
-pre.code .fn.blue{color:var(--blue-bright)}
-pre.code .fn.sage{color:var(--sage-bright)}
-pre.code .fn.gold{color:var(--gold-bright)}
-pre.code .fn.elixir{color:var(--elixir-bright)}
-pre.code .fn.burg{color:#e08f8b}
-pre.code .rdx{color:var(--redis-bright);background:rgba(214,88,79,.18);border-radius:4px;padding:0 .2em}
-pre.code .res{color:var(--gold-bright)}
-pre.code .str{color:var(--sage-bright)}
-pre.code .cmt{color:var(--cream-dim)}
-code.inl{font-family:var(--mono);font-size:.9em;color:var(--redis-bright);
-  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
 
-/* ---- when-to-use table ---- */
-.tbl{width:100%;border-collapse:collapse;margin:1.2rem 0 0;font-family:var(--sans);font-size:.9rem}
-.tbl th,.tbl td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
-.tbl th{font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);font-weight:700}
-.tbl td{color:var(--cream-soft)}
-.tbl td code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
-.tbl tr:last-child td{border-bottom:0}
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
 
-/* ---- contents directory ---- */
-.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);
-  font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.8rem}
-.legend span{display:inline-flex;align-items:center;gap:.45rem}
-.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
-.pill.live{color:var(--sage-bright);border-color:var(--sage)}
-.pill.built{color:var(--gold-bright);border-color:var(--gold)}
-.pill.planned{color:var(--blue-bright);border-color:var(--blue)}
-.pill.soon{color:var(--redis-bright);border-color:var(--redis)}
-.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
-.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:.85rem .95rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
-  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
-a.mod:hover{transform:translateY(-3px);border-color:var(--gold);
-  box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
-.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
-.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
-.mod .t{font-family:var(--serif-display);font-size:1.14rem;font-weight:600;
-  color:var(--cream);line-height:1.12;margin:0 0 .25rem}
-.mod .o{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);line-height:1.4}
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
 
-/* ---- door ---- */
-.door{margin:1.7rem 0 0;border:1px solid var(--redis);border-radius:16px;
-  background:linear-gradient(180deg,rgba(214,88,79,.10),rgba(10,14,26,.3));
-  padding:clamp(1rem,2.4vw,1.5rem)}
-.door .dl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
-  color:var(--redis-bright);margin:0 0 .6rem}
-.door p{margin:0;font-family:var(--serif);color:var(--cream-soft);max-width:var(--measure)}
-.door a{color:var(--redis-bright);font-weight:600}
-.door a:hover{color:var(--cream)}
-
-/* ---- pager ---- */
-.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
-  align-items:center;font-family:var(--sans)}
-.pager .p-left{color:var(--cream-dim);font-size:.9rem}
-.pager .spacer{flex:1}
-
-/* ---- branded stamp ---- */
-.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
-  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
-  background:var(--ink);user-select:none}
-.stamp:hover{border-color:var(--gold)}
-.stamp .id{color:var(--gold-bright)}
-.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
-  display:none;grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
 .stamp.open .panel{display:grid}
-.stamp .panel dt{color:var(--cream-dim)}
-.stamp .panel dd{margin:0;color:var(--cream)}
-.colophon{max-width:42ch}
-.colophon b{color:var(--cream-soft)}
 
-/* ---- reveal (JS-gated; content visible without JS) ---- */
-html.js .reveal{opacity:0;transform:translateY(14px)}
-html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
-@media (prefers-reduced-motion: reduce){
-  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.tbl{width:100%;border-collapse:collapse;margin:0 0 18px;font-family:var(--mono);font-size:13px}
+.tbl th,.tbl td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{color:var(--r-red);text-transform:uppercase;letter-spacing:.06em;font-size:11.5px}
+.tbl td{color:var(--b-ink)}
+.tbl tr:last-child td{border-bottom:0}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
 }
-
-/* ---- responsive ---- */
-@media (max-width:760px){
-  .mods{grid-template-columns:1fr}
-  .site nav{display:none}
-  .lede{max-width:none}
-  .take{font-size:1.08rem}
-}
-
-/* ---- module / lesson page additions (additive; shared head) ---- */
-.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
-  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
-.crumbs a{color:var(--cream-soft)}
-.crumbs .sep{opacity:.45}
-.crumbs .here{color:var(--gold)}
-.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
-.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
-.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
-.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
-.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
-  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
-.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
-  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
-.bridge .cell.idea .lbl{color:var(--gold)}
-.bridge .cell.elix .lbl{color:var(--redis-bright)}
-.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
-.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
-@media (max-width:760px){
-  .bridge{grid-template-columns:1fr;gap:.7rem}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
   .bridge .arrow{justify-self:center;transform:rotate(90deg)}
 }
-.dive-tag{font-family:var(--mono);font-size:.72rem;color:var(--redis-bright);
-  border:1px solid var(--redis);border-radius:999px;padding:.16rem .55rem}
-.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
-  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
-/* ---- references ---- */
-.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
-@media(max-width:680px){.refs{grid-template-columns:1fr}}
-.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
-.refs h3:first-child{margin-top:0}
-.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
-.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
-.refs a{color:var(--sage-bright)}
-.refs a:hover{color:var(--cream)}
-.refs em{color:var(--cream-dim);font-style:italic}
-.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the priority-ladder figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.pl{width:100%;height:auto;display:block;margin-top:4px}
+.pl .slot rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.4;transition:opacity .18s ease}
+.pl .slot.head rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.pl .jb{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle;font-weight:700}
+.pl .sc{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.pl .ttl{font:11px var(--mono);fill:var(--b-dim)}
+.pl .slot{cursor:pointer}
+.pl.focus .slot{opacity:.34}
+.pl.focus .slot.on{opacity:1}
+.pl.focus .slot.on rect{stroke-width:2.6}
 </style>
 </head>
 <body>
-<a class="skip" href="#main">Skip to the module</a>
 
-<header class="site">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="/redis-patterns">jonnify<span class="dot"></span><span class="sub">redis</span></a>
-    <nav>
-      <a href="/redis-patterns">Home</a>
-      <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><span class="rcur">priority-scores</span></span>
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/time-delay-priority">time-delay-priority</a><span class="rsep">/</span><span class="rcur">priority-scores</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#order">Ordering</a>
+      <a href="#composite">Composite</a>
+      <a href="#score">The score</a>
+      <a href="#applied">In EchoMQ</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
     </nav>
   </div>
 </header>
 
-<main id="main" class="wrap">
+<main>
+  <div class="wrap">
 
-  <style>
-    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
-    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
-    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
-    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
-    .foot-cols a:hover{color:var(--cream)}
-    .foot-cols .it{color:var(--cream-dim)}
-    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
-    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
-    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
-    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
-  </style>
+    <section class="hero">
+      <p class="kicker">R4.03 &#183; Time, Delay &amp; Priority &#8212; module hub</p>
+      <h1>Priority with composite <span class="hns">scores</span>.</h1>
+      <p class="lede">A sorted set orders by score, then lexicographically within an equal score. Pack the priority tier
+      and the arrival order into one numeric score and a single sorted set becomes a priority queue &#8212;
+      <b>one pop returns the right job</b>.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/lanes.ex &#183; EchoMQ.Lanes.weight/4 &#183; wclaim/3
+      &#8212; the real bus retired numeric per-job priority by design; precedence lives on the lane, verified verbatim on disk.</p>
 
-  <section class="hero">
-    <div class="crumbs">
-      <a href="/redis-patterns">Redis Patterns</a>
-      <span class="sep">/</span>
-      <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
-      <span class="sep">/</span>
-      <span class="here">Priority with composite scores</span>
-    </div>
-    <p class="eyebrow">R4.03 &middot; Time, Delay &amp; Priority</p>
-    <h1>Priority with composite <span class="ex">scores</span></h1>
-    <p class="lede">A sorted set orders by score, then lexicographically within an equal score. Pack the priority tier
-      and the arrival order into one numeric score and a single sorted set becomes a priority queue.</p>
-    <p class="kicker">A sorted set offers one ordering axis: the score. A priority queue needs two &mdash; jobs in a
-      higher tier come out first, and within a tier the earliest arrival comes out first. Encode more than one field
-      into that ordering key and one sorted set becomes a multi-level index: bucket by the high-order field, order by
-      the low. This module takes the composite-key idea apart for the sharpest case, the priority queue, and shows the
-      one move EchoMQ makes: scoring by <code class="inl">priority &times; 0x100000000 + (INCR pc)</code> so a single
-      <code class="inl">ZPOPMIN</code> returns the right job &mdash; tier first, arrival second.</p>
-    <div class="toc-mini" aria-label="On this page">
-      <a href="#order">How a sorted set orders</a>
-      <a href="#composite">Composite keys</a>
-      <a href="#score">The composite score</a>
-      <a href="#fifo">FIFO within a tier</a>
-      <a href="#consume">Consuming with ZPOPMIN</a>
-      <a href="#when">When to use</a>
-      <a href="#dives">Dives</a>
-      <a href="#refs">References</a>
-    </div>
-  </section>
+      <figure class="anatomy" aria-labelledby="plCap">
+        <figcaption id="plCap"><b>The prioritized set &#8212; six jobs ordered by composite score.</b> Hover or select a
+        job to read its score and pop position; toggle to "priority only" to see the ties a tie-breaker removes.</figcaption>
+        <div class="segbar" id="modeSel" role="group" aria-label="Order the jobs by composite score or by priority alone">
+          <button type="button" data-mode="composite" aria-pressed="true">composite score</button>
+          <button type="button" data-mode="priority" aria-pressed="false">priority only</button>
+        </div>
+        <svg class="pl" id="pl" viewBox="0 0 460 130" role="img" aria-label="Six prioritized jobs, each with a priority tier and an arrival counter, laid left to right in pop order: smallest composite score first. The head — the job a ZPOPMIN returns next — is leftmost and red. Toggling to priority-only ties same-tier jobs so arrival order is lost. Hover or select a slot to read its score.">
+          <text class="ttl" id="plLine" x="30" y="20">scored:jobs &#8212; six jobs by composite score (smallest first)</text>
+          <g id="plSlots"></g>
+        </svg>
+        <div class="readout" id="plOut" aria-live="polite"><span class="rk">readout &#183;</span> Composite score =
+        priority &times; 0x100000000 + counter. Hover a slot for its tier, counter, and pop position.</div>
+        <p class="booknote">Static order &#8212; composite: B, D, F (tier 1 by arrival), then A, E (tier 2), then C (tier 3)
+        &#183; priority-only: the three tier-1 jobs tie and fall back to member order, losing arrival order.</p>
+      </figure>
+    </section>
 
-  <section id="order">
-    <h2>How a sorted set orders: score, then member</h2>
-    <div class="prose">
-      <p>A Redis sorted set keeps its members in order by a numeric score. Read it low-to-high and the smallest score is
-        at the head. When two members carry the same score, the set falls back to lexicographic order of the member to
-        break the tie. The ordering is two-level by construction: the score first, the member second.</p>
-      <pre class="code"><span class="rdx">ZADD</span> scores <span class="res">100</span> <span class="str">"alice"</span> <span class="res">200</span> <span class="str">"bob"</span> <span class="res">150</span> <span class="str">"charlie"</span>
-<span class="rdx">ZRANGE</span> scores <span class="res">0</span> <span class="res">-1</span>
-<span class="cmt"># Returns: alice, charlie, bob — sorted by score</span></pre>
-      <p>The score is the whole ordering axis. Choose what number goes in it and the set's order becomes whatever that
-        number means. The interactive below loads a fixed set of six prioritized jobs, computes each composite score,
-        sorts ascending, and names the job a <code class="inl">ZPOPMIN</code> would return next.</p>
-    </div>
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
-    <figure class="fig pl" aria-labelledby="plTitle">
-      <h4 id="plTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The prioritized set &middot; six jobs ordered by composite score</h4>
-      <div class="controls">
-        <div class="solid-select" id="plSel" role="group" aria-label="Order the jobs by the composite score or by priority alone">
-          <button type="button" data-mode="composite" data-c="redis" class="active" aria-pressed="true">composite score</button>
-          <button type="button" data-mode="priority" data-c="blue" aria-pressed="false">priority only</button>
+    <section id="order">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>How a sorted set orders: score, then member</h2>
+        <span class="ssrc">lexicographic-sorted-sets.md.txt</span>
+      </div>
+      <div class="prose">
+        <p>A Redis sorted set keeps its members in order by a numeric <strong>score</strong>. Read it low-to-high and
+        the smallest score is at the head. When two members carry the same score, the set falls back to lexicographic
+        order of the member to break the tie. The ordering is two-level by construction: the score first, the member
+        second.</p>
+      </div>
+      <pre class="code"><b>ZADD</b> scores 100 "alice" 200 "bob" 150 "charlie"
+<b>ZRANGE</b> scores 0 -1
+<span class="cmt"># Returns: alice, charlie, bob  — sorted by score</span></pre>
+      <p class="take">The score is the whole ordering axis. Choose what number goes in it and the set's order becomes
+      whatever that number means.</p>
+    </section>
+
+    <section id="composite">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Composite keys: two fields, one ordering key</h2>
+        <span class="ssrc">lexicographic-sorted-sets.md.txt &#183; Composite keys</span>
+      </div>
+      <div class="prose">
+        <p>The composite-key pattern encodes several fields into one ordering key so a single sorted set answers a
+        hierarchical query. In its lexicographic form the fields go into the member string, read by
+        <code>ZRANGEBYLEX</code>:</p>
+      </div>
+      <pre class="code"><b>ZADD</b> events 0 "user:100:1706648400:login"
+<b>ZADD</b> events 0 "user:100:1706648500:click"
+<b>ZRANGEBYLEX</b> events [user:100: (user:100:\xff   <span class="cmt"># all user:100 events, ordered by timestamp</span></pre>
+      <div class="prose">
+        <p>The second encoding puts the high-order field in the score and the low in the member. Members sort by
+        score first, then lexicographically within an equal score, so the score can carry a tier while the member
+        carries the order within it. Bucketing falls out: group by score (a category, a priority tier), order within
+        each bucket. A priority queue is the same composite key, encoded entirely in the score.</p>
+      </div>
+      <pre class="code"><b>ZADD</b> hybrid 1 "a:first" 1 "a:second" 2 "b:first" 2 "b:second"
+<b>ZRANGE</b> hybrid 0 -1
+<span class="cmt"># Returns: a:first, a:second, b:first, b:second  — bucket by score, order within</span></pre>
+      <p class="take">A composite key packs more than one field into one ordering key; pack into the member and read
+      with <code>ZRANGEBYLEX</code>, or pack into the score and bucket by tier with the member ordering within.</p>
+    </section>
+
+    <section id="score">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The numeric composite score: the priority queue</h2>
+        <span class="ssrc">lexicographic-sorted-sets.md.txt &#183; Numeric rankings</span>
+      </div>
+      <div class="prose">
+        <p>A priority queue packs both fields into the score. The score is
+        <code>priority &times; 0x100000000 + counter</code>. <code>0x100000000</code> is <code>2<sup>32</sup></code>,
+        so multiplying the priority by it shifts the tier into the high thirty-two bits; the arrival counter sits in
+        the low thirty-two bits. One IEEE double carries both fields exactly &#8212; a double holds fifty-three bits of
+        integer precision, ample for small priorities and counters.</p>
+        <p>The counter comes from an atomic <code>INCR</code> on a per-queue counter key, taken at the moment the job
+        is added. Every add reads a fresh, monotonically rising counter, so two jobs in the same tier get two
+        different low-bit fields: the earlier add gets the smaller counter. A <strong>lower priority number means
+        higher precedence</strong> &#8212; priority 1 produces a smaller high-bit field than priority 2, so its
+        composite score is smaller, and the set keeps it nearer the head.</p>
+      </div>
+      <pre class="code"><b>ZADD</b> scored:jobs 4294967297 "job-A"   <span class="cmt"># priority 1, counter 1  → 1·2^32 + 1</span>
+<b>ZADD</b> scored:jobs 8589934594 "job-B"   <span class="cmt"># priority 2, counter 2  → 2·2^32 + 2</span>
+<b>ZPOPMIN</b> scored:jobs                  <span class="cmt"># → job-A: the smaller tier wins</span></pre>
+      <p class="take">The composite score puts the tier in the high thirty-two bits and the arrival counter in the
+      low; the high bits dominate, so the score orders by tier first and arrival second &#8212; in one number.</p>
+    </section>
+
+    <section id="fifo">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>FIFO within a tier, then ZPOPMIN</h2>
+        <span class="ssrc">lexicographic-sorted-sets.md.txt &#183; INCR / ZPOPMIN</span>
+      </div>
+      <div class="prose">
+        <p>Two jobs of the same priority share the same high thirty-two bits. The tie is broken by the low thirty-two
+        bits &#8212; the arrival counter. Because the counter rises by one per add, the first job to arrive in a tier
+        carries the smaller counter and so the smaller composite score: strict FIFO within the tier, with no second
+        structure and no scan. Without the counter, a score of <code>priority</code> alone would tie every job in a
+        tier and the set would fall back to member order, which is not arrival order unless the id is itself
+        time-ordered.</p>
+        <p>A worker takes the next job with <code>ZPOPMIN</code> &#8212; pop the member with the smallest score: the
+        highest-priority tier and, within it, the earliest arrival. One command returns the right job and removes it
+        atomically. <code>ZPOPMIN</code> is the reason a lower priority number wins: the formula makes a
+        higher-precedence job a smaller number, and the pop always returns the smallest first.</p>
+      </div>
+      <p class="take">The counter breaks the within-tier tie in arrival order, and one <code>ZPOPMIN</code> returns the
+      smallest score &#8212; highest tier, earliest arrival &#8212; removing it atomically.</p>
+    </section>
+
+    <section id="when">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>When a composite score &#8212; when lexicographic instead</h2>
+        <span class="ssrc">lexicographic-sorted-sets.md.txt &#183; When to use</span>
+      </div>
+      <div class="prose">
+        <p>A single composite score earns its place when the ordering is fully numeric and one pop must return the
+        right job: a priority queue, a numeric ranking, any case where the high-order field and the tie-breaker are
+        both numbers. One sorted set then replaces a per-tier structure plus a separate FIFO, and the consume is one
+        <code>ZPOPMIN</code>. Reach for the member-packed lexicographic key instead when the fields are strings and
+        the read is a prefix or range query &#8212; autocomplete, hierarchical keys, time-series with string ids
+        &#8212; where <code>ZRANGEBYLEX</code> over the member is the natural read.</p>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>Pack into the score (numeric)</th><th>Pack into the member (lexicographic)</th></tr></thead>
+        <tbody>
+          <tr><td>Priority queues, numeric rankings</td><td>Autocomplete, prefix search</td></tr>
+          <tr><td>Read with <code>ZPOPMIN</code> / <code>ZRANGEBYSCORE</code></td><td>Read with <code>ZRANGEBYLEX</code></td></tr>
+          <tr><td>Tier in high bits, tie-breaker in low bits</td><td>Fields delimited in one string, zero-padded</td></tr>
+        </tbody>
+      </table>
+      <p class="take">Pack into the score when the order is numeric and the read is a pop; pack into the member when
+      the order is a string and the read is a lexicographic range &#8212; the same composite-key idea, two encodings.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>Applied in EchoMQ: precedence on the lane, not the score</h2>
+        <span class="ssrc">echo_mq/lanes.ex &#183; weight/4 &#183; wclaim/3</span>
+      </div>
+      <div class="prose">
+        <p>Here the applied turn differs from the textbook, and the difference is the lesson. The real EchoMQ bus
+        carries <strong>no numeric per-job priority</strong> &#8212; it is retired by design. <code>EchoMQ.Lanes</code>
+        states it in the source: <em>"there is no numeric per-job priority (retired by design); &#8216;served
+        more&#8217; is a property of the identity, not the work,"</em> and <em>"&#8216;matters more now&#8217; is a
+        change of lane, mint order is the order theorem."</em></p>
+        <p>So EchoMQ does not pack precedence into a job's score. Its pending and lane sets are written at
+        <strong>score 0</strong> &#8212; <code>ZADD &lt;set&gt; 0 &lt;job-id&gt;</code> &#8212; and the branded
+        <code>JOB</code> id (typed, time-ordered) is the whole ordering: byte order is mint order, so a lane serves
+        first-in-first-out by id with no second index. That is the <strong>order theorem</strong> &#8212; the same
+        arrival ordering the composite score reaches with a counter, EchoMQ reaches for free.</p>
+        <p>Precedence between <em>identities</em> is the per-lane <strong>weight</strong>. <code>EchoMQ.Lanes.weight/4</code>
+        writes a <code>gweight</code> hash (group &#8594; weight); <code>EchoMQ.Lanes.wclaim/3</code> runs the weighted
+        rotation: one <code>LMOVE</code> rotates the ring of serviceable lanes exactly once, then serves that lane a
+        fair share of <code>K = min(weight, lane depth, glimit headroom)</code> heads in one atomic turn. A
+        higher-weight lane is served proportionally more over a window, never all of it &#8212; fairness is
+        constructed by the rotation, not encoded in a number.</p>
+      </div>
+      <pre class="code"><span class="cmt"># EchoMQ.Lanes.weight/4 (lanes.ex) — set a lane's fair-share weight, verbatim</span>
+def weight(conn, queue, group, w) when is_integer(w) and w &gt;= 1 do
+  _ = lane_key!(queue, group)
+  keys = [Keyspace.queue_key(queue, <b>"gweight"</b>)]
+  case Connector.eval(conn, @gweight, keys, [group, Integer.to_string(w)]) do
+    {:ok, 1} -&gt; :ok
+    other -&gt; other
+  end
+end</pre>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A sorted set orders by score, then lexicographically
+      within an equal score &#8212; so EchoMQ's score-0 lane sets order purely by member, and a time-ordered branded
+      id makes that mint order &#8212;
+      <a href="https://valkey.io/topics/sorted-sets/" rel="noopener">valkey.io/topics/sorted-sets</a>.</p>
+
+      <div class="door">
+        <span class="dr">the application &#183; codemojex &#183; a fair lane per chat</span>
+        <h3>The lane, not the message, carries precedence</h3>
+        <p>The consumer is <strong>codemojex</strong>, the Telegram emoji game on the same stack.
+        <code>Codemojex.Notifier.notify/3</code> enqueues every notification on
+        <code>EchoMQ.Lanes.enqueue(conn, "cm.notify", chat_id, job_id, payload)</code> &#8212; a fair lane keyed by
+        chat id, so one chat's burst cannot starve others &#8212; and <code>Codemojex.NotificationWorker</code> drains
+        the lanes by the rotation. Precedence is the chat's lane and its weight, never a score on the message. The lane
+        ring, the fair-share weight, and the order theorem in depth are the dedicated
+        <a href="/echomq/queue">Queue pillar of the EchoMQ course</a>.</p>
+        <figure class="frozen">
+          <figcaption>echo_mq/lanes.ex &#183; the weighted rotation (@gwclaim), trimmed<span class="tag">frozen</span></figcaption>
+          <pre>local g = redis.call('LMOVE', KEYS[1], KEYS[1], 'LEFT', 'RIGHT')   <span class="fd">&#8592; rotate the ring once</span>
+local w = tonumber(redis.call('HGET', ARGV[1] .. 'gweight', g) or '1')  <span class="fd">&#8592; the lane's share</span>
+local k = w
+if depth &lt; k then k = depth end                                   <span class="fd">&#8592; never over-pop the lane</span>
+<b>-- then ZPOPMIN k heads of THIS lane, on one server-clock lease</b></pre>
+        </figure>
+      </div>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">pack &#8594; tie-break &#8594; pop</span>
+      </div>
+      <div class="prose">
+        <p>Each dive takes one layer of the composite priority score, then sets it beside the EchoMQ choice: the
+        number that packs both fields, the counter that orders within a tier, and the pop that reads them &#8212; with
+        the lane rotation that reaches the same head without a packed score. Read them in order: the packing first,
+        the FIFO second, the pop third.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">
+          <div class="top"><span class="num">R4.03.1</span><span class="pill built">built</span></div>
+          <p class="t">Packing two keys in one score</p>
+          <p class="o">The core move: <code>priority &times; 0x100000000 + counter</code> puts the tier in the high
+          thirty-two bits and the arrival counter in the low; changing the tier dominates the counter.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">
+          <div class="top"><span class="num">R4.03.2</span><span class="pill built">built</span></div>
+          <p class="t">FIFO within a tier</p>
+          <p class="o">Two jobs of the same priority order by the arrival counter; the counter breaks the tie, and
+          EchoMQ reaches the same order for free with a score-0 set and a time-ordered id.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">
+          <div class="top"><span class="num">R4.03.3</span><span class="pill built">built</span></div>
+          <p class="t">ZPOPMIN</p>
+          <p class="o">Consumption: <code>ZPOPMIN</code> pops the smallest score (highest tier, earliest arrival); why
+          a lower number wins, and the lane rotation that serves the same head by weight.</p>
+        </a>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A textbook priority queue packs the tier and the arrival order into one score so a single
+          <code>ZPOPMIN</code> returns the right job &#8212; precedence encoded in the number.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>EchoMQ moves precedence off the job: arrival is the branded id's mint order (score-0 sets, the order
+          theorem), and tier precedence is the lane's <code>gweight</code> served by <code>wclaim/3</code> over a
+          rotating ring. The precedence is on the identity, not the number.</p>
         </div>
       </div>
+      <p class="take">Same goal &#8212; the right work served first, fairly &#8212; reached two ways: pack the
+      precedence into the score, or put it on the lane and let a weighted rotation serve the share.</p>
 
-      <svg viewBox="0 0 460 150" role="img" aria-label="Six prioritized jobs, each with a priority tier and an arrival counter. Ordered left to right by their composite score, smallest first. The head — the job a ZPOPMIN returns next — is the leftmost, shown red. Toggling to priority-only ties the jobs in a tier, so arrival order is lost.">
-        <text class="ttl" x="30" y="22">emq:{queue}:prioritized &mdash; six jobs by composite score (smallest first)</text>
-        <g id="plSlots"></g>
-        <text class="ttl" id="plVerd" x="230" y="140" text-anchor="middle">&mdash;</text>
-      </svg>
-
-      <div class="geo-readout" id="plOut" aria-live="polite"></div>
-    </figure>
-    <p class="take">A sorted set orders by score, then by member; the score is the whole index, so the number chosen for
-      it determines the order, and the head is the smallest score.</p>
-  </section>
-
-  <section id="composite">
-    <h2>Composite keys: packing two fields into one ordering key</h2>
-    <div class="prose">
-      <p>The composite-key pattern encodes several fields into one ordering key so a single sorted set answers a
-        hierarchical query. In its lexicographic form the fields go into the member string, read by
-        <code class="inl">ZRANGEBYLEX</code>.</p>
-      <pre class="code"><span class="rdx">ZADD</span> events <span class="res">0</span> <span class="str">"user:100:1706648400:login"</span>
-<span class="rdx">ZADD</span> events <span class="res">0</span> <span class="str">"user:100:1706648500:click"</span>
-<span class="rdx">ZRANGEBYLEX</span> events <span class="str">[user:100:</span> <span class="str">(user:100:\xff</span>   <span class="cmt"># all user:100 events, ordered by timestamp</span></pre>
-      <p>The second encoding puts the high-order field in the score and the low in the member. Members sort by score
-        first, then lexicographically within an equal score, so the score can carry a category or a tier while the
-        member carries the order within it.</p>
-      <pre class="code"><span class="rdx">ZADD</span> hybrid <span class="res">1</span> <span class="str">"a:first"</span> <span class="res">1</span> <span class="str">"a:second"</span> <span class="res">2</span> <span class="str">"b:first"</span> <span class="res">2</span> <span class="str">"b:second"</span>
-<span class="rdx">ZRANGE</span> hybrid <span class="res">0</span> <span class="res">-1</span>
-<span class="cmt"># Returns: a:first, a:second, b:first, b:second — bucket by score, order within</span></pre>
-      <p>Bucketing falls out: group items by score (a category, a priority tier) and order within each bucket. A
-        priority queue is the same composite key, encoded entirely in the score &mdash; both the tier and the position
-        within it.</p>
-    </div>
-    <p class="take">A composite key packs more than one field into one ordering key; pack into the member and read with
-      <code class="inl">ZRANGEBYLEX</code>, or pack into the score and bucket by tier with the member ordering within.</p>
-  </section>
-
-  <section id="score">
-    <h2>The numeric composite score: the priority queue</h2>
-    <div class="prose">
-      <p>A priority queue packs both fields into the score. The score is
-        <code class="inl">priority &times; 0x100000000 + counter</code>. <code class="inl">0x100000000</code> is
-        <code class="inl">2<sup>32</sup></code>, so multiplying the priority by it shifts the tier into the high
-        thirty-two bits; the arrival counter sits in the low thirty-two bits. One IEEE double carries both fields
-        exactly &mdash; a double holds fifty-three bits of integer precision, ample for small priorities and counters.</p>
-      <pre class="code"><span class="cmt">-- getPriorityScore.lua (included by addPrioritizedJob-9) — real</span>
-<span class="op">local</span> prioCounter = <span class="fn">rcall</span>(<span class="str">"INCR"</span>, priorityCounterKey)
-<span class="op">return</span> priority * <span class="res">0x100000000</span> + prioCounter % <span class="res">0x100000000</span>
-<span class="cmt">-- high 32 bits = the priority tier · low 32 bits = the arrival counter</span></pre>
-      <p>The counter is the value of <code class="inl">INCR pc</code> &mdash; an atomic increment of the priority-counter
-        key, taken at the moment the job is added. Every prioritized add reads a fresh, monotonically rising counter, so
-        two jobs in the same tier get two different low-bit fields: the earlier add gets the smaller counter. A
-        <strong>lower priority number means higher precedence</strong> &mdash; priority 1 produces a smaller high-bit
-        field than priority 2, so its composite score is smaller, and the set keeps it nearer the head.</p>
-    </div>
-    <p class="take">The composite score puts the tier in the high thirty-two bits and the arrival counter in the low;
-      because the high bits dominate, the score orders by tier first and arrival second, in one number.</p>
-  </section>
-
-  <section id="fifo">
-    <h2>FIFO within a tier</h2>
-    <div class="prose">
-      <p>Two jobs of the same priority share the same high thirty-two bits. The tie is broken by the low thirty-two bits
-        &mdash; the arrival counter. Because <code class="inl">INCR pc</code> rises by one per add, the first job to
-        arrive in a tier carries the smaller counter and so the smaller composite score. The set orders same-tier jobs
-        by arrival, head first: strict FIFO within the tier, with no second structure and no scan.</p>
-      <p>Without the counter, a score of <code class="inl">priority</code> alone would tie every job in a tier, and the
-        set would fall back to member order &mdash; the job id &mdash; which is not arrival order. The counter is what
-        breaks the tie deterministically and in the order jobs arrived. The second dive takes this apart in full.</p>
-    </div>
-    <p class="take">Same-tier jobs share the high bits; the <code class="inl">INCR pc</code> counter in the low bits
-      breaks the tie in arrival order, so the tier serves first-in-first-out without a second structure.</p>
-  </section>
-
-  <section id="consume">
-    <h2>Consuming with ZPOPMIN</h2>
-    <div class="prose">
-      <p>A worker takes the next job with <code class="inl">ZPOPMIN</code> &mdash; pop the member with the smallest
-        score. The smallest composite score is the highest-priority tier (the smallest priority number) and, within
-        that tier, the earliest arrival (the smallest counter). One command returns the right job and removes it
-        atomically.</p>
-      <pre class="code"><span class="rdx">ZPOPMIN</span> emq:{queue}:prioritized
-<span class="cmt"># Returns the smallest-score member: highest-priority tier, earliest arrival — and removes it</span></pre>
-      <p>In EchoMQ the popped job id is then pushed onto the active list with <code class="inl">LPUSH</code>.
-        <code class="inl">ZPOPMIN</code> is the reason a lower priority number wins: the formula makes a
-        higher-precedence job a smaller number, and <code class="inl">ZPOPMIN</code> always returns the smallest first.
-        The third dive walks the real consume in <code class="inl">moveToActive-11.lua</code>.</p>
-    </div>
-    <p class="take">One <code class="inl">ZPOPMIN</code> returns the smallest score &mdash; highest tier, earliest
-      arrival &mdash; and removes it atomically; a lower priority number wins because it makes the smaller number.</p>
-  </section>
-
-  <section id="when">
-    <h2>When a composite score beats two structures, when lexicographic instead</h2>
-    <div class="prose">
-      <p>A single composite score earns its place when the ordering is fully numeric and one pop must return the right
-        job: a priority queue, a numeric ranking, any case where the high-order field and the tie-breaker are both
-        numbers. One sorted set then replaces a per-tier structure plus a separate FIFO, and the consume is one
-        <code class="inl">ZPOPMIN</code>.</p>
-      <p>Reach for the member-packed lexicographic key instead when the fields are strings and the read is a prefix or
-        range query &mdash; autocomplete, hierarchical composite keys, time-series with string ids &mdash; where
-        <code class="inl">ZRANGEBYLEX</code> over the member is the natural read. Score-packing and member-packing are
-        the same composite-key idea; the choice is whether the read is a numeric pop or a lexicographic range.</p>
-    </div>
-    <table class="tbl">
-      <thead><tr><th>Pack into the score (numeric)</th><th>Pack into the member (lexicographic)</th></tr></thead>
-      <tbody>
-        <tr><td>Priority queues, numeric rankings</td><td>Autocomplete, prefix search</td></tr>
-        <tr><td>Read with <code>ZPOPMIN</code> / <code>ZRANGEBYSCORE</code></td><td>Read with <code>ZRANGEBYLEX</code></td></tr>
-        <tr><td>Tier in high bits, tie-breaker in low bits</td><td>Fields delimited in one string, zero-padded</td></tr>
-      </tbody>
-    </table>
-    <p class="take">Pack into the score when the order is numeric and the read is a pop; pack into the member when the
-      order is a string and the read is a lexicographic range &mdash; the same composite-key idea, two encodings.</p>
-  </section>
-
-  <section id="dives">
-    <h2>The three dives</h2>
-    <div class="prose">
-      <p>Each dive takes one layer of the composite priority score, building on the source spine and adding the EchoMQ
-        grounding on top: the number that packs both fields, the counter that orders within a tier, and the pop that
-        reads them. Read them in order &mdash; the packing first, the FIFO second, the pop third.</p>
-    </div>
-
-    <div class="mods" style="margin-top:1.3rem">
-
-      <a class="mod" href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">
-        <div class="top"><span class="num">R4.03.1</span><span class="pill built">built</span></div>
-        <p class="t">Packing two keys in one score</p>
-        <p class="o">The core move: <code class="inl">priority &times; 0x100000000 + counter</code> puts the tier in the
-          high thirty-two bits and the arrival counter in the low; changing the tier dominates the counter.</p>
-      </a>
-
-      <a class="mod" href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">
-        <div class="top"><span class="num">R4.03.2</span><span class="pill built">built</span></div>
-        <p class="t">FIFO within a tier</p>
-        <p class="o">Two jobs of the same priority order by the <code class="inl">INCR pc</code> arrival counter; the
-          counter breaks the tie deterministically, in the order jobs arrived.</p>
-      </a>
-
-      <a class="mod" href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">
-        <div class="top"><span class="num">R4.03.3</span><span class="pill built">built</span></div>
-        <p class="t">ZPOPMIN</p>
-        <p class="o">Consumption: <code class="inl">ZPOPMIN</code> pops the smallest score (highest tier, earliest
-          arrival), then <code class="inl">LPUSH</code> to the active list; why a lower priority number wins.</p>
-      </a>
-
-    </div>
-
-    <div class="bridge">
-      <div class="cell idea">
-        <span class="lbl">the pattern</span>
-        <p>A textbook sorted set buckets by score and orders within the bucket lexicographically by member &mdash; a
-          composite ordering key, two levels.</p>
-      </div>
-      <div class="arrow" aria-hidden="true">&rarr;</div>
-      <div class="cell elix">
-        <span class="lbl">in EchoMQ</span>
-        <p><code class="inl">EchoMQ.Keys.prioritized/1</code> &rarr; <code class="inl">emq:{queue}:prioritized</code> is
-          scored by <code class="inl">getPriorityScore</code>: <code class="inl">priority &times; 0x100000000 + (INCR pc)</code>
-          packs both the tier and the arrival order into one number, so a single <code class="inl">ZPOPMIN</code> yields
-          strict priority then FIFO, with no second structure and no scan.</p>
-      </div>
-    </div>
-    <p class="take">A composite priority queue packs the tier and the arrival order into one score; EchoMQ scores
-      <code class="inl">priority &times; 0x100000000 + (INCR pc)</code> and pops the smallest with one
-      <code class="inl">ZPOPMIN</code>, so one sorted set serves both orderings.</p>
-
-    <div class="door">
-      <p class="dl">A door, not a depth</p>
-      <p>This module cites one excerpt of EchoMQ's protocol &mdash; <code class="inl">getPriorityScore</code> in
-        <code class="inl">addPrioritizedJob-9.lua</code> and the <code class="inl">ZPOPMIN</code> consume in
-        <code class="inl">moveToActive-11.lua</code> &mdash; as proof the composite priority score ships. The intra-group
-        priority control plane, the fairness arc, and the polyglot concurrency models are the subject of the dedicated
-        <strong>EchoMQ course</strong>, built next with this toolkit. From here, open onto
-        <a href="/echomq/groups">E4 &middot; Groups</a>. This module teaches the priority score; that course teaches the
-        groups that prioritize within it.</p>
-    </div>
-
-    <p class="note">After R4.03, the Time, Delay &amp; Priority chapter continues with backoff-and-retry and
-      leaderboards (a numeric ranking on the same machinery), closing with the EchoMQ scheduler workshop; fairness and
-      starvation are <strong>R6.02 &middot; Priorities and fairness</strong>, a later chapter. Return to the
+      <p class="booknote">After R4.03, the Time, Delay &amp; Priority chapter continues with backoff-and-retry and
+      leaderboards (a numeric ranking on the same machinery), closing with the scheduler workshop; fairness and
+      starvation are <strong>R6.02 &#183; Priorities and fairness</strong>, a later chapter. Return to the
       <a href="/redis-patterns/time-delay-priority">Time, Delay &amp; Priority chapter</a> to continue.</p>
-  </section>
+    </section>
 
-  <section id="refs">
-    <h2>References</h2>
-    <div class="prose">
-      <p>The Redis commands behind the composite priority score &mdash; the sorted set as a priority ladder, the score,
-        the atomic counter, the smallest-score pop &mdash; the lexicographic contrast, and where the groups that
-        prioritize within it are taught.</p>
-    </div>
-    <div class="refs">
-      <div>
-        <h3>Sources</h3>
-        <ul>
-          <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/">Redis &mdash; <em>Sorted sets</em></a> &mdash; score-then-member ordering, the basis of the composite priority score.</li>
-          <li><a href="https://redis.io/commands/zadd/">Redis &mdash; <em>ZADD</em></a> &mdash; score a member by its composite priority score; the write that adds a prioritized job.</li>
-          <li><a href="https://redis.io/commands/zpopmin/">Redis &mdash; <em>ZPOPMIN</em></a> &mdash; pop the smallest score: highest-priority tier, earliest arrival, removed atomically.</li>
-          <li><a href="https://redis.io/commands/incr/">Redis &mdash; <em>INCR</em></a> &mdash; the atomic arrival counter that breaks the within-tier tie.</li>
-          <li><a href="https://redis.io/commands/zrangebylex/">Redis &mdash; <em>ZRANGEBYLEX</em></a> &mdash; the source's other half: member-packed lexicographic ordering, the contrast to score-packing.</li>
-          <li><a href="https://bullmq.io/">BullMQ &mdash; <em>the queue protocol</em></a> &mdash; the prioritized-jobs protocol EchoMQ ports, where the Lua scripts are the protocol.</li>
-        </ul>
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;8</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
       </div>
-      <div>
-        <h3>Related in this course</h3>
-        <ul>
-          <li><a href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &middot; Packing two keys in one score</a> &mdash; the tier in the high bits, the counter in the low.</li>
-          <li><a href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &middot; FIFO within a tier</a> &mdash; the <code>INCR pc</code> counter that breaks the tie.</li>
-          <li><a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &middot; ZPOPMIN</a> &mdash; the smallest-score pop, and why a lower priority number wins.</li>
-          <li><a href="/redis-patterns/time-delay-priority/score-as-meaning">R4 &middot; Score as meaning</a> &mdash; the orientation dive that names <code>getPriorityScore</code>.</li>
-          <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &middot; The delayed queue</a> &mdash; the sibling sorted set scored by fire-time.</li>
-          <li><a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a> &mdash; the chapter.</li>
-          <li><a href="/echomq/groups">E4 &middot; Groups</a> &mdash; the dedicated EchoMQ course: intra-group priority and the control plane.</li>
-        </ul>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/data-types/sorted-sets/" rel="noopener">Redis &mdash; <em>Sorted sets</em></a> &mdash; score-then-member ordering, the basis of the composite priority score.</li>
+            <li><a href="https://redis.io/commands/zadd/" rel="noopener">Redis &mdash; <em>ZADD</em></a> &mdash; score a member by its composite priority score; the write that adds a prioritized job.</li>
+            <li><a href="https://valkey.io/commands/zpopmin/" rel="noopener">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; pop the smallest score: highest-priority tier, earliest arrival, removed atomically; the engine EchoMQ runs on.</li>
+            <li><a href="https://redis.io/commands/incr/" rel="noopener">Redis &mdash; <em>INCR</em></a> &mdash; the atomic arrival counter that breaks the within-tier tie in the composite-score form.</li>
+            <li><a href="https://redis.io/commands/zrangebylex/" rel="noopener">Redis &mdash; <em>ZRANGEBYLEX</em></a> &mdash; the source's other half: member-packed lexicographic ordering, the contrast to score-packing.</li>
+            <li><a href="https://valkey.io/topics/sorted-sets/" rel="noopener">Valkey &mdash; <em>Sorted sets</em></a> &mdash; the engine's own reference for the score-then-member order EchoMQ's score-0 lane sets depend on.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &#183; Packing two keys in one score</a><span class="rs">the tier in the high bits, the counter in the low</span></li>
+            <li><a href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &#183; FIFO within a tier</a><span class="rs">the counter, and EchoMQ's score-0 mint order</span></li>
+            <li><a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &#183; ZPOPMIN</a><span class="rs">the smallest-score pop, and the lane rotation</span></li>
+            <li><a href="/redis-patterns/time-delay-priority/score-as-meaning">R4 &#183; Score as meaning</a><span class="rs">the sorted set as a meaning-bearing index</span></li>
+            <li><a href="/redis-patterns/time-delay-priority/delayed-queue">R4.01 &#183; The delayed queue</a><span class="rs">the sibling set scored by fire-time</span></li>
+            <li><a href="/redis-patterns/time-delay-priority">R4 &#183; Time, Delay &amp; Priority</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq/queue">/echomq &#183; Queue</a><span class="rs">the lane ring, fair-share weight, the order theorem</span></li>
+          </ul>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section>
-    <nav class="pager" aria-label="Module navigation">
-      <a class="btn ghost" href="/redis-patterns/time-delay-priority"><span aria-hidden="true">&larr;</span>&nbsp; R4 &middot; Time, Delay &amp; Priority</a>
-      <span class="spacer"></span>
-      <a class="btn" href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &middot; Packing two keys in one score <span aria-hidden="true">&rarr;</span></a>
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/time-delay-priority"><span class="pk">up</span>&#8592; R4 &#183; Time, Delay &amp; Priority</a>
+      <a class="pgx" href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score"><span class="pk">next</span>R4.03.1 &#183; Packing two keys in one score &#8594;</a>
     </nav>
-  </section>
 
+  </div>
 </main>
 
 <footer class="site-foot">
-  <div class="wrap" style="display:block">
-    <div class="foot-cols">
-      <div>
-        <a class="fbrand" href="/redis-patterns">jonnify<span class="dot"></span></a>
-        <p class="tag">Redis Patterns Applied &mdash; thirty Redis design patterns, each grounded in how EchoMQ-in-Portal really uses it.</p>
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
       </div>
-      <div>
-        <h4>This module</h4>
-        <a href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &middot; Packing two keys in one score</a>
-        <a href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &middot; FIFO within a tier</a>
-        <a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &middot; ZPOPMIN</a>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score">R4.03.1 &#183; Packing two keys in one score</a>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier">R4.03.2 &#183; FIFO within a tier</a>
+        <a href="/redis-patterns/time-delay-priority/priority-scores/zpopmin">R4.03.3 &#183; ZPOPMIN</a>
       </div>
-      <div>
-        <h4>The course</h4>
-        <a href="/redis-patterns">Course home</a>
-        <a href="/redis-patterns/time-delay-priority">R4 &middot; Time, Delay &amp; Priority</a>
-        <a href="/elixir">Companion &middot; Functional Programming</a>
-        <a href="/echomq/groups">The EchoMQ course &middot; groups</a>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
       </div>
-    </div>
-    <div class="foot-bottom">
-      <span class="cr">&copy; jonnify</span>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
       <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
         build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
         <dl class="panel">
@@ -637,85 +586,103 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 <script>
 (function () {
   "use strict";
+  document.documentElement.classList.add('js');
 
   /* ---------- hub: the prioritized set — six jobs ordered by composite score (pure over mode) ---------- */
-  // A fixed set of six prioritized jobs, each with a priority tier and an arrival counter (the INCR pc value taken on
-  // add). The composite score is priority × 0x100000000 + counter. The ZPOPMIN order is the ascending composite-score
-  // order. The "priority only" mode scores by the tier alone, which ties same-tier jobs and falls back to id order.
+  // A fixed set of six prioritized jobs, each with a priority tier and an arrival counter (the INCR value taken on
+  // add). The composite score is priority × 0x100000000 + counter. ZPOPMIN order = ascending composite-score order.
+  // "priority only" scores by tier alone, which ties same-tier jobs and falls back to member (id) order.
   var SHIFT = 0x100000000; // 2^32
   var JOBS = [
     { id: 'A', prio: 2, ctr: 1 }, { id: 'B', prio: 1, ctr: 2 }, { id: 'C', prio: 3, ctr: 3 },
     { id: 'D', prio: 1, ctr: 4 }, { id: 'E', prio: 2, ctr: 5 }, { id: 'F', prio: 1, ctr: 6 }
   ];
-  // pure: composite score of a job
   function compositeScore(j) { return j.prio * SHIFT + j.ctr; }
-  // pure: mode -> { slots:[{id,prio,ctr,score,head,tier}], head:{...} }
+  // pure: mode -> ordered slot list
   function order(mode) {
-    var withScore = JOBS.map(function (j) {
-      return { id: j.id, prio: j.prio, ctr: j.ctr, score: compositeScore(j) };
-    });
+    var rows = JOBS.map(function (j) { return { id: j.id, prio: j.prio, ctr: j.ctr, score: compositeScore(j) }; });
     if (mode === 'priority') {
-      // score = priority only; ties broken by member (id) order, as Redis does for equal scores
-      withScore.sort(function (a, b) { return (a.prio - b.prio) || (a.id < b.id ? -1 : 1); });
+      rows.sort(function (a, b) { return (a.prio - b.prio) || (a.id < b.id ? -1 : 1); });
     } else {
-      withScore.sort(function (a, b) { return a.score - b.score; });
+      rows.sort(function (a, b) { return a.score - b.score; });
     }
-    var head = withScore[0];
-    var slots = withScore.map(function (j, i) {
-      return { id: j.id, prio: j.prio, ctr: j.ctr, score: j.score, head: i === 0, tier: j.prio };
+    return rows.map(function (j, i) { return { id: j.id, prio: j.prio, ctr: j.ctr, score: j.score, head: i === 0, pop: i + 1 }; });
+  }
+  var pl = document.getElementById('pl');
+  var plSlots = document.getElementById('plSlots');
+  var plOut = document.getElementById('plOut');
+  var modeButtons = document.querySelectorAll('#modeSel button');
+  var curMode = 'composite';
+  var curSlots = [];
+
+  function renderSlots(mode) {
+    curSlots = order(mode);
+    if (!plSlots) return;
+    var frag = '';
+    for (var i = 0; i < curSlots.length; i++) {
+      var s = curSlots[i];
+      var x = 30 + i * 68;
+      frag += '<g class="slot' + (s.head ? ' head' : '') + '" data-job="' + s.id + '">' +
+        '<rect x="' + x + '" y="40" width="56" height="56" rx="8"></rect>' +
+        '<text class="jb" x="' + (x + 28) + '" y="62" text-anchor="middle">' + s.id + '</text>' +
+        '<text class="sc" x="' + (x + 28) + '" y="76" text-anchor="middle">p' + s.prio + ' c' + s.ctr + '</text>' +
+        '<text class="sc" x="' + (x + 28) + '" y="88" text-anchor="middle">pop ' + s.pop + '</text></g>';
+    }
+    plSlots.innerHTML = frag;
+    // re-bind hover after re-render
+    plSlots.querySelectorAll('.slot').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectJob(g.getAttribute('data-job')); });
+      g.addEventListener('mouseleave', function () { selectJob(null); });
     });
-    return { slots: slots, head: head, mode: mode };
   }
-  function renderPl(mode) {
-    var r = order(mode);
-    var g = document.getElementById('plSlots');
-    if (g) {
-      var frag = '';
-      for (var i = 0; i < r.slots.length; i++) {
-        var s = r.slots[i];
-        var x = 30 + i * 68;
-        var cls = s.head ? 'head' : ('t' + (s.tier === 1 ? '1' : '2'));
-        frag += '<g class="slot ' + cls + '"><rect x="' + x + '" y="38" width="56" height="48" rx="9"></rect>' +
-          '<text class="job" x="' + (x + 28) + '" y="58" text-anchor="middle">' + s.id + '</text>' +
-          '<text class="sc" x="' + (x + 28) + '" y="72" text-anchor="middle">p' + s.prio + ' c' + s.ctr + '</text>' +
-          '<text class="sc" x="' + (x + 28) + '" y="83" text-anchor="middle">pop ' + (i + 1) + '</text></g>';
+  // pure: jobId -> readout text over the current order
+  function describe(jobId) {
+    if (!jobId) {
+      var popseq = curSlots.map(function (s) { return s.id; }).join(' → ');
+      if (curMode === 'priority') {
+        return '<span class="rk">mode &#183;</span> priority only. Score = the tier alone, so jobs B, D, F all tie at ' +
+          'tier 1 and the set falls back to member order — arrival order is lost. Pop order: <b>' + popseq + '</b>.';
       }
-      g.innerHTML = frag;
+      return '<span class="rk">mode &#183;</span> composite. Score = priority &times; 0x100000000 + counter. ' +
+        'Pop order: <b>' + popseq + '</b> — tier 1 (B, D, F by arrival), then tier 2 (A, E), then tier 3 (C).';
     }
-    var verd = document.getElementById('plVerd');
-    var out = document.getElementById('plOut');
-    var pops = r.slots.map(function (s) { return s.id; }).join(' → ');
-    if (verd) verd.textContent = 'pop order: ' + pops;
-    if (out) {
-      if (mode === 'priority') {
-        out.textContent = 'mode = priority only. Score = priority alone, so the three priority-1 jobs (B, D, F) all ' +
-          'tie at score 1 and the set falls back to member order — B, D, F by id, not by arrival. The pop order is ' +
-          pops + '. Arrival order inside a tier is lost.';
-      } else {
-        out.textContent = 'mode = composite. Score = priority × 0x100000000 + counter. The head is job ' + r.head.id +
-          ' (priority ' + r.head.prio + ', counter ' + r.head.ctr + ', score ' + r.head.score + '). ZPOPMIN returns ' +
-          'it first. The full pop order is ' + pops + ' — tier 1 (B, D, F by arrival), then tier 2 (A, E), then tier 3 (C).';
-      }
-    }
+    var s = null;
+    for (var i = 0; i < curSlots.length; i++) { if (curSlots[i].id === jobId) { s = curSlots[i]; break; } }
+    if (!s) return '';
+    return '<span class="rk">job &#183;</span> ' + s.id + ' (priority ' + s.prio + ', counter ' + s.ctr + ') &#183; ' +
+      '<span class="rk">score &#183;</span> <b>' + s.score + '</b> &#183; <span class="rk">pop position &#183;</span> ' +
+      s.pop + (s.head ? ' — the head; ZPOPMIN returns it next.' : '.');
   }
-  document.querySelectorAll('#plSel button').forEach(function (b) {
-    b.addEventListener('click', function () {
-      var mode = b.getAttribute('data-mode');
-      document.querySelectorAll('#plSel button').forEach(function (x) {
-        var sel = x === b; x.classList.toggle('active', sel); x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+  // pure: highlight a job in the diagram and fill the readout — hover or null
+  function selectJob(jobId) {
+    if (pl) {
+      pl.classList.toggle('focus', !!jobId);
+      pl.querySelectorAll('.slot').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-job') === jobId);
       });
-      renderPl(mode);
+    }
+    if (plOut) plOut.innerHTML = describe(jobId);
+  }
+  modeButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      curMode = b.getAttribute('data-mode');
+      modeButtons.forEach(function (x) {
+        var sel = x === b; x.setAttribute('aria-pressed', sel ? 'true' : 'false');
+      });
+      renderSlots(curMode);
+      selectJob(null);
     });
   });
-  renderPl('composite'); // initial render — correct without interaction
+  renderSlots('composite'); // initial render — correct without interaction
+  selectJob(null);
 
-  /* ---------- Branded Snowflake decoder ---------- */
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
   var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   var EPOCH_MS = 1704067200000;
   function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
   function pad2(x) { return (x < 10 ? '0' : '') + x; }
   function decodeBranded(id) {
-    if (!id || id.length < 4) return null;
+    if (!id || id.length !== 14) return null;
     var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
     if (snow === null) return null;
     var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
@@ -735,23 +702,5 @@ html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transfo
 })();
 </script>
 
-<script>
-/* progressive enhancement: mark JS on, then reveal-on-scroll */
-document.documentElement.classList.add('js');
-document.addEventListener('DOMContentLoaded', function () {
-  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var els = document.querySelectorAll('.reveal');
-  if (reduce || !('IntersectionObserver' in window)) {
-    els.forEach(function (e) { e.classList.add('in'); });
-    return;
-  }
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (en) {
-      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
-    });
-  }, { threshold: 0.12 });
-  els.forEach(function (e) { io.observe(e); });
-});
-</script>
 </body>
 </html>
