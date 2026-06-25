@@ -196,10 +196,21 @@ def handshake(conn, %{"platform" => platform} = params) do
        {:ok, plr} <- Codemojex.resolve_player_by_tg(uid, name: claims.user["first_name"]),
        {:ok, ses} <- Codemojex.Session.mint(plr, platform, %{"tg_user_id" => uid}) do
     json(conn, %{session: ses, player: plr})
+  else
+    # Render 401 INLINE — every verify/resolve/mint failure is unauthenticated. (D-5: the
+    # handshake does NOT route through the FallbackController; see the note below.)
+    {:error, _reason} -> conn |> put_status(:unauthorized) |> json(%{error: :unauthenticated})
   end
-  # any {:error, reason} → the FallbackController renders 401 (see §9 acceptance)
 end
 ```
+
+> **As-built (D-5) — the handshake renders 401 INLINE, NOT via the `FallbackController`.** The
+> `FallbackController.render_error/1` maps only `:no_player → 401`; every `InitData`/resolve reason
+> (`:no_token` · `:bad_hash` · `:stale` · `:missing` · `:malformed`) and `:unknown` falls to its
+> `render_error(other) → {:bad_request, …}` default — a **400**, which would mis-signal a verify failure and
+> breach A1/A4. So `AuthController` owns its own 401 rendering in the `with`'s `else`; the `FallbackController`
+> stays owned by the *game* actions (whose `:error` reasons it maps correctly). A `nil` token →
+> `{:error, :no_token}` → this inline 401 (fail-closed).
 
 - `platform` is the `:platform` path segment (FB B3's adapter selector — `"telegram"` today; a second platform
   is a new adapter, the SES shape unchanged).
@@ -324,7 +335,7 @@ Run from `echo/apps/codemojex`, `TMPDIR=/tmp`, Valkey on `6390` + Postgres up.
 | A4 | The verifier is **pure + fixture-tested** (accept + tamper-reject); the compare is **constant-time** | `InitData` unit tests: a fixture signed with a known test token → `{:ok, %{tg_user_id: N}}`; flip one field → `{:error, :bad_hash}`; a present `signature` field is excluded (accept still holds); a `nil` token → `{:error, :no_token}`. **Mutation:** flipping `:crypto.hash_equals` to a truthy constant MUST make A4 fail (the net-zero spot-check). |
 | A5 | `POST /api/players` is **gone** (G3) | a request to `POST /api/players` → **404** (the route is removed); a grep shows no `create_player` action. The free-player mint is impossible without a verified handshake. |
 | A6 | F2 — the dev/test helper mints a real `SES`, **no prod bypass** | the helper lives in `test/support`; a grep shows **no** `trust_supplied_player` (or any auth-skip) in `lib/`. |
-| A7 | The 8 story suites stay **byte-unchanged** + green | `git diff --stat test/stories/` empty; `mix test --include valkey` → the **41 scenarios** green (41/0) **plus** the new auth suite. |
+| A7 | The 8 story suites stay **byte-unchanged** + green | `git diff --stat test/stories/` empty; `mix test --include valkey` → the **41 story scenarios** green (41/0) **plus** the new auth suite (**29 tests**) = **70 tests / 0 failures** (the measured as-built total — 41 story + 29 auth; re-pinned in the Director Y-10 verify and Apollo's T-16). |
 | A8 | The migration **up/down** + fresh-schema reinit clean | Venus-Postgres: `MIX_ENV=test mix ecto.migrate` then `ecto.rollback` (the `tg_user_id` column + the partial unique index), `mix ecto.drop/create/migrate` clean (partitioned DB). |
 | A9 | The **≥100 determinism loop** (the handshake mints BOTH a `PLR` and a `SES` → the same-ms branded-id mint hazard) | `for i in $(seq 1 150); do TMPDIR=/tmp mix test --include valkey || break; done` green throughout. |
 | A10 | The **privacy line** holds | the game `secret` never crosses the wire (the existing privacy stories stay green; the auth cutover does not touch the views). |

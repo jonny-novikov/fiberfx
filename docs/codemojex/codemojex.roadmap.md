@@ -156,7 +156,8 @@ first** (buildable now), then the **blind Golden mode** (its forks ruled before 
 | **cm.1 — the founding core** | the fresh Ecto schema (one clean initial create) · the `GAM` game entity (round→game rename, code + wire) · the type/policy discriminator + the `games_type` CHECK · **linear scoring, the bonus-tier economy removed** · the dev-DB reinitialization · classic live mode end-to-end | B7.1 · B7.2 · B7.3 · B7.4 (the linear scale) | ✅ **SHIPPED** (`specs/cm.1.{md,stories.md,llms.md}`) — built + committed via the `codemojex-game-rename` rung |
 | **cm.2 — classic hardening** (optional) | any classic-mode polish cm.1 defers; folded into cm.1 | B7.3 · B7.6 | folded into cm.1 — no separate rung |
 | **cm.3 — blind Golden** | feedback `none` + the privacy withholding · commit-reveal (`commitment`/`nonce`/`revealed_ms`) · sealed top-K settlement from the pool (the stored `payout_split`) · the per-game reduced set (`cell_count`/`cell_codes`) · the `revealing`/`settling` states | B7.2.3 · B7.4.3 · the Golden Rooms § | ✅ **SHIPPED** (`specs/cm.3.{md,stories.md,llms.md}`) — Arms V-7/V-8/V-14/V-15/V-16 ruled (D-15/D-16), built + committed via the `codemojex-game-rename` rung |
-| **cm.4+ — the deferred systems** | the `BNK` bank + rake · `RMP` membership + the anonymized leaderboard · `SES` sessions / verified `initData` · commerce · growth · analytics | B7.5 · B7.6 + beyond | 📋 named below (§ The feature catalog); out of the core engine's scope |
+| **cm.4 — the auth floor** | verified Telegram `initData` (the pure `Codemojex.InitData` HMAC verifier) → a shared **`SES`-in-Valkey** session (the FIRST mutable `EchoStore.Table` — `:tracking` coherence + immediate revocation) · the handshake `POST /api/auth/:platform` (the sole `SES` mint) · the `:auth` plug + socket cutover to `conn.assigns.player` · `players.tg_user_id` resolve-or-create · **`POST /api/players` retired** (the free-money gap) | B7.5 (forward) | ✅ **SHIPPED** (`specs/cm.4.{md,stories.md,llms.md}` + `cm.4.postgres.design.md`) — the dual-architect HIGH-risk Squad rung (`cm-4`); the one pre-launch auth gap closed |
+| **cm.5+ — the deferred systems** | the `BNK` bank + rake · `RMP` membership + the anonymized leaderboard · commerce · growth · analytics | B7.5 · B7.6 + beyond | 📋 named below (§ The feature catalog); out of the core engine's scope |
 
 The gate is the codemojex app gate (`TMPDIR=/tmp mix compile --warnings-as-errors` + `mix test
 --include valkey` on Valkey `:6390` + Postgres, plus the fresh-schema reinitialization on the
@@ -180,7 +181,8 @@ engine; the classic live room and the Golden Room are two modes of it, selected 
 the whole game is a matter of building these features, not new identity types. The **engine core**
 (rooms/modes, the Mastermind engine, games + guesses, the blind Golden mode, the commit-reveal secret,
 the three-currency transactional wallet, the classic + blind API) is **SHIPPED** on the nine as-built
-brands; the systems below it marks 📋 are the **forward** `cm.4+` work.
+brands; the systems below it marks 📋 are the **forward** `cm.5+` work (the auth floor — `cm.4` — has
+since shipped: verified `initData` → a shared `SES`-in-Valkey session, the first mutable `EchoStore.Table`).
 
 > **Identity reconcile.** The as-built game re-based its single player entity to **`PLR`** (the
 > `codemojex-game-rename` rung retired `USR`). The forward identity split named below — account (`USR`) /

@@ -127,7 +127,7 @@ def resolve_by_tg(tg_user_id, opts \\ []) do
       attrs = Map.merge(@empty, %{id: uid, name: name_of(opts), tg_user_id: tg_user_id,
                                   tg_chat_id: Keyword.get(opts, :tg_chat_id)})
 
-      {:ok, %Player{} = row} =
+      {:ok, %Player{}} =
         %Player{}
         |> Player.create_changeset(attrs)
         |> Repo.insert(
@@ -135,15 +135,26 @@ def resolve_by_tg(tg_user_id, opts \\ []) do
              conflict_target: {:unsafe_fragment, "(tg_user_id) WHERE tg_user_id IS NOT NULL"}
            )
 
-      # On a real insert, row.id == uid. On a conflict (:nothing), Postgres returns no row,
-      # so Ecto hands back the struct WITHOUT a DB-confirmed id — re-fetch the winner.
-      case row do
-        %Player{id: ^uid, __meta__: %{state: :loaded}} -> {:ok, uid}
-        _ -> {:ok, Repo.get_by!(Player, tg_user_id: tg_user_id).id}
-      end
+      # Re-fetch the winner UNCONDITIONALLY by tg_user_id: the row the partial unique
+      # index guards is the single source of truth, never the in-memory struct. A real
+      # insert wrote uid's row; a conflict (:nothing) wrote nothing and the loser's minted
+      # uid is discarded — either way the one indexed row is THE answer for every caller.
+      {:ok, Repo.get_by!(Player, tg_user_id: tg_user_id).id}
   end
 end
 ```
+
+> **CORRECTION (as-built, D-6 — the `:loaded`-state heuristic this design first sketched is UNSOUND on
+> Ecto 3.x / Postgrex).** An earlier draft guarded the winner with
+> `%Player{id: ^uid, __meta__: %{state: :loaded}} -> {:ok, uid}`, on the stated premise that `:loaded`
+> distinguishes a real insert from a conflict no-op. The cm.4 concurrency probe disproved it:
+> `Repo.insert(on_conflict: :nothing)` returns the struct with `__meta__.state == :loaded` **even when the
+> conflict suppressed the write**, so every *loser* matched the winner-branch and was handed back its own
+> *discarded* `uid` — 16 racers produced **5 distinct PLRs** while the DB correctly held **one** row. The
+> shipped `resolve_by_tg/2` therefore re-fetches **unconditionally** by `tg_user_id` (the index read is the
+> authoritative answer); this keeps Pattern A's "the loser writes nothing" while replacing the brittle
+> struct-state check. The standing proof is the A9/S4 concurrency test (≥16 racers → 1 distinct PLR, 1 row).
+> Re-verified at 32 racers in Apollo's high-risk evaluation (T-16).
 
 - **Why A wins.** The loser's freshly-minted `PLR` is **discarded** (no row written under `:nothing`); the
   re-fetch returns the winner. No orphan row, no second PLR, the unique index is the sole enforcer, and the
@@ -156,8 +167,10 @@ end
   fragment matches the migration's `where:` byte-for-byte** (a mismatch → Postgres raises "there is no unique
   or exclusion constraint matching the ON CONFLICT specification"). This is the one place the partial-index
   choice (§1.2) costs a line of care; the acceptance gate is the concurrent-first-touch test (§2.4).
-  **Detection contract:** the post-conflict branch distinguishes "real insert" (`__meta__.state == :loaded`
-  with the minted id) from "conflict no-op" by the loaded-state check, not by trusting `row.id` blindly.
+  **Resolution contract (as-built, D-6):** the post-conflict branch does **not** try to tell "real insert"
+  from "conflict no-op" from the in-memory struct at all (the `:loaded`-state heuristic is unsound — see the
+  CORRECTION above); it re-fetches the winner **unconditionally** by `tg_user_id`, the indexed row being the
+  single source of truth for every concurrent caller.
 
 #### Pattern B — unique-violation rescue + re-fetch *(the alternative)*
 

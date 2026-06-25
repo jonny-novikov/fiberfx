@@ -6,12 +6,14 @@ implementation of the Branded Component System — the consumer app in the `echo
 whole**: a thin Phoenix surface (`CodemojexWeb`) over the `Codemojex` facade, guesses on fair
 per-player lanes to one scorer, a Valkey leaderboard, a transactional Postgres wallet, the **two-mode
 engine — classic (live) + golden (blind/sealed)** on one six-table schema, and an optional Graft
-durable floor. The founding core (**cm.1**) and the blind Golden flow (**cm.3**) **both SHIPPED** via
-the `codemojex-game-rename` rung (Operator-committed). The game is documented **pre-launch** — the one
-open gap before launch is verified Telegram `initData` (per the design). The **course chapter B7**
+durable floor. The founding core (**cm.1**) and the blind Golden flow (**cm.3**) shipped via the `codemojex-game-rename`
+rung; the **auth floor (cm.4)** then shipped via the `cm-4` rung — verified Telegram `initData` (the pure
+`Codemojex.InitData` HMAC verifier) → a shared **`SES`-in-Valkey** session (the FIRST mutable
+`EchoStore.Table`, `:tracking` coherence + immediate revocation), with `POST /api/players` (the free-money
+mint) retired. The **one pre-launch auth gap is closed**. The **course chapter B7**
 ([`codemojex.roadmap.md`](./codemojex.roadmap.md), six modules B7.1–B7.6 of three dives each) is
 **PLANNED** — the chapter landing is written; the dives follow. **Next on the build ladder:** the
-`cm.4+` deferred systems (the `BNK` bank · `RMP` membership · `SES` sessions · commerce · growth ·
+`cm.5+` deferred systems (the `BNK` bank · `RMP` membership · commerce · growth ·
 analytics — the [feature catalog](./codemojex.roadmap.md#the-feature-catalog)).
 
 ---
@@ -105,16 +107,19 @@ exactly-once.
 The rung's design-phase deliverable, the frozen audit ledger, the build brief, and the AAW registry are
 archived under [`specs/progress/`](./specs/progress/) (records-freeze — the ledger history is never
 rewritten). The settled spec triads are [`specs/cm.1.*`](./specs/cm.1.md) (the founding core) +
-[`specs/cm.3.*`](./specs/cm.3.md) (the blind Golden flow).
+[`specs/cm.3.*`](./specs/cm.3.md) (the blind Golden flow) +
+[`specs/cm.4.*`](./specs/cm.4.md) (the auth floor — verified `initData` + the shared `SES` session).
 
 ---
 
 ## Next
 
-The engine is whole; the forward work is the **`cm.4+` deferred systems** named in the roadmap's
-[feature catalog](./codemojex.roadmap.md#the-feature-catalog): the `BNK` bank + rake · the `RMP`
-membership + the anonymized leaderboard · `SES` sessions / verified `initData` (the one pre-launch gap) ·
-commerce (`PKG`/`ORD`/`OTX`/`WHK`) · growth (`SHR`) · analytics (`AEV`) · the LiveAdmin console. Each
+The engine is whole and the **auth floor (cm.4) has shipped** — verified Telegram `initData` → a shared
+**`SES`-in-Valkey** session (the first mutable `EchoStore.Table`, immediate revocation), `POST /api/players`
+retired; the one pre-launch auth gap is closed. The forward work is the **`cm.5+` deferred systems** named
+in the roadmap's [feature catalog](./codemojex.roadmap.md#the-feature-catalog): the `BNK` bank + rake · the
+`RMP` membership + the anonymized leaderboard · commerce (`PKG`/`ORD`/`OTX`/`WHK`) · growth (`SHR`) ·
+analytics (`AEV`) · the LiveAdmin console. Each
 lands as its own `cm.N` rung through the Codemojex Program — a new triad under `specs/` + a per-rung
 ledger under `specs/progress/`.
 
