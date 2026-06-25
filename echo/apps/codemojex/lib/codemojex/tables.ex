@@ -7,8 +7,8 @@ defmodule Codemojex.Tables do
   for its life — so the cache never goes stale and the coherence mode is
   `:none`:
 
-    * `:cm_rounds` (`RND`) — a round and its secret, read on every guess score.
-    * `:cm_emojisets` (`EMS`) — an emoji set's layout, read alongside the round.
+    * `:cm_games` (`GAM`) — a game and its secret, read on every guess score.
+    * `:cm_emojisets` (`EMS`) — an emoji set's layout, read alongside the game.
 
   A read is a caller-side `:ets.lookup` against the table's public, read-
   concurrent ETS table; a miss coalesces onto one in-flight fill that checks L2
@@ -27,11 +27,11 @@ defmodule Codemojex.Tables do
 
   alias Codemojex.Store
 
-  @rounds :cm_rounds
+  @games :cm_games
   @sets :cm_emojisets
 
-  @doc "The rounds near-cache name (`RND`)."
-  def rounds_table, do: @rounds
+  @doc "The games near-cache name (`GAM`)."
+  def games_table, do: @games
   @doc "The emoji-sets near-cache name (`EMS`)."
   def sets_table, do: @sets
 
@@ -42,7 +42,7 @@ defmodule Codemojex.Tables do
     port = Keyword.get(opts, :port, 6390)
     connector = [port: port, protocol: 3]
 
-    rounds_ttl = Application.get_env(:codemojex, :rounds_cache_ttl_ms, 600_000)
+    games_ttl = Application.get_env(:codemojex, :games_cache_ttl_ms, 600_000)
     sets_ttl = Application.get_env(:codemojex, :sets_cache_ttl_ms, 3_600_000)
 
     children = [
@@ -55,14 +55,14 @@ defmodule Codemojex.Tables do
       },
       Supervisor.child_spec(
         {EchoStore.Table,
-         name: @rounds,
-         kind: "RND",
-         loader: &load_round/1,
+         name: @games,
+         kind: "GAM",
+         loader: &load_game/1,
          coherence: :none,
-         ttl_ms: rounds_ttl,
+         ttl_ms: games_ttl,
          max_size: 50_000,
          connector: connector},
-        id: :cm_rounds_table
+        id: :cm_games_table
       ),
       Supervisor.child_spec(
         {EchoStore.Table,
@@ -86,10 +86,10 @@ defmodule Codemojex.Tables do
   # name the value belongs to; `{:error, :not_found}` is a clean miss.
 
   @doc false
-  def load_round(<<_::binary-14>> = round_id) do
-    case Store.round(round_id) do
+  def load_game(<<_::binary-14>> = game_id) do
+    case Store.game(game_id) do
       nil -> {:error, :not_found}
-      map -> {:ok, :erlang.term_to_binary(map), round_id}
+      map -> {:ok, :erlang.term_to_binary(map), game_id}
     end
   end
 

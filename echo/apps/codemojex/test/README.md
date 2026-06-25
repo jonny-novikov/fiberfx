@@ -10,14 +10,15 @@ for Codemojex** (Elixir, in the repo's own self-documenting BDD style), and
 ```
 codemojex/
   test/support/codemojex/story.ex        Codemojex.Story — the BDD DSL (mirrors EchoMQ.Story)
-  test/stories/                          the Given/When/Then game specs (7 feature files)
+  test/stories/                          the Given/When/Then game specs (8 feature files)
     scoring_story_test.exs               pure — runs anywhere
     economy_story_test.exs               pure
     emoji_codes_story_test.exs           pure
-    rooms_and_rounds_story_test.exs      integration — @moduletag :valkey (+ Postgres)
+    rooms_and_games_story_test.exs       integration — @moduletag :valkey (+ Postgres)
     wallet_story_test.exs                integration
     privacy_story_test.exs               integration
     settlement_story_test.exs            integration
+    golden_blind_story_test.exs          integration — the blind/sealed Golden flow
   lib/mix/tasks/codemojex.stories.ex     mix codemojex.stories — generates the catalogue
 
 docs/
@@ -47,10 +48,11 @@ running the suite.
   secret.
 - **Integration** (`@moduletag :valkey`, also need Postgres + the app up) assert
   behaviour that does **not** depend on the random secret: a first join opens a
-  round and a later join lands in it; a paid guess debits one key and never goes
-  negative; a free guess spends a clip; the round view and history never expose the
+  game and a later join lands in it; a paid guess debits one key and never goes
+  negative; a free guess spends a clip; the game view and history never expose the
   secret or another player's guesses; a close pays the leader winner-take-all and a
-  second close is a no-op (exactly-once).
+  second close is a no-op (exactly-once); a golden game runs blind (the commitment
+  is published, the score withheld until the sealed reveal, then verifiable).
 
 ## Placement
 

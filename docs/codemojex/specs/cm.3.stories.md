@@ -125,6 +125,15 @@ ledger compared (idempotency proven, not assumed); G-4 requires the `games_statu
 by a rejected write; G-5 requires a present golden game with `cell_count = N` to snapshot exactly `N` codes
 and the secret to be drawn from them. No gate is satisfied by a no-op.
 
+**Test determinism (as-built, the `golden_blind_story_test` discipline):** the sealed-close stories use
+`duration_ms: 600_000` (the game stays open through every in-flight submit) and trigger the close
+**explicitly** via `close_now/1` — which dispatches on `settlement == "sealed"` regardless of the timer —
+rather than coupling the close to a short timer expiry. A short `duration_ms` raced the in-flight submit
+against `:expired` and flaked only on an unlucky single-file isolation seed (a green full-suite + a green
+≥100 loop hid it; the seed-1 isolation run surfaced it). The explicit-close discipline makes the flow
+deterministic and clock-independent — verified across seeds in isolation. (Independently re-confirmed: 10
+seeds incl. seed 1, the original failing seed, all `4/0`.)
+
 ---
 
 *Derived from `cm.3.md` (all mechanics RULED, D-15/D-16). The body is authoritative; feedback edits the

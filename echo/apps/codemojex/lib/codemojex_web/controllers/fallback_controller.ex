@@ -17,12 +17,12 @@ defmodule CodemojexWeb.FallbackController do
   end
 
   defp render_error(:no_player), do: {:unauthorized, "player required"}
-  defp render_error(:no_round), do: {:not_found, "round not found"}
+  defp render_error(:no_game), do: {:not_found, "game not found"}
   defp render_error(:no_room), do: {:not_found, "room not found"}
   defp render_error(:insufficient), do: {:payment_required, "insufficient balance"}
   defp render_error(:no_keys), do: {:payment_required, "not enough keys"}
-  defp render_error(:closed), do: {:conflict, "round is closed"}
-  defp render_error(:expired), do: {:conflict, "round has expired"}
+  defp render_error(:closed), do: {:conflict, "game is closed"}
+  defp render_error(:expired), do: {:conflict, "game has expired"}
   defp render_error(:bad_guess), do: {:unprocessable_entity, "invalid guess"}
   defp render_error(:bad_amount), do: {:unprocessable_entity, "invalid amount"}
   defp render_error(other), do: {:bad_request, to_string(other)}

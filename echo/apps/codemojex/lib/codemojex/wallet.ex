@@ -16,9 +16,9 @@ defmodule Codemojex.Wallet do
 
   @empty %{keys: 0, clips: 0, diamonds: 0, bonus_diamonds: 0, locked_diamonds: 0}
 
-  @doc "Create a player (`USR`) with an opening balance (`:keys`, `:clips`, `:diamonds`)."
+  @doc "Create a player (`PLR`) with an opening balance (`:keys`, `:clips`, `:diamonds`)."
   def create(name, opts \\ []) do
-    uid = EchoData.BrandedId.generate!("USR")
+    uid = EchoData.BrandedId.generate!("PLR")
 
     attrs =
       Map.merge(@empty, %{
@@ -36,12 +36,12 @@ defmodule Codemojex.Wallet do
     end
   end
 
-  @doc "Charge a guess against the right currency for the round; refuse if short. `ref` is the round id."
-  def charge_guess(player, round_map, ref) do
+  @doc "Charge a guess against the right currency for the game; refuse if short. `ref` is the game id."
+  def charge_guess(player, game_map, ref) do
     {currency, cost} =
-      if Map.get(round_map, :free, false),
-        do: {:clips, Map.get(round_map, :clip_cost, 1)},
-        else: {:keys, Map.get(round_map, :guess_fee, 1)}
+      if Map.get(game_map, :free, false),
+        do: {:clips, Map.get(game_map, :clip_cost, 1)},
+        else: {:keys, Map.get(game_map, :guess_fee, 1)}
 
     debit(player, currency, cost, "guess", ref)
   end
@@ -49,7 +49,7 @@ defmodule Codemojex.Wallet do
   @doc "Buy keys (paid externally via Telegram Stars); `ref` is the payment id."
   def purchase_keys(player, keys, ref), do: credit(player, :keys, keys, "purchase", ref)
 
-  @doc "Deposit a diamond prize for a round win."
+  @doc "Deposit a diamond prize for a game win."
   def deposit_prize(player, diamonds, ref), do: credit(player, :diamonds, diamonds, "prize", ref)
 
   @doc "Grant a currency (bonus/admin)."

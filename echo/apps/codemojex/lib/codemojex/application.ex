@@ -5,7 +5,7 @@ defmodule Codemojex.Application do
 
   Order: the relational system of record (`Repo`) and `PubSub` first; then the EchoMQ bus
   (`Bus`, the shared Valkey connector); then the EchoStore near-cache tier (`Tables`, the
-  declared L1-over-L2 caches for rounds and emoji sets); then the rate limiter and the bot
+  declared L1-over-L2 caches for games and emoji sets); then the rate limiter and the bot
   gateway, which the
   notification worker depends on; then the consumers — the scoring authority, the settlement
   worker, the **notification worker**, and the **bot-command worker** (inbound Telegram updates
@@ -26,7 +26,7 @@ defmodule Codemojex.Application do
         {Phoenix.PubSub, name: Codemojex.PubSub},
         {Codemojex.Bus, port: port},
 
-        # the EchoStore near-cache tier (rounds + emoji sets) over the shared
+        # the EchoStore near-cache tier (games + emoji sets) over the shared
         # Valkey, in front of Postgres on the scoring hot path
         {Codemojex.Tables, port: port},
 

@@ -13,10 +13,9 @@ defmodule Codemojex.Stories.ScoringStoryTest do
       result = Scoring.score(secret, secret)
     end
 
-    then_ "every position is EXACT and the total is 600 at 100%, tier 30" do
+    then_ "every position is EXACT and the total is 600 at 100%" do
       assert result.total == 600
       assert result.percentage == 100
-      assert result.tier == 30
       assert Enum.all?(result.breakdown, fn {_pos, _e, d, _pts, status} -> d == 0 and status == "EXACT" end)
     end
   end
@@ -46,10 +45,9 @@ defmodule Codemojex.Stories.ScoringStoryTest do
       result = Scoring.score(@secret, guess)
     end
 
-    then_ "each swapped emoji is ADJACENT (distance 1, 80 points) and the total is 560 at 93%, tier 28" do
+    then_ "each swapped emoji is ADJACENT (distance 1, 80 points) and the total is 560 at 93%" do
       assert result.total == 560
       assert result.percentage == 93
-      assert result.tier == 28
     end
   end
 
@@ -62,10 +60,9 @@ defmodule Codemojex.Stories.ScoringStoryTest do
       result = Scoring.score(@secret, guess)
     end
 
-    then_ "the swapped ends are MAX distance (0 points) and the total is 400 at 67%, tier 20" do
+    then_ "the swapped ends are MAX distance (0 points) and the total is 400 at 67%" do
       assert result.total == 400
       assert result.percentage == 67
-      assert result.tier == 20
     end
   end
 
@@ -78,11 +75,10 @@ defmodule Codemojex.Stories.ScoringStoryTest do
       result = Scoring.score(@secret, guess)
     end
 
-    then_ "that position is a MISS worth 0 and the total is 500 at 83%, tier 25" do
+    then_ "that position is a MISS worth 0 and the total is 500 at 83%" do
       assert {0, "9999", :miss, 0, "MISS"} = hd(result.breakdown)
       assert result.total == 500
       assert result.percentage == 83
-      assert result.tier == 25
     end
   end
 

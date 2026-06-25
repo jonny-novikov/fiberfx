@@ -28,33 +28,33 @@ defmodule CodemojexWeb.GameController do
 
   def join(conn, %{"id" => room} = params) do
     with player when is_binary(player) <- require_player(params),
-         {:ok, round} <- Codemojex.join_room(room, player) do
-      json(conn, %{round: round, view: Codemojex.round_view(round)})
+         {:ok, game} <- Codemojex.join_room(room, player) do
+      json(conn, %{game: game, view: Codemojex.game_view(game)})
     end
   end
 
-  def round(conn, %{"id" => round}) do
-    case Codemojex.round_view(round) do
-      nil -> {:error, :no_round}
+  def game(conn, %{"id" => game}) do
+    case Codemojex.game_view(game) do
+      nil -> {:error, :no_game}
       view -> json(conn, %{view: view})
     end
   end
 
-  def guess(conn, %{"id" => round} = params) do
+  def guess(conn, %{"id" => game} = params) do
     with player when is_binary(player) <- require_player(params),
-         {:ok, _job} <- Codemojex.submit(round, player, params["emojis"]) do
-      json(conn, %{status: "accepted", view: Codemojex.round_view(round)})
+         {:ok, _job} <- Codemojex.submit(game, player, params["emojis"]) do
+      json(conn, %{status: "accepted", view: Codemojex.game_view(game)})
     end
   end
 
-  def history(conn, %{"id" => round} = params) do
+  def history(conn, %{"id" => game} = params) do
     with player when is_binary(player) <- require_player(params) do
-      json(conn, %{history: Codemojex.my_history(round, player)})
+      json(conn, %{history: Codemojex.my_history(game, player)})
     end
   end
 
-  def leaderboard(conn, %{"id" => round}) do
-    json(conn, %{leaderboard: rows(Codemojex.leaderboard(round, 20))})
+  def leaderboard(conn, %{"id" => game}) do
+    json(conn, %{leaderboard: rows(Codemojex.leaderboard(game, 20))})
   end
 
   def buy_keys(conn, params) do

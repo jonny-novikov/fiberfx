@@ -48,6 +48,39 @@ defmodule Codemojex.Economy do
     Enum.map(winners, &{&1, share})
   end
 
+  @doc """
+  Sealed top-K payout — the golden-close rule (V-15): the top `K` players by score
+  each take a weight share of the `pool` (diamonds). `board` is `[{player, score}]`
+  highest first; `split` is an ordered integer weight array (rank `i` takes
+  `split[i] / Σ split_used`). When fewer than `length(split)` players are present,
+  only the assigned ranks are paid and the share normalizes over the weights
+  actually used. The integer-division remainder (the rounding dust) is added to
+  rank 1 (the top scorer), so the **whole** pool is distributed — none is stranded.
+  Pure: the same inputs always yield the same `[{player, diamonds}]`, so a re-run
+  settlement pays identically.
+  """
+  def top_k_split(_pool, [], _split), do: []
+
+  def top_k_split(pool, board, split) when is_list(split) do
+    ranked = Enum.zip(board, split)
+    sum = ranked |> Enum.map(fn {_row, w} -> w end) |> Enum.sum()
+
+    if sum <= 0 do
+      Enum.map(ranked, fn {{p, _s}, _w} -> {p, 0} end)
+    else
+      payouts = Enum.map(ranked, fn {{p, _s}, w} -> {p, div(pool * w, sum)} end)
+      # the floor strands up to (paid_ranks - 1) diamonds; give the dust to rank 1
+      # so the boosted golden pool drains entirely (purity preserved — deterministic).
+      paid = payouts |> Enum.map(&elem(&1, 1)) |> Enum.sum()
+      add_dust(payouts, pool - paid)
+    end
+  end
+
+  # Add the integer-division remainder to the first (highest-ranked) payout.
+  defp add_dust([], _dust), do: []
+  defp add_dust(payouts, 0), do: payouts
+  defp add_dust([{p, d} | rest], dust), do: [{p, d + dust} | rest]
+
   @doc "Proportional payout (an alternative split): `net` shared by score."
   def proportional(net, board) do
     sum = board |> Enum.map(&elem(&1, 1)) |> Enum.sum()

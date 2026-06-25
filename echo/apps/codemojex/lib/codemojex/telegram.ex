@@ -7,7 +7,7 @@ defmodule Codemojex.Telegram do
   env) so tests drive it without a network. The bot token comes from app env
   (`config :codemojex, Codemojex.Telegram, token: ...`); never hard-code it.
 
-  Only the two calls the game uses are wrapped — `send_message/3` (round results, prize
+  Only the two calls the game uses are wrapped — `send_message/3` (game results, prize
   notices) and `answer_callback_query/3` (inline-keyboard taps). Both return
   `{:ok, result_map} | {:error, reason}`; the caller (the notification worker) decides whether
   a failure is retryable.

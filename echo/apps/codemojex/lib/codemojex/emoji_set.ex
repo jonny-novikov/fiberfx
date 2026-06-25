@@ -3,10 +3,10 @@ defmodule Codemojex.EmojiSet do
   An emoji set is a sprite sheet plus the subset of cells a room exposes. A code
   is `XXYY` — column then row, two digits each — addressing one cell at
   `(-x*cell_size, -y*cell_size)` on the sheet, exactly as the frontend renders it.
-  A round draws its secret — six distinct codes — from the set's `codes`, so the
-  keyboard a player taps and the secret they chase index the same `EMS` snapshot.
-  The set is immutable for a round's life, which is why the read-hot cache holds
-  it under the round's own version.
+  A game draws its secret — six distinct codes — from its snapshotted keyboard, so
+  the keyboard a player taps and the secret they chase index the same cells. The
+  set is immutable for a game's life, which is why the read-hot cache holds it
+  under the game's own version.
   """
   alias EchoData.BrandedId
 
@@ -62,6 +62,9 @@ defmodule Codemojex.EmojiSet do
 
   @doc "Draw a secret: six distinct codes from the keyboard."
   def secret(%__MODULE__{codes: codes}), do: Enum.take_random(codes, @code_length)
+
+  @doc "Draw a secret: six distinct codes from a given code list (a game's snapshotted keyboard)."
+  def secret_from(codes) when is_list(codes), do: Enum.take_random(codes, @code_length)
 
   @doc "A well-formed secret: six codes, all in the set, all distinct."
   def valid_secret?(%__MODULE__{} = set, secret) do

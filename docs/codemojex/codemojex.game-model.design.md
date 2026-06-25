@@ -367,7 +367,7 @@ type          string   not null  default "classic"     -- NEW: the engine discri
 feedback      string   not null  default "score"        -- NEW policy: "score" (classic) | "none" (golden)
 scoring       string   not null  default "linear"       -- NEW policy: "linear" (the only value today; V-7)
 settlement    string   not null  default "live"         -- NEW policy: "live" (classic) | "sealed" (golden)
-economy       string   not null  default "winner_take_all" -- NEW policy: the payout curve word
+economy       string   not null  default "winner_take_all" -- NEW policy: the payout-curve DESCRIPTOR (stored, NOT read for control flow — `do_close` dispatches on `settlement` "sealed"→top_k_split / else→winner_take_all, rooms.ex; golden carries economy="winner_take_all" as a label, the sealed split is selected by settlement, §3.8.2)
 secret        {array,string}  not null                  -- server-side; no player-facing query selects it
 cell_codes    {array,string}  not null                  -- NEW (V-16a): the game's snapshotted keyboard (take_random N of the room codes, or the full set); the secret draws from THIS
 commitment    string   nullable                         -- NEW (blind): hash over secret+nonce, set at open (§3.8.3)
@@ -514,12 +514,16 @@ revealed secret, ranks players, pays the top K … records the rake; the game mo
   split is the ordered integer array `games.payout_split` (default `[40,25,15,12,8]`, snapshotted from
   `rooms.payout_split` at start, §3.4/§3.5). The settlement ranks every guess linearly and pays rank `i`
   of the top-`top_k` its **weight share** `payout_split[i] / Σ payout_split` of `Economy.effective_pool/3`.
-  This is a **new pure `economy.ex` function** (`top_k_split/2` over the ranked best `points` + the stored
-  array) — the seam beside the as-built `winner_take_all/2` (K=1) + `proportional/2`. The split is **not**
-  a computed monotone curve (the first-pass recommendation) — it is the Operator-configured array, so a
-  room sets its own prize distribution and a game settles by the split it was created under. When fewer than
-  `top_k` players guessed, only the present ranks are paid (the share normalizes over the weights actually
-  assigned). Grounded in `specs.md:47`'s "pay the top K".
+  This is a **new pure `economy.ex` function** (as-built `top_k_split/3` over the pool, the ranked best
+  `points` board, + the stored split array) — the seam beside the as-built `winner_take_all/2` (K=1) +
+  `proportional/2`. The split is **not** a computed monotone curve (the first-pass recommendation) — it is
+  the Operator-configured array, so a room sets its own prize distribution and a game settles by the split
+  it was created under. When fewer than `top_k` players guessed, only the present ranks are paid (the share
+  normalizes over the weights actually assigned). **The integer-division remainder (the rounding dust) is
+  added to rank 1 (the top scorer) so the WHOLE pool is distributed — none is stranded** (as-built
+  `add_dust/2`; a boosted golden pool must not strand boosted diamonds, vs the `winner_take_all/2`
+  even-split floor convention). Purity preserved (the dust assignment is deterministic, so a re-run pays
+  identically). Grounded in `specs.md:47`'s "pay the top K".
 
 #### 3.8.3 Commit-reveal — the provably-fair secret
 

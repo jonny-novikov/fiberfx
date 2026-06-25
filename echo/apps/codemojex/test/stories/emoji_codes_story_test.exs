@@ -50,6 +50,23 @@ defmodule Codemojex.Stories.EmojiCodesStoryTest do
     end
   end
 
+  scenario "a secret drawn from a reduced N-cell snapshot stays within that snapshot" do
+    given_ "a randomized 24-cell snapshot of a larger keyboard" do
+      set = EmojiSet.new("Dogs", 10, 15)
+      snapshot = Enum.take_random(set.codes, 24)
+    end
+
+    when_ "a secret is drawn from the snapshot" do
+      secret = EmojiSet.secret_from(snapshot)
+    end
+
+    then_ "the six secret codes are distinct and all within the 24-cell snapshot" do
+      assert length(secret) == 6
+      assert Enum.uniq(secret) == secret
+      assert Enum.all?(secret, &(&1 in snapshot))
+    end
+  end
+
   scenario "the player-facing snapshot carries the keyboard but nothing the secret leaks from" do
     given_ "an emoji set" do
       set = EmojiSet.new("Dogs", 6, 6, sprite_url: "https://cdn.example/dogs.png")

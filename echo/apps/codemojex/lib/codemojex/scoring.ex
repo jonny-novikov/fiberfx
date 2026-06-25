@@ -4,10 +4,10 @@ defmodule Codemojex.Scoring do
   0..5; a guess is six emojis. Each guessed emoji that exists in the secret earns
   points by how far it sits from its secret position — `points = 100 - 20*d` for
   distance `d` in 0..5, zero for a miss — and the total over six positions, out of
-  600, is the round's percentage. The tier is the total in 20-point steps (0..30).
-  No process, no bus: the score worker calls this once a guess arrives, and the
-  same secret and guess always yield the same score, so a re-delivered guess
-  re-scores identically.
+  600, is the game's percentage. This is the sole score — linear only, no tiers,
+  no bonus. No process, no bus: the score worker calls this once a guess arrives,
+  and the same secret and guess always yield the same score, so a re-delivered
+  guess re-scores identically.
   """
 
   @max 600
@@ -28,13 +28,10 @@ defmodule Codemojex.Scoring do
   def status(4), do: "FAR"
   def status(5), do: "MAX"
 
-  @doc "The tier a total lands in: the total in 20-point steps, 0..30."
-  def tier(total) when is_integer(total), do: div(total, 20)
-
   @doc """
-  Score one guess against a secret. Returns the total, the percentage out of 600,
-  the tier, and a per-position breakdown `{pos, guess_emoji, distance|:miss, points,
-  status}`.
+  Score one guess against a secret. Returns the total, the percentage out of 600
+  (computed, never stored), and a per-position breakdown `{pos, guess_emoji,
+  distance|:miss, points, status}`.
   """
   def score(secret, guess) when length(secret) == 6 and length(guess) == 6 do
     breakdown =
@@ -53,7 +50,6 @@ defmodule Codemojex.Scoring do
       total: total,
       max: @max,
       percentage: round(total / @max * 100),
-      tier: tier(total),
       breakdown: breakdown
     }
   end

@@ -13,18 +13,18 @@ defmodule Codemojex.Stories.PrivacyStoryTest do
     {:ok, room} = Codemojex.create_room("Dog House", set, guess_fee: 1, duration_ms: 600_000)
     {:ok, alice} = Codemojex.create_player("Alice", keys: 5)
     {:ok, bob} = Codemojex.create_player("Bob", keys: 5)
-    {:ok, round} = Codemojex.join_room(room, alice)
-    {:ok, ^round} = Codemojex.join_room(room, bob)
-    %{round: round, alice: alice, bob: bob}
+    {:ok, game} = Codemojex.join_room(room, alice)
+    {:ok, ^game} = Codemojex.join_room(room, bob)
+    %{game: game, alice: alice, bob: bob}
   end
 
-  scenario "the round view never carries the secret", %{round: round} do
-    given_ "an open round whose secret was minted server-side" do
+  scenario "the game view never carries the secret", %{game: game} do
+    given_ "an open game whose secret was minted server-side" do
       :ok
     end
 
-    when_ "the client fetches the round view" do
-      view = Codemojex.round_view(round)
+    when_ "the client fetches the game view" do
+      view = Codemojex.game_view(game)
     end
 
     then_ "there is no :secret key anywhere in the view — only the keyboard snapshot" do
@@ -34,15 +34,15 @@ defmodule Codemojex.Stories.PrivacyStoryTest do
     end
   end
 
-  scenario "a player's history shows only their own attempts", %{round: round, alice: alice, bob: bob} do
+  scenario "a player's history shows only their own attempts", %{game: game, alice: alice, bob: bob} do
     given_ "both players have submitted a guess" do
-      assert {:ok, _} = Codemojex.submit(round, alice, ~w(0000 0101 0202 0303 0404 0505))
-      assert {:ok, _} = Codemojex.submit(round, bob, ~w(0505 0404 0303 0202 0101 0000))
-      assert eventually(fn -> length(Codemojex.my_history(round, alice)) >= 1 and length(Codemojex.my_history(round, bob)) >= 1 end)
+      assert {:ok, _} = Codemojex.submit(game, alice, ~w(0000 0101 0202 0303 0404 0505))
+      assert {:ok, _} = Codemojex.submit(game, bob, ~w(0505 0404 0303 0202 0101 0000))
+      assert eventually(fn -> length(Codemojex.my_history(game, alice)) >= 1 and length(Codemojex.my_history(game, bob)) >= 1 end)
     end
 
     when_ "Alice reads her history" do
-      mine = Codemojex.my_history(round, alice)
+      mine = Codemojex.my_history(game, alice)
     end
 
     then_ "she sees her own guess and nothing of Bob's" do
@@ -51,14 +51,14 @@ defmodule Codemojex.Stories.PrivacyStoryTest do
     end
   end
 
-  scenario "the leaderboard exposes scores, never guess content", %{round: round, alice: alice} do
+  scenario "the leaderboard exposes scores, never guess content", %{game: game, alice: alice} do
     given_ "a scored attempt on the board" do
-      assert {:ok, _} = Codemojex.submit(round, alice, ~w(0000 0101 0202 0303 0404 0505))
-      assert eventually(fn -> Codemojex.leaderboard(round, 10) != [] end)
+      assert {:ok, _} = Codemojex.submit(game, alice, ~w(0000 0101 0202 0303 0404 0505))
+      assert eventually(fn -> Codemojex.leaderboard(game, 10) != [] end)
     end
 
     when_ "the leaderboard is read" do
-      board = Codemojex.leaderboard(round, 10)
+      board = Codemojex.leaderboard(game, 10)
     end
 
     then_ "every row is a {player, score} pair with no emojis attached" do

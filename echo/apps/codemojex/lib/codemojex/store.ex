@@ -9,11 +9,11 @@ defmodule Codemojex.Store do
   """
   import Ecto.Query
   alias Codemojex.Repo
-  alias Codemojex.Schemas.{Player, Round, Guess, Room, EmojiSet}
+  alias Codemojex.Schemas.{Player, Game, Guess, Room, EmojiSet}
 
-  # rounds ----------------------------------------------------------------
-  def put_round(id, m), do: upsert(Round, id, m)
-  def round(id), do: to_map(Repo.get(Round, id))
+  # games -----------------------------------------------------------------
+  def put_game(id, m), do: upsert(Game, id, m)
+  def game(id), do: to_map(Repo.get(Game, id))
 
   # rooms -----------------------------------------------------------------
   def put_room(id, m), do: upsert(Room, id, m)
@@ -24,10 +24,10 @@ defmodule Codemojex.Store do
   def put_guess(id, m), do: upsert(Guess, id, m)
   def guess(id), do: to_map(Repo.get(Guess, id))
 
-  def guesses_for(round, player, n) do
+  def guesses_for(game, player, n) do
     Repo.all(
       from g in Guess,
-        where: g.round == ^round and g.player == ^player,
+        where: g.game == ^game and g.player == ^player,
         order_by: [desc: g.at_ms],
         limit: ^n
     )
@@ -125,32 +125,32 @@ end
 defmodule Codemojex.Cache do
   @moduledoc """
   The read-hot seam, over the EchoStore near-cache declared in `Codemojex.Tables`.
-  A round (with its secret) and an emoji set are read on the scoring path through
+  A game (with its secret) and an emoji set are read on the scoring path through
   `EchoStore.Table.fetch/3` — an L1 `:ets` hit in the caller's process, otherwise
   a single-flight fill that checks the shared Valkey (L2) and falls through to the
   loader (the relational system of record). The cached value's version is the
-  entity's own 14-byte branded id: a round's secret and an emoji set are immutable
-  for the round's life, so the cache never goes stale and coherence is `:none`.
+  entity's own 14-byte branded id: a game's secret and an emoji set are immutable
+  for the game's life, so the cache never goes stale and coherence is `:none`.
 
   The reads keep a direct fallback to Postgres for the window before the tables
   have started (boot) or if a table is briefly unavailable; the writes are best-
   effort (`safe_put/4`), so a Valkey blip or a table restart never fails the
-  writer that is recording a round or a set.
+  writer that is recording a game or a set.
   """
-  @cache :cm_rounds
+  @cache :cm_games
   @sets :cm_emojisets
 
-  @doc "Read a round through the L1/L2 cache, falling back to the system of record."
-  def fetch_round(round_id) do
-    case EchoStore.Table.fetch(@cache, round_id) do
+  @doc "Read a game through the L1/L2 cache, falling back to the system of record."
+  def fetch_game(game_id) do
+    case EchoStore.Table.fetch(@cache, game_id) do
       {:ok, bin, _source} when is_binary(bin) -> :erlang.binary_to_term(bin)
-      _ -> Codemojex.Store.round(round_id)
+      _ -> Codemojex.Store.game(game_id)
     end
   end
 
-  @doc "Write a round into both cache layers, framed with its own id as the version."
-  def put_round(round_id, round_map) do
-    _ = safe_put(@cache, round_id, :erlang.term_to_binary(round_map), round_id)
+  @doc "Write a game into both cache layers, framed with its own id as the version."
+  def put_game(game_id, game_map) do
+    _ = safe_put(@cache, game_id, :erlang.term_to_binary(game_map), game_id)
     :ok
   end
 

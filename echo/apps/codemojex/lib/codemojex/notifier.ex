@@ -9,7 +9,7 @@ defmodule Codemojex.Notifier do
   and is cheap: it does one enqueue and no network I/O. Delivery, rate limiting, retries, and
   backoff are the worker's job (`Codemojex.NotificationWorker`).
 
-  Game helpers (`round_result/3`, `prize_won/3`) are thin wrappers that format the text; they
+  Game helpers (`game_result/3`, `prize_won/3`) are thin wrappers that format the text; they
   exist so call sites stay readable and the wording lives in one place.
   """
   alias Codemojex.{Bus, NotificationWorker}
@@ -33,11 +33,11 @@ defmodule Codemojex.Notifier do
     end
   end
 
-  @doc "Notify a player how a finished round scored them."
-  @spec round_result(integer() | binary(), EchoData.BrandedId.t(), non_neg_integer()) ::
+  @doc "Notify a player how a finished game scored them."
+  @spec game_result(integer() | binary(), EchoData.BrandedId.t(), non_neg_integer()) ::
           {:ok, EchoData.BrandedId.t()} | {:error, term()}
-  def round_result(chat_id, round_id, score) do
-    notify(chat_id, "Round #{round_id} is done — you scored #{score}/600. 🎯")
+  def game_result(chat_id, game_id, score) do
+    notify(chat_id, "Game #{game_id} is done — you scored #{score}/600. 🎯")
   end
 
   @doc "Notify a player they won a prize, with the diamond amount."
@@ -50,7 +50,7 @@ defmodule Codemojex.Notifier do
   @doc "Notify a player they won a Golden Room, with the boosted diamonds and the multiplier."
   @spec golden_win(integer() | binary(), EchoData.BrandedId.t(), non_neg_integer(), pos_integer()) ::
           {:ok, EchoData.BrandedId.t()} | {:error, term()}
-  def golden_win(chat_id, round_id, diamonds, multiplier) do
-    notify(chat_id, "✨ GOLDEN ROOM #{round_id} — you took #{diamonds} 💎 at a #{multiplier}x boost. Tap to claim.")
+  def golden_win(chat_id, game_id, diamonds, multiplier) do
+    notify(chat_id, "✨ GOLDEN ROOM #{game_id} — you took #{diamonds} 💎 at a #{multiplier}x boost. Tap to claim.")
   end
 end

@@ -1,7 +1,7 @@
 defmodule Codemojex.Stories.SettlementStoryTest do
   @moduledoc """
-  GWT acceptance for round settlement: the diamond pool pays the max-score player
-  winner-take-all, and a round pays exactly once even when a perfect-crack close
+  GWT acceptance for game settlement: the diamond pool pays the max-score player
+  winner-take-all, and a game pays exactly once even when a perfect-crack close
   and a timer close race. Integration: needs the app, Postgres, and a Valkey on
   $VK_PORT (`mix test --include valkey`).
   """
@@ -12,19 +12,19 @@ defmodule Codemojex.Stories.SettlementStoryTest do
     set = EmojiSet.new("Dogs", 6, 6)
     {:ok, room} = Codemojex.create_room("Dog House", set, seed_pool: 1000, guess_fee: 1, duration_ms: 600_000)
     {:ok, alice} = Codemojex.create_player("Alice", keys: 5)
-    {:ok, round} = Codemojex.join_room(room, alice)
-    %{room: room, round: round, alice: alice}
+    {:ok, game} = Codemojex.join_room(room, alice)
+    %{room: room, game: game, alice: alice}
   end
 
-  scenario "closing a round pays the whole diamond pool to the leader", %{round: round, alice: alice} do
+  scenario "closing a game pays the whole diamond pool to the leader", %{game: game, alice: alice} do
     given_ "a single player who has scored on the board" do
-      assert {:ok, _} = Codemojex.submit(round, alice, ~w(0000 0101 0202 0303 0404 0505))
-      assert eventually(fn -> Codemojex.leaderboard(round, 10) != [] end)
+      assert {:ok, _} = Codemojex.submit(game, alice, ~w(0000 0101 0202 0303 0404 0505))
+      assert eventually(fn -> Codemojex.leaderboard(game, 10) != [] end)
       before = Codemojex.balance(alice).diamonds
     end
 
-    when_ "the round is closed" do
-      {:ok, payouts} = Codemojex.close_now(round)
+    when_ "the game is closed" do
+      {:ok, payouts} = Codemojex.close_now(game)
     end
 
     then_ "the leader is paid the seeded pool in diamonds" do
@@ -33,16 +33,16 @@ defmodule Codemojex.Stories.SettlementStoryTest do
     end
   end
 
-  scenario "a round pays exactly once — a second close is a no-op", %{round: round, alice: alice} do
-    given_ "a round that has already been closed and paid" do
-      assert {:ok, _} = Codemojex.submit(round, alice, ~w(0000 0101 0202 0303 0404 0505))
-      assert eventually(fn -> Codemojex.leaderboard(round, 10) != [] end)
-      {:ok, _first} = Codemojex.close_now(round)
+  scenario "a game pays exactly once — a second close is a no-op", %{game: game, alice: alice} do
+    given_ "a game that has already been closed and paid" do
+      assert {:ok, _} = Codemojex.submit(game, alice, ~w(0000 0101 0202 0303 0404 0505))
+      assert eventually(fn -> Codemojex.leaderboard(game, 10) != [] end)
+      {:ok, _first} = Codemojex.close_now(game)
       paid = Codemojex.balance(alice).diamonds
     end
 
-    when_ "the round is closed again (the perfect-crack vs timer race)" do
-      second = Codemojex.close_now(round)
+    when_ "the game is closed again (the perfect-crack vs timer race)" do
+      second = Codemojex.close_now(game)
     end
 
     then_ "the second close pays nothing — the balance is unchanged" do

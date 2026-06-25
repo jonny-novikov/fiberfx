@@ -111,10 +111,12 @@ data model or the scoring math.
   on a perfect crack — there is no per-guess signal): inside the `cm:{game}:closed` `SET NX` one-shot,
   reveal, rank players by best linear `points`, compute `Economy.effective_pool/3`, pay the **top `top_k`**
   (DEFAULT 5) — **rank `i` taking its share `payout_split[i] / Σ payout_split`** of the effective pool (the
-  stored `games.payout_split` weight array, a new pure `economy.ex` `top_k_split/2`) — as `TXN` deposits
-  through `Codemojex.Wallet` (the Postgres-floor law: money moves only through the wallet in a
+  stored `games.payout_split` weight array, the as-built pure `economy.ex` `top_k_split/3`) — as `TXN`
+  deposits through `Codemojex.Wallet` (the Postgres-floor law: money moves only through the wallet in a
   transaction), record nothing to a rake (no `BNK`), move to `settled`. When fewer than `top_k` players
-  guessed, the share normalizes over the present ranks. (design §3.8.2) → Story R-4.
+  guessed, the share normalizes over the present ranks. **The integer-division remainder (the dust) is added
+  to rank 1 so the whole boosted pool drains** (as-built `add_dust/2`; pinned by the economy story "drains
+  the whole pool"). (design §3.8.2) → Story R-4.
 - **G4 — the `revealing`/`settling` states (CHECK-bounded, V-8).** The golden lifecycle `open → revealing
   → settling → settled`; `voided` the abort. The `status` column + its `games_status` CHECK (the seven
   canon words; classic terminal `settled`) already ship in cm.1; cm.3 writes the two new words

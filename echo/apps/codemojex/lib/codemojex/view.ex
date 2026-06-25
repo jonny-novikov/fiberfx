@@ -2,9 +2,15 @@ defmodule Codemojex.View do
   @moduledoc """
   The player-facing reads, with the privacy invariant built in: nothing here
   returns the secret, and nothing returns another player's guesses. The lobby
-  lists the rooms; a round view carries the keyboard, timer, pool, and totals; a
+  lists the rooms; a game view carries the keyboard, timer, pool, and totals; a
   player sees only their own attempt history (from Postgres); the leaderboard is
   max scores, never guesses.
+
+  For a golden game (`feedback="none"`) the privacy gate widens: before the game's
+  `revealed_ms` is set, no score crosses the wire — the view withholds the totals,
+  `my_history` withholds points, and the leaderboard withholds scores; only the
+  published commitment, the state, and the timer are exposed. After reveal, the
+  golden reads return the score like classic (the contest is over).
   """
   alias EchoWire.Cmd
   alias Codemojex.{Bus, Store, Cache, EmojiSet, Economy, Board, Wire}
@@ -15,10 +21,10 @@ defmodule Codemojex.View do
       set = Cache.fetch_set(room.emojiset)
 
       {prize, best} =
-        case room.round do
-          rid when is_binary(rid) ->
-            r = Store.round(rid)
-            {(r && r.prize_pool) || room.seed_pool, best_score(rid)}
+        case room.game do
+          gid when is_binary(gid) ->
+            r = Store.game(gid)
+            {(r && r.prize_pool) || room.seed_pool, lobby_best(r, gid)}
 
           _ ->
             {room.seed_pool, 0}
@@ -39,18 +45,16 @@ defmodule Codemojex.View do
     end
   end
 
-  @doc "Everything a player may see about a round — never the secret."
-  def round_view(round) do
-    case Store.round(round) do
+  @doc "Everything a player may see about a game — never the secret; for a golden game, no score until reveal."
+  def game_view(game) do
+    case Store.game(game) do
       nil ->
         nil
 
       r ->
         set = Cache.fetch_set(r.emojiset)
-        best = best_score(round)
-
-        %{
-          round: round,
+        base = %{
+          game: game,
           room: Map.get(r, :room),
           emojiset: set && EmojiSet.snapshot(set),
           ends_ms: r.ends_ms,
@@ -58,37 +62,89 @@ defmodule Codemojex.View do
           prize_usd: Economy.to_usd(r.prize_pool),
           guess_fee: r.guess_fee,
           free: r.free,
-          status: r.status,
-          totals: %{
-            players: total_players(round),
-            attempts: total_attempts(round),
+          status: r.status
+        }
+
+        if revealed?(r) do
+          best = best_score(game)
+
+          Map.put(base, :totals, %{
+            players: total_players(game),
+            attempts: total_attempts(game),
             best: best,
             best_pct: Economy.progress_pct(best)
-          }
-        }
+          })
+          |> put_commitment(r)
+        else
+          # blind, pre-reveal: state + timer + the commitment, no score
+          Map.put(base, :totals, %{
+            players: total_players(game),
+            attempts: total_attempts(game)
+          })
+          |> put_commitment(r)
+        end
     end
   end
 
-  @doc "The player's own attempts (their guesses + scores), newest first — from Postgres."
-  def my_history(round, player, n \\ 50) do
-    round
+  @doc "The player's own attempts (their guesses + scores), newest first — from Postgres. A golden game withholds points until reveal."
+  def my_history(game, player, n \\ 50) do
+    fields =
+      case Store.game(game) do
+        r when is_map(r) -> if revealed?(r), do: [:emojis, :points, :at_ms], else: [:emojis, :at_ms]
+        _ -> [:emojis, :points, :at_ms]
+      end
+
+    game
     |> Store.guesses_for(player, n)
-    |> Enum.map(&Map.take(&1, [:emojis, :points, :percentage, :tier, :at_ms]))
+    |> Enum.map(&Map.take(&1, fields))
   end
 
-  @doc "The leaderboard: `{player, max_score}` highest first — no guesses."
-  def leaderboard(round, n \\ 10) do
-    case Board.top(round, n) do
+  @doc "The leaderboard: `{player, max_score}` highest first — no guesses. A golden game returns nothing until reveal."
+  def leaderboard(game, n \\ 10) do
+    case Store.game(game) do
+      r when is_map(r) ->
+        if revealed?(r) do
+          board_rows(game, n)
+        else
+          []
+        end
+
+      _ ->
+        board_rows(game, n)
+    end
+  end
+
+  def total_players(game), do: scard("cm:" <> game <> ":players")
+  def total_attempts(game), do: get_int("cm:" <> game <> ":attempts")
+
+  # A game's score is visible when it is not blind, or once it has revealed.
+  defp revealed?(r) do
+    Map.get(r, :feedback, "score") != "none" or not is_nil(Map.get(r, :revealed_ms))
+  end
+
+  # The commitment is published from open for a golden game (so the player records
+  # it for later verification); a classic game has none.
+  defp put_commitment(view, r) do
+    case Map.get(r, :commitment) do
+      c when is_binary(c) -> Map.put(view, :commitment, c)
+      _ -> view
+    end
+  end
+
+  defp board_rows(game, n) do
+    case Board.top(game, n) do
       {:ok, rows} -> rows
       _ -> []
     end
   end
 
-  def total_players(round), do: scard("cm:" <> round <> ":players")
-  def total_attempts(round), do: get_int("cm:" <> round <> ":attempts")
+  # The lobby leader's progress: hidden for a blind game in flight, else the best.
+  defp lobby_best(r, gid) do
+    if is_map(r) and not revealed?(r), do: 0, else: best_score(gid)
+  end
 
-  defp best_score(round) do
-    case Board.top(round, 1) do
+  defp best_score(game) do
+    case Board.top(game, 1) do
       {:ok, [{_p, s} | _]} -> s
       _ -> 0
     end

@@ -16,13 +16,13 @@ defmodule Codemojex.Stories.WalletStoryTest do
   end
 
   scenario "a guess in a paid room is charged one key and leaves clips untouched", %{paid: paid} do
-    given_ "a player with keys but no clips, in an opened paid round" do
+    given_ "a player with keys but no clips, in an opened paid game" do
       {:ok, p} = Codemojex.create_player("Pat", keys: 3)
-      {:ok, round} = Codemojex.join_room(paid, p)
+      {:ok, game} = Codemojex.join_room(paid, p)
     end
 
     when_ "the player submits a guess" do
-      assert {:ok, _} = Codemojex.submit(round, p, ~w(0000 0101 0202 0303 0404 0505))
+      assert {:ok, _} = Codemojex.submit(game, p, ~w(0000 0101 0202 0303 0404 0505))
     end
 
     then_ "one key is debited and clips stay at zero" do
@@ -33,13 +33,13 @@ defmodule Codemojex.Stories.WalletStoryTest do
   end
 
   scenario "a guess in a free room spends a clip, never a key", %{free: free} do
-    given_ "a player with clips, in an opened free round" do
+    given_ "a player with clips, in an opened free game" do
       {:ok, p} = Codemojex.create_player("Free Fiona", keys: 0, clips: 3)
-      {:ok, round} = Codemojex.join_room(free, p)
+      {:ok, game} = Codemojex.join_room(free, p)
     end
 
     when_ "the player submits a guess" do
-      assert {:ok, _} = Codemojex.submit(round, p, ~w(0000 0101 0202 0303 0404 0505))
+      assert {:ok, _} = Codemojex.submit(game, p, ~w(0000 0101 0202 0303 0404 0505))
     end
 
     then_ "a clip is debited and keys remain at zero" do
@@ -50,13 +50,13 @@ defmodule Codemojex.Stories.WalletStoryTest do
   end
 
   scenario "a player with no keys cannot guess in a paid room, and the balance never goes negative", %{paid: paid} do
-    given_ "a player with zero keys in an opened paid round" do
+    given_ "a player with zero keys in an opened paid game" do
       {:ok, p} = Codemojex.create_player("Broke Bo", keys: 0)
-      {:ok, round} = Codemojex.join_room(paid, p)
+      {:ok, game} = Codemojex.join_room(paid, p)
     end
 
     when_ "the player attempts a guess" do
-      result = Codemojex.submit(round, p, ~w(0000 0101 0202 0303 0404 0505))
+      result = Codemojex.submit(game, p, ~w(0000 0101 0202 0303 0404 0505))
     end
 
     then_ "the guess is refused for insufficient funds and keys are still zero (never below)" do

@@ -27,7 +27,6 @@ defmodule Codemojex.Story do
           then_ "every position is EXACT and the total is 600 at 100%" do
             assert result.total == 600
             assert result.percentage == 100
-            assert result.tier == 30
           end
         end
       end
