@@ -74,7 +74,7 @@ system :accounts
     in-system:    bigint FK between component tables
 ```
 
-A namespace line is a registry entry in `EchoData.Namespace` and the gate in `EchoData.Bcs.gate/2`. A component line is a table — the snowflake `bigint` primary key on disk, the ordered `EchoData.Bcs.Column` in memory — and, for a hot kind, a cache table in `EchoCache.Table`. A composite or adjacency component is a multi-column primary key, read by its left prefix. A retention of `id-range` is `EchoData.Buckets`. A boundary line is the rule that the crossing value is the branded text, decoded at the door, and the in-system reference is the eight-byte `bigint`. The declaration is small; the system is its expansion, and the namespace registry is the part every other line refers back to.
+A namespace line is a registry entry in `EchoData.Namespace` and the gate in `EchoData.Bcs.gate/2`. A component line is a table — the snowflake `bigint` primary key on disk, the ordered `EchoData.Bcs.Column` in memory — and, for a hot kind, a cache table in `EchoStore.Table`. A composite or adjacency component is a multi-column primary key, read by its left prefix. A retention of `id-range` is `EchoData.Buckets`. A boundary line is the rule that the crossing value is the branded text, decoded at the door, and the in-system reference is the eight-byte `bigint`. The declaration is small; the system is its expansion, and the namespace registry is the part every other line refers back to.
 
 ## The decision
 

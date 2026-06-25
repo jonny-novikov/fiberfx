@@ -1,15 +1,15 @@
 # BCS · B3 — The Bus
 <show-structure depth="2"/>
 
-B3 is the bus: EchoMQ, the Valkey-native message bus where the BCS law meets the network. Three dives carry it — the keyspace as the contract on the wire, jobs and fair lanes as the entities it moves, and the EchoMQ 3.0 Stream Tier beside the queue. The chapter is served at `/bcs/bus`; its dives at `/bcs/bus/the-keyspace`, `/bcs/bus/jobs-and-lanes`, and `/bcs/bus/the-stream-tier`.
+B3 is the bus: EchoMQ, the Valkey-native message bus where the BCS law meets the network. Three dives carry it — the keyspace as the contract on the wire, jobs and fair lanes as the entities it moves, and the Stream Tier beside the queue. The chapter is served at `/bcs/bus`; its dives at `/bcs/bus/the-keyspace`, `/bcs/bus/jobs-and-lanes`, and `/bcs/bus/the-stream-tier`.
 
-EchoMQ is the bus, and a bus is the place the BCS law meets the network: between systems, only branded identities and messages about them cross. A job is a branded entity — a `JOB` id with a property bundle — so `orders` can hand work to `codemojex` without either reaching into the other's state. The bus is Valkey-native, lib-only, and re-derived from first principles: the v1 line could not become 2.0 in place, so it was rewritten fresh and removed.
+EchoMQ is the bus, and a bus is the place the BCS law meets the network: between systems, only branded identities and messages about them cross. A job is a branded entity — a `JOB` id with a property bundle — so `orders` can hand work to `codemojex` without either reaching into the other's state. The bus is Valkey-native, lib-only, and re-derived from first principles by the Branded Component System.
 
-Every surface here is real source under `echo_mq` (v2.6.3); the movements and shipped rungs are read from `docs/echo_mq/emq.roadmap.md`. No engine number is cited that the committed tree does not assert.
+Every surface here is real source under `echo_mq`; the shipped rungs are read from `docs/echo_mq/emq.roadmap.md`. No engine version is cited that the committed tree does not assert.
 
 ## B3.1 · The keyspace
 
-EchoMQ is the bus, and a bus is where the BCS law meets the wire: only branded identities and messages about them cross between systems. The discipline is in the key. Every EchoMQ key is born braced — `emq:{queue}:` — born branded — a `JOB` id gated at the key builder — and born declared — named in a Lua script's `KEYS[]`, never interpolated into the body. The v1 line could not become 2.0 in place because its keys were built from an `ARGV` prefix inside script bodies and interpolated verbatim; the rewrite drew the keyspace from first principles instead.
+EchoMQ is the bus, and a bus is where the BCS law meets the wire: only branded identities and messages about them cross between systems. The discipline is in the key. Every EchoMQ key is born braced — `emq:{queue}:` — born branded — a `JOB` id gated at the key builder — and born declared — named in a Lua script's `KEYS[]`, never interpolated into the body. Building a key from an `ARGV` prefix inside a script body is exactly what this forbids — a key the script touches but never declares is invisible to the gate, so the keyspace draws every key from a total grammar instead.
 
 The braces are a hash-slot tag. `{queue}` tells Valkey to place every key for one queue on the same slot, so a multi-key script touches one node and stays atomic on a cluster. The brace is not decoration; it is the difference between a script that runs and a `CROSSSLOT` error. The queue name is the slot, and the slot is chosen by the name.
 
@@ -25,7 +25,7 @@ Jobs depend on jobs, and a dependency is a relation, not a field. `Flows.add` re
 
 ## B3.3 · The Stream Tier
 
-EchoMQ's program ran in three movements, and the third has landed as EchoMQ 3.0 — a Stream Tier beside the job queue. A queue is for work that is claimed and completed once; a stream is an append-only log that many readers consume at their own pace. The tier is built additively: the writer, the readers, and retention each shipped as a rung with its own conformance probe, and the stream keys are born braced and branded like every other key on the bus.
+EchoMQ's Stream Tier sits beside the job queue. A queue is for work that is claimed and completed once; a stream is an append-only log that many readers consume at their own pace. The tier is built additively: the writer, the readers, and retention each shipped as a rung with its own conformance probe, and the stream keys are born braced and branded like every other key on the bus.
 
 `EchoMQ.Stream` is the writer — it appends an entry to the log and returns its id, the log ordered by append the way the property store is ordered by mint. `EchoMQ.StreamConsumer` is the reader law: a consumer group reads new entries, acknowledges them, and resumes where it left off, so a reader that restarts does not replay what it has already handled. A deliberate polyglot seam keeps the read side reachable from any language that speaks the wire, not only the BEAM.
 

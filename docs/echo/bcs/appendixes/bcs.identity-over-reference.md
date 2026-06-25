@@ -6,7 +6,7 @@ The difference between an object-oriented design and a Branded Component System 
 
 ## Scope and method
 
-This is a design comparison, not a benchmark. It is grounded in the application built across this series: the registration and referral systems (`BcsApp.Registration`, `BcsApp.Referrals`), the game system and its emulator (`BcsGame.Games`, `BcsGame.Engine`), the Valkey-backed sessions and leaderboard (`BcsGame.Sessions`, `BcsGame.Leaderboard`), and the near-cache (`EchoCache`) over the component stores. The identity is the branded snowflake [1]; the systems-own-their-slice and pull-not-push posture follows the social-graph store TAO [2]. The claims here are about shape, and the shapes are the ones the running code uses.
+This is a design comparison, not a benchmark. It is grounded in the application built across this series: the registration and referral systems (`BcsApp.Registration`, `BcsApp.Referrals`), the game system and its emulator (`BcsGame.Games`, `BcsGame.Engine`), the Valkey-backed sessions and leaderboard (`BcsGame.Sessions`, `BcsGame.Leaderboard`), and the near-cache (`EchoStore`) over the component stores. The identity is the branded snowflake [1]; the systems-own-their-slice and pull-not-push posture follows the social-graph store TAO [2]. The claims here are about shape, and the shapes are the ones the running code uses.
 
 ## The boundary question
 
