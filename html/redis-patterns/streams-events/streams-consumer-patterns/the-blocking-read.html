@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R5.02.1 — The blocking read · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R5.02.1 dive: the blocking read. A busy-poll spins on XREADGROUP with no entries to show for it; a blocking read parks once with BLOCK and wakes on the next entry, sub-millisecond latency, one parked connection. The pitfall: a blocked read holds its connection, so a pool of blocking readers starves everything else. EchoMQ.StreamConsumer takes the dedicated-lane fix as a law. Grounded in echo/apps/echo_mq/lib/echo_mq/stream_consumer.ex — read_group_block/1, with codemojex the consumer.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the wait-timeline figure (hover-select) ---------- */
+.tflow{width:100%;height:auto;display:block;margin-top:4px}
+.tflow .axis{stroke:var(--b-line);stroke-width:1.2}
+.tflow .rlbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:end}
+.tflow .ev{fill:var(--b-node)}
+.tflow .evlbl{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.tflow .row{cursor:pointer;transition:opacity .18s ease}
+.tflow .row .mk rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.2}
+.tflow .row .mk text{font:9px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.tflow.focus .row{opacity:.24}
+.tflow.focus .row.on{opacity:1}
+.tflow.focus .row.on .mk rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+/* ---------- the connection-lane figure (hover-select) ---------- */
+.nflow{width:100%;height:auto;display:block;margin-top:4px}
+.nflow .pool rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4}
+.nflow .pool .plbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.nflow .conn{cursor:pointer;transition:opacity .18s ease}
+.nflow .conn rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.nflow .conn.blocked rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.nflow .conn text{font:9px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.nflow.focus .conn{opacity:.26}
+.nflow.focus .conn.on{opacity:1}
+.nflow.focus .conn.on rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/streams-events">streams-events</a><span class="rsep">/</span><a href="/redis-patterns/streams-events/streams-consumer-patterns">streams-consumer-patterns</a><span class="rsep">/</span><span class="rcur">the-blocking-read</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#poll">Poll vs block</a>
+      <a href="#cost">The cost</a>
+      <a href="#lane">The lane</a>
+      <a href="#applied">Applied</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/streams-events">R5 &#183; Streams &amp; Events</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns">Stream consumer patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">The blocking read</span>
+      </nav>
+      <p class="kicker">R5.02.1 &#183; Stream consumer patterns &#8212; dive</p>
+      <h1>The blocking read <span class="hns">&#8212; wait once, on your own lane</span>.</h1>
+      <p class="lede">A reader of a stream has to wait for the next entry, and there are two ways to wait. A busy-poll
+      spins on <code>XREADGROUP</code> with nothing to show for it; a <b>blocking read parks once with
+      <code>BLOCK</code></b> and wakes the instant an entry lands &#8212; one round trip, no spin.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/stream_consumer.ex &#183; read_group_block/1 &#8212;
+      the <code>XREADGROUP ... BLOCK beat_ms</code> on the consumer's own private connector lane, the command timeout
+      set longer than the block.</p>
+
+      <figure class="anatomy" aria-labelledby="waitCap">
+        <figcaption id="waitCap"><b>Two ways to wait for the next entry.</b> Select a strategy to read what it costs
+        between arrivals. The green dot is when the entry actually lands; the boxes are the reader's requests.</figcaption>
+        <div class="segbar" id="waitSel" role="group" aria-label="Select a wait strategy">
+          <button type="button" data-wt="poll" aria-pressed="false">busy-poll</button>
+          <button type="button" data-wt="block" aria-pressed="false">block · BLOCK 1000</button>
+          <button type="button" data-wt="block0" aria-pressed="false">block · BLOCK 0</button>
+        </div>
+        <svg class="tflow" id="waitflow" viewBox="0 0 460 170" role="img" aria-label="A time axis runs left to right with the entry arriving near the right as a green dot. The busy-poll row has many small request boxes spread across the wait, all empty until the arrival. The BLOCK 1000 row has one box per second that re-arms, parking until the arrival. The BLOCK 0 row has a single box that parks the whole time. Select a row to highlight it.">
+          <circle class="ev" cx="392" cy="14" r="5"></circle>
+          <text class="evlbl" x="392" y="9">entry</text>
+          <line class="axis" x1="120" y1="46" x2="440" y2="46"></line>
+          <line class="axis" x1="120" y1="96" x2="440" y2="96"></line>
+          <line class="axis" x1="120" y1="146" x2="440" y2="146"></line>
+          <line x1="392" y1="22" x2="392" y2="158" stroke="#2e7d5b" stroke-width="1" stroke-dasharray="3 3"></line>
+
+          <g class="row" data-wt="poll">
+            <text class="rlbl" x="112" y="50">busy-poll</text>
+            <g class="mk"><rect x="128" y="36" width="22" height="20" rx="3"></rect><text x="139" y="50">·</text></g>
+            <g class="mk"><rect x="172" y="36" width="22" height="20" rx="3"></rect><text x="183" y="50">·</text></g>
+            <g class="mk"><rect x="216" y="36" width="22" height="20" rx="3"></rect><text x="227" y="50">·</text></g>
+            <g class="mk"><rect x="260" y="36" width="22" height="20" rx="3"></rect><text x="271" y="50">·</text></g>
+            <g class="mk"><rect x="304" y="36" width="22" height="20" rx="3"></rect><text x="315" y="50">·</text></g>
+            <g class="mk"><rect x="348" y="36" width="22" height="20" rx="3"></rect><text x="359" y="50">·</text></g>
+            <g class="mk"><rect x="381" y="36" width="22" height="20" rx="3"></rect><text x="392" y="50">hit</text></g>
+          </g>
+          <g class="row" data-wt="block">
+            <text class="rlbl" x="112" y="100">BLOCK 1000</text>
+            <g class="mk"><rect x="128" y="86" width="80" height="20" rx="3"></rect><text x="168" y="100">park 1s</text></g>
+            <g class="mk"><rect x="216" y="86" width="80" height="20" rx="3"></rect><text x="256" y="100">park 1s</text></g>
+            <g class="mk"><rect x="304" y="86" width="86" height="20" rx="3"></rect><text x="347" y="100">park → hit</text></g>
+          </g>
+          <g class="row" data-wt="block0">
+            <text class="rlbl" x="112" y="150">BLOCK 0</text>
+            <g class="mk"><rect x="128" y="136" width="262" height="20" rx="3"></rect><text x="259" y="150">park until the entry &#183; no re-arm</text></g>
+          </g>
+        </svg>
+        <div class="readout" id="waitOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a strategy. A
+        busy-poll spends requests on empty reads; <code>BLOCK</code> parks server-side and returns the instant an entry
+        lands, with round-trip latency and one parked connection.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="poll">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Busy-poll versus block</h2>
+        <span class="ssrc">streams-consumer-patterns.md.txt</span>
+      </div>
+      <div class="prose">
+        <p>A busy-poll loop reads, gets an empty reply, sleeps a little, and reads again. Its latency is the sleep
+        interval &#8212; shrink the sleep to lower latency and the request rate against an idle stream climbs; raise the
+        sleep to lower the rate and latency climbs. There is no setting that is both responsive and cheap.</p>
+        <p>A blocking read removes the trade. <code>XREADGROUP GROUP g &lt;self&gt; BLOCK &lt;ms&gt; COUNT &lt;n&gt;
+        STREAMS &lt;key&gt; &gt;</code> parks server-side until either an entry is appended &#8212; and it returns
+        immediately, sub-millisecond latency &#8212; or <code>ms</code> elapses with nothing, and it returns an empty
+        reply so the caller can re-arm. The latency is the network round trip, not a poll interval, and an idle stream
+        costs one parked connection rather than a stream of empty reads.</p>
+      </div>
+      <p class="take">A busy-poll trades latency against request rate and loses both. A blocking read waits at the
+      network round trip and spends nothing on an idle stream but one parked connection.</p>
+    </section>
+
+    <section id="cost">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The connection cost</h2>
+        <span class="ssrc">the blocking-read pitfall</span>
+      </div>
+      <div class="prose">
+        <p>The blocking form has one hazard: a parked read holds its connection for the whole block. With a pool of ten
+        connections and ten worker threads each issuing <code>XREADGROUP ... BLOCK 5000</code>, all ten connections are
+        parked at once. Any other code that needs the store &#8212; even a simple <code>GET</code> &#8212; waits for a
+        connection that will not free for five seconds. The blocking verb did not deadlock the stream; it starved
+        everything else of connections.</p>
+        <p>The three standard mitigations all point the same way:</p>
+        <ul>
+          <li><strong>Dedicated connections</strong> &#8212; give each blocking consumer its own connection, separate
+          from the shared pool.</li>
+          <li><strong>Shorter block times</strong> &#8212; a two-to-three-second block re-arms often enough to notice a
+          shutdown, rather than an infinite <code>BLOCK 0</code> that never returns on its own.</li>
+          <li><strong>Timeout coordination</strong> &#8212; the server-side <code>BLOCK</code> timeout must be shorter
+          than the client socket timeout, or the socket gives up before the server replies.</li>
+        </ul>
+      </div>
+      <figure class="anatomy" aria-labelledby="laneCap">
+        <figcaption id="laneCap"><b>Where the blocking read parks.</b> Select a topology to read what happens to an
+        unrelated <code>GET</code> while the consumers block. A shared pool starves; a dedicated lane does not.</figcaption>
+        <div class="segbar" id="laneSel" role="group" aria-label="Select a connection topology">
+          <button type="button" data-ln="shared" aria-pressed="false">shared pool</button>
+          <button type="button" data-ln="dedicated" aria-pressed="false">dedicated lane</button>
+        </div>
+        <svg class="nflow" id="laneflow" viewBox="0 0 460 150" role="img" aria-label="Two topologies. In the shared-pool topology, every connection in the pool is parked on a blocking read, so an unrelated GET has no free connection. In the dedicated-lane topology, the blocking consumer holds its own private lane and the shared pool stays free, so a GET runs at once. Select a topology to highlight it.">
+          <g class="conn" data-ln="shared">
+            <g class="pool"><rect x="20" y="24" width="200" height="100" rx="8" fill="none"></rect><text class="plbl" x="120" y="18">shared pool · blocking readers</text></g>
+            <g class="blocked"><rect x="34" y="36" width="80" height="22" rx="4"></rect><text x="74" y="51">parked</text></g>
+            <g class="blocked"><rect x="126" y="36" width="80" height="22" rx="4"></rect><text x="166" y="51">parked</text></g>
+            <g class="blocked"><rect x="34" y="64" width="80" height="22" rx="4"></rect><text x="74" y="79">parked</text></g>
+            <g class="blocked"><rect x="126" y="64" width="80" height="22" rx="4"></rect><text x="166" y="79">parked</text></g>
+            <rect x="34" y="94" width="172" height="22" rx="4" fill="#f8e3e0" stroke="#d6584f" stroke-width="1.3"></rect><text x="120" y="109" style="font:9px var(--mono);fill:#22282b;text-anchor:middle">GET waits — no free connection</text>
+          </g>
+          <g class="conn" data-ln="dedicated">
+            <g class="pool"><rect x="240" y="24" width="200" height="100" rx="8" fill="none"></rect><text class="plbl" x="340" y="18">dedicated lane + free pool</text></g>
+            <rect x="254" y="36" width="172" height="22" rx="4" fill="#f3e2de" stroke="#b23b2e" stroke-width="1.3"></rect><text x="340" y="51" style="font:9px var(--mono);fill:#22282b;text-anchor:middle">own lane · XREADGROUP BLOCK</text>
+            <rect x="254" y="64" width="80" height="22" rx="4" fill="#fffefa" stroke="#d9d2bf" stroke-width="1.2"></rect><text x="294" y="79" style="font:9px var(--mono);fill:#22282b;text-anchor:middle">free</text>
+            <rect x="346" y="64" width="80" height="22" rx="4" fill="#fffefa" stroke="#d9d2bf" stroke-width="1.2"></rect><text x="386" y="79" style="font:9px var(--mono);fill:#22282b;text-anchor:middle">free</text>
+            <rect x="254" y="94" width="172" height="22" rx="4" fill="#e4ebf1" stroke="#2e7d5b" stroke-width="1.3"></rect><text x="340" y="109" style="font:9px var(--mono);fill:#22282b;text-anchor:middle">GET runs at once</text>
+          </g>
+        </svg>
+        <div class="readout" id="laneOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a topology. A
+        blocking read holds its connection for the whole block &#8212; on the shared pool that starves an unrelated
+        <code>GET</code>; on its own lane the shared pool stays free.</div>
+      </figure>
+    </section>
+
+    <section id="lane">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The dedicated lane</h2>
+        <span class="ssrc">stream_consumer.ex &#183; read_group_block/1</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ takes the dedicated-connection mitigation as a law, not an option. <code>EchoMQ.StreamConsumer</code>
+        holds a <strong>private</strong> connector lane and parks the blocking read on it. This is the only blocking
+        verb in the consumer, and it rides the consumer's own lane &#8212; the same rule the job consumer follows for
+        <code>BLPOP</code> &#8212; so the single-owner socket the rest of the system shares is never stalled.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/stream_consumer.ex &#183; read_group_block/1, the blocking read on the private lane<span class="tag">verbatim</span></figcaption>
+<pre>defp read_group_block(s) do
+  parts =
+    ["XREADGROUP", "GROUP", s.group, s.consumer, "BLOCK", Integer.to_string(s.beat_ms),
+     "COUNT", Integer.to_string(s.count), "STREAMS", s.key, "&gt;"]
+
+  case Connector.command(s.conn, parts, s.beat_ms + 5_000) do
+    {:ok, reply} -&gt; group_entries(reply, s.key)   <span class="fd">&#8592; new entries this beat</span>
+    {:error, _} -&gt; []                              <span class="fd">&#8592; timeout: re-arm, nothing new</span>
+  end
+end</pre>
+      </figure>
+      <div class="prose">
+        <p>The block time is the <code>:beat_ms</code> cadence (default <code>1_000</code>), short enough that the loop
+        re-arms once a second and notices a stop request between entries. The command timeout is
+        <code>beat_ms&nbsp;+&nbsp;5_000</code> &#8212; deliberately longer than the block &#8212; so the server's
+        <code>BLOCK</code> returns first with either entries or an empty reply, and the socket timeout is the backstop,
+        never the thing that fires. A timeout returns an empty list, and the loop comes round again.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The <code>&gt;</code> id in a group read means
+      <em>entries never delivered to any consumer in this group</em> &#8212; so a blocking <code>&gt;</code> read parks
+      for genuinely new entries, while a <code>0</code> read of the same group is the non-blocking PEL replay &#8212;
+      <a href="https://valkey.io/commands/xreadgroup/" rel="noopener">valkey.io/commands/xreadgroup</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The pattern, applied</h2>
+        <span class="ssrc">echo/apps/codemojex</span>
+      </div>
+      <div class="prose">
+        <p>A codemojex activity-feed reader (<code>echo/apps/codemojex</code>) is a long-lived consumer of a game's
+        stream. It is idle most of the time &#8212; a round is appended only when a guess is scored or a round opens
+        &#8212; so a busy-poll would spend almost all of its requests on empty reads. On its own lane it parks on
+        <code>XREADGROUP ... BLOCK 1000</code> and wakes the instant an entry lands, rendering the live timeline with
+        round-trip latency, while a separate <code>GET</code>-the-board call elsewhere in the app never waits on the
+        feed's parked connection.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Wait for the next entry with a blocking <code>XREADGROUP ... BLOCK</code>, not a busy-poll &#8212; but give
+          the blocking reader a dedicated connection, because a parked read holds its connection for the whole block.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.StreamConsumer.read_group_block/1</code> parks <code>BLOCK beat_ms</code> on the consumer's
+          private lane, the command timeout set to <code>beat_ms + 5_000</code> so the block returns first &#8212; the
+          shared single-owner socket is never stalled.</p>
+        </div>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/bus">
+          <span class="dr">/echomq/bus</span>
+          <h3>The reader loop, in depth</h3>
+          <p>The Bus pillar teaches the consumer-group loop the blocking read sits inside: the PEL drain, the
+          <code>XAUTOCLAIM</code> beat, and the polyglot seam.</p>
+        </a>
+        <a class="door" href="/echo-persistence">
+          <span class="dr">/echo-persistence</span>
+          <h3>What the reader drains from</h3>
+          <p>The log a reader parks on is bounded by retention; trimmed segments fold into the Graft floor &#8212; the
+          durability dial taught in full.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>The Stream Tier in the manuscript</h3>
+          <p>Part B3 builds the bus the reader runs on: the <code>emq:{q}:</code> keyspace, jobs and lanes, the Stream
+          Tier beside the queue.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/xreadgroup/" rel="noopener">Valkey &mdash; <em>XREADGROUP</em></a> &mdash; the <code>BLOCK &lt;ms&gt;</code> form that parks for a new entry and the <code>&gt;</code> cursor that delivers only new entries.</li>
+            <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; blocking reads, the consumer group, and the connection a block holds.</li>
+            <li><a href="https://valkey.io/commands/xread/" rel="noopener">Valkey &mdash; <em>XREAD</em></a> &mdash; the un-grouped blocking read the long-poll starts from.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{q}</code> hash tag that keeps a queue's stream key on one of 16384 hash slots.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/streams-events/streams-consumer-patterns">R5.02 &#183; Stream consumer patterns</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/streams-events/streams-consumer-patterns/consumer-groups">R5.02.2 &#183; Consumer groups</a><span class="rs">the group read this block rides</span></li>
+            <li><a href="/redis-patterns/streams-events/streams-consumer-patterns/maxlen-trimming">R5.02.3 &#183; MAXLEN trimming</a><span class="rs">bounding the log the reader drains</span></li>
+            <li><a href="/echomq/bus">/echomq/bus</a><span class="rs">the EchoMQ Bus pillar, the retained log in depth</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/streams-events/streams-consumer-patterns"><span class="pk">up</span>&#8592; R5.02 &#183; Stream consumer patterns</a>
+      <a class="pgx" href="/redis-patterns/streams-events/streams-consumer-patterns/consumer-groups"><span class="pk">next</span>R5.02.2 &#183; Consumer groups &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns/the-blocking-read">R5.02.1 &#183; The blocking read</a>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns/consumer-groups">R5.02.2 &#183; Consumer groups</a>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns/maxlen-trimming">R5.02.3 &#183; MAXLEN trimming</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: wait strategy (pure lookup over a fixed dataset) ---------- */
+  var WAIT = {
+    poll:   { cost: 'many requests across the wait, all empty until the entry lands', lat: 'the sleep interval — lower it and the request rate climbs' },
+    block:  { cost: 'one parked connection that re-arms each second', lat: 'the network round trip — returns the instant the entry lands' },
+    block0: { cost: 'one parked connection that never returns on its own', lat: 'the round trip — but no re-arm, so a shutdown is not noticed' }
+  };
+  function describeWait(wt) {
+    var s = WAIT[wt];
+    if (!s) return '';
+    return '<span class="rk">cost &#183;</span> ' + s.cost + '<br>' +
+      '<span class="rk">latency &#183;</span> <b>' + s.lat + '</b>';
+  }
+  wireHoverSelect('waitflow', '#waitSel button', 'waitOut', 'data-wt', '.row', describeWait,
+    '<span class="rk">readout &#183;</span> Select a strategy. A busy-poll spends requests on empty reads; <code>BLOCK</code> parks server-side and returns the instant an entry lands, with round-trip latency and one parked connection.');
+
+  /* ---------- Interactive 2: connection topology (pure lookup over a fixed dataset) ---------- */
+  var LANE = {
+    shared:    { gets: 'a GET has no free connection until a block returns — seconds of wait', verdict: 'the blocking verb starves everything else of connections' },
+    dedicated: { gets: 'a GET runs at once on the free shared pool', verdict: 'the blocking read holds its OWN lane — the shared socket is never stalled' }
+  };
+  function describeLane(ln) {
+    var s = LANE[ln];
+    if (!s) return '';
+    return '<span class="rk">unrelated GET &#183;</span> ' + s.gets + '<br>' +
+      '<span class="rk">verdict &#183;</span> <b>' + s.verdict + '</b>';
+  }
+  wireHoverSelect('laneflow', '#laneSel button', 'laneOut', 'data-ln', '.conn', describeLane,
+    '<span class="rk">readout &#183;</span> Select a topology. A blocking read holds its connection for the whole block &#8212; on the shared pool that starves an unrelated <code>GET</code>; on its own lane the shared pool stays free.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

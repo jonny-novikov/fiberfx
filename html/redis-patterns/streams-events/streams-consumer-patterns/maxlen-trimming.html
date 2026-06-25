@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R5.02.3 — MAXLEN trimming · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R5.02.3 dive: MAXLEN trimming. A log that only grows is a leak, and XACK does not shrink it. XTRIM, not XDEL, is the tool: MAXLEN ~ N keeps the newest entries, MINID ~ trims by time, and the ~ trims whole macro-nodes — it may under-trim but never over-trims, so a trim can never delete inside the window. EchoMQ.Stream.trim/4 is the verb; EchoMQ.StreamRetention re-applies a declared policy; EchoStore.StreamArchive folds what is trimmed to the durable floor. Grounded in echo/apps/echo_mq, with codemojex the consumer.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the retention-form figure (hover-select) ---------- */
+.rflow{width:100%;height:auto;display:block;margin-top:4px}
+.rflow .log rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4}
+.rflow .log .llbl{font:11px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.rflow .seg{cursor:pointer;transition:opacity .18s ease,fill .18s ease}
+.rflow .seg rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.2}
+.rflow .seg text{font:9px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.rflow.focus .seg{opacity:.3}
+.rflow.focus .seg.on{opacity:1}
+.rflow.focus .seg.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+.rflow .kept{font:9.5px var(--mono);fill:var(--b-node);text-anchor:middle}
+.rflow .gone{font:9.5px var(--mono);fill:var(--r-red);text-anchor:middle}
+/* ---------- the approx-vs-exact figure (hover-select) ---------- */
+.aflow{width:100%;height:auto;display:block;margin-top:4px}
+.aflow .mode{cursor:pointer;transition:opacity .18s ease}
+.aflow .mode rect.box{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.aflow .mode text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.aflow .mode .node{fill:var(--b-card);stroke:var(--b-line);stroke-width:1}
+.aflow .mode .win{stroke:var(--b-node);stroke-width:1.4;stroke-dasharray:3 2;fill:none}
+.aflow.focus .mode{opacity:.26}
+.aflow.focus .mode.on{opacity:1}
+.aflow.focus .mode.on rect.box{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.4}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/streams-events">streams-events</a><span class="rsep">/</span><a href="/redis-patterns/streams-events/streams-consumer-patterns">streams-consumer-patterns</a><span class="rsep">/</span><span class="rcur">maxlen-trimming</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#xtrim">XTRIM not XDEL</a>
+      <a href="#approx">Approximate</a>
+      <a href="#verb">The verb</a>
+      <a href="#archive">The archive</a>
+      <a href="#applied">Applied</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/streams-events">R5 &#183; Streams &amp; Events</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns">Stream consumer patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">MAXLEN trimming</span>
+      </nav>
+      <p class="kicker">R5.02.3 &#183; Stream consumer patterns &#8212; dive</p>
+      <h1>MAXLEN trimming <span class="hns">&#8212; bound the log, keep the history</span>.</h1>
+      <p class="lede">A log that only grows is a leak, and acknowledgement does not shrink it: <code>XACK</code> marks an
+      entry handled in group metadata, but the entry stays in the log. The right tool is <code>XTRIM</code>, not
+      <code>XDEL</code> &#8212; and the <b><code>~</code> trims whole macro-nodes</b>, so it may under-trim but can
+      never over-trim.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/stream.ex &#183; trim/4 {:maxlen, count, approx?} /
+      {:minid, dt, approx?} &#183; stream_retention.ex (the opt-in driver) &#183;
+      echo/apps/echo_store/lib/echo_store/stream_archive.ex &#183; fold/3 &#8212; the fold to the durable floor.</p>
+
+      <figure class="anatomy" aria-labelledby="retCap">
+        <figcaption id="retCap"><b>Three retention windows over one log.</b> Select a policy to read what it keeps and
+        what it removes. The newest entries are on the right; a retention policy bounds the log from the left.</figcaption>
+        <div class="segbar" id="retSel" role="group" aria-label="Select a retention policy">
+          <button type="button" data-rt="none" aria-pressed="false">no trim · leak</button>
+          <button type="button" data-rt="maxlen" aria-pressed="false">MAXLEN ~ 4</button>
+          <button type="button" data-rt="minid" aria-pressed="false">MINID ~ t</button>
+        </div>
+        <svg class="rflow" id="retflow" viewBox="0 0 460 140" role="img" aria-label="A log of seven entries left to right, oldest on the left. With no trim all seven stay and the log grows without bound. With MAXLEN approx 4 the four newest are kept and the older are removed. With MINID approx t the entries older than the time t are removed. Select a policy to highlight what it keeps.">
+          <g class="log"><rect x="20" y="44" width="420" height="44" rx="6" fill="none"></rect><text class="llbl" x="40" y="38">older</text><text class="llbl" x="420" y="38">newest</text></g>
+          <g class="seg" data-rt="g1"><rect x="28" y="52" width="54" height="28" rx="4"></rect><text x="55" y="69">e1</text></g>
+          <g class="seg" data-rt="g2"><rect x="86" y="52" width="54" height="28" rx="4"></rect><text x="113" y="69">e2</text></g>
+          <g class="seg" data-rt="g3"><rect x="144" y="52" width="54" height="28" rx="4"></rect><text x="171" y="69">e3</text></g>
+          <g class="seg" data-rt="g4"><rect x="202" y="52" width="54" height="28" rx="4"></rect><text x="229" y="69">e4</text></g>
+          <g class="seg" data-rt="g5"><rect x="260" y="52" width="54" height="28" rx="4"></rect><text x="287" y="69">e5</text></g>
+          <g class="seg" data-rt="g6"><rect x="318" y="52" width="54" height="28" rx="4"></rect><text x="345" y="69">e6</text></g>
+          <g class="seg" data-rt="g7"><rect x="376" y="52" width="54" height="28" rx="4"></rect><text x="403" y="69">e7</text></g>
+          <line id="minidMark" x1="200" y1="46" x2="200" y2="86" stroke="#2e7d5b" stroke-width="1.2" stroke-dasharray="3 3" opacity="0"></line>
+          <text id="minidLbl" class="kept" x="200" y="100" opacity="0">t</text>
+        </svg>
+        <div class="readout" id="retOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a policy.
+        <code>XACK</code> does not shrink the log &#8212; retention is a separate <code>XTRIM</code>: <code>MAXLEN</code>
+        keeps the newest <code>N</code>, <code>MINID</code> keeps entries at or after a time, and no policy means the
+        log grows forever.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="xtrim">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>XTRIM, not XDEL</h2>
+        <span class="ssrc">streams-consumer-patterns.md.txt</span>
+      </div>
+      <div class="prose">
+        <p>The tempting cleanup is to <code>XDEL</code> an entry right after <code>XACK</code>ing it. It is harmful. A
+        stream stores entries in a radix tree of macro-nodes (listpacks); <code>XDEL</code> marks an entry deleted but
+        does not free the memory until the entire macro-node is empty, so heavy <code>XDEL</code> use leaves "Swiss
+        cheese" fragmentation &#8212; memory that is logically free but physically held.</p>
+        <p>The correct pattern keeps the two concerns apart:</p>
+        <ul>
+          <li><code>XACK</code> marks an entry handled &#8212; consumer-group state only, it does not touch the log.</li>
+          <li><code>XTRIM</code> enforces a retention policy &#8212; it frees memory by removing whole macro-nodes from
+          the tail.</li>
+        </ul>
+        <p><code>XADD ... MAXLEN ~ N</code> trims on every write; <code>XTRIM ... MAXLEN ~ N</code> trims periodically.
+        Either way the unit of work is a macro-node, which is why approximate trimming is the cheap default.</p>
+      </div>
+      <p class="take">Acknowledgement is group bookkeeping; retention is memory. Keep them apart: <code>XACK</code> to
+      mark handled, <code>XTRIM</code> to bound the log, never <code>XDEL</code> per entry.</p>
+    </section>
+
+    <section id="approx">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Approximate trimming &#8212; why <code>~</code></h2>
+        <span class="ssrc">stream.ex &#183; approx_flag</span>
+      </div>
+      <div class="prose">
+        <p><code>MAXLEN ~ N</code> does not promise exactly <code>N</code> entries. The <code>~</code> selects
+        approximate trimming: Valkey removes whole macro-nodes from the tail and stops when removing the next one would
+        drop the count below <code>N</code>. So it may keep a little more than <code>N</code> &#8212; it under-trims
+        &#8212; but it never removes an entry it should have kept. The payoff is CPU: trimming a whole listpack at once
+        is far cheaper than walking to an exact boundary entry. The exact form, <code>MAXLEN = N</code>, removes
+        precisely to the edge and is the opt-in for when the count must be exact.</p>
+      </div>
+      <figure class="anatomy" aria-labelledby="apxCap">
+        <figcaption id="apxCap"><b>Approximate, exact, and the safe boundary.</b> Select a mode to read where the cut
+        lands. The dashed line is the declared window; neither mode ever deletes inside it.</figcaption>
+        <div class="segbar" id="apxSel" role="group" aria-label="Select a trim mode">
+          <button type="button" data-am="approx" aria-pressed="false">~ approximate</button>
+          <button type="button" data-am="exact" aria-pressed="false">= exact</button>
+          <button type="button" data-am="never" aria-pressed="false">never over-trim</button>
+        </div>
+        <svg class="aflow" id="apxflow" viewBox="0 0 460 130" role="img" aria-label="Macro-nodes left to right with a dashed window boundary marking the entries to keep on the right. Approximate trimming removes whole macro-nodes and stops before the boundary, keeping a little extra. Exact trimming removes precisely to the boundary. Neither ever crosses the boundary to delete a kept entry. Select a mode to highlight it.">
+          <rect class="win" x="250" y="20" width="196" height="86" rx="6"></rect>
+          <text x="348" y="14" style="font:9.5px var(--mono);fill:#2e7d5b;text-anchor:middle">declared window — always kept</text>
+          <g class="mode" data-am="approx">
+            <rect class="box" x="20" y="26" width="150" height="22" rx="4"></rect><text x="95" y="41">~ removes whole nodes</text>
+            <rect class="node" x="180" y="26" width="58" height="22" rx="3"></rect><text x="209" y="41" style="font:8.5px var(--mono);fill:var(--b-dim);text-anchor:middle">kept extra</text>
+          </g>
+          <g class="mode" data-am="exact">
+            <rect class="box" x="20" y="56" width="150" height="22" rx="4"></rect><text x="95" y="71">= removes to the edge</text>
+            <line x1="180" y1="52" x2="180" y2="82" stroke="#b23b2e" stroke-width="1.4"></line><text x="210" y="71" style="font:8.5px var(--mono);fill:var(--b-dim);text-anchor:middle">exact cut</text>
+          </g>
+          <g class="mode" data-am="never">
+            <rect class="box" x="20" y="86" width="150" height="22" rx="4"></rect><text x="95" y="101">blast radius bounded</text>
+            <text x="210" y="101" style="font:8.5px var(--mono);fill:#2e7d5b;text-anchor:middle">never inside window</text>
+          </g>
+        </svg>
+        <div class="readout" id="apxOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a mode.
+        <code>~</code> trims whole macro-nodes and may keep a little extra; <code>=</code> trims to the exact edge;
+        either way a trim can never delete an entry inside the declared window.</div>
+      </figure>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>Because <code>~</code> works in whole macro-nodes, the
+      removed-count <code>XTRIM</code> returns can be <code>0</code> even when entries are old &#8212; under-trimming is
+      expected and safe, an over-trim is impossible &#8212; <a href="https://valkey.io/commands/xtrim/" rel="noopener">valkey.io/commands/xtrim</a>.</p>
+    </section>
+
+    <section id="verb">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>trim/4 &#8212; the verb, and the policy</h2>
+        <span class="ssrc">stream.ex &#183; trim/4 &#183; stream_retention.ex</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ exposes both forms as one verb, <code>EchoMQ.Stream.trim/4</code>, issued direct over
+        <code>XTRIM</code>:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/stream.ex &#183; trim/4, the two window clauses<span class="tag">verbatim</span></figcaption>
+<pre>def trim(conn, queue, name, {:maxlen, count, approx?}) do
+  key = stream_key(queue, name)
+  xtrim(conn, ["XTRIM", key, "MAXLEN", approx_flag(approx?), Integer.to_string(count)])
+end
+
+def trim(conn, queue, name, {:minid, %DateTime{} = dt, approx?}) do
+  key = stream_key(queue, name)
+  xtrim(conn, ["XTRIM", key, "MINID", approx_flag(approx?), minid_floor(dt)])
+end</pre>
+      </figure>
+      <div class="prose">
+        <p><code>{:maxlen, count, approx?}</code> keeps the <code>count</code> newest entries;
+        <code>{:minid, dt, approx?}</code> keeps entries minted at or after a <code>DateTime</code>, with the floor
+        <code>"&lt;ms&gt;-0"</code> <strong>derived</strong> from the branded mint instant &#8212; never a raw snowflake
+        integer handed to the wire. <code>approx?</code> true selects <code>~</code> (the safe default); false selects
+        <code>=</code> (exact, the opt-in). Either way the blast radius is bounded by the window: a trim can never
+        delete an entry inside it.</p>
+        <p>A trim is a destructive verb, so it is never coupled to the append and never folded into a consumer's beat.
+        <code>EchoMQ.StreamRetention</code> is the named, opt-in driver that beats on a tick and re-applies a declared
+        policy through the public <code>trim/4</code>: a stream nobody drains still trims, because bounded memory is a
+        safety property and <em>a consumer is up</em> is a liveness fact &#8212; coupling the two is a silent-no-op the
+        design refuses. A manual <code>trim/4</code> call is the equally-supported cadence.</p>
+      </div>
+      <p class="take">One verb, two windows, one safe default. Retention is a property of the stream, declared on its
+      own beat &#8212; not a side effect of a consumer being alive.</p>
+    </section>
+
+    <section id="archive">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>What is trimmed is not lost</h2>
+        <span class="ssrc">echo_store/stream_archive.ex &#183; fold/3</span>
+      </div>
+      <div class="prose">
+        <p>Trimming frees memory, but the history a trimmed entry held may still matter for an audit or a backtest. The
+        two needs are reconciled by folding what is trimmed into a durable floor before it is removed.
+        <code>EchoStore.StreamArchive.fold/3</code> folds a mint-ordered slice of <code>{branded, fields}</code> records
+        into the native Graft engine's page store &#8212; one page per record, in a reserved high page range disjoint
+        from business data &#8212; and advances a watermark <code>W</code> to the branded <code>EVT</code> id of the
+        highest-folded record:</p>
+      </div>
+      <pre class="code">EchoStore.StreamArchive.fold(volume_id, slice, db)
+<span class="cmt">#=&gt; {:ok, w}     # the new frontier — the highest folded branded id</span></pre>
+      <div class="prose">
+        <p>The fold commits <strong>before</strong> the trim removes anything, so an entry is durable in the floor
+        before it leaves the live log &#8212; no-gap, no-overlap is a consequence of fold-before-trim plus the order
+        theorem, not a per-read check. A reader then merges the two: records with a branded id at or below <code>W</code>
+        come from the archive, records above <code>W</code> come from the live tail, joined in mint order. Deep history
+        stays readable without resident memory.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Keep the log bounded with <code>XTRIM MAXLEN ~ N</code> (or <code>MINID</code> by time), keep
+          acknowledgement separate from retention, and accept that trimming removes history from the live log.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Stream.trim/4</code> bounds the log and <code>EchoMQ.StreamRetention</code> re-applies the
+          policy; <code>EchoStore.StreamArchive.fold/3</code> folds what is trimmed into the Graft floor first &#8212;
+          bounded memory, history preserved, the durability dial at <code>/echo-persistence</code>.</p>
+        </div>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The archive frontier <code>W</code> is a branded
+      <code>EVT</code> id, not the engine's integer page cursor &#8212; greater id means newer, so the merge-read splits
+      archived from live on one comparison the leaderboard's first-claim also uses &#8212; <a href="https://www.tigrisdata.com/docs/objects/conditionals/" rel="noopener">tigrisdata.com/docs/objects/conditionals</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The pattern, applied</h2>
+        <span class="ssrc">echo/apps/codemojex &#183; EchoStore</span>
+      </div>
+      <div class="prose">
+        <p>A codemojex game's activity stream (<code>echo/apps/codemojex</code>) grows as rounds are played. The
+        operator declares a retention policy &#8212; keep the recent window live &#8212; and
+        <code>EchoMQ.StreamRetention</code> trims it on its beat with <code>MAXLEN ~</code>, so memory stays bounded no
+        matter how long the game runs. Before each trim, the trimmed segment is folded to the Graft floor, so the full
+        round history of a long-running game is recoverable for a leaderboard audit even though only the recent window
+        sits in the live log.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echo-persistence">
+          <span class="dr">/echo-persistence</span>
+          <h3>Where a trimmed segment lands</h3>
+          <p><code>EchoStore.StreamArchive</code> folds trimmed segments into the Graft floor on CubDB and on to Tigris
+          behind a create-only fence &#8212; deep history without resident memory, the durability dial in full.</p>
+        </a>
+        <a class="door" href="/echomq/bus">
+          <span class="dr">/echomq/bus</span>
+          <h3>Retention in the bus</h3>
+          <p>The Bus pillar teaches the retained, replayable log: the trim driver, the archive fold, and time-travel
+          over the merge-read of archived and live entries.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>The Stream Tier in the manuscript</h3>
+          <p>Part B3: a log that only grows is a leak, so retention is a policy; what is trimmed folds into the durable
+          Graft floor &#8212; deep history without resident memory.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/xtrim/" rel="noopener">Valkey &mdash; <em>XTRIM</em></a> &mdash; <code>MAXLEN ~</code> and <code>MINID</code> retention; the <code>~</code> trims whole macro-nodes, the <code>=</code> trims to an exact edge.</li>
+            <li><a href="https://valkey.io/commands/xadd/" rel="noopener">Valkey &mdash; <em>XADD</em></a> &mdash; the <code>MAXLEN ~ N</code> trim-on-write form and why <code>XDEL</code> is the wrong cleanup.</li>
+            <li><a href="https://valkey.io/commands/xlen/" rel="noopener">Valkey &mdash; <em>XLEN</em></a> &mdash; the live length a retention policy bounds.</li>
+            <li><a href="https://www.tigrisdata.com/docs/objects/conditionals/" rel="noopener">Tigris &mdash; <em>Conditional operations</em></a> &mdash; the create-only fence an archived segment lands behind on the durable floor.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/streams-events/streams-consumer-patterns">R5.02 &#183; Stream consumer patterns</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/streams-events/streams-consumer-patterns/the-blocking-read">R5.02.1 &#183; The blocking read</a><span class="rs">the long-poll the reader uses</span></li>
+            <li><a href="/redis-patterns/streams-events/streams-consumer-patterns/consumer-groups">R5.02.2 &#183; Consumer groups</a><span class="rs">the reader law on the log this trims</span></li>
+            <li><a href="/echo-persistence">/echo-persistence</a><span class="rs">the durability dial a trimmed segment folds onto</span></li>
+            <li><a href="/bcs/bus">/bcs/bus</a><span class="rs">the manuscript bus chapter the figures are drawn from</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/streams-events/streams-consumer-patterns/consumer-groups"><span class="pk">prev</span>&#8592; R5.02.2 &#183; Consumer groups</a>
+      <a class="pgx" href="/redis-patterns/streams-events/streams-consumer-patterns"><span class="pk">up</span>R5.02 &#183; Stream consumer patterns &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns/the-blocking-read">R5.02.1 &#183; The blocking read</a>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns/consumer-groups">R5.02.2 &#183; Consumer groups</a>
+        <a href="/redis-patterns/streams-events/streams-consumer-patterns/maxlen-trimming">R5.02.3 &#183; MAXLEN trimming</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml, onSelect) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+      if (onSelect) onSelect(key);
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: retention windows ----------
+     The SVG segments are the entries (data-rt g1..g7); the buttons are the
+     POLICIES (none / maxlen / minid). A policy lights the entries it keeps and,
+     for minid, reveals the time boundary. The control surface is the buttons
+     AND hovering an entry previews "kept under the current policy" via a shared
+     map — so both the segbar and the diagram drive the same readout. */
+  var RET = {
+    none:   { keep: 'all seven entries — the log grows without bound', remove: 'nothing — this is the leak', segs: ['g1','g2','g3','g4','g5','g6','g7'] },
+    maxlen: { keep: 'the four newest (e4–e7)', remove: 'the three oldest (e1–e3) — MAXLEN ~ 4', segs: ['g4','g5','g6','g7'] },
+    minid:  { keep: 'entries minted at or after t (e4–e7)', remove: 'entries older than t (e1–e3) — MINID ~ t', segs: ['g4','g5','g6','g7'] }
+  };
+  function describeRet(rt) {
+    var s = RET[rt];
+    if (!s) return '';
+    return '<span class="rk">keeps &#183;</span> ' + s.keep + '<br>' +
+      '<span class="rk">removes &#183;</span> <b>' + s.remove + '</b>';
+  }
+  (function wireRetention() {
+    var svg = document.getElementById('retflow');
+    var buttons = document.querySelectorAll('#retSel button');
+    var out = document.getElementById('retOut');
+    var minidMark = document.getElementById('minidMark');
+    var minidLbl = document.getElementById('minidLbl');
+    var reset = '<span class="rk">readout &#183;</span> Select a policy. <code>XACK</code> does not shrink the log &#8212; retention is a separate <code>XTRIM</code>: <code>MAXLEN</code> keeps the newest <code>N</code>, <code>MINID</code> keeps entries at or after a time, and no policy means the log grows forever.';
+    function paint(rt) {
+      var keepSet = rt && RET[rt] ? RET[rt].segs : null;
+      buttons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-rt') === rt ? 'true' : 'false'); });
+      if (svg) {
+        svg.classList.toggle('focus', !!rt);
+        svg.querySelectorAll('.seg').forEach(function (g) {
+          var id = g.getAttribute('data-rt');
+          g.classList.toggle('on', !!keepSet && keepSet.indexOf(id) !== -1);
+        });
+      }
+      var showMinid = rt === 'minid';
+      if (minidMark) minidMark.setAttribute('opacity', showMinid ? '1' : '0');
+      if (minidLbl) minidLbl.setAttribute('opacity', showMinid ? '1' : '0');
+      if (out) out.innerHTML = rt ? describeRet(rt) : reset;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        paint(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute('data-rt'));
+      });
+      b.addEventListener('mouseenter', function () { paint(b.getAttribute('data-rt')); });
+      b.addEventListener('mouseleave', function () {
+        var pressed = document.querySelector('#retSel button[aria-pressed="true"]');
+        paint(pressed ? pressed.getAttribute('data-rt') : null);
+      });
+    });
+  })();
+
+  /* ---------- Interactive 2: approx vs exact (pure lookup over a fixed dataset) ---------- */
+  var APX = {
+    approx: { cut: 'removes whole macro-nodes, stops before the window — may keep a little extra', cost: 'cheap: one listpack at a time, never an entry walk' },
+    exact:  { cut: 'removes precisely to the window edge', cost: 'the opt-in for when the count must be exact' },
+    never:  { cut: 'the blast radius is bounded by the window', cost: 'a trim can NEVER delete an entry inside the declared window' }
+  };
+  function describeApx(am) {
+    var s = APX[am];
+    if (!s) return '';
+    return '<span class="rk">cut &#183;</span> ' + s.cut + '<br>' +
+      '<span class="rk">property &#183;</span> <b>' + s.cost + '</b>';
+  }
+  wireHoverSelect('apxflow', '#apxSel button', 'apxOut', 'data-am', '.mode', describeApx,
+    '<span class="rk">readout &#183;</span> Select a mode. <code>~</code> trims whole macro-nodes and may keep a little extra; <code>=</code> trims to the exact edge; either way a trim can never delete an entry inside the declared window.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

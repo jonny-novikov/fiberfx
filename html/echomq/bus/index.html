@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Bus — EchoMQ, In Depth</title>
+<meta name="description" content="The Bus chapter of EchoMQ, In Depth: broadcast signals over the wire — fire-and-forget pub/sub events (EchoMQ.Events) plus a retained, replayable append-only log (EchoMQ.Stream) ordered by mint, consumed by groups at-least-once, read by a mint instant for time-travel, bounded by retention, and folded into the durable Graft floor. All real Elixir, grounded in echo/apps/echo_mq and echo/apps/echo_store.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);background:rgba(42,161,152,.08);
+  border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.rev{font-family:var(--sans);font-size:.78rem;color:var(--echo-bright);border:1px solid var(--echo);
+  border-radius:999px;padding:.22rem .7rem;display:inline-flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
+.rev a{color:var(--echo-bright);text-decoration:none}
+.rev a:hover{color:var(--cream);text-decoration:underline}
+
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.applied{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.applied .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.applied p{margin:0;color:var(--cream-soft);font-size:.96rem}
+.door{margin:1rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- contents cards ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.soon{color:var(--echo-bright);border-color:var(--echo)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.2rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);line-height:1.45}
+.mod.work{border-left:2px solid var(--echo)}
+.mod.work .num::after{content:" · workshop";color:var(--echo-bright)}
+
+/* ---- up next ---- */
+.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem;margin-top:1.2rem}
+.upnext .mod .t{font-size:1.04rem}
+@media(max-width:860px){.upnext{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.upnext{grid-template-columns:1fr}}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><span class="rcur">bus</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <span class="here">The Bus</span>
+    </nav>
+    <p class="rev">&larr; the depth behind <strong>redis-patterns R5 &middot; Streams &amp; Events</strong></p>
+    <p class="eyebrow">The Bus &middot; pillar II</p>
+    <h1>Broadcast signals<br>over the <span class="ex">wire</span></h1>
+    <p class="lede">Fan a message out to everyone, then keep an ordered, replayable log of what was said.</p>
+    <p class="kicker">The Bus is the second pillar, and it is the mirror of the Queue. Where the Queue hands one job to
+      <strong>one</strong> worker, the Bus does the opposite: it broadcasts to <strong>everyone</strong>, and it keeps
+      an <strong>append-only log</strong> many readers replay at their own pace. Two surfaces, one wire. <strong>Events</strong>
+      (<code class="inl">EchoMQ.Events</code>) are fire-and-forget pub/sub — a consumer reacts to work as it happens
+      without polling. The <strong>stream log</strong> (<code class="inl">EchoMQ.Stream</code>) is a retained, replayable
+      log <strong>ordered by mint</strong> — consumed by groups at-least-once, read by a mint instant for
+      <strong>time-travel</strong>, bounded by <strong>retention</strong>, and what it trims is <strong>folded into the
+      durable floor</strong>. The thread through both is the branded id. It is <strong>all real code</strong>.</p>
+    <div class="toc-mini">
+      <a href="#two">The two surfaces</a>
+      <a href="#mods">The modules</a>
+      <a href="#upnext">The rest of the system</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE TWO SURFACES (framing interactive) ===================== -->
+  <section id="two">
+    <h2>The two surfaces, one wire</h2>
+    <div class="prose">
+      <p>The Bus is one wire read two ways. <strong>Events</strong> broadcast a signal to whoever is listening, now and
+        gone. The <strong>stream</strong> is the same idea made durable: an append-only log, ordered the way the store
+        is ordered &mdash; by the branded id &mdash; that survives, replays, and folds to disk. Pick a verb to read what
+        it does, the Valkey command beneath it, and the guarantee it makes.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="busTitle">
+      <h4 id="busTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One wire, two reads &middot; pick a verb</h4>
+      <div class="controls">
+        <div class="solid-select" id="busSel" role="group" aria-label="The verbs the Bus exposes">
+          <button type="button" data-verb="events" data-c="blue" class="active" aria-pressed="true">events</button>
+          <button type="button" data-verb="append" data-c="echo" aria-pressed="false">append</button>
+          <button type="button" data-verb="consume" data-c="gold" aria-pressed="false">consume</button>
+          <button type="button" data-verb="travel" data-c="blue" aria-pressed="false">time-travel</button>
+          <button type="button" data-verb="retain" data-c="gold" aria-pressed="false">retain</button>
+          <button type="button" data-verb="archive" data-c="echo" aria-pressed="false">archive</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 250" role="img" aria-label="The Bus over one wire: on the left, EchoMQ.Events broadcasts a signal from a publisher out to many subscribers, fire-and-forget. On the right, EchoMQ.Stream appends ordered records to a replayable log, which a consumer group reads at-least-once, a time-travel read selects a mint-instant window of, retention trims, and the archive folds the trimmed segments into the durable Graft floor. The selected verb is highlighted.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- the wire spine -->
+        <line x1="20" y1="128" x2="460" y2="128" stroke="#2a3252" stroke-width="2"></line>
+        <text x="240" y="122" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488">emq:{q}: &mdash; one owned wire</text>
+
+        <!-- ===== EVENTS (left, broadcast fan-out) ===== -->
+        <g id="g-events">
+          <rect x="16" y="38" width="92" height="34" rx="8" fill="rgba(90,135,196,.16)" stroke="#5a87c4"></rect>
+          <text x="62" y="52" text-anchor="middle" font-family="Manrope,sans-serif" font-size="11" fill="#ece4d0">publish</text>
+          <text x="62" y="65" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">PUBLISH</text>
+          <!-- fan-out arrows -->
+          <g stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9">
+            <path d="M62 72 L30 104"></path>
+            <path d="M62 72 L62 104"></path>
+            <path d="M62 72 L96 104"></path>
+          </g>
+          <g font-family="JetBrains Mono,monospace" font-size="7.5" fill="#9fc0ea">
+            <rect x="14" y="106" width="32" height="18" rx="5" fill="rgba(90,135,196,.1)" stroke="#46507a"></rect><text x="30" y="118" text-anchor="middle">sub</text>
+            <rect x="46" y="106" width="32" height="18" rx="5" fill="rgba(90,135,196,.1)" stroke="#46507a"></rect><text x="62" y="118" text-anchor="middle">sub</text>
+            <rect x="80" y="106" width="32" height="18" rx="5" fill="rgba(90,135,196,.1)" stroke="#46507a"></rect><text x="96" y="118" text-anchor="middle">sub</text>
+          </g>
+          <text x="62" y="28" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#9fc0ea" font-weight="600">EchoMQ.Events &middot; at-most-once</text>
+        </g>
+
+        <!-- ===== STREAM (right, ordered log) ===== -->
+        <g id="g-append">
+          <text x="300" y="28" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#6fdccf" font-weight="600">EchoMQ.Stream &middot; ordered by mint</text>
+          <!-- the log cells (mint order, left to right) -->
+          <g font-family="JetBrains Mono,monospace" font-size="7.5" fill="#ece4d0">
+            <rect x="160" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="177" y="60" text-anchor="middle">EVT</text>
+            <rect x="196" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="213" y="60" text-anchor="middle">EVT</text>
+            <rect x="232" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="249" y="60" text-anchor="middle">EVT</text>
+            <rect x="268" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="285" y="60" text-anchor="middle">EVT</text>
+            <rect x="304" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="321" y="60" text-anchor="middle">EVT</text>
+            <rect x="340" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="357" y="60" text-anchor="middle">EVT</text>
+            <rect x="376" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="393" y="60" text-anchor="middle">EVT</text>
+            <rect x="412" y="44" width="34" height="26" rx="5" fill="rgba(42,161,152,.2)" stroke="#6fdccf"></rect><text x="429" y="60" text-anchor="middle">XADD</text>
+          </g>
+          <text x="160" y="82" text-anchor="start" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">head &mdash; oldest</text>
+          <text x="446" y="82" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">tail &mdash; append &rarr;</text>
+        </g>
+
+        <!-- consumer group (reads the tail) -->
+        <g id="g-consume">
+          <path d="M393 70 L393 150" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="340" y="150" width="108" height="32" rx="8" fill="rgba(212,168,90,.16)" stroke="#d4a85a"></rect>
+          <text x="394" y="164" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">consumer group</text>
+          <text x="394" y="176" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">XREADGROUP &middot; at-least-once</text>
+        </g>
+
+        <!-- time-travel window (a mint-instant slice) -->
+        <g id="g-travel">
+          <rect x="230" y="40" width="110" height="34" rx="6" fill="none" stroke="#9fc0ea" stroke-dasharray="3 2" stroke-width="1.4"></rect>
+          <path d="M285 88 L285 150" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="218" y="150" width="120" height="32" rx="8" fill="rgba(90,135,196,.16)" stroke="#5a87c4"></rect>
+          <text x="278" y="164" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">read by instant</text>
+          <text x="278" y="176" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">XRANGE [t0, t1]</text>
+        </g>
+
+        <!-- retention (trims the head) -->
+        <g id="g-retain">
+          <path d="M177 70 L177 150" stroke="#c4504c" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="120" y="150" width="116" height="32" rx="8" fill="rgba(196,80,76,.13)" stroke="#c4504c"></rect>
+          <text x="178" y="164" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">trim the head</text>
+          <text x="178" y="176" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">XTRIM MAXLEN / MINID</text>
+        </g>
+
+        <!-- archive (folds trimmed segments to the durable floor) -->
+        <g id="g-archive">
+          <path d="M178 182 L178 206" stroke="#2aa198" fill="none" stroke-width="1.3" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="92" y="206" width="184" height="34" rx="8" fill="rgba(42,161,152,.12)" stroke="#2aa198"></rect>
+          <text x="184" y="220" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">the durable Graft floor</text>
+          <text x="184" y="232" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">StreamArchive.fold &middot; CubDB &rarr; Tigris</text>
+        </g>
+      </svg>
+      <div class="geo-readout" id="busOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">One wire: <em>events</em> say it once, the <em>stream</em> remembers &mdash; appended in mint
+      order, replayed by a group, read by an instant, trimmed by policy, and what is trimmed is folded, not lost.</p>
+  </section>
+
+  <!-- ===================== THE MODULES ===================== -->
+  <section id="mods">
+    <h2>The modules</h2>
+    <div class="prose">
+      <p>Five modules, each a hub and three dives, then a workshop. Each grounds in the real
+        <code class="inl">echo/apps/echo_mq</code> code &mdash; the events channel, the append-only log, consumer
+        groups, the mint-instant read, and retention folding into the
+        <code class="inl">echo/apps/echo_store</code> archive.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill built">built</span> page ready to read</span>
+      <span><span class="pill soon">soon</span> on the build front</span>
+    </div>
+    <div class="mods">
+      <div class="mod"><div class="top"><span class="num">01</span><span class="pill soon">soon</span></div><p class="t">The events channel</p><p class="o">Fire-and-forget pub/sub on <code class="inl">emq:{q}:events</code>: subscribe once, publish after a verdict, react without polling.</p></div>
+      <div class="mod"><div class="top"><span class="num">02</span><span class="pill soon">soon</span></div><p class="t">The stream log</p><p class="o">The append-only log: the host-side <code class="inl">EVT</code> mint, the order theorem, the claims-only id field, the non-monotonic signal.</p></div>
+      <div class="mod"><div class="top"><span class="num">03</span><span class="pill soon">soon</span></div><p class="t">Consumer groups</p><p class="o">At-least-once with idempotent handlers: the lazy group door, drain-self then reclaim dead peers, the re-claim ordering cost.</p></div>
+      <div class="mod"><div class="top"><span class="num">04</span><span class="pill soon">soon</span></div><p class="t">Time-travel</p><p class="o">Read the log by a mint instant: a <code class="inl">DateTime</code> becomes an id range bound for backtest, audit, and debug.</p></div>
+      <div class="mod"><div class="top"><span class="num">05</span><span class="pill soon">soon</span></div><p class="t">Retention &amp; the archive</p><p class="o">Bound the log by length or age, then fold the trimmed segments into the durable Graft floor &mdash; the door to persistence.</p></div>
+      <div class="mod work"><div class="top"><span class="num">06</span><span class="pill soon">soon</span></div><p class="t">Workshop</p><p class="o">Publish an event, append and replay a log by instant, then watch a retention sweep fold a segment to disk.</p></div>
+    </div>
+
+    <div class="applied">
+      <p class="dl">Redis Patterns Applied</p>
+      <p>This is the depth behind the <a href="/redis-patterns">Redis Patterns Applied</a> chapter that doors here:
+        <a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a> &mdash; the pub/sub events and the
+        retained, replayable log that land in this pillar, and the stream patterns (the append-only log, consumer
+        groups, event sourcing) this pillar's log makes concrete. There the pattern is the door; here is the wire.</p>
+    </div>
+
+    <div class="door">
+      <p class="dl">The durable floor</p>
+      <p>A log that only grows is a leak, so retention is a policy &mdash; and what a stream trims is not lost.
+        <code class="inl">EchoStore.StreamArchive</code> folds the trimmed segments into the durable
+        <code class="inl">EchoStore.Graft</code> floor &mdash; CubDB's append-only B-tree, on to Tigris object storage
+        &mdash; at a reserved page range ordered by the branded <code class="inl">EVT</code> id, readable beside the
+        live tail through a watermark merge-read. Deep history without resident memory. That floor is taught in full in
+        <a href="/echo-persistence">Echo Persistence</a>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== THE REST OF THE SYSTEM ===================== -->
+  <section id="upnext">
+    <h2>The rest of the system</h2>
+    <div class="prose">
+      <p>The Bus is one reading of the shared substrate. The <strong>Queue</strong> distributes work over the same
+        wire; the <strong>Cache</strong> serves reads in front of it; the <strong>Proof</strong> chapter shows the whole
+        system holds. The <strong>Protocol</strong> below them all &mdash; the keyspace the stream keys are born to
+        &mdash; is ready to read now.</p>
+    </div>
+    <div class="upnext">
+      <a class="mod" href="/echomq/protocol"><div class="top"><span class="num">&larr;</span><span class="pill built">built</span></div><p class="t">The Protocol</p><p class="o">The substrate the Bus runs on: the braced keyspace, the record, the Lua layer, the branded-id gate.</p></a>
+      <a class="mod" href="/echomq/queue"><div class="top"><span class="num">I</span><span class="pill built">built</span></div><p class="t">The Queue</p><p class="o">Distribute work: the lifecycle, jobs, lanes, the consumer, batches, flows.</p></a>
+      <div class="mod"><div class="top"><span class="num">III</span><span class="pill soon">soon</span></div><p class="t">The Cache</p><p class="o">Serve reads: cache-aside, single-flight, coherence on the Bus.</p></div>
+      <div class="mod"><div class="top"><span class="num">IV</span><span class="pill soon">soon</span></div><p class="t">The Proof</p><p class="o">The system holds: the conformance suite, telemetry, the benchmark gate.</p></div>
+    </div>
+    <p class="note">The Queue and the Protocol are ready to read; the Bus modules, the Cache, and the Proof are on the
+      build front, each added as its pages land.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/topics/streams-intro/">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the append-only log and consumer groups the stream tier is built on.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code class="inl">{q}</code> hashtag forces a queue's keys, the stream included, onto one of 16384 slots.</li>
+          <li><a href="https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying">Kreps &mdash; <em>The Log</em></a> &mdash; the log as the unifying abstraction beneath a stream.</li>
+          <li><a href="https://dl.acm.org/doi/10.1145/359545.359563">Lamport &mdash; <em>Time, Clocks, and the Ordering of Events</em></a> &mdash; the happens-before the mint order and the time-travel read order by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; distribute work; the first pillar over the same wire.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the keyspace and branded-id gate the stream keys are born to.</li>
+          <li><a href="/echomq/overview">Overview</a> &mdash; the chapter that frames the three pillars.</li>
+          <li><a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor a trimmed stream history folds into.</li>
+          <li><a href="/bcs/bus">The Branded Component System &middot; the Bus</a> &mdash; the manuscript chapter this pillar realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Chapter navigation">
+      <a class="btn ghost" href="/echomq/queue"><span aria-hidden="true">←</span> The Queue</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/protocol">The Protocol <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMQ — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/echomq/bus">The events channel</a>
+        <a href="/echomq/bus">The stream log</a>
+        <a href="/echomq/bus">Consumer groups</a>
+        <a href="/echomq/bus">Time-travel</a>
+        <a href="/echomq/bus">Retention &amp; the archive</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/overview">Overview</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: the two surfaces of the Bus (pure lookup over a fixed dataset) ---------- */
+  var VERBS = {
+    events: { title: 'events', call: 'EchoMQ.Events.publish/5', wire: 'PUBLISH emq:{q}:events', guarantee: 'at-most-once',
+      says: 'fan a signal out to every live subscriber',
+      note: 'fire-and-forget — a publish with no live subscriber is gone; the reconnect resubscribe is the mitigation, the stream is the durable receipt',
+      lit: 'events' },
+    append: { title: 'append', call: 'EchoMQ.Stream.append/4', wire: 'XADD emq:{q}:stream:<name>', guarantee: 'ordered by mint',
+      says: 'append one record to the replayable log',
+      note: 'mints an EVT id host-side, returns {:ok, branded} — the id is the receipt; a mint-order violation surfaces as {:error, :nonmonotonic}, never swallowed',
+      lit: 'append' },
+    consume: { title: 'consume', call: 'EchoMQ.StreamConsumer', wire: 'XREADGROUP … >', guarantee: 'at-least-once',
+      says: 'a consumer group reads new entries and resumes where it left off',
+      note: 'drain-self then reclaim dead peers (XAUTOCLAIM); a re-claimed entry can return out of order, so the handler must be idempotent — the branded id is the dedup key',
+      lit: 'consume' },
+    travel: { title: 'time-travel', call: 'EchoMQ.Stream.read_window/6', wire: 'XRANGE <t0> <t1>', guarantee: 'a mint-instant window',
+      says: 'read the log as it stood across a closed time window',
+      note: 'a %DateTime{} becomes an id range bound — minid_floor/1 the lower floor, maxid_ceil/1 the inclusive upper inverse; zero new Lua, the read is host-issued',
+      lit: 'travel' },
+    retain: { title: 'retain', call: 'EchoMQ.Stream.trim/4', wire: 'XTRIM MAXLEN | MINID', guarantee: 'bounded by policy',
+      says: 'bound the log by length or by age',
+      note: 'the safe approximate ~ default never over-trims; the named opt-in StreamRetention driver re-applies a declared BEAM-side policy on a beat',
+      lit: 'retain' },
+    archive: { title: 'archive', call: 'EchoStore.StreamArchive.fold/3', wire: 'CubDB → Tigris', guarantee: 'durable, no loss',
+      says: 'fold the trimmed segments into the durable floor',
+      note: 'lands at a reserved 2^49 page range ordered by the EVT id; the merge-read splits on the watermark W — archive below, live tail above. The door to /echo-persistence',
+      lit: 'archive' }
+  };
+  // which SVG groups light up per verb (the wire spine is always lit)
+  var LIT = {
+    events:  ['g-events'],
+    append:  ['g-append'],
+    consume: ['g-append', 'g-consume'],
+    travel:  ['g-append', 'g-travel'],
+    retain:  ['g-append', 'g-retain'],
+    archive: ['g-append', 'g-retain', 'g-archive']
+  };
+  var ALLG = ['g-events', 'g-append', 'g-consume', 'g-travel', 'g-retain', 'g-archive'];
+  function renderVerb(key) {
+    var v = VERBS[key];
+    var out = document.getElementById('busOut');
+    if (!v || !out) return;
+    var on = LIT[key] || [];
+    ALLG.forEach(function (gid) {
+      var g = document.getElementById(gid);
+      if (g) g.setAttribute('opacity', on.indexOf(gid) >= 0 ? '1' : '.22');
+    });
+    out.innerHTML = '<b>' + v.title + '</b> <span class="dim">— ' + v.says + '</span><br>' +
+      'verb: <b>' + v.call + '</b><br>' +
+      'wire: <span class="dim">' + v.wire + '</span><br>' +
+      'guarantee: <b>' + v.guarantee + '</b><br>' +
+      '<span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#busSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#busSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderVerb(b.getAttribute('data-verb'));
+    });
+  });
+  renderVerb('events');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>
