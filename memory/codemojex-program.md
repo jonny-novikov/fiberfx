@@ -1,0 +1,16 @@
+---
+name: codemojex-program
+description: "codemojex = the BCS Telegram emoji-game consumer (echo/apps/codemojex) — its canon docs, the Codemojex Program, the ship skill, and the shipped game engine"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: 874ee9ef-331a-49fc-82d7-80158cd7f6d8
+---
+
+**codemojex** = the worked consumer of the BCS data stack — the Telegram emoji-guessing Mastermind (for money) at `echo/apps/codemojex`, ABOVE `echo_wire`/`echo_data`/`echo_mq`/`echo_store` (it consumes their public surface, never edits it — a change reaching a sibling app is out of bounds). A generic Mastermind engine: the modes are policy on one `games` table with a `type` discriminator — `classic` (live feedback, live settlement) + `golden` (blind/sealed: feedback `none`, sealed top-K, a commit-reveal provably-fair secret).
+
+**Canon (`docs/codemojex/`, reorganized 2026-06-25 to 3 files + a program):** `codemojex.design.md` (the binding design — engine · six-table model · state machine · pragmatic Valkey node · open questions) · `codemojex.roadmap.md` (the `cm.N` ladder + the forward feature catalog) · `codemojex.progress.md` (the dashboard). The **Codemojex Program** is `docs/codemojex/program/codemojex.{program,venus,mars,apollo}.md` (operating manual + role calibrations, mirroring `docs/echo_mq/program/`). Rung specs are `specs/cm.N.{md,stories.md,llms.md}`; run-ledgers + design-phase deliverables archived in `specs/progress/`.
+
+**Ship a rung via `/codemojex-ship`** (the `codemojex-ship` skill = /x-mode with the codemojex facts pre-loaded): GENERIC venus/mars/apollo charters (NO codemojex-* role skills); the topology router (Solo/Duo/Trio/Squad, keyed risk×build-state); a **data-model rung fans out a 2nd architect (Venus-Postgres)** over the relational redesign; Apollo is the MANDATORY high-risk evaluator on a Squad (the generic x-mode Apollo, NOT emq's mentor-only recalibration). Gate (from `echo/apps/codemojex`, `TMPDIR=/tmp`): Valkey 6390 + Postgres, `mix compile --warnings-as-errors`, `mix test --include valkey`; the residual-brand grep to 0 on a rename rung (spare `Kernel.round`); the fresh-schema reinit (`codemojex_dev`/`codemojex_test`) + migration up/down on a schema rung; the ≥100 determinism loop on a mint/process rung; `mix codemojex.stories`.
+
+**Shipped:** the `codemojex-game-rename` rung (HIGH Squad) re-based three brands (`RND`→`GAM`, `RMM`→`ROM`, `USR`→`PLR`), collapsed to one six-table initial migration, removed the bonus-tier economy for linear-only scoring, and landed the blind Golden flow (commit-reveal SHA-256, per-game reduced `cell_codes`, sealed top-K with stored `payout_split`) — delivering **cm.1 (founding core) + cm.3 (blind Golden): the engine WHOLE**. The 2026-06-25 docs reorg shipped as `32f73504`. **NEXT: the `cm.4+` deferred systems** (the `BNK` bank · `RMP` membership · `SES` sessions / verified Telegram `initData` — the one pre-launch gap · commerce · growth · analytics). Gotchas: six Postgres tables not seven (`NOT` is a Valkey lane); `players.bonus_diamonds` is a wallet bucket NOT a scoring tier; EMS `cell_size`=72 (measured from the real sprite sheets, not the code default 144); a golden timer test needs a long `duration_ms` + explicit `close_now`. [[redis-reframe-echomq]] [[bcs-family-tooling]] [[echo-store-rename]]

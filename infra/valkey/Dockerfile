@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# Codemojex / EchoMQ — Valkey 9.x for Fly shared-cpu-2x / 1 GB.
+# EchoMQ — Valkey 9.x for Fly shared-cpu-2x / 1 GB.
 #
 # The official image is already built with the bundled jemalloc, ships the
 # current security patches, and its entrypoint chowns the mounted Fly volume
@@ -10,7 +10,7 @@
 # jemalloc and Valkey build flags is the point.
 #
 # The password is NOT baked in. Inject it at boot as a Fly secret:
-#   fly secrets set -a codemojex-valkey \
+#   fly secrets set -a echo-valkey \
 #     VALKEY_EXTRA_FLAGS="--requirepass $(openssl rand -hex 32)"
 # The image entrypoint appends VALKEY_EXTRA_FLAGS after the config file, and a
 # command-line flag overrides the file, so requirepass takes effect with the
