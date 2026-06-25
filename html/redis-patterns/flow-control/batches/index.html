@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.04 — Batches &amp; pipelining · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.04 module hub: batches and pipelining — many small writes become one network round-trip. EchoMQ.Jobs.enqueue_many/4 pipelines a per-item idempotent enqueue script (atomic-updates, R2.01) through EchoWire.Pipe and flushes once, returning a verdict per item (:enqueued / :duplicate / {:error, :kind}) in input order. It is a pipeline, NOT a transaction: no MULTI/EXEC, no all-or-nothing rollback. SCRIPT LOAD once is server-global so a pooled EVALSHA never NOSCRIPT-faults; EchoMQ.Lanes.bclaim/3 is the batch claim on one shared TIME lease. Grounded in echo/apps/echo_mq. Consumer: codemojex, a burst of guess JOBs in one flush.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.bq{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ns);border-radius:var(--rad);padding:14px 16px;margin:18px 0 6px;max-width:82ch}
+.bq .src{display:block;margin-top:8px;font-size:11.5px;color:var(--b-dim);letter-spacing:.04em}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the batch-flow figure (hover-select) ---------- */
+.bflow{width:100%;height:auto;display:block;margin-top:4px}
+.bflow .step rect{fill:var(--b-pay-tint);stroke:var(--b-line);stroke-width:1.3}
+.bflow .step text{font:10.5px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.bflow .step .cmd{font-weight:700}
+.bflow .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.bflow .step{cursor:pointer;transition:opacity .18s ease}
+.bflow.focus .step{opacity:.24}
+.bflow.focus .step.on{opacity:1}
+.bflow.focus .step.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+/* ---------- the apply figure (hover-select) ---------- */
+.pflow{width:100%;height:auto;display:block;margin-top:4px}
+.pflow .row{cursor:pointer;transition:opacity .18s ease}
+.pflow .row .prob rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.3}
+.pflow .row .tech rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.pflow .row text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.pflow .row .lt{fill:var(--b-dim);font-size:9px}
+.pflow .arr{stroke:var(--b-dim);stroke-width:1.4;fill:none}
+.pflow.focus .row{opacity:.22}
+.pflow.focus .row.on{opacity:1}
+.pflow.focus .row.on .prob rect{stroke:var(--r-red);stroke-width:2.2}
+.pflow.focus .row.on .tech rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><span class="rcur">batches</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#what">What batching is</a>
+      <a href="#flush">One round-trip</a>
+      <a href="#verdict">The verdict</a>
+      <a href="#applied">Applied</a>
+      <a href="#when">When</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Batches &amp; pipelining</span>
+      </nav>
+      <p class="kicker">R6.04 &#183; Flow Control &amp; Scale &#8212; module hub</p>
+      <h1>Batches <span class="hns">&#8212; many writes, one round-trip</span>.</h1>
+      <p class="lede">Batching turns many small writes into <b>one network round-trip</b>: assemble the commands, send
+      them together, read the replies together &#8212; paying the wire cost once instead of once per item. The real
+      surface is <code>EchoMQ.Jobs.enqueue_many/4</code>, and it is a <b>pipeline, not a transaction</b>: each item is
+      atomic and idempotent, the batch returns a verdict per item, and there is no rollback.</p>
+      <p class="heronote">Technique, not a fresh catalog pattern: it applies atomic-updates (R2.01) &#8212; the
+      per-item idempotent enqueue script &#8212; run many times in one flush. Grounding: echo/apps/echo_mq &#183;
+      EchoMQ.Jobs.enqueue_many/4 through EchoWire.Pipe, the @enqueue script, EchoMQ.Lanes.bclaim/3 over emq:{q}:pending.
+      Consumer: codemojex &#8212; a burst of guess JOBs in one flush.</p>
+
+      <figure class="anatomy" aria-labelledby="bCap">
+        <figcaption id="bCap"><b>A batch enqueue, end to end.</b> Select a step to read what it does. The script is
+        cached once, an EVALSHA per pair is assembled into a pipe, the pipe is flushed in one round-trip, and a
+        verdict comes back per item in input order.</figcaption>
+        <div class="segbar" id="bSel" role="group" aria-label="Select a step in a batch enqueue">
+          <button type="button" data-st="load" aria-pressed="false">SCRIPT LOAD</button>
+          <button type="button" data-st="assemble" aria-pressed="false">assemble</button>
+          <button type="button" data-st="flush" aria-pressed="false">flush</button>
+          <button type="button" data-st="verdicts" aria-pressed="false">verdicts</button>
+        </div>
+        <svg class="bflow" id="bflow" viewBox="0 0 460 150" role="img" aria-label="Four steps left to right: SCRIPT LOAD caches the enqueue body once and returns a SHA, assemble appends one EVALSHA per pair to an EchoWire.Pipe, flush sends the whole pipe in one round-trip, and verdicts return one result per item in input order. Select a step to highlight it.">
+          <path class="edge" d="M104 56 L128 56" marker-end="url(#bar)"></path>
+          <path class="edge" d="M232 56 L256 56" marker-end="url(#bar)"></path>
+          <path class="edge" d="M360 56 L384 56" marker-end="url(#bar)"></path>
+          <text class="axl" x="230" y="138" style="font-family:var(--mono);fill:var(--b-dim);text-anchor:middle">one wire round-trip carries every EVALSHA &#183; the replies return in one frame</text>
+          <g class="step" data-st="load"><rect x="12" y="36" width="92" height="40" rx="5"></rect><text class="cmd" x="58" y="54">SCRIPT LOAD</text><text x="58" y="68">cache once</text></g>
+          <g class="step" data-st="assemble"><rect x="136" y="36" width="96" height="40" rx="5"></rect><text class="cmd" x="184" y="54">Pipe.command</text><text x="184" y="68">EVALSHA / pair</text></g>
+          <g class="step" data-st="flush"><rect x="264" y="36" width="96" height="40" rx="5"></rect><text class="cmd" x="312" y="54">Pipe.exec</text><text x="312" y="68">one round-trip</text></g>
+          <g class="step" data-st="verdicts"><rect x="392" y="36" width="60" height="40" rx="5"></rect><text class="cmd" x="422" y="54">map</text><text x="422" y="68">per item</text></g>
+          <defs><marker id="bar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#68705f"></path></marker></defs>
+        </svg>
+        <div class="readout" id="bOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a step. The
+        enqueue script is cached once and its SHA returned; an EVALSHA per pair is appended to an EchoWire.Pipe; the
+        pipe is flushed in one round-trip; and the replies are mapped to a verdict per item, in input order.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="what">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>What batching is, and what it is not</h2>
+        <span class="ssrc">pipelining vs transactions</span>
+      </div>
+      <div class="prose">
+        <p>Two different ideas hide under &#8220;do many things at once,&#8221; and conflating them is the common
+        mistake.</p>
+        <ul>
+          <li><strong>Pipelining</strong> is a transport optimisation. The client stops waiting for each reply before
+          sending the next command; it writes N commands to the socket back to back and then reads N replies. The
+          server still runs N commands &#8212; pipelining changes <em>when the bytes travel</em>, not <em>how much
+          work the server does</em>. The win is wall-clock round-trip time.</li>
+          <li><strong>A transaction</strong> (<code>MULTI</code>/<code>EXEC</code>) is an atomicity guarantee. The
+          commands run as one indivisible unit; either every queued command applies or, on the narrow conditions
+          <code>MULTI</code> rolls back, none do. The win is all-or-nothing semantics.</li>
+        </ul>
+        <p><code>enqueue_many/4</code> is the first, not the second. It pipelines N idempotent enqueue scripts and
+        returns a list of N verdicts. There is no rollback: if the third item is a duplicate, the first two are still
+        enqueued and the verdict list says so plainly at position three. That is a deliberate design choice, examined
+        in the third dive.</p>
+      </div>
+      <p class="take">Batching here is pipelining, not a transaction. The wire is paid once for the whole batch; the
+      server still runs every script; and the reply is a verdict per item, not a single all-or-nothing result.</p>
+    </section>
+
+    <section id="flush">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>One round-trip, N scripts</h2>
+        <span class="ssrc">jobs.ex &#183; enqueue_many/4</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoMQ.Jobs.enqueue_many(conn, queue, pairs, opts \\ [])</code> takes a list of
+        <code>{id, payload}</code> pairs and admits them in one wire flush. It runs in two wire steps: it
+        <code>SCRIPT LOAD</code>s the enqueue body once &#8212; Valkey's script cache is server-global, so one load
+        makes the SHA resolvable for every command that follows &#8212; then it appends one <code>EVALSHA</code> per
+        pair to an <code>EchoWire.Pipe</code> and flushes the whole pipe in one <code>exec</code>.</p>
+      </div>
+      <pre class="code"><b>EchoMQ.Jobs.enqueue_many</b>(conn, "cm", pairs)
+<span class="cmt"># &#8594; SCRIPT LOAD once, then one EVALSHA per pair flushed together through EchoWire.Pipe</span>
+<span class="cmt"># &#8594; [:enqueued, :duplicate, :enqueued, {:error, :kind}, ...]  (one verdict per pair, in order)</span></pre>
+      <div class="prose">
+        <p>Each pair runs the same script the single <code>enqueue/4</code> runs &#8212; the per-item atomic move from
+        the <code>atomic-updates</code> pattern. The script kind-gates the id, refuses a duplicate, and writes the row
+        and the pending entry on the server in one step:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Jobs &#183; echo/apps/echo_mq &#8212; the @enqueue script each batch member runs<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd">if</span> string.sub(ARGV[1], 1, 3) ~= <b>'JOB'</b> <span class="fd">then</span>
+  <span class="fd">return</span> redis.error_reply(<b>'EMQKIND job id must be JOB-namespaced'</b>)   <span class="fd">&#8592; kind-gate</span>
+<span class="fd">end</span>
+<span class="fd">if</span> redis.call(<b>'EXISTS'</b>, KEYS[1]) == 1 <span class="fd">then</span>
+  <span class="fd">return</span> 0                                                       <span class="fd">&#8592; duplicate: no-op</span>
+<span class="fd">end</span>
+redis.call(<b>'HSET'</b>, KEYS[1], <b>'state'</b>, <b>'pending'</b>, <b>'attempts'</b>, <b>'0'</b>, <b>'payload'</b>, ARGV[2])
+redis.call(<b>'ZADD'</b>, KEYS[2], 0, ARGV[1])                              <span class="fd">&#8592; row + pending insert</span>
+<span class="fd">return</span> 1</pre>
+      </figure>
+      <div class="prose">
+        <p>So each member is: kind-gate (<code>JOB</code>-namespaced) &#8594; duplicate refusal (<code>EXISTS</code>
+        returns <code>0</code>) &#8594; row write plus pending insert &#8594; <code>1</code>. The batch pipelines many
+        of these. The idempotency is <strong>per item</strong> &#8212; <code>:duplicate</code> is one item's verdict,
+        never an abort of the rest &#8212; which is exactly why the move is a pipeline and not a single
+        <code>MULTI</code>/<code>EXEC</code>.</p>
+      </div>
+      <p class="take">A batch is one round-trip carrying N scripts. The wire cost is paid once; the server runs the
+      same N enqueue scripts it would for N separate calls; and the per-item idempotency is what lets the batch be a
+      pipeline rather than a transaction.</p>
+    </section>
+
+    <section id="verdict">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The verdict per item</h2>
+        <span class="ssrc">jobs.ex &#183; the reply map</span>
+      </div>
+      <div class="prose">
+        <p>The reply is a list, in input order, one entry per pair:</p>
+        <ul>
+          <li><code>:enqueued</code> &#8212; the script returned <code>1</code>: the row and the pending entry were
+          written.</li>
+          <li><code>:duplicate</code> &#8212; the script returned <code>0</code>: a row already existed at that id, so
+          nothing changed.</li>
+          <li><code>{:error, :kind}</code> &#8212; the id was not <code>JOB</code>-namespaced; the script refused it
+          with <code>EMQKIND</code> and that one item failed.</li>
+        </ul>
+        <p>An <strong>empty</strong> <code>pairs</code> list answers <code>{:error, :empty_pipeline}</code> &#8212;
+        there is nothing to flush, and the empty pipe refuses rather than send an empty frame. A non-empty batch
+        always returns the verdict list; reading it is how a caller learns which items landed.</p>
+      </div>
+
+      <div class="legend">
+        <span><span class="pill built">built</span> ready to read</span>
+      </div>
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/flow-control/batches/round-trip-elimination">
+          <div class="top"><span class="num">R6.04.1</span><span class="pill built">built</span></div>
+          <p class="t">Round-trip elimination</p>
+          <p class="o">N enqueues cost N&#215; the round-trip; <code>enqueue_many</code> is one flush. The win is
+          wall-clock round-trip time, not server work &#8212; the server still runs every script.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/flow-control/batches/chunking-across-a-pool">
+          <div class="top"><span class="num">R6.04.2</span><span class="pill built">built</span></div>
+          <p class="t">Chunking across a pool</p>
+          <p class="o"><code>via: EchoMQ.Pool</code> round-robins the flush across N pipelined members; a server-global
+          <code>SCRIPT LOAD</code> keeps every member's <code>EVALSHA</code> resolvable.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/flow-control/batches/partial-failure-handling">
+          <div class="top"><span class="num">R6.04.3</span><span class="pill built">built</span></div>
+          <p class="t">Partial-failure handling</p>
+          <p class="o">A verdict per item against <code>MULTI</code>/<code>EXEC</code> rollback: each item atomic, the
+          batch not transactional &#8212; the honest model, by design.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Applied in EchoMQ</h2>
+        <span class="ssrc">echo/apps/echo_mq</span>
+      </div>
+      <div class="prose">
+        <p>The whole technique is <code>EchoMQ.Jobs.enqueue_many/4</code>, and it is the <code>atomic-updates</code>
+        pattern run in bulk: the same script, the same row shape, the same idempotency as the single
+        <code>enqueue/4</code>, pipelined so the wire is paid once. The batch is not transactional, and that is the
+        design &#8212; per-item idempotent dedup beats whole-batch rollback for an at-least-once queue, because a
+        re-sent batch settles to the same state rather than failing wholesale.</p>
+        <p>The mirror of a batch enqueue is a batch claim. <code>EchoMQ.Lanes.bclaim/3</code> rotates to a serviceable
+        lane and serves up to a batch of heads in one script, every member leased on <strong>one shared
+        <code>TIME</code> deadline</strong> read once for the whole batch. The non-grouped spine is the count-variant
+        <code>ZPOPMIN</code> loop, which clamps the count to <code>k = min(requested, depth)</code> so it never
+        over-pops:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Jobs &#183; echo/apps/echo_mq &#8212; the @bclaim spine: one TIME lease, k = min(requested, depth)<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd">local</span> depth = redis.call(<b>'ZCARD'</b>, KEYS[1])
+<span class="fd">if</span> depth == 0 <span class="fd">then</span> <span class="fd">return</span> {} <span class="fd">end</span>
+<span class="fd">local</span> k = tonumber(ARGV[3])
+<span class="fd">if</span> depth &lt; k <span class="fd">then</span> k = depth <span class="fd">end</span>                            <span class="fd">&#8592; never over-pops</span>
+<span class="fd">local</span> t = redis.call(<b>'TIME'</b>)
+<span class="fd">local</span> now = t[1] * 1000 + math.floor(t[2] / 1000)            <span class="fd">&#8592; one lease for the batch</span>
+<span class="fd">local</span> served = {}
+<span class="fd">for</span> _ = 1, k <span class="fd">do</span>
+  <span class="fd">local</span> popped = redis.call(<b>'ZPOPMIN'</b>, KEYS[1])
+  <span class="fd">if</span> #popped == 0 <span class="fd">then</span> <span class="fd">break</span> <span class="fd">end</span>
+  <span class="fd">local</span> id = popped[1]
+  <span class="fd">local</span> jk = ARGV[1] .. id
+  <span class="fd">local</span> att = redis.call(<b>'HINCRBY'</b>, jk, <b>'attempts'</b>, 1)
+  redis.call(<b>'HSET'</b>, jk, <b>'state'</b>, <b>'active'</b>)
+  redis.call(<b>'ZADD'</b>, KEYS[2], now + tonumber(ARGV[2]), id)
+  served[#served + 1] = {id, redis.call(<b>'HGET'</b>, jk, <b>'payload'</b>), att}
+<span class="fd">end</span>
+<span class="fd">return</span> served</pre>
+      </figure>
+      <div class="prose">
+        <p>An under-fill returns the short list rather than refusing. The batch is a <strong>claim unit, not a
+        resolution unit</strong> &#8212; the members are claimed together, but each is settled on its own through the
+        byte-frozen completion and retry paths, so one poisoned member is isolated to its own retry while the rest of
+        the batch settles.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Many writes, one round-trip, no rollback: assemble the commands, send them together, read the replies
+          together &#8212; and read a result for each.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Jobs.enqueue_many/4</code>: the per-item idempotent <code>@enqueue</code> script
+          <code>SCRIPT LOAD</code>ed once (server-global cache), an <code>EVALSHA</code> per pair assembled through
+          <code>EchoWire.Pipe</code> and flushed in one round-trip, a <strong>verdict per item</strong>
+          (<code>:enqueued</code> / <code>:duplicate</code> / <code>{:error, :kind}</code>) in input order.</p>
+        </div>
+      </div>
+      <div class="bq">&#8220;Enqueue is one idempotent script: kind policy, duplicate refusal, row write, and pending
+      insertion happen on the server in one atomic step.&#8221; A batch pipelines many of these &#8212; the atomicity
+      is the item, the round-trip is the batch.
+      <span class="src">&#8212; The Branded Component System, Part B3 &#183; Jobs and lanes</span></div>
+
+      <figure class="anatomy" aria-labelledby="aCap">
+        <figcaption id="aCap"><b>The throughput problem &#8594; the technique.</b> Select a problem to read the
+        technique that answers it and the real EchoMQ surface that carries it.</figcaption>
+        <div class="segbar" id="aSel" role="group" aria-label="Select a throughput problem">
+          <button type="button" data-p="rtt" aria-pressed="false">per-job round-trip</button>
+          <button type="button" data-p="onesock" aria-pressed="false">one socket saturates</button>
+          <button type="button" data-p="bad" aria-pressed="false">one item is bad</button>
+          <button type="button" data-p="claim" aria-pressed="false">per-claim fetch</button>
+        </div>
+        <svg class="pflow" id="pflow" viewBox="0 0 460 198" role="img" aria-label="Four rows mapping a throughput problem to a technique and an EchoMQ surface: a per-job round-trip maps to pipelining via enqueue_many, one saturated socket maps to a connector pool via the via option, one bad item maps to per-item verdicts in the reply, and a per-claim fetch maps to a batch claim via bclaim. Select a problem to highlight its row.">
+          <text class="lt" x="92" y="20" style="font-family:var(--mono);fill:var(--b-dim);text-anchor:middle">the problem</text>
+          <text class="lt" x="356" y="20" style="font-family:var(--mono);fill:var(--b-dim);text-anchor:middle">the technique &amp; surface</text>
+          <g class="row" data-p="rtt">
+            <g class="prob"><rect x="14" y="30" width="156" height="32" rx="5"></rect><text x="92" y="50">per-job round-trip</text></g>
+            <path class="arr" d="M174 46 L256 46" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="30" width="186" height="32" rx="5"></rect><text x="353" y="46">pipeline &#183; enqueue_many/4</text></g>
+          </g>
+          <g class="row" data-p="onesock">
+            <g class="prob"><rect x="14" y="70" width="156" height="32" rx="5"></rect><text x="92" y="90">one socket saturates</text></g>
+            <path class="arr" d="M174 86 L256 86" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="70" width="186" height="32" rx="5"></rect><text x="353" y="86">pool &#183; via: EchoMQ.Pool</text></g>
+          </g>
+          <g class="row" data-p="bad">
+            <g class="prob"><rect x="14" y="110" width="156" height="32" rx="5"></rect><text x="92" y="130">one item is bad</text></g>
+            <path class="arr" d="M174 126 L256 126" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="110" width="186" height="32" rx="5"></rect><text x="353" y="126">per-item verdict &#183; the reply map</text></g>
+          </g>
+          <g class="row" data-p="claim">
+            <g class="prob"><rect x="14" y="150" width="156" height="32" rx="5"></rect><text x="92" y="170">per-claim fetch</text></g>
+            <path class="arr" d="M174 166 L256 166" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="150" width="186" height="32" rx="5"></rect><text x="353" y="166">batch claim &#183; bclaim/3</text></g>
+          </g>
+          <defs><marker id="par" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#68705f"></path></marker></defs>
+        </svg>
+        <div class="readout" id="aOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a problem.
+        Each throughput problem maps to one move: a per-job round-trip to pipelining the batch, a saturated socket to
+        a connector pool, a bad item to a per-item verdict, and a per-claim fetch to a batch claim &#8212; all real
+        EchoMQ surfaces.</div>
+      </figure>
+
+      <div class="prose">
+        <p>A consumer makes the burst concrete. In codemojex &#8212; a Telegram emoji-guessing game on the same stack
+        &#8212; a single guess is admitted by <code>Codemojex.Guesses.submit/3</code>, which mints a branded
+        <code>JOB</code>, builds the guess payload, and enqueues it. When the bot ingests a burst of player commands
+        at once, the flat-queue shape of the same move admits the whole burst in one flush &#8212;
+        <code>enqueue_many(conn, "cm", pairs)</code> over <code>emq:{cm}:pending</code> &#8212; so one wire round-trip
+        admits the burst and each guess-<code>JOB</code> is idempotent at its own <code>JOB</code>-keyed row.</p>
+        <p>Wiring the batch claim into the dequeue path at scale &#8212; the consumer that drives
+        <code>bclaim/3</code>, the pool width, the lease recovery &#8212; is the queue's scaling layer, taught in the
+        EchoMQ course rather than here.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The batch at the dequeue point</h3>
+          <p>The Queue pillar wires the batch claim into the consumer: <code>bclaim/3</code> amortising the per-claim
+          fetch, the pool width that feeds it, and the lease recovery for a batch on one deadline.</p>
+        </a>
+        <a class="door" href="/bcs/bus/jobs-and-lanes">
+          <span class="dr">/bcs/bus/jobs-and-lanes</span>
+          <h3>Enqueue is one atomic script</h3>
+          <p>Part B3.2 builds the job row and the pending set the enqueue script writes &#8212; the per-item atomic
+          move a batch pipelines many times in one flush.</p>
+        </a>
+        <a class="door" href="/redis-patterns/coordination">
+          <span class="dr">R2</span>
+          <h3>The atomic move each item runs</h3>
+          <p>The per-item enqueue is the <code>atomic-updates</code> pattern: a read-modify-write done in one
+          server-side step. The coordination chapter builds it; a batch runs it in bulk.</p>
+        </a>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>Pipelining is not a transaction: the commands in a
+      pipeline are sent without waiting for each reply, but they are not isolated and do not roll back as a unit.
+      All-or-nothing is <code>MULTI</code>/<code>EXEC</code>; a pipeline returns a reply for every command, which is
+      why a batch enqueue can report a verdict per item &#8212;
+      <a href="https://valkey.io/topics/pipelining/" rel="noopener">valkey.io/topics/pipelining</a>.</p>
+    </section>
+
+    <section id="when">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>When to use / when to avoid</h2>
+        <span class="ssrc">the decision</span>
+      </div>
+      <div class="prose">
+        <p><strong>Reach for a pipelined batch when:</strong></p>
+        <ul>
+          <li>A producer admits many jobs at once and the per-job round-trip is the bottleneck &#8212; a burst of
+          events, a fan-out, a backfill.</li>
+          <li>Each item is independently meaningful: a duplicate or a bad id on one item should not undo the others.
+          Per-item verdicts are exactly what you want to read back.</li>
+          <li>The work is idempotent at the item level, so a re-sent batch settles to the same state. The enqueue
+          script's <code>EXISTS</code> guard gives this for free.</li>
+        </ul>
+        <p><strong>Avoid a pipelined batch &#8212; or reach for a real transaction instead &#8212; when:</strong></p>
+        <ul>
+          <li>The items must be all-or-nothing: either every write applies or none does. That is a transaction's job,
+          not a pipeline's; a pipeline has no rollback.</li>
+          <li>The batch is so large that one connection's FIFO would grow unbounded; chunk it across a pool, or cap the
+          chunk size.</li>
+          <li>There is only ever one item; the batch machinery adds assembly with no round-trip to amortise.</li>
+        </ul>
+      </div>
+      <p class="take">A pipelined batch buys the round-trip back and keeps per-item visibility; it does not buy
+      all-or-nothing. Reach for it when items are independent and the producer may re-send &#8212; reach for a
+      transaction when the items are only meaningful together.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/pipelining/" rel="noopener">Valkey &mdash; <em>Pipelining</em></a> &mdash; sending multiple commands without waiting for each reply; the transport optimisation behind a batch enqueue, and why it is not a transaction.</li>
+            <li><a href="https://valkey.io/commands/evalsha/" rel="noopener">Valkey &mdash; <em>EVALSHA</em></a> &mdash; run a cached script by its SHA; the per-item command a batch assembles, resolvable on any connection once the body is loaded.</li>
+            <li><a href="https://valkey.io/commands/script-load/" rel="noopener">Valkey &mdash; <em>SCRIPT LOAD</em></a> &mdash; cache a script body and return its SHA; the server-global cache that lets a pool's round-robin <code>EVALSHA</code> never fault.</li>
+            <li><a href="https://valkey.io/topics/transactions/" rel="noopener">Valkey &mdash; <em>Transactions</em></a> &mdash; <code>MULTI</code>/<code>EXEC</code> and the all-or-nothing guarantee a pipeline deliberately does not provide.</li>
+            <li><a href="https://valkey.io/commands/zadd/" rel="noopener">Valkey &mdash; <em>ZADD</em></a> &mdash; the score-0 insert that puts a job's branded id into the pending set in the enqueue script.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a><span class="rs">the chapter</span></li>
+            <li><a href="/redis-patterns/flow-control/batches/round-trip-elimination">R6.04.1 &#183; Round-trip elimination</a><span class="rs">N round-trips collapse to one flush</span></li>
+            <li><a href="/redis-patterns/flow-control/batches/chunking-across-a-pool">R6.04.2 &#183; Chunking across a pool</a><span class="rs">round-robin dispatch and the server-global script cache</span></li>
+            <li><a href="/redis-patterns/flow-control/batches/partial-failure-handling">R6.04.3 &#183; Partial-failure handling</a><span class="rs">per-item verdicts against MULTI/EXEC rollback</span></li>
+            <li><a href="/redis-patterns/coordination">R2 &#183; Distributed coordination</a><span class="rs">atomic-updates, the per-item idempotent script</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the batch claim and pool width at the dequeue point</span></li>
+            <li><a href="/bcs/bus">/bcs/bus</a><span class="rs">Part B3, the Valkey-native bus the figures draw from</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/flow-control"><span class="pk">prev</span>&#8592; R6 &#183; Flow Control &amp; Scale</a>
+      <a class="pgx" href="/redis-patterns/flow-control/batches/round-trip-elimination"><span class="pk">begin</span>R6.04.1 &#183; Round-trip elimination &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/flow-control/batches/round-trip-elimination">R6.04.1 &#183; Round-trip elimination</a>
+        <a href="/redis-patterns/flow-control/batches/chunking-across-a-pool">R6.04.2 &#183; Chunking across a pool</a>
+        <a href="/redis-patterns/flow-control/batches/partial-failure-handling">R6.04.3 &#183; Partial-failure handling</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: the batch flow (pure lookup over a fixed dataset) ---------- */
+  var BAT = {
+    load:     { cmd: 'SCRIPT LOAD', why: 'cache the @enqueue body once and return its SHA; Valkey&#8217;s script cache is server-global, so the SHA resolves for every command that follows' },
+    assemble: { cmd: 'EchoWire.Pipe.command', why: 'append one EVALSHA per {id, payload} pair to the pipe — the cached script, keyed at this pair&#8217;s job key and the queue&#8217;s pending set' },
+    flush:    { cmd: 'EchoWire.Pipe.exec', why: 'send the whole pipe in one wire round-trip; the replies return together, in one frame, in input order' },
+    verdicts: { cmd: 'Enum.map over the replies', why: 'map each reply to a verdict — 1 to :enqueued, 0 to :duplicate, EMQKIND to {:error, :kind} — at its own position in the list' }
+  };
+  function describeBat(st) {
+    var s = BAT[st];
+    if (!s) return '';
+    return '<span class="rk">step &#183;</span> <b>' + s.cmd + '</b><br>' +
+      '<span class="rk">does &#183;</span> ' + s.why;
+  }
+  wireHoverSelect('bflow', '#bSel button', 'bOut', 'data-st', '.step', describeBat,
+    '<span class="rk">readout &#183;</span> Select a step. The enqueue script is cached once and its SHA returned; an EVALSHA per pair is appended to an EchoWire.Pipe; the pipe is flushed in one round-trip; and the replies are mapped to a verdict per item, in input order.');
+
+  /* ---------- Interactive 2: the throughput problem → the technique (pure lookup) ---------- */
+  var APP = {
+    rtt:     { tech: 'pipeline the batch', surf: 'EchoMQ.Jobs.enqueue_many/4 — one EVALSHA per pair flushed in one round-trip; the wire cost is paid once for the whole burst' },
+    onesock: { tech: 'a pool of pipelined connectors', surf: 'opts[:via] = EchoMQ.Pool — round-robin dispatch by a lock-free atomic counter; SCRIPT LOAD once is server-global, so the EVALSHA never NOSCRIPT-faults across members' },
+    bad:     { tech: 'a verdict per item', surf: 'the reply map — 1 to :enqueued, 0 to :duplicate, EMQKIND to {:error, :kind}; a bad item fails only itself, the rest land' },
+    claim:   { tech: 'a batch claim', surf: 'EchoMQ.Lanes.bclaim/3 — the count-variant ZPOPMIN serves k = min(requested, depth) heads on one shared TIME lease; amortizes the per-claim fetch' }
+  };
+  function describeApp(p) {
+    var s = APP[p];
+    if (!s) return '';
+    return '<span class="rk">technique &#183;</span> <b>' + s.tech + '</b><br>' +
+      '<span class="rk">surface &#183;</span> ' + s.surf;
+  }
+  wireHoverSelect('pflow', '#aSel button', 'aOut', 'data-p', '.row', describeApp,
+    '<span class="rk">readout &#183;</span> Select a problem. Each throughput problem maps to one move: a per-job round-trip to pipelining the batch, a saturated socket to a connector pool, a bad item to a per-item verdict, and a per-claim fetch to a batch claim &#8212; all real EchoMQ surfaces.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7.03 — Probabilistic data structures · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R7.03 module hub: probabilistic data structures, taught as a contrast. Count unique items with HyperLogLog (12KB fixed), test membership with Bloom and Cuckoo filters, estimate frequency with Count-Min Sketch and percentiles with T-Digest — trading a small known error for a fixed, tiny footprint. EchoMQ chose the opposite for deduplication: the emq:{q}:de:<dedupId> key stores every id exactly, O(n) memory and zero false positives, because a false 'already seen' would silently drop a job. HyperLogLog is core Valkey; Bloom, Cuckoo, Count-Min, T-Digest and Top-K are module commands. State the trade both ways.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.tbl{width:100%;border-collapse:collapse;margin:0 0 18px;font-family:var(--mono);font-size:12.5px}
+.tbl th,.tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--b-dim)}
+.tbl td{color:var(--b-ink)}
+.tbl td code{font-size:.92em}
+.tbl .core{color:var(--b-node);font-weight:700}
+.tbl .mod{color:var(--b-ts);font-weight:700}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the structure-map figure (hover-select, memory vs accuracy) ---------- */
+.mapfig{width:100%;height:auto;display:block;margin-top:4px}
+.mapfig .struct rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;cursor:pointer;transition:fill .18s ease,stroke .18s ease}
+.mapfig .struct.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.mapfig .sl{font:11.5px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.mapfig .sc{font:10px var(--mono);text-anchor:middle}
+.mapfig .sc.core{fill:var(--b-node)}
+.mapfig .sc.mod{fill:var(--b-ts)}
+.mapfig .axis{font:10px var(--mono);fill:var(--b-dim)}
+.mapfig .axisline{stroke:var(--b-line);stroke-width:1}
+.mapfig.focus .struct{opacity:.32;transition:opacity .18s ease}
+.mapfig.focus .struct.on{opacity:1}
+/* ---------- the contrast figure (exact vs probabilistic) ---------- */
+.cxfig{width:100%;height:auto;display:block;margin-top:4px}
+.cxfig .road rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;cursor:pointer;transition:fill .18s ease,stroke .18s ease}
+.cxfig .road.exact.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.cxfig .road.prob.on rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:2}
+.cxfig .rl{font:11.5px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.cxfig .rd{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cxfig .hdr{font:11px var(--mono);font-weight:700;text-anchor:middle;text-transform:uppercase;letter-spacing:.04em}
+.cxfig .hdr.exact{fill:var(--r-red)}
+.cxfig .hdr.prob{fill:var(--b-ts)}
+.cxfig .split{stroke:var(--b-line);stroke-width:1;stroke-dasharray:3 3}
+.cxfig.focus .road{opacity:.32;transition:opacity .18s ease}
+.cxfig.focus .road.on{opacity:1}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the module</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling">data-modeling</a><span class="rsep">/</span><span class="rcur">probabilistic-data-structures</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#contrast">The contrast</a>
+      <a href="#hll">HyperLogLog</a>
+      <a href="#bloom">Bloom &amp; Cuckoo</a>
+      <a href="#estimate">Estimation</a>
+      <a href="#choose">Choosing</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling &amp; Memory</a>
+        <span class="sep">/</span>
+        <span class="here">Probabilistic data structures</span>
+      </nav>
+      <p class="kicker">R7.03 &middot; Data Modeling &amp; Memory &mdash; module hub &middot; a contrast</p>
+      <h1>Probabilistic <span class="hns">data structures</span>.</h1>
+      <p class="lede">Count unique items with HyperLogLog (12KB fixed), test set membership with Bloom filters, or estimate
+        frequencies with Count-Min Sketch &mdash; trading small accuracy loss for massive memory savings.</p>
+      <p class="heronote">This module is taught as a <strong>contrast</strong>. When a dataset grows to billions of items,
+        exact counting and exact membership become prohibitively expensive, so a probabilistic structure gives up exactness
+        for a fixed, tiny footprint with a known error rate. EchoMQ made the <em>opposite</em> choice for deduplication: the
+        <code>emq:{q}:de:&lt;dedupId&gt;</code> key stores every id exactly &mdash; O(n) memory, zero false positives &mdash;
+        because a false &ldquo;already seen&rdquo; would silently drop a job. A grep of the whole <code>echo_mq</code> library
+        finds no probabilistic structure at all. The three dives take the family apart and state the trade both ways.</p>
+
+      <figure class="anatomy" aria-labelledby="mapCap">
+        <figcaption id="mapCap"><b>The family, by memory and engine.</b> Select a structure to read what it estimates, its
+          error type, its memory shape, and whether it is core Valkey or a module command.</figcaption>
+        <div class="segbar" id="mapSel" role="group" aria-label="Which probabilistic structure to inspect">
+          <button type="button" data-s="hll" aria-pressed="false">HyperLogLog</button>
+          <button type="button" data-s="bloom" aria-pressed="false">Bloom</button>
+          <button type="button" data-s="cuckoo" aria-pressed="false">Cuckoo</button>
+          <button type="button" data-s="cms" aria-pressed="false">Count-Min</button>
+          <button type="button" data-s="tdigest" aria-pressed="false">T-Digest</button>
+          <button type="button" data-s="topk" aria-pressed="false">Top-K</button>
+        </div>
+        <svg class="mapfig" id="mapfig" viewBox="0 0 460 196" role="img" aria-label="Six probabilistic structures arranged left to right by the question they answer. HyperLogLog estimates cardinality and is core Valkey with the PF commands. Bloom and Cuckoo test membership and are module commands. Count-Min Sketch estimates frequency, T-Digest estimates percentiles, and Top-K finds heavy hitters — all module commands. Each trades a small known error for a fixed, tiny memory footprint. Selecting one lights it and the readout names what it estimates, its error type, and its engine.">
+          <text class="axis" x="30" y="22">structure</text>
+          <text class="axis" x="430" y="22" text-anchor="end">core (green) &middot; module (blue)</text>
+          <line class="axisline" x1="30" y1="28" x2="430" y2="28"></line>
+          <g class="struct" id="sHll"><rect x="30" y="40" width="124" height="48" rx="8"></rect><text class="sl" x="92" y="62">HyperLogLog</text><text class="sc core" x="92" y="78">core &middot; PF*</text></g>
+          <g class="struct" id="sBloom"><rect x="168" y="40" width="124" height="48" rx="8"></rect><text class="sl" x="230" y="62">Bloom</text><text class="sc mod" x="230" y="78">module &middot; BF.*</text></g>
+          <g class="struct" id="sCuckoo"><rect x="306" y="40" width="124" height="48" rx="8"></rect><text class="sl" x="368" y="62">Cuckoo</text><text class="sc mod" x="368" y="78">module &middot; CF.*</text></g>
+          <g class="struct" id="sCms"><rect x="30" y="100" width="124" height="48" rx="8"></rect><text class="sl" x="92" y="122">Count-Min</text><text class="sc mod" x="92" y="138">module &middot; CMS.*</text></g>
+          <g class="struct" id="sTdigest"><rect x="168" y="100" width="124" height="48" rx="8"></rect><text class="sl" x="230" y="122">T-Digest</text><text class="sc mod" x="230" y="138">module &middot; TDIGEST.*</text></g>
+          <g class="struct" id="sTopk"><rect x="306" y="100" width="124" height="48" rx="8"></rect><text class="sl" x="368" y="122">Top-K</text><text class="sc mod" x="368" y="138">module &middot; TOPK.*</text></g>
+          <text class="axis" x="30" y="174">each: a small known error bought for a fixed, tiny footprint</text>
+        </svg>
+        <div class="readout" id="mapOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a structure. Each
+          answers one question approximately &mdash; cardinality, membership, frequency, or percentile &mdash; to trade a
+          known error for a fixed, tiny footprint. Only HyperLogLog is core Valkey.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="contrast">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The contrast that frames the module</h2>
+        <span class="ssrc">echo_mq/metrics.ex &middot; echo_mq/jobs.ex</span>
+      </div>
+      <div class="prose">
+        <p>Probabilistic structures earn their place only by what they give up: exactness. So the clearest way into them is the
+          choice <strong>not</strong> to use one. EchoMQ deduplicates jobs, and it does so <strong>exactly</strong>. Every
+          producer-chosen idempotency key is parked at a real string key holding the actual branded job id, and
+          <code>EchoMQ.Metrics.get_deduplication_job_id/3</code> reads it back:</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_mq/lib/echo_mq/metrics.ex — the branded job id parked at emq:{q}:de:&lt;dedupId&gt;</span>
+<b>def</b> get_deduplication_job_id(conn, queue, dedup_id) <b>when</b> is_binary(dedup_id) <b>do</b>
+  key = Keyspace.queue_key(queue, "de:" &lt;&gt; dedup_id)
+  <b>case</b> Connector.command(conn, ["GET", key]) <b>do</b>
+    {:ok, nil} -&gt; :absent
+    {:ok, id} <b>when</b> is_binary(id) -&gt; {:ok, id}
+    other -&gt; other
+  <b>end</b>
+<b>end</b></pre>
+      <div class="prose">
+        <p>The admission script adds a second exact check &mdash; <code>EXISTS KEYS[1]</code> on the job key refuses a
+          duplicate by id:</p>
+      </div>
+      <pre class="code"><span class="cmt">-- echo/apps/echo_mq/lib/echo_mq/jobs.ex — @enqueue, the exact dup-refusal by job key</span>
+<b>if</b> redis.call('EXISTS', KEYS[1]) == 1 <b>then</b>
+  <b>return</b> 0
+<b>end</b></pre>
+
+      <figure class="anatomy" aria-labelledby="cxCap">
+        <figcaption id="cxCap"><b>Two roads from the same question.</b> Select a membership answer; the readout names what it
+          costs and what its error does. EchoMQ took the exact road for dedup; probabilistic is the other road.</figcaption>
+        <div class="segbar" id="cxSel" role="group" aria-label="Exact versus probabilistic membership">
+          <button type="button" data-r="exact" aria-pressed="false">exact &middot; the de: key</button>
+          <button type="button" data-r="prob" aria-pressed="false">probabilistic &middot; a filter</button>
+        </div>
+        <svg class="cxfig" id="cxfig" viewBox="0 0 460 180" role="img" aria-label="Two answers to have I seen this before. The exact road, on the left, is EchoMQ's emq open-brace q close-brace colon de colon dedupId key: it stores every id, costs order n memory, and has zero false positives, so it never drops a job. The probabilistic road, on the right, is a Bloom or Cuckoo filter: a fixed tiny footprint with a tunable false-positive rate and zero false negatives, so it can wrongly say present but never wrongly say absent. EchoMQ took the exact road for dedup because a false present would drop a job. Selecting a road lights it and the readout explains the trade.">
+          <text class="hdr exact" x="115" y="22">exact (EchoMQ)</text>
+          <text class="hdr prob" x="345" y="22">probabilistic</text>
+          <line class="split" x1="230" y1="30" x2="230" y2="166"></line>
+          <g class="road exact" id="rExact">
+            <rect x="20" y="40" width="190" height="100" rx="9"></rect>
+            <text class="rl" x="115" y="66">emq:{q}:de:&lt;dedupId&gt;</text>
+            <text class="rd" x="115" y="86">stores every id</text>
+            <text class="rd" x="115" y="102">O(n) memory</text>
+            <text class="rd" x="115" y="118">zero false positives</text>
+            <text class="rd" x="115" y="134">never drops a job</text>
+          </g>
+          <g class="road prob" id="rProb">
+            <rect x="250" y="40" width="190" height="100" rx="9"></rect>
+            <text class="rl" x="345" y="66">a Bloom / Cuckoo filter</text>
+            <text class="rd" x="345" y="86">fixed, tiny footprint</text>
+            <text class="rd" x="345" y="102">tunable FP rate</text>
+            <text class="rd" x="345" y="118">zero false negatives</text>
+            <text class="rd" x="345" y="134">a false &ldquo;present&rdquo; is possible</text>
+          </g>
+          <text class="rd" x="230" y="160">same question &mdash; different price</text>
+        </svg>
+        <div class="readout" id="cxOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a road. EchoMQ took
+          the exact one for dedup &mdash; <code>emq:{q}:de:&lt;dedupId&gt;</code>, O(n) memory, zero false positives &mdash;
+          because a false &ldquo;already seen&rdquo; would drop a real job.</div>
+      </figure>
+
+      <p class="take">A grep of the whole <code>echo_mq</code> library finds zero probabilistic structures &mdash; no
+        <code>PFADD</code>, no <code>BF.</code>/<code>CF.</code>/<code>CMS.</code>. That is deliberate: a probabilistic dedup
+        would occasionally report &ldquo;already seen&rdquo; for a job it never saw, and the queue would drop real work
+        silently. Probabilistic structures are the road for the <em>other</em> direction &mdash; a huge cardinality where a
+        bounded error is acceptable.</p>
+    </section>
+
+    <section id="hll">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>HyperLogLog: counting unique items</h2>
+        <span class="ssrc">probabilistic-data-structures.md.txt &middot; cardinality</span>
+      </div>
+      <div class="prose">
+        <p>HyperLogLog (HLL) estimates the <strong>cardinality</strong> &mdash; the count of unique items &mdash; of a set. A
+          plain Set storing one billion unique user ids needs roughly 12GB of RAM. An HLL needs exactly <strong>12KB
+          regardless of how many elements you add</strong>, with about <strong>0.81% standard error</strong>.</p>
+        <p>HLL hashes each element and observes the maximum number of leading zeros in the resulting bits. The probability of
+          seeing N leading zeros is 1/2<sup>N</sup>, so the longest run estimates how many distinct elements were added;
+          multiple registers and a harmonic mean reduce the variance. The commands are <strong>core Valkey</strong> &mdash; no
+          module required:</p>
+      </div>
+      <pre class="code">PFADD visitors:2024-01-30 "user:123" "user:456" "user:789"   <span class="cmt"># add elements (creates the key)</span>
+PFCOUNT visitors:2024-01-30                                  <span class="cmt"># the estimated cardinality</span>
+PFMERGE visitors:week visitors:2024-01-28 visitors:2024-01-29  <span class="cmt"># union of HLLs, no double-count</span></pre>
+      <div class="prose">
+        <p>Use it for unique visitors, distinct search queries, or distinct IP addresses &mdash; any place an approximate
+          count of a huge set is acceptable. For one million actual uniques the estimate typically lands between 991,900 and
+          1,008,100. The <a href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog">HyperLogLog</a>
+          dive carves this slice, with the exact-Set-vs-HLL memory cliff.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>PFADD</code> returns 1 when the registers changed and 0
+        otherwise; an HLL is stored in a string and starts in a compact sparse encoding, converting to the fixed-size dense
+        encoding as the cardinality grows &mdash; which is why a small HLL is under 12KB and a large one settles at 12KB
+        &mdash; <a href="https://valkey.io/commands/pfadd/" rel="noopener">valkey.io/commands/pfadd</a>.</p>
+      <p class="take">HyperLogLog turns a 12GB exact count into a 12KB estimate with a 0.81% error &mdash; the probabilistic
+        trade in its clearest form. It answers <em>how many</em>, not <em>which</em>, which is exactly why it cannot stand in
+        for EchoMQ's exact dedup.</p>
+    </section>
+
+    <section id="bloom">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Bloom &amp; Cuckoo: membership testing</h2>
+        <span class="ssrc">probabilistic-data-structures.md.txt &middot; membership</span>
+      </div>
+      <div class="prose">
+        <p>A <strong>Bloom filter</strong> answers &ldquo;is this item in the set?&rdquo; with <strong>possible false
+          positives but zero false negatives</strong>. A &ldquo;no&rdquo; is definite; a &ldquo;yes&rdquo; is
+          &ldquo;probably&rdquo;. Items are hashed by several functions, each setting a bit in a shared array; a lookup checks
+          the same bits &mdash; any zero proves absence. Bloom commands are <strong>module commands</strong> (Valkey-Bloom /
+          Redis-Stack), not core:</p>
+      </div>
+      <pre class="code">BF.RESERVE usernames 0.01 1000000   <span class="cmt"># 1% false-positive rate, capacity 1M — a module command</span>
+BF.ADD usernames "john_doe"
+BF.EXISTS usernames "john_doe"</pre>
+      <div class="prose">
+        <p>The signature use is the <strong>cache-penetration problem</strong>: a flood of requests for non-existent keys each
+          misses the cache and hits the database. A Bloom filter holding the real keys rejects the absent ones immediately
+          &mdash; if the filter says &ldquo;absent&rdquo;, skip the cache and the database. The zero-false-negative guarantee
+          is what makes this safe: a real key is never wrongly rejected, and a false positive only costs one needless lookup.</p>
+        <p>A <strong>Cuckoo filter</strong> is a Bloom filter that <strong>supports deletion</strong>, storing fingerprints
+          via cuckoo hashing. Use Cuckoo when items must leave the filter &mdash; tracking active sessions that expire, for
+          instance:</p>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>feature</th><th>Bloom</th><th>Cuckoo</th></tr></thead>
+        <tbody>
+          <tr><td>deletion</td><td>not supported</td><td>supported</td></tr>
+          <tr><td>space (low FP rates)</td><td>good</td><td>better</td></tr>
+          <tr><td>insert</td><td>faster</td><td>slightly slower</td></tr>
+          <tr><td>lookup</td><td>slightly slower</td><td>faster</td></tr>
+        </tbody>
+      </table>
+      <div class="prose">
+        <p>Both contrast with EchoMQ's exact <code>de:</code> membership. A Bloom filter's one-sided error is in the wrong
+          direction for idempotency: it never wrongly says &ldquo;absent&rdquo;, but it can wrongly say &ldquo;present&rdquo;
+          &mdash; and a false &ldquo;already seen&rdquo; drops a job. So EchoMQ stores every id exactly. The
+          <a href="/redis-patterns/data-modeling/probabilistic-data-structures/bloom-and-cuckoo">Bloom &amp; Cuckoo</a> dive
+          carves both, with the false-positive dial.</p>
+      </div>
+      <p class="take">A Bloom filter is safe where a false positive is cheap (a wasted cache lookup) and the no-false-negative
+        guarantee protects real keys. Where a false positive is catastrophic &mdash; dropping a job &mdash; use the exact key
+        EchoMQ uses.</p>
+    </section>
+
+    <section id="estimate">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Estimation: frequency, percentiles, heavy hitters</h2>
+        <span class="ssrc">probabilistic-data-structures.md.txt &middot; T-Digest &middot; CMS &middot; Top-K</span>
+      </div>
+      <div class="prose">
+        <p><strong>T-Digest</strong> estimates percentiles without sorting every observation &mdash; accurate at the tails
+          (p99, p99.9) where an average misleads. <strong>Count-Min Sketch</strong> estimates how many times each item has
+          been seen, with possible <strong>over-counting but never under-counting</strong>. <strong>Top-K</strong> tracks the
+          K most frequent items without storing all of them. All three are <strong>module commands</strong>:</p>
+      </div>
+      <pre class="code">TDIGEST.CREATE latencies                       <span class="cmt"># percentiles — a module command</span>
+TDIGEST.ADD latencies 45.2 89.1 12.5 156.7
+TDIGEST.QUANTILE latencies 0.5 0.95 0.99       <span class="cmt"># estimated p50, p95, p99</span>
+
+CMS.INITBYDIM page_views 2000 5                <span class="cmt"># frequency — a module command</span>
+CMS.INCRBY page_views "/home" 1 "/about" 1
+CMS.QUERY page_views "/home"                   <span class="cmt"># an estimate ≥ the true count</span>
+
+TOPK.RESERVE trending 10 50 3 0.9              <span class="cmt"># heavy hitters — a module command</span>
+TOPK.ADD trending "topic:redis" "topic:go"
+TOPK.LIST trending</pre>
+      <div class="prose">
+        <p>They fit observability over a huge stream &mdash; SLA p99, page-view frequency, trending topics &mdash; where a
+          small bounded error is fine. They are the wrong tool for a counter the system acts on: EchoMQ's <code>attempts</code>
+          retry fence is an exact <code>HINCRBY</code> integer, because an over-count would dead-letter a job too early. The
+          <a href="/redis-patterns/data-modeling/probabilistic-data-structures/count-min-and-t-digest">Count-Min &amp;
+          T-Digest</a> dive carves all three.</p>
+      </div>
+      <p class="take">Count-Min, T-Digest, and Top-K answer &ldquo;how often&rdquo; and &ldquo;what percentile&rdquo; cheaply,
+        with a bounded error, over streams too large to count exactly. Use them for observability &mdash; not for a count that
+        gates a decision, where EchoMQ keeps the exact integer.</p>
+    </section>
+
+    <section id="choose">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Choosing the right structure</h2>
+        <span class="ssrc">probabilistic-data-structures.md.txt &middot; the decision</span>
+      </div>
+      <div class="prose">
+        <p>Each structure answers one question approximately to save memory. The discipline is the same in every case: name the
+          error you can tolerate, then pick the structure whose error is that.</p>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>need</th><th>structure</th><th>engine</th><th>error type</th></tr></thead>
+        <tbody>
+          <tr><td>count unique items</td><td>HyperLogLog</td><td><span class="core">core</span> &middot; <code>PF*</code></td><td>cardinality &plusmn;0.81%</td></tr>
+          <tr><td>check set membership</td><td>Bloom / Cuckoo</td><td><span class="mod">module</span> &middot; <code>BF.*</code>/<code>CF.*</code></td><td>false positives possible</td></tr>
+          <tr><td>calculate percentiles</td><td>T-Digest</td><td><span class="mod">module</span> &middot; <code>TDIGEST.*</code></td><td>percentile estimates</td></tr>
+          <tr><td>count item frequency</td><td>Count-Min Sketch</td><td><span class="mod">module</span> &middot; <code>CMS.*</code></td><td>over-counting possible</td></tr>
+        </tbody>
+      </table>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A probabilistic structure trades a small, known error for a fixed, tiny memory footprint &mdash; answering
+            cardinality, membership, frequency, or percentile approximately, at a fraction of the exact cost.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application (counter-example)</span>
+          <p>EchoMQ's <code>emq:{q}:de:&lt;dedupId&gt;</code> membership is <strong>exact</strong> &mdash; O(n) memory, zero
+            false positives. For producer idempotency a false positive would drop a job, so the exact key is the right call,
+            and the <code>echo_mq</code> library carries no probabilistic structure at all.</p>
+        </div>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>PFCOUNT</code> returns the estimated cardinality of one or
+        more HyperLogLogs in core Valkey; the module structures &mdash; <code>BF.*</code>, <code>CF.*</code>,
+        <code>CMS.*</code>, <code>TDIGEST.*</code>, <code>TOPK.*</code> &mdash; ship in Valkey-Bloom / Redis-Stack, not the
+        core engine &mdash; <a href="https://valkey.io/commands/pfcount/" rel="noopener">valkey.io/commands/pfcount</a>.</p>
+
+      <p class="take">Name the error you can tolerate and pick the structure whose error matches it &mdash; and notice when the
+        tolerable error is zero, as it is for idempotency, where EchoMQ keeps the exact <code>de:</code> key. A
+        <strong>codemojex</strong> note, forward-tense: unique-player counts per round or day are the natural HyperLogLog fit
+        for the workshop's &ldquo;uniques&rdquo; view, but codemojex ships no HLL surface today, so it is shown standalone in
+        the dive, not as a claim about the live code.</p>
+
+      <div class="doors">
+        <div class="door">
+          <span class="dr">/redis-patterns/data-modeling/primary-database/system-of-record</span>
+          <h3>The exact-dedup home</h3>
+          <p>The <code>emq:{q}:de:&lt;dedupId&gt;</code> key and the <code>@enqueue</code> <code>EXISTS</code> refusal are taught
+            in full in <a href="/redis-patterns/data-modeling/primary-database/system-of-record">R7.1, the system of
+            record</a>: the job HASH is the record of truth, and its dedup is exact by the same logic. This module is its
+            mirror image &mdash; the road not taken.</p>
+        </div>
+        <div class="door">
+          <span class="dr">/bcs</span>
+          <h3>The architecture</h3>
+          <p>EchoMQ's exact-dedup choice follows from the Branded Component System discipline &mdash; the branded id is the
+            identity a dedup key is built from. <a href="/bcs">The Branded Component System</a> is the architecture EchoMQ and
+            codemojex are built to, where this and the other modeling decisions are grounded.</p>
+        </div>
+      </div>
+
+      <p class="booknote">R7.3 grounds the probabilistic family against EchoMQ's exact dedup. The three dives take cardinality,
+        membership, and estimation in turn. Return to the
+        <a href="/redis-patterns/data-modeling">Data Modeling &amp; Memory chapter</a> to continue.</p>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">hyperloglog &rarr; bloom-and-cuckoo &rarr; count-min-and-t-digest</span>
+      </div>
+      <div class="prose">
+        <p>Each dive takes one slice of the family, in order: cardinality at a fixed 12KB, membership with no false negatives,
+          and the estimation trio &mdash; frequency, percentiles, heavy hitters. Each closes against EchoMQ's exact choice.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog">
+          <div class="top"><span class="num">R7.03.1</span><span class="pill built">built</span></div>
+          <p class="t">HyperLogLog</p>
+          <p class="o">Cardinality at a fixed 12KB, ~0.81% error; <code>PFADD</code>/<code>PFCOUNT</code>/<code>PFMERGE</code>
+            in core Valkey; the exact-Set-vs-HLL memory cliff and the EchoMQ exact-dedup contrast.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/data-modeling/probabilistic-data-structures/bloom-and-cuckoo">
+          <div class="top"><span class="num">R7.03.2</span><span class="pill built">built</span></div>
+          <p class="t">Bloom &amp; Cuckoo</p>
+          <p class="o">Membership with no false negatives; Bloom (<code>BF.*</code>, the cache-penetration use) vs Cuckoo
+            (<code>CF.*</code>, supports delete) &mdash; module commands; the false-positive dial against exact <code>de:</code>.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/data-modeling/probabilistic-data-structures/count-min-and-t-digest">
+          <div class="top"><span class="num">R7.03.3</span><span class="pill built">built</span></div>
+          <p class="t">Count-Min &amp; T-Digest</p>
+          <p class="o">Frequency (<code>CMS.*</code>), percentiles (<code>TDIGEST.*</code>), heavy hitters (<code>TOPK.*</code>)
+            &mdash; module commands for observability, contrasted with EchoMQ's exact <code>attempts</code> fence.</p>
+        </a>
+      </div>
+
+      <p class="booknote">The three dives ground in the same contrast: a bounded-error estimate where it is acceptable, and the
+        exact key where it is not. Begin with HyperLogLog.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/data-types/probabilistic/" rel="noopener">Redis &mdash; <em>Probabilistic data types</em></a> &mdash; HyperLogLog, Bloom, Cuckoo, Count-Min, T-Digest and Top-K in one place.</li>
+            <li><a href="https://valkey.io/commands/pfadd/" rel="noopener">Valkey &mdash; <em>PFADD</em></a> &mdash; add elements to a HyperLogLog; cardinality estimation in core Valkey, no module.</li>
+            <li><a href="https://valkey.io/commands/pfcount/" rel="noopener">Valkey &mdash; <em>PFCOUNT</em></a> &mdash; the estimated cardinality of one or more HyperLogLogs.</li>
+            <li><a href="https://redis.io/commands/bf.reserve/" rel="noopener">Redis &mdash; <em>BF.RESERVE</em></a> &mdash; create a Bloom filter with a target false-positive rate; a module command.</li>
+            <li><a href="https://redis.io/commands/cms.initbydim/" rel="noopener">Redis &mdash; <em>CMS.INITBYDIM</em></a> &mdash; initialise a Count-Min Sketch; a module command for frequency estimation.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog">R7.03.1 &middot; HyperLogLog</a><span class="rs">cardinality at 12KB; the exact-Set-vs-HLL cliff</span></li>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures/bloom-and-cuckoo">R7.03.2 &middot; Bloom &amp; Cuckoo</a><span class="rs">membership with no false negatives</span></li>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures/count-min-and-t-digest">R7.03.3 &middot; Count-Min &amp; T-Digest</a><span class="rs">frequency, percentile, heavy-hitter estimation</span></li>
+            <li><a href="/redis-patterns/data-modeling/primary-database/system-of-record">R7.01.1 &middot; System of record</a><span class="rs">the exact-dedup home: the job HASH and the de: key</span></li>
+            <li><a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling &amp; Memory</a><span class="rs">the chapter landing</span></li>
+            <li><a href="/bcs">/bcs &middot; The Branded Component System</a><span class="rs">the architecture EchoMQ is built to</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/data-modeling/memory-optimization"><span class="pk">prev</span>&#8592; R7.02 &middot; Memory optimization</a>
+      <a class="pgx" href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog"><span class="pk">begin</span>R7.03.1 &middot; HyperLogLog &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog">R7.03.1 &middot; HyperLogLog</a>
+        <a href="/redis-patterns/data-modeling/probabilistic-data-structures/bloom-and-cuckoo">R7.03.2 &middot; Bloom &amp; Cuckoo</a>
+        <a href="/redis-patterns/data-modeling/probabilistic-data-structures/count-min-and-t-digest">R7.03.3 &middot; Count-Min &amp; T-Digest</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0OGzMraP24f</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- hero: the family by memory + engine (hover-select, pure over the structure) ---------- */
+  // Six probabilistic structures. Selecting one is a pure map from the structure name to what it estimates,
+  // its error type, its memory shape, and whether it is core Valkey or a module command.
+  var STRUCTS = {
+    hll:     { id: 'sHll',     text: 'HyperLogLog estimates cardinality — the count of distinct items — at a fixed 12KB ' +
+      'regardless of how many you add, with ~0.81% standard error. It stores no members, only the evidence of how many. Core ' +
+      'Valkey: PFADD / PFCOUNT / PFMERGE, no module.' },
+    bloom:   { id: 'sBloom',   text: 'A Bloom filter tests membership with possible false positives but zero false negatives ' +
+      '— a "no" is certain, a "yes" is "probably". A bit array plus k hashes; the false-positive rate is a tunable dial. A ' +
+      'module command (BF.*), not core.' },
+    cuckoo:  { id: 'sCuckoo',  text: 'A Cuckoo filter is a Bloom filter that supports deletion, storing fingerprints via ' +
+      'cuckoo hashing. Same membership semantics, plus CF.DEL. A module command (CF.*). Choose it when items must leave the ' +
+      'set — sessions that expire, for instance.' },
+    cms:     { id: 'sCms',     text: 'Count-Min Sketch estimates how often each item was seen, with over-counting possible ' +
+      'but never under-counting — a query takes the minimum across the hash rows. A fixed-size grid. A module command ' +
+      '(CMS.*) for frequency over a huge stream.' },
+    tdigest: { id: 'sTdigest', text: 'T-Digest estimates percentiles without sorting every observation, accurate at the ' +
+      'tails (p99, p99.9) where an average misleads. A compressed sketch over an unbounded stream. A module command ' +
+      '(TDIGEST.*).' },
+    topk:    { id: 'sTopk',    text: 'Top-K tracks the K most frequent items in a stream without storing all of them. It may ' +
+      'temporarily misrank but converges. A module command (TOPK.*) for trending topics, popular products, or frequent ' +
+      'errors.' }
+  };
+  var mapfig = document.getElementById('mapfig');
+  var mapButtons = document.querySelectorAll('#mapSel button');
+  var mapOut = document.getElementById('mapOut');
+  var mapAll = ['sHll', 'sBloom', 'sCuckoo', 'sCms', 'sTdigest', 'sTopk'];
+  function selectStruct(s) {
+    mapButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-s') === s ? 'true' : 'false');
+    });
+    if (mapfig) mapfig.classList.toggle('focus', !!s);
+    mapAll.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('on', !!s && STRUCTS[s] && STRUCTS[s].id === id);
+    });
+    if (s && STRUCTS[s]) {
+      mapOut.innerHTML = '<span class="rk">readout &middot;</span> ' + STRUCTS[s].text;
+    } else {
+      mapOut.innerHTML = '<span class="rk">readout &middot;</span> Select a structure. Each answers one question ' +
+        'approximately &mdash; cardinality, membership, frequency, or percentile &mdash; to trade a known error for a fixed, ' +
+        'tiny footprint. Only HyperLogLog is core Valkey.';
+    }
+  }
+  mapButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = b.getAttribute('data-s');
+      selectStruct(b.getAttribute('aria-pressed') === 'true' ? null : s);
+    });
+    b.addEventListener('mouseenter', function () { selectStruct(b.getAttribute('data-s')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#mapSel button[aria-pressed="true"]');
+      selectStruct(pressed ? pressed.getAttribute('data-s') : null);
+    });
+  });
+  mapfig && mapfig.querySelectorAll('.struct').forEach(function (g) {
+    var idMap = { sHll:'hll', sBloom:'bloom', sCuckoo:'cuckoo', sCms:'cms', sTdigest:'tdigest', sTopk:'topk' };
+    var key = idMap[g.id];
+    g.addEventListener('mouseenter', function () { selectStruct(key); });
+    g.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#mapSel button[aria-pressed="true"]');
+      selectStruct(pressed ? pressed.getAttribute('data-s') : null);
+    });
+  });
+
+  /* ---------- contrast: exact vs probabilistic membership (hover-select, pure over the road) ---------- */
+  // Two answers to "have I seen this before". The exact road is EchoMQ's de: key; the probabilistic road is a filter.
+  // Selecting one is a pure map from the road to its cost and the direction of its error.
+  var ROADS = {
+    exact: { id: 'rExact', text: 'The exact road is EchoMQ’s choice for dedup: emq:{q}:de:<dedupId> stores every id, ' +
+      'so it costs O(n) memory and has zero false positives. It never wrongly says "already seen", so it never drops a job. ' +
+      'That is why EchoMQ pays the memory rather than estimate.' },
+    prob:  { id: 'rProb',  text: 'The probabilistic road is a Bloom or Cuckoo filter: a fixed, tiny footprint with a tunable ' +
+      'false-positive rate and zero false negatives. It can wrongly say "present" but never wrongly say "absent". Safe where a ' +
+      'false positive is cheap (a wasted lookup) — wrong where it drops a job.' }
+  };
+  var cxfig = document.getElementById('cxfig');
+  var cxButtons = document.querySelectorAll('#cxSel button');
+  var cxOut = document.getElementById('cxOut');
+  var cxAll = ['rExact', 'rProb'];
+  function selectRoad(r) {
+    cxButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-r') === r ? 'true' : 'false');
+    });
+    if (cxfig) cxfig.classList.toggle('focus', !!r);
+    cxAll.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('on', !!r && ROADS[r] && ROADS[r].id === id);
+    });
+    if (r && ROADS[r]) {
+      cxOut.innerHTML = '<span class="rk">readout &middot;</span> ' + ROADS[r].text;
+    } else {
+      cxOut.innerHTML = '<span class="rk">readout &middot;</span> Select a road. EchoMQ took the exact one for dedup ' +
+        '&mdash; <code>emq:{q}:de:&lt;dedupId&gt;</code>, O(n) memory, zero false positives &mdash; because a false ' +
+        '&ldquo;already seen&rdquo; would drop a real job.';
+    }
+  }
+  cxButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var r = b.getAttribute('data-r');
+      selectRoad(b.getAttribute('aria-pressed') === 'true' ? null : r);
+    });
+    b.addEventListener('mouseenter', function () { selectRoad(b.getAttribute('data-r')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#cxSel button[aria-pressed="true"]');
+      selectRoad(pressed ? pressed.getAttribute('data-r') : null);
+    });
+  });
+  cxfig && cxfig.querySelectorAll('.road').forEach(function (g) {
+    var key = g.id === 'rExact' ? 'exact' : 'prob';
+    g.addEventListener('mouseenter', function () { selectRoad(key); });
+    g.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#cxSel button[aria-pressed="true"]');
+      selectRoad(pressed ? pressed.getAttribute('data-r') : null);
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

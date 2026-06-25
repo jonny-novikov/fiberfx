@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The two reads · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The two time-travel reads of EchoMQ.Stream: read_since/5 is the open window [t0, ∞) (from = minid_floor(t0), to = '+'); read_window/6 is the closed window [t0, t1] (from = minid_floor(t0), to = maxid_ceil(t1)). Both delegate to the byte-frozen read/6 (XRANGE) and return {:ok, [{branded, fields_map}]} in mint order. read_window/6 raises ArgumentError before any wire on an inverted window (t1 strictly before t0). The window is a filter expressed as bounds — no new wire surface, no new Lua. Real echo_mq code.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="red"]{background:var(--redis-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+input[type=range]{accent-color:var(--echo);width:min(300px,68vw)}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><a href="/echomq/bus/time-travel">time-travel</a><span class="rsep">/</span><span class="rcur">the-two-reads</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus">The Bus</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus/time-travel">Time-travel</a>
+        <span class="sep">/</span>
+        <span class="here">The two reads</span>
+      </nav>
+      <p class="eyebrow">Time-travel &middot; dive 02</p>
+      <h1>The two <span class="ex">reads</span></h1>
+      <p class="lede">Open or closed, both are bound choices over a read that already shipped &mdash; and an inverted window never reaches the wire.</p>
+      <p class="kicker">The previous dive built the address arithmetic: a <code class="inl">%DateTime{}</code> compiles
+        to an exact id bound. This dive composes those bounds into the two public reads. They differ only in the
+        <strong>upper</strong> edge &mdash; one open, one closed &mdash; and both <strong>delegate to the byte-frozen
+        <code class="inl">read/6</code></strong> (<code class="inl">XRANGE</code>). There is no new wire surface and no
+        new Lua: time-travel is two thin functions that pick bounds and hand off. Set a pair of instants on the right
+        and watch the bounds each compiles to &mdash; and what happens when you invert the window.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#two">Two windows, one read</a>
+        <a href="#code">The two reads</a>
+        <a href="#guard">The inverted-window guard</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="twoTitle">
+      <h4 id="twoTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Pick a read &middot; the bounds it builds</h4>
+      <div class="controls">
+        <div class="solid-select" id="readSel" role="group" aria-label="Which read">
+          <button type="button" data-r="window" data-c="blue" class="active" aria-pressed="true">read_window/6</button>
+          <button type="button" data-r="since" data-c="echo" aria-pressed="false">read_since/5</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 170" role="img" aria-label="Two reads over the same byte-frozen read/6. read_window/6 sets from to minid_floor(t0) and to to maxid_ceil(t1), a closed window. read_since/5 sets from to minid_floor(t0) and to to the stream top plus, an open window. Both pass the bounds to read/6, which issues XRANGE and returns the entries in mint order.">
+        <!-- t0 -->
+        <rect x="20" y="20" width="120" height="40" rx="8" fill="rgba(90,135,196,.14)" stroke="#5a87c4"></rect>
+        <text x="80" y="38" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">from</text>
+        <text x="80" y="52" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#9fc0ea">minid_floor(t0)</text>
+        <!-- to (varies) -->
+        <rect id="to-box" x="20" y="76" width="120" height="40" rx="8" fill="rgba(42,161,152,.13)" stroke="#2aa198"></rect>
+        <text x="80" y="94" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">to</text>
+        <text id="to-txt" x="80" y="108" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#6fdccf">maxid_ceil(t1)</text>
+        <!-- arrows into read/6 -->
+        <g stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ah2)">
+          <path d="M140 40 L210 60"></path>
+          <path d="M140 96 L210 80"></path>
+        </g>
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- read/6 -->
+        <rect x="212" y="48" width="120" height="44" rx="9" fill="rgba(212,168,90,.14)" stroke="#d4a85a"></rect>
+        <text x="272" y="66" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#f0cd7f">read/6</text>
+        <text x="272" y="80" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">byte-frozen &middot; XRANGE</text>
+        <!-- result -->
+        <path d="M332 70 L392 70" stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ah2)"></path>
+        <rect x="394" y="48" width="56" height="44" rx="8" fill="rgba(123,163,135,.13)" stroke="#7ba387"></rect>
+        <text x="422" y="66" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#a7c9b1">{:ok, …}</text>
+        <text x="422" y="79" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">mint order</text>
+        <text id="win-label" x="230" y="138" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#9fc0ea">closed [t0, t1]</text>
+        <text x="230" y="152" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">both functions delegate to the SAME read/6 — no new Lua</text>
+      </svg>
+      <div class="geo-readout" id="twoOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="two">
+    <h2>Two windows, one read beneath</h2>
+    <div class="prose">
+      <p>The two reads differ only in the upper bound, and both delegate to the same shipped
+        <code class="inl">read/6</code>:</p>
+      <p><strong><code class="inl">read_since(conn, queue, name, t0, count \\ nil)</code></strong> &rarr; the
+        <strong>open</strong> window <span class="math">[t0, &infin;)</span>. The lower bound is
+        <code class="inl">minid_floor(t0)</code>; the upper bound is <code class="inl">"+"</code>, the stream top.
+        &ldquo;Everything at or after <code class="inl">t0</code>.&rdquo; The half-open lower edge is the exact one the
+        floor already proves: a <code class="inl">t0</code> entry is in, a <span class="math">t0 &minus; 1ms</span> entry
+        is out.</p>
+      <p><strong><code class="inl">read_window(conn, queue, name, t0, t1, count \\ nil)</code></strong> &rarr; the
+        <strong>closed</strong> window <span class="math">[t0, t1]</span>. The lower bound is
+        <code class="inl">minid_floor(t0)</code>; the upper bound is <code class="inl">maxid_ceil(t1)</code>, the
+        inclusive ceiling. &ldquo;Between <code class="inl">t0</code> and <code class="inl">t1</code>, both ends
+        in.&rdquo;</p>
+      <p>Both return <code class="inl">{:ok, [{branded, fields_map}]}</code> &mdash; the entries in <strong>mint
+        order</strong>, each a <code class="inl">{branded EVT id, payload map}</code> tuple, the branded id recovered
+        from the stored <code class="inl">id</code> field. A connector or server fault surfaces as
+        <code class="inl">{:error, term}</code> verbatim, the same shape <code class="inl">read/6</code> already has.</p>
+    </div>
+  </section>
+
+  <section id="code">
+    <h2>The two reads, extracted</h2>
+    <div class="prose">
+      <p>The real <code class="inl">read_since/5</code> and <code class="inl">read_window/6</code>. Notice how little there
+        is to either: each is a bound choice and a delegation. <code class="inl">read_window/6</code> carries one extra
+        guard &mdash; the inverted-window check &mdash; which it pays before computing any bound.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Stream</span>
+<span class="cmt"># OPEN window [t0, ∞): from = minid_floor(t0) (the half-open lower floor), to = "+"</span>
+<span class="cmt"># (the stream top). The common audit case — "everything at or after t0." Delegates</span>
+<span class="cmt"># to the byte-frozen read/6; ZERO new Lua.</span>
+<span class="op">def</span> <span class="fn">read_since</span>(conn, queue, name, %DateTime{} = t0, count \\ <span class="res">nil</span>)
+    <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(name) <span class="op">do</span>
+  <span class="fn">read</span>(conn, queue, name, <span class="fn">minid_floor</span>(t0), <span class="str">"+"</span>, count)
+<span class="op">end</span>
+
+<span class="cmt"># CLOSED window [t0, t1], both edges inclusive: from = minid_floor(t0), to =</span>
+<span class="cmt"># maxid_ceil(t1) (the inclusive upper inverse). Delegates to read/6; ZERO new Lua.</span>
+<span class="cmt"># RAISES ArgumentError before any wire on an INVERTED window (t1 strictly before</span>
+<span class="cmt"># t0) — a host-side guard, never a malformed bound to the wire.</span>
+<span class="op">def</span> <span class="fn">read_window</span>(conn, queue, name, %DateTime{} = t0, %DateTime{} = t1, count \\ <span class="res">nil</span>)
+    <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(name) <span class="op">do</span>
+  <span class="op">if</span> DateTime.<span class="fn">compare</span>(t1, t0) == <span class="str">:lt</span> <span class="op">do</span>
+    <span class="op">raise</span> ArgumentError,
+          <span class="str">"EchoMQ.Stream.read_window requires t0 <= t1; got t0=#{DateTime.to_iso8601(t0)}, t1=#{DateTime.to_iso8601(t1)}"</span>
+  <span class="op">end</span>
+
+  <span class="fn">read</span>(conn, queue, name, <span class="fn">minid_floor</span>(t0), <span class="fn">maxid_ceil</span>(t1), count)
+<span class="op">end</span></pre>
+
+    <p class="take">The <code class="inl">count</code> is an optional cap passed straight through to
+      <code class="inl">read/6</code> (it becomes <code class="inl">XRANGE … COUNT n</code>) &mdash; for paging a wide
+      window without materializing all of it at once. When <code class="inl">nil</code>, the whole window comes back.</p>
+  </section>
+
+  <section id="guard">
+    <h2>An inverted window raises before the wire</h2>
+    <div class="prose">
+      <p><code class="inl">read_window/6</code> checks <span class="math">t1 &ge; t0</span> <em>first</em>, and
+        <strong>raises <code class="inl">ArgumentError</code></strong> if not &mdash; before it computes a single bound,
+        before it touches the connector. An inverted window is a programming error, not a runtime condition to be
+        handled, and a malformed bound should never reach the wire. This is the same policy-before-existence discipline
+        the append path takes with its kind door and the trim path takes with its name guard: refuse the bad input at
+        the host, loudly, rather than ship a malformed command and let the store's behavior define the meaning. A valid
+        <span class="math">t0 == t1</span> window is allowed &mdash; the degenerate closed window of a single
+        millisecond.</p>
+      <p>And the window is a <strong>filter expressed as bounds</strong>. <code class="inl">read_window/6</code> over
+        <span class="math">[t0, t1]</span> returns exactly the entries you would get by reading the <em>whole</em> stream
+        and keeping each one whose branded <code class="inl">EVT</code> mint instant falls in
+        <span class="math">[t0, t1]</span> &mdash; but it does not read the whole stream and filter in the host. It
+        pushes the filter down to the store as the <code class="inl">XRANGE</code> bounds, so the store returns only the
+        slice and the host materializes only the slice. The floor/ceil arithmetic is what makes that push-down exact.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="invTitle">
+      <h4 id="invTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A pair of instants &middot; valid, degenerate, or inverted</h4>
+      <div class="controls">
+        <div class="ctl">
+          <label for="g0">t0</label>
+          <input type="range" id="g0" min="0" max="6" step="1" value="1" aria-label="t0, an index on a time axis">
+        </div>
+        <div class="ctl">
+          <label for="g1">t1</label>
+          <input type="range" id="g1" min="0" max="6" step="1" value="4" aria-label="t1, an index on a time axis">
+        </div>
+      </div>
+      <svg viewBox="0 0 480 96" role="img" aria-label="Two instants t0 and t1 on a time axis. When t1 is at or after t0 the window is valid and read_window returns the slice; when t1 equals t0 it is the degenerate single-millisecond window; when t1 is before t0 read_window raises ArgumentError before any wire.">
+        <line x1="30" y1="48" x2="450" y2="48" stroke="#2a3252" stroke-width="2"></line>
+        <text x="30" y="40" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#5a6488">time &rarr;</text>
+        <circle id="g0-dot" cx="100" cy="48" r="7" fill="#9fc0ea" stroke="#5a87c4"></circle>
+        <text id="g0-t" x="100" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#9fc0ea">t0</text>
+        <circle id="g1-dot" cx="280" cy="48" r="7" fill="#6fdccf" stroke="#2aa198"></circle>
+        <text id="g1-t" x="280" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#6fdccf">t1</text>
+        <line id="g-band" x1="100" y1="64" x2="280" y2="64" stroke="#7ba387" stroke-width="3"></line>
+        <text id="g-verdict" x="240" y="84" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#a7c9b1">valid window</text>
+      </svg>
+      <div class="geo-readout" id="guardOut" aria-live="polite"></div>
+    </figure>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Read a slice of an event log by a time range &mdash; open-ended (&ldquo;since X&rdquo;) or closed
+          (&ldquo;between X and Y&rdquo;) &mdash; with <code class="inl">XRANGE</code> over the entry ids.
+          <a href="/redis-patterns/streams-events">Streams &amp; Events</a> teaches the range read.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">read_since/5</code> (<span class="math">[t0, &infin;)</span>,
+          <code class="inl">to = "+"</code>) and <code class="inl">read_window/6</code>
+          (<span class="math">[t0, t1]</span>, <code class="inl">to = maxid_ceil(t1)</code>) pick bounds from
+          <code class="inl">%DateTime{}</code>s and delegate to the byte-frozen <code class="inl">read/6</code>;
+          <code class="inl">read_window/6</code> raises on an inverted window before any wire. No new Lua, no new wire
+          surface.</p>
+      </div>
+    </div>
+    <p class="take">The pattern names two range reads; the implementation is two bound choices over a read that already
+      shipped &mdash; the depth is that the bounds are exact and the bad input never sails.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; two reads, one XRANGE</h2>
+    <div class="prose">
+      <p>Two reads, one <code class="inl">XRANGE</code> beneath. <code class="inl">read_since/5</code> is the open window
+        <span class="math">[t0, &infin;)</span>; <code class="inl">read_window/6</code> is the closed window
+        <span class="math">[t0, t1]</span>, raising <code class="inl">ArgumentError</code> on an inverted pair before it
+        touches the wire. Both return mint-ordered <code class="inl">{branded, fields_map}</code> tuples and both
+        delegate to the byte-frozen <code class="inl">read/6</code>. The next dive puts them to work: backtest, audit,
+        debug.</p>
+    </div>
+    <p class="note">Next in the module: <strong>Backtest, audit, debug</strong> &mdash; the two reads applied, worked on
+      a codemojex round's activity feed.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the two reads are grounded, and the range semantics they rest on.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/xrange/">Valkey &mdash; <em>XRANGE</em></a> &mdash; the range read both functions delegate to.</li>
+          <li><a href="https://valkey.io/topics/streams-intro/">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the entry-id range semantics the window rests on.</li>
+          <li><a href="https://dl.acm.org/doi/10.1145/359545.359563">Lamport &mdash; <em>Time, Clocks, and the Ordering of Events</em></a> &mdash; the mint order the reads return in.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/time-travel/time-is-the-address">Time is the address</a> &mdash; the floor/ceil bounds these reads compose.</li>
+          <li><a href="/echomq/bus/the-stream-log/the-claims-only-id">The claims-only id</a> &mdash; the un-grouped <code>read/6</code> these delegate to.</li>
+          <li><a href="/echomq/bus/time-travel/backtest-audit-debug">Backtest, audit, debug</a> &mdash; the two reads applied.</li>
+          <li><a href="/echomq/bus/time-travel">Time-travel</a> &mdash; the module hub.</li>
+          <li><a href="/bcs/bus">The Branded Component System &middot; the Bus</a> &mdash; the manuscript chapter this module realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/bus/time-travel/time-is-the-address"><span aria-hidden="true">&larr;</span>&nbsp; Time is the address</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus/time-travel/backtest-audit-debug">Backtest, audit, debug <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/bus/time-travel">Time-travel</a>
+        <a href="/echomq/bus/time-travel/time-is-the-address">Time is the address</a>
+        <a href="/echomq/bus/time-travel/the-two-reads">The two reads</a>
+        <a href="/echomq/bus/time-travel/backtest-audit-debug">Backtest, audit, debug</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- content interactive 1: pick a read, see the bounds (pure lookup) ---------- */
+  var READS = {
+    window: { label: 'closed [t0, t1]', to: 'maxid_ceil(t1)', toColor: '#6fdccf', winLabel: 'closed [t0, t1]',
+      call: 'read_window(conn, "cm", "feed", t0, t1, count \\\\ nil)',
+      desc: 'from = minid_floor(t0), to = maxid_ceil(t1) — the closed [t0, t1] window, both edges inclusive; delegates to the byte-frozen read/6 (XRANGE), returns {:ok, [{branded, fields_map}]} in mint order' },
+    since:  { label: 'open [t0, ∞)', to: '"+"', toColor: '#f0cd7f', winLabel: 'open [t0, ∞)',
+      call: 'read_since(conn, "cm", "feed", t0, count \\\\ nil)',
+      desc: 'from = minid_floor(t0), to = "+" (the stream top) — the open [t0, ∞) window, everything at or after t0; same byte-frozen read/6, same mint-ordered {:ok, …} result' }
+  };
+  function renderRead(key) {
+    var r = READS[key];
+    var out = document.getElementById('twoOut');
+    if (!r || !out) return;
+    var toBox = document.getElementById('to-txt'); if (toBox) { toBox.textContent = r.to; toBox.setAttribute('fill', r.toColor); }
+    var wl = document.getElementById('win-label'); if (wl) wl.textContent = r.winLabel;
+    out.innerHTML = 'call: <b>' + r.call + '</b><br><span class="dim">' + r.desc + '</span>';
+  }
+  document.querySelectorAll('#readSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#readSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderRead(b.getAttribute('data-r'));
+    });
+  });
+  renderRead('window');
+
+  /* ---------- content interactive 2: the inverted-window guard (the real DateTime.compare branch) ---------- */
+  var GX0 = 40, GX1 = 440, GN = 6;
+  function gx(i) { return GX0 + (GX1 - GX0) * (i / GN); }
+  function renderGuard() {
+    var i0 = parseInt(document.getElementById('g0').value, 10);
+    var i1 = parseInt(document.getElementById('g1').value, 10);
+    var x0 = gx(i0), x1 = gx(i1);
+    document.getElementById('g0-dot').setAttribute('cx', x0.toFixed(1));
+    document.getElementById('g0-t').setAttribute('x', x0.toFixed(1));
+    document.getElementById('g1-dot').setAttribute('cx', x1.toFixed(1));
+    document.getElementById('g1-t').setAttribute('x', x1.toFixed(1));
+
+    var band = document.getElementById('g-band');
+    var verd = document.getElementById('g-verdict');
+    var out = document.getElementById('guardOut');
+    var lo = Math.min(x0, x1), hi = Math.max(x0, x1);
+    band.setAttribute('x1', lo.toFixed(1)); band.setAttribute('x2', hi.toFixed(1));
+
+    if (i1 < i0) {
+      band.setAttribute('stroke', '#c4504c');
+      verd.setAttribute('fill', '#f2948c'); verd.setAttribute('x', ((x0 + x1) / 2).toFixed(1));
+      verd.textContent = 'raises ArgumentError';
+      out.innerHTML = 'DateTime.compare(t1, t0) == <b class="bad">:lt</b> &rarr; <b class="bad">raise ArgumentError</b><br>' +
+        '<span class="dim">an inverted window (t1 strictly before t0) is refused at the host — no bound is computed, no command reaches the wire</span>';
+    } else if (i1 === i0) {
+      band.setAttribute('stroke', '#d4a85a');
+      verd.setAttribute('fill', '#f0cd7f'); verd.setAttribute('x', ((x0 + x1) / 2 + 6).toFixed(1));
+      verd.textContent = 'degenerate [t0, t0]';
+      out.innerHTML = 'DateTime.compare(t1, t0) == <b>:eq</b> &rarr; <b class="ok">valid</b><br>' +
+        '<span class="dim">t0 == t1 is allowed: the degenerate closed window of a single millisecond — minid_floor(t0) .. maxid_ceil(t0)</span>';
+    } else {
+      band.setAttribute('stroke', '#7ba387');
+      verd.setAttribute('fill', '#a7c9b1'); verd.setAttribute('x', ((x0 + x1) / 2).toFixed(1));
+      verd.textContent = 'valid window';
+      out.innerHTML = 'DateTime.compare(t1, t0) == <b>:gt</b> &rarr; <b class="ok">valid</b><br>' +
+        '<span class="dim">read_window delegates to read/6 with from = minid_floor(t0), to = maxid_ceil(t1) — the slice comes back in mint order</span>';
+    }
+  }
+  document.getElementById('g0').addEventListener('input', renderGuard);
+  document.getElementById('g1').addEventListener('input', renderGuard);
+  renderGuard();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Publish after the verdict · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="EchoMQ.Events.publish/5 issues PUBLISH emq:{q}:events HOST-SIDE, after a transition's verdict — so the byte-frozen transition scripts stay byte-unchanged. The id is gated at the key builder before the wire; the cjson payload is built by hand (no JSON dependency); event_name/1 reads the name by substring scan and resolves with to_existing_atom, answering :unknown rather than minting an atom from the wire. Real echo_mq code, no Lua, with a publish round-trip inspector and the freeze argument.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- freeze argument svg ---- */
+.step .mv rect{fill:#10162b;stroke:#2a3252;transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+.step .mv.on rect{fill:rgba(42,161,152,.14);stroke:#2aa198}
+.step .mv.bad rect{fill:rgba(196,80,76,.13);stroke:#c4504c}
+.step text{font-family:var(--sans);fill:#d7cfb9}
+.step .mid{font-family:var(--mono);fill:#a39c89;font-size:10px}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><a href="/echomq/bus/the-events-channel">the-events-channel</a><span class="rsep">/</span><span class="rcur">publish-after-the-verdict</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus">The Bus</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus/the-events-channel">The events channel</a>
+        <span class="sep">/</span>
+        <span class="here">Publish after the verdict</span>
+      </nav>
+      <p class="eyebrow">The events channel &middot; dive 02</p>
+      <h1>Publish <span class="ex">after the verdict</span></h1>
+      <p class="lede">The announcement belongs to the host, not the script that decides.</p>
+      <p class="kicker">An event is published <strong>after</strong> a transition decides, from the host &mdash; not inside
+        the script that decides. <code class="inl">publish/5</code> gates the id at the key builder, builds a small cjson
+        object by hand, and issues one <code class="inl">PUBLISH emq:{q}:events</code> direct through
+        <code class="inl">EchoMQ.Connector.command/3</code> &mdash; no new script, no Lua. That one placement choice is
+        what keeps the byte-frozen transition scripts <strong>byte-unchanged</strong>. See the choice on the right, then
+        read the code.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#where">Where the publish lives</a>
+        <a href="#payload">The payload</a>
+        <a href="#read">Reading the name back</a>
+        <a href="#trip">Publish round-trip</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig step" aria-labelledby="frzTitle">
+      <h4 id="frzTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Why host-side &middot; two placements</h4>
+      <div class="controls">
+        <div class="solid-select" id="frzSel" role="group" aria-label="Where the publish is placed">
+          <button type="button" data-p="host" data-c="echo" class="active" aria-pressed="true">host, after verdict</button>
+          <button type="button" data-p="script" data-c="blue" aria-pressed="false">inside the script</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 210" role="img" aria-label="Two placements for the publish. Host-side after the verdict: the transition script is unchanged, its bytes and SHA frozen, and the host issues the PUBLISH separately — the recommended choice. Inside the script: adding a PUBLISH changes the script's bytes and SHA, breaking the byte-freeze.">
+        <g class="mv on" id="f-script"><rect x="40" y="16" width="380" height="58" rx="9"></rect></g>
+        <text x="60" y="36" class="mid">the transition script</text>
+        <text x="230" y="50" id="f-script-l" text-anchor="middle" font-size="13">@complete — bytes UNCHANGED, SHA frozen</text>
+        <text x="230" y="66" id="f-script-s" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#6fdccf">freeze holds</text>
+
+        <path d="M230 74 L230 104" stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#fah)"></path>
+        <defs><marker id="fah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path></marker></defs>
+
+        <g class="mv on" id="f-pub"><rect x="40" y="104" width="380" height="58" rx="9"></rect></g>
+        <text x="60" y="124" class="mid">the publish</text>
+        <text x="230" y="138" id="f-pub-l" text-anchor="middle" font-size="13">publish/5 — host-side, AFTER the verdict</text>
+        <text x="230" y="154" id="f-pub-s" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#a39c89">PUBLISH emq:{q}:events (direct, no Lua)</text>
+
+        <line x1="40" y1="184" x2="420" y2="184" stroke="#2aa198" stroke-dasharray="4 3" id="f-rule"></line>
+        <text x="230" y="198" id="f-verdict" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#6fdccf">the verdict is the script's; the announcement is the host's</text>
+      </svg>
+      <div class="geo-readout" id="frzOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="where">
+    <h2>Where the publish lives &mdash; and why it is host-side</h2>
+    <div class="prose">
+      <p>A queue transition (<code class="inl">complete</code>, <code class="inl">retry</code>, the stalled reaper) is an
+        atomic Lua script. The publish does <strong>not</strong> go inside it. The calling code runs the transition, reads
+        its verdict, and then &mdash; host-side, in Elixir &mdash; calls <code class="inl">publish/5</code> to announce what
+        happened. The reason is a hard invariant of this bus: the transition scripts are <strong>byte-frozen</strong>.
+        Adding a <code class="inl">PUBLISH</code> to a script would change its bytes (and its SHA), which is exactly what
+        the freeze forbids. Publishing from the host keeps every script byte-for-byte identical to what shipped, while
+        still broadcasting the outcome.</p>
+      <p>(One event is published inline because its transition already does: <code class="inl">progress</code>. The
+        <code class="inl">@update_progress</code> seam established the <code class="inl">emq:{q}:events</code> channel and
+        the cjson payload shape; every <em>other</em> lifecycle event reuses that channel from the host.)</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Events.publish/5 (host-side, after the verdict)</span>
+<span class="cmt"># Announce a lifecycle event AFTER its transition has decided. The transition</span>
+<span class="cmt"># scripts are byte-frozen, so the publish lives here in the host, not in the</span>
+<span class="cmt"># script — the scripts stay byte-unchanged. One PUBLISH, issued DIRECT (no Lua).</span>
+<span class="op">def</span> <span class="fn">publish</span>(conn, queue, event, job_id, extra \ []) <span class="op">do</span>
+  <span class="cmt"># gate the id at the key builder (INV5) — raises on an ill-formed id BEFORE the</span>
+  <span class="cmt"># wire, so a malformed JOB id can never reach a PUBLISH</span>
+  _ = Keyspace.<span class="rdx">job_key</span>(queue, job_id)
+  payload = <span class="fn">encode_event</span>(event, job_id, extra)
+
+  <span class="op">case</span> Connector.<span class="rdx">command</span>(conn, [<span class="str">"PUBLISH"</span>, <span class="fn">channel</span>(queue), payload]) <span class="op">do</span>
+    {<span class="str">:ok</span>, _n} -&gt; <span class="str">:ok</span>                  <span class="cmt"># best-effort — n is the receiver count (may be 0)</span>
+    other -&gt; other
+  <span class="op">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># the channel — emq:{q}:events, the SAME suffix the @update_progress seam publishes on</span>
+<span class="op">def</span> <span class="fn">channel</span>(queue), <span class="op">do</span>: Keyspace.<span class="fn">queue_key</span>(queue, <span class="str">"events"</span>)</pre>
+
+    <div class="prose">
+      <p>Two facts carry weight. First, the id is <strong>gated at the key builder</strong> before anything is sent:
+        <code class="inl">Keyspace.job_key(queue, job_id)</code> raises if the job id is ill-formed, so a malformed branded
+        id cannot reach a <code class="inl">PUBLISH</code>. The return value is discarded &mdash; the call exists purely
+        for its gate. Second, the publish is <strong>best-effort</strong>: <code class="inl">PUBLISH</code> answers the
+        number of receivers, which the function throws away and maps to <code class="inl">:ok</code>. Zero receivers is
+        success, not error.</p>
+    </div>
+    <p class="take">Split the work: the script decides, the host announces. That one line of separation is what lets the
+      bus broadcast every outcome without ever editing a frozen transition.</p>
+  </section>
+
+  <section id="payload">
+    <h2>The payload &mdash; flat cjson, built by hand</h2>
+    <div class="prose">
+      <p>The payload is a tiny JSON object of flat string fields: the event name, the job id, and any
+        <code class="inl">extra</code> keyword pairs (e.g. <code class="inl">[progress: "50"]</code>). The bus carries
+        <strong>no JSON dependency</strong>, so the object is built by string concatenation, with the two
+        JSON-significant characters escaped.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Events.encode_event/3 (the flat cjson payload, built by hand)</span>
+<span class="cmt"># {"event":"&lt;name&gt;","job":"&lt;id&gt;", …extra} — flat string fields only. No JSON</span>
+<span class="cmt"># library on the bus; the object is concatenated, with \ and " escaped.</span>
+<span class="op">defp</span> <span class="fn">encode_event</span>(event, job_id, extra) <span class="op">do</span>
+  fields =
+    [{<span class="str">"event"</span>, to_string(event)}, {<span class="str">"job"</span>, job_id}] ++
+      Enum.<span class="fn">map</span>(extra, <span class="op">fn</span> {k, v} -&gt; {to_string(k), to_string(v)} <span class="op">end</span>)
+
+  body =
+    fields
+    |&gt; Enum.<span class="fn">map</span>(<span class="op">fn</span> {k, v} -&gt; ~s(<span class="str">"#{k}":"#{escape(v)}"</span>) <span class="op">end</span>)
+    |&gt; Enum.<span class="fn">join</span>(<span class="str">","</span>)
+
+  <span class="str">"{"</span> &lt;&gt; body &lt;&gt; <span class="str">"}"</span>
+<span class="op">end</span>
+
+<span class="op">defp</span> <span class="fn">escape</span>(v) <span class="op">do</span>
+  v
+  |&gt; String.<span class="fn">replace</span>(<span class="str">"\\"</span>, <span class="str">"\\\\"</span>)   <span class="cmt"># backslash first</span>
+  |&gt; String.<span class="fn">replace</span>(<span class="str">"\""</span>, <span class="str">"\\\""</span>)   <span class="cmt"># then the quote</span>
+<span class="op">end</span></pre>
+    <p class="take">No JSON library on the bus &mdash; only a concatenated object with the two significant characters
+      escaped. Small payloads, zero dependency.</p>
+  </section>
+
+  <section id="read">
+    <h2>Reading the name back &mdash; a scan, not a parser</h2>
+    <div class="prose">
+      <p>On the receive side, the consumer needs the event name. It does <strong>not</strong> parse the JSON. Because the
+        payload is hand-built and cjson key order is not guaranteed, the name is read by a <strong>substring scan</strong>
+        for the <code class="inl">event</code> field, and the matched string is resolved with
+        <code class="inl">String.to_existing_atom/1</code>. That last choice is the safety one: an unknown name answers
+        <code class="inl">:unknown</code> rather than <strong>minting an atom from the wire</strong>. Atoms are not garbage
+        collected; turning arbitrary wire bytes into atoms is an unbounded-memory hazard, so the function only ever returns
+        an atom that already exists.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Events.event_name/1 (read the name by scan; never mint an atom)</span>
+<span class="cmt"># The bus has no JSON parser and cjson key order is not guaranteed — so read the</span>
+<span class="cmt"># "event" field by substring scan. Resolve with to_existing_atom: an UNKNOWN</span>
+<span class="cmt"># name answers :unknown, never minting an atom from the wire (atoms aren't GC'd).</span>
+<span class="op">def</span> <span class="fn">event_name</span>(payload) <span class="op">when</span> is_binary(payload) <span class="op">do</span>
+  <span class="op">case</span> Regex.<span class="fn">run</span>(~r/<span class="str">"event"\s*:\s*"([^"]+)"</span>/, payload) <span class="op">do</span>
+    [_, name] -&gt;
+      <span class="op">try do</span>
+        String.<span class="rdx">to_existing_atom</span>(name)     <span class="cmt"># only an atom that already exists</span>
+      <span class="op">rescue</span>
+        ArgumentError -&gt; <span class="str">:unknown</span>          <span class="cmt"># unknown name → :unknown, not a new atom</span>
+      <span class="op">end</span>
+
+    _ -&gt;
+      <span class="str">:unknown</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+    <p class="take">Read the name by scan, resolve it to an existing atom or <code class="inl">:unknown</code> &mdash; never
+      mint an atom from the wire. A hand-built payload deserves a hand-built, safe read.</p>
+  </section>
+
+  <section id="trip">
+    <h2>The publish round-trip</h2>
+    <div class="prose">
+      <p>Pick a verdict and watch the whole round-trip: <code class="inl">publish/5</code> gates the id, builds the cjson
+        payload with <code class="inl">encode_event/3</code>, and issues <code class="inl">PUBLISH emq:{q}:events</code>;
+        then <code class="inl">event_name/1</code> scans the same payload back to the atom. The
+        <code class="inl">unknown</code> option injects a name no atom exists for, so the read answers
+        <code class="inl">:unknown</code>. The strings shown are exactly what the code produces &mdash; pure, no network.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="tripTitle">
+      <h4 id="tripTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">publish/5 → encode_event/3 → event_name/1</h4>
+      <div class="controls">
+        <div class="solid-select" id="tripSel" role="group" aria-label="Which event to publish">
+          <button type="button" data-ev="completed" data-c="echo" class="active" aria-pressed="true">completed</button>
+          <button type="button" data-ev="failed" data-c="blue" aria-pressed="false">failed</button>
+          <button type="button" data-ev="progress" data-c="gold" aria-pressed="false">progress (+extra)</button>
+          <button type="button" data-ev="unknown" data-c="blue" aria-pressed="false">an unknown name</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 96" role="img" aria-label="The publish round trip: encode_event builds a cjson object, PUBLISH sends it on emq:{q}:events, and event_name scans it back to an atom or :unknown.">
+        <rect x="14" y="16" width="220" height="64" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="124" y="38" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">encode_event → PUBLISH</text>
+        <text id="trip-payload" x="124" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#6fdccf">·</text>
+        <rect x="246" y="16" width="220" height="64" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="356" y="38" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a39c89">event_name (scan)</text>
+        <text id="trip-name" x="356" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="13" fill="#6fdccf">·</text>
+      </svg>
+      <div class="geo-readout" id="tripOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">The id is gated <strong>before</strong> the payload is built &mdash; an ill-formed job id raises at
+      <code class="inl">job_key/2</code> and never reaches the wire. The read is a scan, so it tolerates any key order and
+      refuses any name it does not already know.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Emit a domain event when state changes, so other parts of the system can react without coupling to the writer.
+          <a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a> teaches the events side of the
+          pattern.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">publish/5</code> emits <strong>after</strong> the transition's verdict, host-side, gating the
+          id at the key builder and issuing one <code class="inl">PUBLISH emq:{q}:events</code> direct &mdash; so the
+          byte-frozen transition scripts stay byte-unchanged.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says emit on the change. The implementation emits from the host after the change, so the
+      change's script never has to move.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; the host announces</h2>
+    <div class="prose">
+      <p>A lifecycle event is published <strong>host-side</strong>, after a transition's verdict, by
+        <code class="inl">publish/5</code> &mdash; one <code class="inl">PUBLISH emq:{q}:events</code> through
+        <code class="inl">EchoMQ.Connector.command/3</code>, no Lua. The id is gated at the key builder before the wire;
+        the cjson payload is built by hand (no JSON dependency); the receiver reads the name by substring scan and
+        resolves it with <code class="inl">String.to_existing_atom/1</code>, answering <code class="inl">:unknown</code>
+        rather than minting an atom. The next dive: the guarantee the channel makes &mdash; at-most-once &mdash; and its
+        control-plane sibling, <code class="inl">EchoMQ.Cancel</code>.</p>
+    </div>
+    <p class="note">Next in the module: <strong>Fire-and-forget</strong> &mdash; what at-most-once costs, the resubscribe
+      and the stream as the two mitigations, and the cooperative cancel token.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the host-side publish, the hand-built payload, and the safe name read are grounded, and the command beneath
+        them.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/publish/">Valkey &mdash; <em>PUBLISH</em></a> &mdash; the single command <code>publish/5</code> issues; its reply is the receiver count, discarded for best-effort.</li>
+          <li><a href="https://valkey.io/topics/streams-intro/">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the bus surfaces this pillar builds on.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{q}</code> hashtag keeps the events channel on the queue's slot.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/the-events-channel">The events channel</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/bus/the-events-channel/subscribe-and-handle">Subscribe and handle</a> &mdash; the receive side that reads these payloads.</li>
+          <li><a href="/echomq/bus/the-events-channel/fire-and-forget">Fire-and-forget</a> &mdash; the at-most-once guarantee of this publish.</li>
+          <li><a href="/echomq/protocol/the-lua-layer">The Lua layer</a> &mdash; the byte-frozen transition scripts the publish stays out of.</li>
+          <li><a href="/redis-patterns/streams-events">redis-patterns &middot; Streams &amp; Events</a> &mdash; the events pattern.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/bus/the-events-channel/subscribe-and-handle"><span aria-hidden="true">&larr;</span>&nbsp; Subscribe and handle</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus/the-events-channel/fire-and-forget">Fire-and-forget <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/bus/the-events-channel">The events channel</a>
+        <a href="/echomq/bus/the-events-channel/subscribe-and-handle">Subscribe and handle</a>
+        <a href="/echomq/bus/the-events-channel/publish-after-the-verdict">Publish after the verdict</a>
+        <a href="/echomq/bus/the-events-channel/fire-and-forget">Fire-and-forget</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- hero: the two placements (pure lookup) ---------- */
+  var PLACE = {
+    host: {
+      scriptL: '@complete — bytes UNCHANGED, SHA frozen', scriptS: 'freeze holds', scriptBad: false,
+      pubL: 'publish/5 — host-side, AFTER the verdict', pubS: 'PUBLISH emq:{q}:events (direct, no Lua)', pubBad: false,
+      verdict: 'the verdict is the script’s; the announcement is the host’s',
+      read: '<b>host-side, after the verdict</b> — the recommended placement<br><span class="ok">the transition script is untouched, so its bytes and SHA stay frozen</span><br><span class="dim">the host issues one PUBLISH separately, after reading the verdict</span>'
+    },
+    script: {
+      scriptL: '@complete with a PUBLISH folded in — bytes CHANGED', scriptS: 'SHA changes', scriptBad: true,
+      pubL: 'publish folded INTO the script', pubS: 'the script body is no longer byte-identical', pubBad: true,
+      verdict: 'a new byte in the script is a new SHA — the freeze breaks',
+      read: '<b>inside the script</b> — what the bus avoids<br><span class="bad">adding a PUBLISH changes the script’s bytes, so its SHA changes and the byte-freeze breaks</span><br><span class="dim">this is exactly why the publish lives in the host instead</span>'
+    }
+  };
+  function renderPlace(key) {
+    var p = PLACE[key];
+    var out = document.getElementById('frzOut');
+    var setG = function (gid, bad) { var g = document.getElementById(gid); if (g) { g.classList.toggle('bad', bad); g.classList.toggle('on', !bad); } };
+    var setT = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+    if (!p || !out) return;
+    setG('f-script', p.scriptBad); setG('f-pub', p.pubBad);
+    setT('f-script-l', p.scriptL); setT('f-script-s', p.scriptS);
+    setT('f-pub-l', p.pubL); setT('f-pub-s', p.pubS);
+    setT('f-verdict', p.verdict);
+    out.innerHTML = p.read;
+  }
+  document.querySelectorAll('#frzSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#frzSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderPlace(b.getAttribute('data-p'));
+    });
+  });
+  renderPlace('host');
+
+  /* ---------- content: the publish round-trip (the real encode_event + event_name over a fixed job) ---------- */
+  /* encode_event builds {"event":"<name>","job":"JOB0KHTOWnGLuC"[,extra]} by
+     concatenation; event_name scans the "event" field back. For an unknown name,
+     to_existing_atom raises ArgumentError -> :unknown. Pure functions of the verdict. */
+  var JOB = 'JOB0KHTOWnGLuC';
+  var TRIP = {
+    completed: { wireName: 'completed', extra: '', exists: true },
+    failed: { wireName: 'failed', extra: '', exists: true },
+    progress: { wireName: 'progress', extra: ',"progress":"50"', exists: true },
+    unknown: { wireName: 'frobnicated', extra: '', exists: false }
+  };
+  function buildPayload(t) { return '{"event":"' + t.wireName + '","job":"' + JOB + '"' + t.extra + '}'; }
+  function renderTrip(key) {
+    var t = TRIP[key];
+    var payloadEl = document.getElementById('trip-payload');
+    var nameEl = document.getElementById('trip-name');
+    var out = document.getElementById('tripOut');
+    if (!t) return;
+    var payload = buildPayload(t);
+    var resolved = t.exists ? (':' + t.wireName) : ':unknown';
+    var shortPayload = payload.length > 30 ? payload.slice(0, 29) + '…' : payload;
+    if (payloadEl) payloadEl.textContent = shortPayload;
+    if (nameEl) { nameEl.textContent = resolved; nameEl.setAttribute('fill', t.exists ? '#6fdccf' : '#f2948c'); }
+    if (!out) return;
+    out.innerHTML =
+      'publish/5 gates job_key("' + JOB + '") <span class="ok">→ ok</span>, then PUBLISH emq:{q}:events<br>' +
+      'payload: <b>' + payload + '</b><br>' +
+      'event_name(payload) → ' + (t.exists
+        ? '<b>' + resolved + '</b> <span class="dim">(to_existing_atom succeeds)</span>'
+        : '<span class="bad">:unknown</span> <span class="dim">(to_existing_atom raises ArgumentError — never minted)</span>');
+  }
+  document.querySelectorAll('#tripSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#tripSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderTrip(b.getAttribute('data-ev'));
+    });
+  });
+  renderTrip('completed');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

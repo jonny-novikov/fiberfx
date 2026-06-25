@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.01.1 — Fixed &amp; sliding windows · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.01.1 dive: the fixed-window rate limiter is a counter and a clock — INCR the count, PEXPIRE the window once, refuse at max, and the window is the key's own TTL. Its flaw is the boundary burst: up to 2× max across the seam of two adjacent windows. The sliding refinement fixes it — a weighted counter pair or a sorted log trimmed by ZREMRANGEBYSCORE. The worked shape is EchoMQ's emq:{q}:limiter counter, read with EchoMQ.Metrics.get_rate_limit_ttl/3. Grounded in echo/apps/echo_mq — metrics.ex, meter.ex.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+.dtable{width:100%;border-collapse:collapse;margin:4px 0 18px;font-size:.9rem}
+.dtable th,.dtable td{border:1px solid var(--b-line);padding:8px 12px;text-align:left;vertical-align:top}
+.dtable th{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--b-dim);background:var(--b-card)}
+.dtable td code{font-size:.86em}
+.dtable .ch-s{font-family:var(--mono);font-weight:700;color:var(--r-red)}
+.dtable .ch-e{font-family:var(--mono);font-weight:700;color:var(--b-ts)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the window-trace figure (hover-select) ---------- */
+.tflow{width:100%;height:auto;display:block;margin-top:4px}
+.tflow .win rect{fill:var(--b-pay-tint);stroke:var(--b-line);stroke-width:1.2}
+.tflow .win text{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.tflow .axis{stroke:var(--b-line);stroke-width:1.2}
+.tflow .seam{stroke:var(--b-dim);stroke-width:1.4;stroke-dasharray:4 3}
+.tflow .grp{cursor:pointer;transition:opacity .18s ease}
+.tflow .grp .rq{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.3}
+.tflow .grp .rl{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.tflow.focus .grp{opacity:.24}
+.tflow.focus .grp.on{opacity:1}
+.tflow.focus .grp.on .rq{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.4}
+/* ---------- the compare figure (hover-select) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .lane rect{fill:none;stroke:var(--b-line);stroke-width:1.2;stroke-dasharray:3 3}
+.cflow .lane text{font:10px var(--mono);fill:var(--b-dim);text-anchor:start}
+.cflow .alg{cursor:pointer;transition:opacity .18s ease}
+.cflow .alg rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.cflow .alg text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .alg .cost{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow.focus .alg{opacity:.24}
+.cflow.focus .alg.on{opacity:1}
+.cflow.focus .alg.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.4}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><a href="/redis-patterns/flow-control/rate-limiting">rate-limiting</a><span class="rsep">/</span><span class="rcur">fixed-and-sliding-windows</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#fixed">The fixed window</a>
+      <a href="#burst">The boundary burst</a>
+      <a href="#sliding">The sliding refinement</a>
+      <a href="#applied">Applied</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control/rate-limiting">Rate limiting</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Fixed &amp; sliding windows</span>
+      </nav>
+      <p class="kicker">R6.01.1 &#183; Rate limiting &#8212; dive</p>
+      <h1>Fixed &amp; sliding windows <span class="hns">&#8212; a counter and a clock</span>.</h1>
+      <p class="lede">The simplest rate limiter is a counter and a clock: count what is admitted in the current
+      slice of time, refuse once the count reaches the cap, and let the count reset when the slice rolls. That
+      is the <b>fixed window</b>, and it is the exact shape EchoMQ ships &#8212; a counter spent down against a
+      configured <code>max</code>, where the window <em>is</em> the key's own TTL.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/metrics.ex &#183;
+      EchoMQ.Metrics.get_rate_limit_ttl/3 (the @rate_ttl Lua, the fixed-window counter read against emq:{q}:limiter
+      and emq:{q}:meta) &#183; meter.ex &#183; EchoMQ.Meter.rate_limit_hit/2, the [:emq, :rate_limit, :hit] receipt.</p>
+
+      <figure class="anatomy" aria-labelledby="tCap">
+        <figcaption id="tCap"><b>One burst, two windows, the seam between them.</b> Select a request to read
+        whether it was admitted and how the counter stood. Six requests fall across the boundary of two adjacent
+        fixed windows &#8212; watch what the seam lets through.</figcaption>
+        <div class="segbar" id="tSel" role="group" aria-label="Select a request in the trace">
+          <button type="button" data-r="r1" aria-pressed="false">early W1</button>
+          <button type="button" data-r="r2" aria-pressed="false">end W1 &#183; #2</button>
+          <button type="button" data-r="r3" aria-pressed="false">end W1 &#183; #3</button>
+          <button type="button" data-r="r4" aria-pressed="false">start W2 &#183; #1</button>
+          <button type="button" data-r="r5" aria-pressed="false">start W2 &#183; #2</button>
+          <button type="button" data-r="seam" aria-pressed="false">the seam</button>
+        </div>
+        <svg class="tflow" id="tflow" viewBox="0 0 460 176" role="img" aria-label="A time axis with two adjacent fixed windows W1 and W2, a cap of 3, and a dashed seam line between them. Six request marks sit along the axis: one early in W1, two at the end of W1, two at the start of W2. The two-plus-two cluster straddles the seam — four admits in a short span across the boundary, on top of W1's earlier admit. Select a request to read how the counter stood.">
+          <g class="win"><rect x="22" y="36" width="196" height="64" rx="5"></rect><text x="120" y="52">W1 &#183; max 3</text></g>
+          <g class="win"><rect x="240" y="36" width="196" height="64" rx="5"></rect><text x="338" y="52">W2 &#183; max 3</text></g>
+          <line class="axis" x1="22" y1="120" x2="436" y2="120"></line>
+          <line class="seam" x1="229" y1="30" x2="229" y2="132"></line>
+          <text x="229" y="148" style="font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle">window rolls &#8594; counter resets</text>
+
+          <g class="grp" data-r="r1">
+            <circle class="rq" cx="58" cy="82" r="13"></circle><text class="rl" x="58" y="86">R1</text>
+          </g>
+          <g class="grp" data-r="r2">
+            <circle class="rq" cx="170" cy="82" r="13"></circle><text class="rl" x="170" y="86">R2</text>
+          </g>
+          <g class="grp" data-r="r3">
+            <circle class="rq" cx="204" cy="82" r="13"></circle><text class="rl" x="204" y="86">R3</text>
+          </g>
+          <g class="grp" data-r="r4">
+            <circle class="rq" cx="256" cy="82" r="13"></circle><text class="rl" x="256" y="86">R4</text>
+          </g>
+          <g class="grp" data-r="r5">
+            <circle class="rq" cx="290" cy="82" r="13"></circle><text class="rl" x="290" y="86">R5</text>
+          </g>
+          <g class="grp" data-r="seam">
+            <rect class="rq" x="156" y="104" width="178" height="20" rx="4"></rect><text class="rl" x="245" y="118">4 admits across the seam</text>
+          </g>
+        </svg>
+        <div class="readout" id="tOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a request.
+        W1 admits its 3; the counter resets at the seam; W2 admits 3 more. The cluster at the boundary &#8212;
+        2 at the end of W1, 2 at the start of W2 &#8212; sends <b>4 requests in a short span</b>, more than one
+        window's cap of 3, while neither window's own counter is ever exceeded.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="fixed">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The fixed window</h2>
+        <span class="ssrc">metrics.ex &#183; the @rate_ttl read</span>
+      </div>
+      <div class="prose">
+        <p>Pick a window &#8212; one second, one minute &#8212; and a cap <code>max</code>. Keep one counter per
+        window. On each admitted request, increment the counter; on the first increment, set the counter to expire
+        when the window ends; refuse any request that arrives while the counter has already reached
+        <code>max</code>. The reset is not a scheduled job &#8212; it is the key expiring. When the key is gone,
+        the next request recreates it at one, and a fresh window has begun.</p>
+        <p>Two Valkey commands carry the whole algorithm. <code>INCR</code> creates the key at one if it does not
+        exist and returns the new value atomically &#8212; the count and the create are a single operation, so two
+        concurrent admits can never both read zero and both write one. <code>PEXPIRE</code> arms the window: set
+        it once, on the first hit, to the window length in milliseconds, and never reset it again &#8212; resetting
+        it on every hit would slide the deadline forward forever and the window would never roll. The remaining
+        lifetime, read with <code>PTTL</code>, is precisely how long until the budget resets &#8212; the back-off
+        a request over budget must wait.</p>
+        <p>EchoMQ ships this as a read. <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code> declares two keys &#8212;
+        the limiter counter <code>emq:{q}:limiter</code> and the queue's meta hash <code>emq:{q}:meta</code>
+        &#8212; and answers the remaining window in milliseconds, or <code>0</code> when the queue is not over
+        budget.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Metrics &#183; echo/apps/echo_mq &#183; the @rate_ttl Lua: the fixed-window counter, read side<span class="tag">verbatim</span></figcaption>
+        <pre>local max = tonumber(ARGV[1])
+if max == 0 then
+  max = tonumber(redis.call('HGET', KEYS[2], 'max') or '0')   <span class="fd">&#8592; the cap, from emq:{q}:meta</span>
+end
+if max &gt; 0 and max &lt;= tonumber(redis.call('GET', KEYS[1]) or '0') then   <span class="fd">&#8592; counter reached max?</span>
+  local pttl = redis.call('PTTL', KEYS[1])   <span class="fd">&#8592; the window: the key's own TTL</span>
+  if pttl &gt; 0 then return pttl end          <span class="fd">&#8592; ms until reset = the back-off</span>
+end
+return 0                                     <span class="fd">&#8592; 0 = admit, not over budget</span></pre>
+      </figure>
+      <div class="prose">
+        <p>The script reads the cap (<code>HGET emq:{q}:meta max</code> when the caller passes zero), compares the
+        live counter against it (<code>GET emq:{q}:limiter</code>), and &#8212; only when the counter has reached
+        <code>max</code> and the window still has time left &#8212; returns the remaining <code>PTTL</code>. A
+        <code>0</code> means admit; any positive number is the milliseconds to wait. Every key the script touches
+        is declared in <code>KEYS[]</code>, so the <code>{q}</code> hashtag pins both keys to one cluster slot and
+        the read is atomic and slot-legal. When a limit is hit,
+        <code>EchoMQ.Meter.rate_limit_hit/2</code> emits <code>[:emq, :rate_limit, :hit]</code> with the delay
+        &#8212; a telemetry receipt, no cost when <code>:telemetry</code> is not loaded.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>PEXPIRE</code> sets the window once, on the
+      first hit, so the counter's own time-to-live <em>is</em> the window &#8212; no separate timer, no scheduled
+      reset. <code>INCR</code> is the atomic create-and-count beneath it: the new value is returned in one
+      operation, so concurrent admits cannot both miss the cap &#8212;
+      <a href="https://valkey.io/commands/incr/" rel="noopener">valkey.io/commands/incr</a>.</p>
+      <p class="take">A fixed-window limiter is one counter and one TTL: <code>INCR</code> to count,
+      <code>PEXPIRE</code> once to arm the window, refuse at <code>max</code>, and the key's expiry rolls the
+      window. EchoMQ reads that exact shape with <code>get_rate_limit_ttl/3</code> &#8212; the remaining
+      <code>PTTL</code> is the over-budget back-off.</p>
+    </section>
+
+    <section id="burst">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The boundary burst</h2>
+        <span class="ssrc">the flaw at the seam</span>
+      </div>
+      <div class="prose">
+        <p>The fixed window has one flaw, and it lives at the seam. The counter resets the instant the window
+        rolls, with no memory of how the previous window was spent. A client that times its requests to the
+        boundary can spend the whole budget at the very end of one window and the whole budget again at the very
+        start of the next &#8212; <code>max</code> requests in the last moment of window one, <code>max</code>
+        more in the first moment of window two. Across the short span straddling the seam, the client sent up to
+        <b>2 &#215; <code>max</code></b> requests, while every window's own counter stayed within its limit.</p>
+        <p>The cause is that the fixed window measures against a fixed grid of slices, not against a span that
+        moves with the request. A burst that lands inside one slice is bounded; a burst that lands across a slice
+        boundary is bounded per slice but not across the seam, because the two slices are counted independently.
+        The window the limiter enforces and the window the client experiences are not the same window.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="bCap">
+        <figcaption id="bCap"><b>Fixed vs sliding, over the same burst.</b> Select an algorithm to read how it
+        scores the boundary cluster and what it costs to run. The fixed window counts per slice; the sliding ones
+        measure a span that ends now.</figcaption>
+        <div class="segbar" id="bSel" role="group" aria-label="Select a rate-limiting algorithm">
+          <button type="button" data-a="fixed" aria-pressed="false">fixed window</button>
+          <button type="button" data-a="swc" aria-pressed="false">sliding counter</button>
+          <button type="button" data-a="log" aria-pressed="false">sliding log</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 150" role="img" aria-label="Three algorithms scoring the same boundary burst. The fixed window admits up to 2 times max across the seam at O(1) state. The sliding counter weights the previous window by the fraction still in view, smoothing the seam at O(1) state, approximate. The sliding log keeps a sorted set of timestamps trimmed by score, exact, at O(n) state. Select an algorithm to read it.">
+          <g class="lane"><rect x="20" y="28" width="420" height="92" rx="6"></rect><text x="26" y="24">over the same boundary burst</text></g>
+
+          <g class="alg" data-a="fixed">
+            <rect x="40" y="50" width="112" height="44" rx="5"></rect>
+            <text x="96" y="70">fixed window</text>
+            <text class="cost" x="96" y="84">O(1) &#183; bursts at seam</text>
+          </g>
+          <g class="alg" data-a="swc">
+            <rect x="174" y="50" width="112" height="44" rx="5"></rect>
+            <text x="230" y="70">sliding counter</text>
+            <text class="cost" x="230" y="84">O(1) &#183; smooth, approx</text>
+          </g>
+          <g class="alg" data-a="log">
+            <rect x="308" y="50" width="112" height="44" rx="5"></rect>
+            <text x="364" y="70">sliding log</text>
+            <text class="cost" x="364" y="84">O(n) &#183; exact</text>
+          </g>
+        </svg>
+        <div class="readout" id="bOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an
+        algorithm. The <b>fixed window</b> admits up to 2&#215; max across the seam for one counter and one TTL.
+        The <b>sliding counter</b> weights the previous window and smooths the seam, still O(1). The
+        <b>sliding log</b> counts the exact requests in the rolling span &#8212; exact, but O(n) memory.</div>
+      </figure>
+      <p class="take">The fixed window is bounded per slice but not across the seam: a burst timed to the boundary
+      sends up to twice the cap. For a coarse throughput budget that is acceptable; when the cap is the real
+      protection, the window has to move with the request.</p>
+    </section>
+
+    <section id="sliding">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The sliding refinement</h2>
+        <span class="ssrc">the counter pair &#183; the sorted log</span>
+      </div>
+      <div class="prose">
+        <p>A sliding window measures against a span that ends <em>now</em> and reaches back exactly one window, so
+        there is no grid and no seam to exploit. Two refinements reach it, and they trade memory against
+        exactness.</p>
+        <p>The <b>sliding-window counter</b> keeps the fixed window's cheap shape and corrects the seam by
+        arithmetic. Keep two counters &#8212; the current window and the previous one &#8212; and weight the
+        previous window's count by the fraction of it still inside the rolling span. If the rolling window is one
+        minute and fifteen seconds have elapsed into the current window, three-quarters of the previous window is
+        still in view, so the estimate is the current count plus three-quarters of the previous count. It is an
+        approximation &#8212; it assumes the previous window's requests were spread evenly &#8212; but it is
+        bounded, smooth across the seam, and still costs only two integers per key.</p>
+        <p>The <b>sliding log</b> is exact. Keep a sorted set of request timestamps &#8212; the score is the time,
+        the member is a unique request id. On each request, trim everything older than the span with
+        <code>ZREMRANGEBYSCORE</code> (remove every member whose score is below <code>now &#8722; window</code>),
+        then <code>ZCARD</code> is the live count of requests still inside the window; admit if it is below
+        <code>max</code> and <code>ZADD</code> the new timestamp. There is no seam because there are no slices
+        &#8212; only a moving span and the exact set of requests inside it. The cost is the trade: the set holds
+        one member per request in the window, so its memory is O(n) in the rate, where the counter is O(1).</p>
+      </div>
+      <table class="dtable">
+        <thead><tr><th>Algorithm</th><th>State</th><th>The seam</th><th>The trade</th></tr></thead>
+        <tbody>
+          <tr><td>Fixed window</td><td><code>INCR</code> + <code>PEXPIRE</code>, one counter</td><td class="ch-s">bursts</td><td>cheapest; up to 2&#215; max at the boundary</td></tr>
+          <tr><td>Sliding counter</td><td>two counters, weighted</td><td class="ch-e">smooth</td><td>O(1); an even-spread approximation</td></tr>
+          <tr><td>Sliding log</td><td>a sorted set of timestamps</td><td class="ch-e">exact</td><td>O(n) memory in the rate; no slices</td></tr>
+        </tbody>
+      </table>
+      <div class="prose">
+        <p>The choice is the usual one. The fixed window is cheapest and bursts at edges; the sliding-window
+        counter is nearly as cheap and smooth; the sliding log is exact and the most expensive. EchoMQ's limiter
+        is the fixed window &#8212; one counter, one TTL &#8212; because a queue's budget is a coarse throughput
+        cap where a boundary burst is tolerable, and the cheapest limiter that holds the budget is the right one.
+        A surface that needs an exact rolling count reaches for the log; one that needs smoothness without the
+        memory reaches for the counter pair.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A fixed window counts admits per slice of time and refuses at the cap, where the slice is the
+          counter's own TTL. It is the cheapest limiter and it leaks at the seam &#8212; up to twice the cap
+          across a window boundary.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>The <code>emq:{q}:limiter</code> counter is spent down to <code>max</code> (from
+          <code>emq:{q}:meta</code>) over its own <code>PTTL</code> window.
+          <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code> reads the remaining window &#8212; the over-budget
+          back-off &#8212; and <code>[:emq, :rate_limit, :hit]</code> is the receipt.</p>
+        </div>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The sliding log is a sorted set:
+      <code>ZREMRANGEBYSCORE key 0 (now-window)</code> drops the timestamps that have aged out, then
+      <code>ZCARD</code> is the exact count still inside the rolling span &#8212; the seam disappears because there
+      are no slices to count independently &#8212;
+      <a href="https://valkey.io/commands/zremrangebyscore/" rel="noopener">valkey.io/commands/zremrangebyscore</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The pattern, applied</h2>
+        <span class="ssrc">echo/apps/codemojex</span>
+      </div>
+      <div class="prose">
+        <p>In EchoMQ the fixed-window algorithm is the <code>emq:{q}:limiter</code> counter spent down to
+        <code>max</code> &#8212; the cap read from <code>emq:{q}:meta</code> &#8212; over its own <code>PTTL</code>
+        window. The window is not a timer the bus runs; it is the key's TTL, set once on the first hit and left to
+        expire. Incrementing the counter on each admitted job and deferring an over-budget job until the window
+        resets is the enforcement loop the queue's scaling layer wires at the dequeue point.</p>
+        <p>A consumer makes the budget concrete. In codemojex (<code>echo/apps/codemojex</code>) &#8212; a Telegram
+        emoji-guessing game on the same stack &#8212; a per-queue <code>emq:{q}:limiter</code> counter caps the
+        work one room or one user can push at the engine, so a flood of guesses from one chat cannot starve the
+        others. Because the counter lives in Valkey, not in any worker, the budget is one shared figure across
+        every bot worker &#8212; the subject of the global-not-local dive.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The limiter at the dequeue point</h3>
+          <p>The Queue pillar wires the budget into the claim path &#8212; counting each admit, deferring an
+          over-budget job until the window resets &#8212; alongside fair lanes and worker concurrency.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>The keyspace the counter lives in</h3>
+          <p>Part B3 builds the Valkey-native bus: the <code>emq:{q}:</code> keyspace, jobs and lanes, and the
+          declared-keys rule that pins <code>limiter</code> and <code>meta</code> to one slot.</p>
+        </a>
+        <a class="door" href="/redis-patterns/flow-control/rate-limiting/global-not-local">
+          <span class="dr">R6.01.3</span>
+          <h3>Why the counter is global</h3>
+          <p>The limiter counter sits in Valkey, not in a worker, so the budget holds across every worker, runtime,
+          and node &#8212; one shared key, no N&#215; overshoot.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/incr/" rel="noopener">Valkey &mdash; <em>INCR</em></a> &mdash; the atomic increment-and-create that counts admits without a read-then-write race.</li>
+            <li><a href="https://valkey.io/commands/pexpire/" rel="noopener">Valkey &mdash; <em>PEXPIRE</em></a> &mdash; arming the window once, so the counter's own TTL <em>is</em> the window.</li>
+            <li><a href="https://valkey.io/commands/pttl/" rel="noopener">Valkey &mdash; <em>PTTL</em></a> &mdash; the remaining lifetime of the counter &#8212; the time until reset, the over-budget back-off.</li>
+            <li><a href="https://valkey.io/commands/zremrangebyscore/" rel="noopener">Valkey &mdash; <em>ZREMRANGEBYSCORE</em></a> &mdash; trimming the sorted log by score so <code>ZCARD</code> counts only the timestamps still in span.</li>
+            <li><a href="https://blog.cloudflare.com/counting-things-a-lot-of-different-things/" rel="noopener">Cloudflare &mdash; <em>Counting things, a lot of different things</em></a> &mdash; the sliding-window counter as a bounded approximation that weights the previous window.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control/rate-limiting">R6.01 &#183; Rate limiting</a><span class="rs">the module hub &#8212; the four algorithms</span></li>
+            <li><a href="/redis-patterns/flow-control/rate-limiting/token-and-leaky-buckets">R6.01.2 &#183; Token &amp; leaky buckets</a><span class="rs">the burst-aware family that smooths instead of slicing</span></li>
+            <li><a href="/redis-patterns/flow-control/rate-limiting/global-not-local">R6.01.3 &#183; Global, not local</a><span class="rs">why the counter belongs in Valkey</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the limiter wired at the dequeue point</span></li>
+            <li><a href="/bcs/bus">/bcs/bus</a><span class="rs">the bus and the <code>emq:{q}:</code> keyspace</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/flow-control/rate-limiting"><span class="pk">prev</span>&#8592; R6.01 &#183; Rate limiting</a>
+      <a class="pgx" href="/redis-patterns/flow-control/rate-limiting/token-and-leaky-buckets"><span class="pk">next</span>R6.01.2 &#183; Token &amp; leaky buckets &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/flow-control/rate-limiting/fixed-and-sliding-windows">R6.01.1 &#183; Fixed &amp; sliding windows</a>
+        <a href="/redis-patterns/flow-control/rate-limiting/token-and-leaky-buckets">R6.01.2 &#183; Token &amp; leaky buckets</a>
+        <a href="/redis-patterns/flow-control/rate-limiting/global-not-local">R6.01.3 &#183; Global, not local</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: the window trace (pure lookup over a fixed dataset) ---------- */
+  var TR = {
+    r1:   { stood: 'W1 counter 0 → 1', verdict: 'admitted', note: 'early in W1, well under the cap of 3' },
+    r2:   { stood: 'W1 counter 1 → 2', verdict: 'admitted', note: 'at the end of W1 — still inside the cap' },
+    r3:   { stood: 'W1 counter 2 → 3', verdict: 'admitted', note: 'W1 now spent: the next W1 request would refuse' },
+    r4:   { stood: 'W2 counter 0 → 1', verdict: 'admitted', note: 'the window rolled — the counter reset to a fresh 0' },
+    r5:   { stood: 'W2 counter 1 → 2', verdict: 'admitted', note: 'a new window, a new budget, no memory of W1' },
+    seam: { stood: 'R2,R3 (end W1) + R4,R5 (start W2)', verdict: '4 admits in a short span', note: 'more than one window’s cap of 3 — the boundary burst, up to 2× max' }
+  };
+  function describeTr(r) {
+    var s = TR[r];
+    if (!s) return '';
+    return '<span class="rk">counter &#183;</span> ' + s.stood + ' &#8212; <b>' + s.verdict + '</b><br>' +
+      '<span class="rk">why &#183;</span> ' + s.note;
+  }
+  wireHoverSelect('tflow', '#tSel button', 'tOut', 'data-r', '.grp', describeTr,
+    '<span class="rk">readout &#183;</span> Select a request. W1 admits its 3; the counter resets at the seam; W2 admits 3 more. The cluster at the boundary &#8212; 2 at the end of W1, 2 at the start of W2 &#8212; sends <b>4 requests in a short span</b>, more than one window&#8217;s cap of 3, while neither window&#8217;s own counter is ever exceeded.');
+
+  /* ---------- Interactive 2: fixed vs sliding (pure lookup over a fixed dataset) ---------- */
+  var ALG = {
+    fixed: { state: 'one counter + one TTL — O(1)', seam: 'admits up to 2× max across the seam', use: 'cheapest; right for a coarse throughput budget like a queue cap' },
+    swc:   { state: 'two counters, weighted — O(1)', seam: 'smooth: weights the previous window by the fraction still in view', use: 'nearly as cheap as fixed; an even-spread approximation' },
+    log:   { state: 'a sorted set of timestamps — O(n)', seam: 'exact: ZREMRANGEBYSCORE trims, ZCARD counts the live span', use: 'when the cap is the real protection and the exact rolling count matters' }
+  };
+  function describeAlg(a) {
+    var s = ALG[a];
+    if (!s) return '';
+    return '<span class="rk">state &#183;</span> ' + s.state + '<br>' +
+      '<span class="rk">the seam &#183;</span> <b>' + s.seam + '</b><br>' +
+      '<span class="rk">use &#183;</span> ' + s.use;
+  }
+  wireHoverSelect('cflow', '#bSel button', 'bOut', 'data-a', '.alg', describeAlg,
+    '<span class="rk">readout &#183;</span> Select an algorithm. The <b>fixed window</b> admits up to 2&#215; max across the seam for one counter and one TTL. The <b>sliding counter</b> weights the previous window and smooths the seam, still O(1). The <b>sliding log</b> counts the exact requests in the rolling span &#8212; exact, but O(n) memory.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

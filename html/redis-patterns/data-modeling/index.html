@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7 · Data Modeling &amp; Memory — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="How data lives in RAM and whose truth it is. Redis is not only a cache: with the right persistence and eviction posture it is a system of record. R7 teaches Redis as a primary database, compact encodings, probabilistic structures, bitmaps, vector sets, and geospatial — grounded in EchoMQ's real job HASH at emq:{q}:job:<JOB> under noeviction and AOF everysec (echo/apps/echo_mq + infra/valkey/conf/valkey.conf), worked through codemojex's per-datum split: game state in Valkey, money in Postgres. Doors into the production config, the durability dial, and the durable floor.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50}
+.skip:focus{left:0}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero / crumbs ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.note{font-family:var(--mono);font-size:13px;color:var(--b-dim);border-left:3px solid var(--b-ts);padding-left:14px;margin:16px 0 0;max-width:78ch}
+
+/* ---------- mapping diagram (light) ---------- */
+.rp rect{fill:var(--b-paper);stroke:var(--b-line)}
+.rp .hit{stroke:var(--b-node)}
+.rp .miss{stroke:var(--r-red)}
+.rp .lock{fill:var(--r-red-tint);stroke:var(--r-red)}
+.rp text{font-family:var(--sans);fill:var(--b-ink);font-size:14px}
+.rp .lbl{font-family:var(--mono);fill:var(--b-dim);font-size:11px}
+.rp .flow{fill:none;stroke-width:1.6}
+.rp .back{fill:none;stroke:var(--b-ts);stroke-width:1.6;stroke-dasharray:5 4}
+
+/* ---------- use-case grid ---------- */
+.uses{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+.uses .use{border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card)}
+.uses .use h4{font-family:var(--mono);font-size:.95rem;margin:0 0 4px;color:var(--b-ink)}
+.uses .use p{font-family:var(--sans);font-size:.84rem;color:var(--b-dim);margin:0;line-height:1.45}
+@media(max-width:680px){.uses{grid-template-columns:1fr}}
+
+/* ---------- doors / vnote ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+.vnote{font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--b-dim);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:10px 13px;margin:16px 0 0;max-width:80ch}
+.vnote b{color:var(--b-ink)}
+
+/* ---------- the chapter map (cards) ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.mod.work{border-left:3px solid var(--r-red)}
+.mod.work .num::after{content:" · workshop";color:var(--b-dim)}
+
+/* ---------- up next ---------- */
+.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px}
+.upnext .mod .t{font-size:.92rem}
+@media(max-width:860px){.upnext{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.upnext{grid-template-columns:1fr}}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+
+/* ---------- the tier ladder figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.tfig{width:100%;height:auto;display:block;margin-top:4px}
+.tfig .tier rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.tfig .tier .tname{font:12px var(--mono);font-weight:700;fill:var(--b-ink)}
+.tfig .tier .tsub{font:10px var(--mono);fill:var(--b-dim)}
+.tfig .tier.vol rect{stroke:var(--b-ts)}
+.tfig .tier.rec rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.tfig .tier.floor rect{stroke:var(--b-node)}
+.tfig .dial{font:10px var(--mono);fill:var(--b-dim);text-anchor:end}
+.tfig.focus .tier{opacity:.28}
+.tfig.focus .tier.on{opacity:1}
+.tfig.focus .tier.on rect{stroke-width:2.6}
+
+/* ---------- the per-datum map figure (hover-select) ---------- */
+.dfig{width:100%;height:auto;display:block;margin-top:4px}
+.dfig .home rect{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.4}
+.dfig .home.valkey rect{stroke:var(--r-red);stroke-width:1.8}
+.dfig .home.pg rect{stroke:var(--b-ts);stroke-width:1.8}
+.dfig .home .hl{font:12px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.dfig .home .hs{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.dfig .datum{cursor:pointer;transition:opacity .18s ease}
+.dfig .datum rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:stroke .18s ease}
+.dfig .datum .dl{font:10.5px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.dfig .datum .arr{fill:none;stroke:var(--b-line);stroke-width:1.6;stroke-dasharray:4 3}
+.dfig .datum.toValkey .arr{stroke:var(--r-red)}
+.dfig .datum.toPg .arr{stroke:var(--b-ts)}
+.dfig.focus .datum{opacity:.22}
+.dfig.focus .datum.on{opacity:1}
+.dfig.focus .datum.on rect{stroke-width:2.6}
+.dfig.focus .datum.on .arr{stroke-width:2.6}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><span class="rcur">data-modeling</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#why">Why &amp; when</a>
+      <a href="#what">The patterns</a>
+      <a href="#apply">How to apply</a>
+      <a href="#workshop">Workshop</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <!-- ===================== HERO / OVERVIEW ===================== -->
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <span class="here">R7 · Data Modeling &amp; Memory</span>
+      </nav>
+      <p class="kicker">R7 · Data Modeling &amp; Memory</p>
+      <h1>How data lives<br>in <span class="hns">RAM</span>.</h1>
+      <p class="lede">Redis is not only a cache. With the right persistence and eviction posture it is a system of
+        record — and the modeling family is the set of techniques for spending the memory budget once a datum has
+        earned its place there.</p>
+      <p class="heronote">Every chapter before this used Redis structures as machinery. This one asks a different
+        question: how the data lives in RAM and whose truth it is. The grounding is EchoMQ's real job HASH
+        (<code>echo/apps/echo_mq</code>) — the <code>@enqueue</code> script writes <code>state</code>,
+        <code>attempts</code>, and <code>payload</code> at <code>emq:{q}:job:&lt;JOB&gt;</code> in one atomic step;
+        the committed <code>valkey.conf</code> keeps it with <code>maxmemory-policy noeviction</code> and makes it
+        durable with <code>appendfsync everysec</code> — worked through <b>codemojex</b>'s per-datum split: game
+        state in Valkey, money in Postgres. R7 records what R8 then runs in production.</p>
+      <div class="toc-mini">
+        <a href="#why">Why &amp; when</a>
+        <a href="#what">The patterns</a>
+        <a href="#apply">How to apply</a>
+        <a href="#workshop">Workshop</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <!-- ===================== WHY & WHEN ===================== -->
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Why &amp; when</h2>
+        <span class="ssrc">echo/apps/echo_mq</span>
+      </div>
+      <div class="prose">
+        <p>Reach for Redis as a primary store when the data is hot, operational, and tolerant of about a second of
+          loss — and keep it out of Redis when it is money. Two threads run through the chapter. The first is the
+          store as a <b>system of record</b>: with <code>noeviction</code> and an append-only log, the row in Valkey
+          is not a copy of something durable elsewhere — it is the record, and there is no second home to fall back
+          on. The second is memory as a <b>budget</b>: a value in RAM costs more than a value on disk, so the
+          modeling family is the set of techniques that spend that budget well. Each demand below has one matching
+          answer, and the chapter is the set of those answers.</p>
+      </div>
+      <div class="uses">
+        <div class="use"><h4>Sub-millisecond reads, high write throughput</h4><p>Treat RAM as the primary storage layer and disk as a recovery mechanism &#8212; the enqueue/claim/complete cycle is point reads and writes, one key, server-side, one round-trip.</p></div>
+        <div class="use"><h4>The truth has no second home</h4><p>When the row in Redis is the authoritative state, it must survive a crash and must never be evicted &#8212; that is <code>noeviction</code> plus an append-only log, decided per datum.</p></div>
+        <div class="use"><h4>The footprint must fit in RAM</h4><p>A value in memory is the expensive value &#8212; compact listpack/intset encodings, short field names, and capped structures keep the resident set small.</p></div>
+        <div class="use"><h4>An exact answer is not worth its memory</h4><p>Counting uniques or testing membership exactly can cost more than the answer is worth &#8212; probabilistic structures trade a bounded error for a fixed, tiny footprint.</p></div>
+      </div>
+      <figure class="anatomy" aria-labelledby="tierCap">
+        <figcaption id="tierCap"><b>The same record, dialled toward durability.</b> A volatile tier serves it fast;
+          a system of record holds the truth; the durable floor carries it off-box. Select a tier to see what it
+          guarantees and where EchoMQ sits.</figcaption>
+        <div class="segbar" id="tierSel" role="group" aria-label="Tiers of the durability ladder">
+          <button type="button" data-t="vol" aria-pressed="false">volatile · a cache copy</button>
+          <button type="button" data-t="rec" aria-pressed="false">system of record · the job HASH</button>
+          <button type="button" data-t="floor" aria-pressed="false">durable floor · off-box</button>
+        </div>
+        <svg class="tfig" id="tfig" viewBox="0 0 460 196" role="img" aria-label="Three stacked tiers ordered by durability. The top tier is volatile — a cache copy whose truth lives elsewhere, droppable on eviction. The middle tier is the system of record — the EchoMQ job HASH at emq:{q}:job:<JOB>, kept by noeviction and durable by AOF everysec with about a one-second loss bound. The bottom tier is the durable floor — the record replicated off-box by the Graft engine to Tigris. A dial label on the right runs from hold-nothing at the top to commit-per-record at the bottom. Select a tier to light it; the readout names its guarantee.">
+          <text class="dial" x="448" y="44">dial: hold nothing</text>
+          <g class="tier vol" data-t="vol">
+            <rect x="22" y="26" width="372" height="42" rx="7"></rect>
+            <text class="tname" x="36" y="46">volatile · a cache copy</text>
+            <text class="tsub" x="36" y="61">truth lives elsewhere · droppable on eviction (EchoStore)</text>
+          </g>
+          <text class="dial" x="448" y="100">~1s loss bound</text>
+          <g class="tier rec" data-t="rec">
+            <rect x="22" y="82" width="372" height="42" rx="7"></rect>
+            <text class="tname" x="36" y="102">system of record · emq:{q}:job:&lt;JOB&gt;</text>
+            <text class="tsub" x="36" y="117">noeviction + AOF everysec · the row IS the truth</text>
+          </g>
+          <text class="dial" x="448" y="156">commit-per-record</text>
+          <g class="tier floor" data-t="floor">
+            <rect x="22" y="138" width="372" height="42" rx="7"></rect>
+            <text class="tname" x="36" y="158">durable floor · off-box</text>
+            <text class="tsub" x="36" y="173">EchoStore.Graft → Tigris · replicated, far from loss</text>
+          </g>
+        </svg>
+        <div class="readout" id="tierOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a tier. The
+          volatile tier serves a copy fast; the system of record holds the truth under <code>noeviction</code> + AOF;
+          the durable floor replicates the record off-box. Durability is a dial a system turns per datum.</div>
+      </figure>
+      <p class="take">Every technique in this chapter answers one demand: serve the hot value fast, hold the truth
+        where it has no second home, spend the RAM budget well, and dial a datum toward durability only as far as it
+        needs.</p>
+    </section>
+
+    <!-- ===================== WHAT (the module cards) ===================== -->
+    <section id="what">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The patterns</h2>
+        <span class="ssrc">seven modules &#183; one built</span>
+      </div>
+      <div class="prose">
+        <p>The first module is built; the rest are specified. Each module is a hub with its dives, grounded in the
+          real echo data layer where it has an honest home and in a clean standalone example where it does not.</p>
+      </div>
+      <div class="legend">
+        <span><span class="pill built">built</span> ready to read</span>
+        <span><span class="pill soon">soon</span> specified</span>
+      </div>
+      <div class="mods">
+        <a class="mod" href="/redis-patterns/data-modeling/primary-database"><div class="top"><span class="num">R7.01</span><span class="pill built">built</span></div><p class="t">Redis as a primary database</p><p class="o">The store as the system of record, not a cache. Grounded in EchoMQ's job HASH (<code>emq:{q}:job:&lt;JOB&gt;</code>) under <code>noeviction</code> + AOF.</p></a>
+        <a class="mod" href="/redis-patterns/data-modeling/memory-optimization"><div class="top"><span class="num">R7.02</span><span class="pill built">built</span></div><p class="t">Memory optimization</p><p class="o">Compact encodings (listpack, intset) and short field names; capped structures with <code>LTRIM</code> and <code>MAXLEN ~</code>. EchoMQ's memory discipline.</p></a>
+        <a class="mod" href="/redis-patterns/data-modeling/probabilistic-data-structures"><div class="top"><span class="num">R7.03</span><span class="pill built">built</span></div><p class="t">Probabilistic data structures</p><p class="o">HyperLogLog, Bloom/Cuckoo, Count-Min/T-Digest &#8212; trade a bounded error for a fixed footprint. The contrast with EchoMQ's exact dedup.</p></a>
+        <a class="mod" href="/redis-patterns/data-modeling/bitmap-patterns"><div class="top"><span class="num">R7.04</span><span class="pill built">built</span></div><p class="t">Bitmaps</p><p class="o">Millions of boolean flags in minimal memory, aggregated with <code>BITCOUNT</code> &#8212; a standalone daily-active-cohort example.</p></a>
+        <a class="mod" href="/redis-patterns/data-modeling/vector-sets"><div class="top"><span class="num">R7.05</span><span class="pill built">built</span></div><p class="t">Vectors &amp; similarity search</p><p class="o">Redis 8 native vector sets (HNSW) for semantic search; the Valkey engine reaches vectors via the valkey-search module &#8212; a standalone example, codemojex note forward-tense.</p></a>
+        <div class="mod"><div class="top"><span class="num">R7.06</span><span class="pill soon">soon</span></div><p class="t">Geospatial</p><p class="o">Locations and radius queries on a geohash sorted set &#8212; a standalone <code>GEOADD</code> / <code>GEOSEARCH</code> example.</p></div>
+        <div class="mod work"><div class="top"><span class="num">R7.07</span><span class="pill soon">soon</span></div><p class="t">Workshop</p><p class="o">codemojex's dashboard read-models &#8212; the round leaderboard, the unique-players count, and the activity view, each a fold of operational state.</p></div>
+      </div>
+    </section>
+
+    <!-- ===================== HOW TO APPLY (interactive) ===================== -->
+    <section id="apply">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>How to apply</h2>
+        <span class="ssrc">name the datum &#183; the home follows</span>
+      </div>
+      <div class="prose">
+        <p>The hard part is not the structure but the judgment: whose truth is this datum, and what does it cost in
+          RAM. Name the datum and its tolerances &#8212; how much loss it can survive, whether it needs a
+          transaction &#8212; and the home follows. <code>Redis as a primary database</code> is never a global switch
+          thrown once; it is a per-datum decision made against two axes, and codemojex makes it in the open. Select a
+          datum to see where it lives and why.</p>
+      </div>
+      <figure class="anatomy" aria-labelledby="mapCap">
+        <figcaption id="mapCap"><b>Where does this datum live? &mdash; a per-datum decision, not a global switch.</b>
+          codemojex keeps hot, loss-tolerant operational state in Valkey and exact, transactional money in Postgres.
+          Select a datum to light its home.</figcaption>
+        <div class="segbar" id="mapSel" role="group" aria-label="codemojex data, each placed by loss-tolerance and transactional need">
+          <button type="button" data-d="job" aria-pressed="false">a queued job</button>
+          <button type="button" data-d="board" aria-pressed="false">the round board</button>
+          <button type="button" data-d="lock" aria-pressed="false">a guess lock</button>
+          <button type="button" data-d="wallet" aria-pressed="false">a wallet balance</button>
+          <button type="button" data-d="ledger" aria-pressed="false">the ledger row</button>
+        </div>
+        <svg class="dfig" id="dfig" viewBox="0 0 460 210" role="img" aria-label="Five codemojex data are placed between two homes. On the left, Valkey — the system of record for hot, operational, about-one-second-loss-tolerant state. On the right, Postgres — for exact state that must move in one transaction. A queued job, the round board, and a guess lock route to Valkey. A wallet balance and the ledger row route to Postgres. Select a datum to light its home and the reason for the placement.">
+          <g class="home valkey">
+            <rect x="20" y="78" width="120" height="54" rx="8"></rect>
+            <text class="hl" x="80" y="100">Valkey · cm:*</text>
+            <text class="hs" x="80" y="116">hot · ~1s-loss-ok</text>
+            <text class="hs" x="80" y="127">noeviction + AOF</text>
+          </g>
+          <g class="home pg">
+            <rect x="320" y="78" width="120" height="54" rx="8"></rect>
+            <text class="hl" x="380" y="100">Postgres</text>
+            <text class="hs" x="380" y="116">exact · ACID</text>
+            <text class="hs" x="380" y="127">one transaction</text>
+          </g>
+          <g class="datum toValkey" data-d="job">
+            <path class="arr" d="M218 42 L140 92"></path>
+            <rect x="170" y="26" width="100" height="30" rx="6"></rect>
+            <text class="dl" x="220" y="45">a queued job</text>
+          </g>
+          <g class="datum toValkey" data-d="board">
+            <path class="arr" d="M210 86 L140 100"></path>
+            <rect x="172" y="72" width="96" height="28" rx="6"></rect>
+            <text class="dl" x="220" y="90">round board</text>
+          </g>
+          <g class="datum toValkey" data-d="lock">
+            <path class="arr" d="M210 150 L140 118"></path>
+            <rect x="172" y="140" width="96" height="28" rx="6"></rect>
+            <text class="dl" x="220" y="158">guess lock</text>
+          </g>
+          <g class="datum toPg" data-d="wallet">
+            <path class="arr" d="M250 86 L320 100"></path>
+            <rect x="194" y="72" width="100" height="28" rx="6"></rect>
+            <text class="dl" x="244" y="90">wallet balance</text>
+          </g>
+          <g class="datum toPg" data-d="ledger">
+            <path class="arr" d="M250 150 L320 118"></path>
+            <rect x="196" y="140" width="96" height="28" rx="6"></rect>
+            <text class="dl" x="244" y="158">ledger row</text>
+          </g>
+        </svg>
+        <div class="readout" id="mapOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a datum. Each
+          is placed against two axes &#8212; how much loss it can survive and whether it must move in one transaction.
+          Hot, loss-tolerant state goes to Valkey; exact money goes to Postgres.</div>
+      </figure>
+      <p class="take">There is no global "Redis as a primary database" switch &#8212; only the per-datum judgment that
+        sends a job to Valkey as the record of truth and a wallet balance to Postgres for the one-transaction
+        coupling.</p>
+    </section>
+
+    <!-- ===================== WORKSHOP + the application doors ===================== -->
+    <section id="workshop">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The workshop</h2>
+        <span class="ssrc">echo/apps/codemojex &#183; valkey.conf</span>
+      </div>
+      <div class="prose">
+        <p>The chapter closes with <strong>R7.07</strong>: codemojex's dashboard read-models, built on the same
+          per-datum discipline R7.01 establishes. Game state — the round leaderboard (<code>Codemojex.Board</code>,
+          the sorted set <code>cm:<game>:board</code>) and the per-player guess locks (<code>Codemojex.Locks</code>,
+          the hash <code>cm:<round>:lock:<player></code>) — lives in Valkey because it is hot, operational, and
+          tolerant of about a second of loss. Money — the player balances (<code>Codemojex.Wallet</code>) and the
+          append-only transaction ledger (<code>Codemojex.Ledger</code>) — lives in Postgres because a balance must
+          be exact and must move with its ledger row in one transaction. The read-models are folds of the operational
+          side: the leaderboard a range read, the uniques a probabilistic count, the activity view a replay.</p>
+        <p>The contrast that frames the chapter is <strong>Oban</strong>: Oban keeps its jobs in the same Postgres as
+          the application data, so a job and a business row commit in one transaction — one store, full coupling.
+          Echo separates the bus (the job HASH in Valkey) from the store and buys an in-memory hot path plus a
+          durability dial; it gives up that one-transaction coupling. Each design names its trade. EchoMQ chooses the
+          in-memory record and the ~1s AOF bound; the next rungs of the dial carry the record further from loss.</p>
+      </div>
+      <figure class="anatomy" aria-labelledby="recCap">
+        <figcaption id="recCap"><b>The row is the record — no second home.</b> The <code>@enqueue</code> script
+          writes the three-field job HASH in one atomic step; <code>claim</code>, <code>complete</code>, and
+          <code>retry</code> mutate that same row. Select a field to see what it holds.</figcaption>
+        <div class="segbar" id="recSel" role="group" aria-label="Fields of the job HASH at emq:{q}:job:<JOB>">
+          <button type="button" data-f="state" aria-pressed="false">state</button>
+          <button type="button" data-f="attempts" aria-pressed="false">attempts</button>
+          <button type="button" data-f="payload" aria-pressed="false">payload</button>
+        </div>
+        <svg class="dfig" id="recfig" viewBox="0 0 460 150" role="img" aria-label="The EchoMQ job HASH at emq:{q}:job:<JOB> with three fields. state holds the lifecycle value — pending, active, scheduled, or dead. attempts is the integer retry fence, bumped with HINCRBY. payload is the job body. There is no second canonical copy: this hash is the job's authoritative state. Select a field to light it.">
+          <text class="hs" x="22" y="22" style="text-anchor:start;fill:var(--b-dim)">HSET emq:{q}:job:&lt;JOB&gt; &middot; the record of truth, no shadow copy</text>
+          <g class="datum toValkey" data-d="state">
+            <rect x="22" y="40" width="130" height="74" rx="7"></rect>
+            <text class="dl" x="87" y="70">state</text>
+            <text class="hs" x="87" y="90">pending / active</text>
+            <text class="hs" x="87" y="103">scheduled / dead</text>
+          </g>
+          <g class="datum toValkey" data-d="attempts">
+            <rect x="166" y="40" width="128" height="74" rx="7"></rect>
+            <text class="dl" x="230" y="70">attempts</text>
+            <text class="hs" x="230" y="90">the integer fence</text>
+            <text class="hs" x="230" y="103">bumped by HINCRBY</text>
+          </g>
+          <g class="datum toValkey" data-d="payload">
+            <rect x="308" y="40" width="130" height="74" rx="7"></rect>
+            <text class="dl" x="373" y="70">payload</text>
+            <text class="hs" x="373" y="90">the job body</text>
+            <text class="hs" x="373" y="103">written once at enqueue</text>
+          </g>
+        </svg>
+        <div class="readout" id="recOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a field. The
+          job HASH carries <code>state</code>, <code>attempts</code>, and <code>payload</code> — written by the
+          <code>@enqueue</code> script in one atomic step and mutated in place, with no second canonical copy.</div>
+      </figure>
+      <div class="doors">
+        <a class="door" href="/bcs/fly/valkey-on-a-fly-machine">
+          <span class="dr">/bcs/fly</span>
+          <h3>The production config</h3>
+          <p>The same <code>noeviction</code> + AOF posture, run on a Fly machine: the pinned image, the
+            <code>maxmemory</code> budget, <code>appendfsync everysec</code>, and why a queue's store must surface
+            memory pressure as write errors rather than drop work silently.</p>
+        </a>
+        <a class="door" href="/echo-persistence">
+          <span class="dr">/echo-persistence</span>
+          <h3>The durable floor</h3>
+          <p>The ~1s AOF bound is one rung of the dial. Beneath it the record is committed per change and replicated
+            off-box — <code>EchoStore.Graft</code> into the page engine and out to Tigris, the durability dial taught
+            end to end.</p>
+        </a>
+      </div>
+      <p class="vnote"><b>Notes on Valkey.</b> A small hash like the three-field job row stays in a compact listpack
+        layout while it is below the configured entry and value thresholds, so a record of truth costs little memory
+        per key; <code>HSET</code> writes the fields and <code>HGETALL</code> reads the whole row back.
+        <span style="color:var(--b-ts)">valkey.io/topics/persistence</span></p>
+    </section>
+
+    <!-- ===================== UP NEXT ===================== -->
+    <section id="upnext">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Up next</h2>
+        <span class="ssrc">R8</span>
+      </div>
+      <div class="prose">
+        <p>R7 establishes that Redis can be a system of record and how its data is modeled in RAM. The chapter that
+          follows is the operations concern over that same record — running the tier at scale.</p>
+      </div>
+      <div class="upnext">
+        <div class="mod"><div class="top"><span class="num">R8</span><span class="pill soon">soon</span></div><p class="t">Production &amp; Operations</p><p class="o">Running the tier at scale &#8212; kernel tuning, persistence and failover, the case studies, and the capstone.</p></div>
+      </div>
+    </section>
+
+    <!-- ===================== REFERENCES ===================== -->
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <p class="refgrp">Sources</p>
+          <ul>
+            <li><a href="https://valkey.io/topics/persistence/" rel="noopener">Valkey &mdash; <em>Persistence</em></a> &mdash; the <code>appendonly</code> <code>everysec</code> posture and a roughly one-second loss bound after a crash, the durability mechanism this chapter is built on.</li>
+            <li><a href="https://valkey.io/topics/lru-cache/" rel="noopener">Valkey &mdash; <em>Eviction</em></a> &mdash; the <code>maxmemory-policy</code> menu; <code>noeviction</code> refuses the write rather than dropping a key, the posture a system of record needs.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{q}</code> hash tag forces every key of one queue onto one of the 16384 hash slots.</li>
+            <li><a href="https://hexdocs.pm/oban/Oban.html" rel="noopener">Oban</a> &mdash; jobs and data in one Postgres transaction; the trade EchoMQ makes the other way, an in-memory record plus the durability dial.</li>
+          </ul>
+        </div>
+        <div>
+          <p class="refgrp">Related in this course</p>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/primary-database">R7.01 &middot; Redis as a primary database</a><span class="rs">the store as the system of record, with the system-of-record, noeviction, and persistence dives</span></li>
+            <li><a href="/redis-patterns/caching/cache-aside">R1.01 &middot; Cache-aside</a><span class="rs">the cache tier whose truth lives elsewhere &#8212; the opposite of a system of record</span></li>
+            <li><a href="/bcs/fly/valkey-on-a-fly-machine">The Branded Component System &middot; Valkey on a Fly machine</a><span class="rs">the manuscript figure home (B8.2): the production posture of the same config</span></li>
+            <li><a href="/bcs/persistence">The Branded Component System &middot; persistence</a><span class="rs">the durability dial (B5) and the Oban trade in depth</span></li>
+            <li><a href="/echo-persistence">The persistence floor</a><span class="rs">the durable floor beneath the ~1s AOF bound &#8212; Graft to Tigris</span></li>
+            <li><a href="/bcs/store">The Branded Component System &middot; the store</a><span class="rs">EchoStore (B4): the near-cache that is explicitly not a system of record</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PAGER ===================== -->
+    <nav class="pager" aria-label="Chapter navigation">
+      <a class="pgx" href="/redis-patterns/flow-control"><span class="pk">prev</span>&#8592; R6 · Flow Control &amp; Scale</a>
+      <a class="pgx" href="/redis-patterns/data-modeling/primary-database"><span class="pk">begin</span>R7.01 · Redis as a primary database &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/redis-patterns/data-modeling/primary-database">R7.01 &#183; Redis as a primary database</a>
+        <a href="/bcs/fly/valkey-on-a-fly-machine">The production config</a>
+        <a href="/bcs/persistence">The durability dial</a>
+        <a href="/echo-persistence">The persistence floor</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/bcs/store">The Branded Component System — the store</a>
+        <a href="/bcs/persistence">The Branded Component System — persistence</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0OGHHvg33z7</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the durability ladder (pure over the chosen tier, no storage) ---------- */
+  // Three tiers ordered by durability. A volatile copy is droppable; the system of record holds the truth under
+  // noeviction + AOF; the durable floor replicates off-box. Which tier is lit, and the readout, are a pure function
+  // of the selection.
+  var TIER = {
+    vol:   { text: 'The <b>volatile</b> tier serves a copy fast — its truth lives elsewhere, so it is droppable. Under a cache eviction policy a key here is removed under memory pressure to keep serving. EchoStore is this tier: a derived, droppable near-cache, never a system of record.' },
+    rec:   { text: 'The <b>system of record</b> is the EchoMQ job HASH at <code>emq:{q}:job:&lt;JOB&gt;</code> — the row IS the truth, with no second home. It runs <code>noeviction</code> so a write is refused rather than a key dropped, and AOF <code>everysec</code> bounds a crash to about one second of loss.' },
+    floor: { text: 'The <b>durable floor</b> carries the record off-box: committed per change and replicated by <code>EchoStore.Graft</code> into the page engine and out to Tigris. It is the far end of the dial — the smallest loss window, reached without putting a database on the path of every dequeue.' }
+  };
+  var tfig = document.getElementById('tfig');
+  var tierButtons = document.querySelectorAll('#tierSel button');
+  var tierOut = document.getElementById('tierOut');
+  function selectTier(t) {
+    tierButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-t') === t ? 'true' : 'false');
+    });
+    if (tfig) {
+      tfig.classList.toggle('focus', !!t);
+      tfig.querySelectorAll('.tier').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-t') === t);
+      });
+    }
+    if (t && TIER[t]) {
+      if (tierOut) tierOut.innerHTML = '<span class="rk">readout &#183;</span> ' + TIER[t].text;
+    } else if (tierOut) {
+      tierOut.innerHTML = '<span class="rk">readout &#183;</span> Select a tier. The volatile tier serves a copy fast; the system of record holds the truth under <code>noeviction</code> + AOF; the durable floor replicates the record off-box. Durability is a dial a system turns per datum.';
+    }
+  }
+  tierButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = b.getAttribute('data-t');
+      selectTier(b.getAttribute('aria-pressed') === 'true' ? null : t);
+    });
+  });
+  if (tfig) {
+    tfig.querySelectorAll('.tier').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectTier(g.getAttribute('data-t')); });
+      g.addEventListener('mouseleave', function () { selectTier(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: where does this datum live? (pure over the chosen datum) ---------- */
+  // Each codemojex datum is placed against two axes: loss tolerance and transactional need. The placement is a pure
+  // lookup; the lit group and the readout follow the selection. No storage.
+  var DATUM = {
+    job:    { home: 'Valkey', text: 'A <b>queued job</b> goes to <b>Valkey</b>. It is operational and tolerant of about a second of loss, so its HASH at <code>emq:{q}:job:&lt;JOB&gt;</code> is the record of truth under <code>noeviction</code> + AOF. <code>Codemojex.Guesses.submit/3</code> mints a <code>JOB</code> id and enqueues it; there is no shadow row in Postgres.' },
+    board:  { home: 'Valkey', text: 'The <b>round board</b> goes to <b>Valkey</b>. <code>Codemojex.Board</code> writes each scored guess straight to the sorted set <code>cm:<game>:board</code> and reads the rank back with a range query — hot, loss-tolerant, and never needing a transaction with a business row.' },
+    lock:   { home: 'Valkey', text: 'A <b>guess lock</b> goes to <b>Valkey</b>. <code>Codemojex.Locks</code> keeps a locked position in the per-round hash <code>cm:<round>:lock:<player></code>, made server-side and durable for the round — operational state, decided per datum to live in the store.' },
+    wallet: { home: 'Postgres', text: 'A <b>wallet balance</b> goes to <b>Postgres</b>. <code>Codemojex.Wallet</code> mutates a balance inside a database transaction — a balance must be exact to the unit and must never lose a write, so it is the wrong datum for a ~1s-loss-tolerant store.' },
+    ledger: { home: 'Postgres', text: 'The <b>ledger row</b> goes to <b>Postgres</b>. <code>Codemojex.Ledger</code> is an append-only row written by <code>Codemojex.Wallet</code> inside the same transaction as the balance update, so the money and its statement move atomically — the one-transaction coupling Valkey deliberately gives up.' }
+  };
+  var dfig = document.getElementById('dfig');
+  var mapButtons = document.querySelectorAll('#mapSel button');
+  var mapOut = document.getElementById('mapOut');
+  function selectDatum(d) {
+    mapButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-d') === d ? 'true' : 'false');
+    });
+    if (dfig) {
+      dfig.classList.toggle('focus', !!d);
+      dfig.querySelectorAll('.datum').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-d') === d);
+      });
+    }
+    if (d && DATUM[d]) {
+      if (mapOut) mapOut.innerHTML = '<span class="rk">readout &#183;</span> ' + DATUM[d].text;
+    } else if (mapOut) {
+      mapOut.innerHTML = '<span class="rk">readout &#183;</span> Select a datum. Each is placed against two axes — how much loss it can survive and whether it must move in one transaction. Hot, loss-tolerant state goes to Valkey; exact money goes to Postgres.';
+    }
+  }
+  mapButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var d = b.getAttribute('data-d');
+      selectDatum(b.getAttribute('aria-pressed') === 'true' ? null : d);
+    });
+  });
+  if (dfig) {
+    dfig.querySelectorAll('.datum').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectDatum(g.getAttribute('data-d')); });
+      g.addEventListener('mouseleave', function () { selectDatum(null); });
+    });
+  }
+
+  /* ---------- Interactive 3: the three-field job HASH (pure over the chosen field) ---------- */
+  var FIELD = {
+    state:    { text: 'The <code>state</code> field holds the job’s lifecycle value — <code>pending</code>, <code>active</code>, <code>scheduled</code>, or <code>dead</code>. The <code>@enqueue</code> script writes it as <code>pending</code>; <code>claim</code>, <code>complete</code>, and <code>retry</code> mutate this same field on the same row.' },
+    attempts: { text: 'The <code>attempts</code> field is the integer retry fence, written as <code>0</code> at enqueue and bumped with <code>HINCRBY</code> on each retry — a counter that lives on the record itself, not in a second place.' },
+    payload:  { text: 'The <code>payload</code> field is the job body, written once by <code>@enqueue</code> and read back with the row. There is no canonical copy elsewhere: the hash at the job key is the job’s authoritative state.' }
+  };
+  var recfig = document.getElementById('recfig');
+  var recButtons = document.querySelectorAll('#recSel button');
+  var recOut = document.getElementById('recOut');
+  function selectField(f) {
+    recButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-f') === f ? 'true' : 'false');
+    });
+    if (recfig) {
+      recfig.classList.toggle('focus', !!f);
+      recfig.querySelectorAll('.datum').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-d') === f);
+      });
+    }
+    if (f && FIELD[f]) {
+      if (recOut) recOut.innerHTML = '<span class="rk">readout &#183;</span> ' + FIELD[f].text;
+    } else if (recOut) {
+      recOut.innerHTML = '<span class="rk">readout &#183;</span> Select a field. The job HASH carries <code>state</code>, <code>attempts</code>, and <code>payload</code> — written by the <code>@enqueue</code> script in one atomic step and mutated in place, with no second canonical copy.';
+    }
+  }
+  recButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var f = b.getAttribute('data-f');
+      selectField(b.getAttribute('aria-pressed') === 'true' ? null : f);
+    });
+  });
+  if (recfig) {
+    recfig.querySelectorAll('.datum').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectField(g.getAttribute('data-d')); });
+      g.addEventListener('mouseleave', function () { selectField(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

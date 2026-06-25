@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7.03.2 — Bloom &amp; Cuckoo filters · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R7.03.2 · A Bloom filter answers 'is this item in the set?' with possible false positives but zero false negatives — a bit array plus k hashes, where a 'no' is certain and a 'yes' is 'probably'. The signature use is cache penetration: reject requests for absent keys before they reach the database. A Cuckoo filter adds deletion. Bloom and Cuckoo are module commands (BF.* / CF.*), not core. Taught as a contrast: EchoMQ answers membership exactly with the emq:{q}:de:<dedupId> key, because a false 'already seen' would drop a job — the filter's one-sided error is in the wrong direction for idempotency.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.tbl{width:100%;border-collapse:collapse;margin:0 0 18px;font-family:var(--mono);font-size:12.5px}
+.tbl th,.tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--b-dim)}
+.tbl td{color:var(--b-ink)}
+.tbl td code{font-size:.92em}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the bit-array figure (hover-select k-hash lookup) ---------- */
+.bitfig{width:100%;height:auto;display:block;margin-top:4px}
+.bitfig .case rect.q{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;cursor:pointer;transition:fill .18s ease,stroke .18s ease}
+.bitfig .case.on.present rect.q{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.bitfig .case.on.absent rect.q{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:2}
+.bitfig .case.on.fp rect.q{fill:#f6ead0;stroke:#b8860b;stroke-width:2}
+.bitfig .ql{font:11px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.bitfig .bit{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1}
+.bitfig .bit.set{fill:var(--b-node);stroke:var(--b-node)}
+.bitfig .bit.hit{stroke:var(--r-red);stroke-width:2}
+.bitfig .bl{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.bitfig .cap{font:10px var(--mono);fill:var(--b-dim)}
+.bitfig.focus .case{opacity:.34;transition:opacity .18s ease}
+.bitfig.focus .case.on{opacity:1}
+/* ---------- the trade figure (hover-select Bloom vs Cuckoo) ---------- */
+.trfig{width:100%;height:auto;display:block;margin-top:4px}
+.trfig .col rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;cursor:pointer;transition:fill .18s ease,stroke .18s ease}
+.trfig .col.bloom.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.trfig .col.cuckoo.on rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:2}
+.trfig .cl{font:12px var(--mono);font-weight:700;text-anchor:middle}
+.trfig .col.bloom .cl{fill:var(--r-red)}
+.trfig .col.cuckoo .cl{fill:var(--b-ts)}
+.trfig .ct{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.trfig.focus .col{opacity:.34;transition:opacity .18s ease}
+.trfig.focus .col.on{opacity:1}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling">data-modeling</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling/probabilistic-data-structures">probabilistic-data-structures</a><span class="rsep">/</span><span class="rcur">bloom-and-cuckoo</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#how">How a Bloom filter works</a>
+      <a href="#penetration">Cache penetration</a>
+      <a href="#cuckoo">Cuckoo</a>
+      <a href="#contrast">The EchoMQ contrast</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling/probabilistic-data-structures">Probabilistic</a>
+          <span class="sep">/</span>
+          <span class="here">Bloom &amp; Cuckoo</span>
+        </nav>
+        <p class="kicker">R7.03.2 &middot; dive 2</p>
+        <h1>Membership, one-sided <span class="hns">error</span>.</h1>
+        <p class="lede">A Bloom filter answers &ldquo;is this item in the set?&rdquo; with possible false positives but
+          zero false negatives &mdash; a &ldquo;no&rdquo; is certain, a &ldquo;yes&rdquo; is &ldquo;probably&rdquo;.</p>
+        <p class="heronote">That one-sided error is the whole point: it is safe to skip work on a &ldquo;no&rdquo;
+          because a &ldquo;no&rdquo; is never wrong. Select a query below &mdash; a present item, an absent item, a
+          false positive &mdash; and read what the bits say. It is also the error in the wrong direction for
+          EchoMQ's idempotency, which keeps an exact <code>de:</code> key.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#how">How it works</a>
+          <a href="#penetration">Cache penetration</a>
+          <a href="#cuckoo">Cuckoo</a>
+          <a href="#contrast">The EchoMQ contrast</a>
+          <a href="#refs">References</a>
+        </div>
+      </section>
+
+      <figure class="anatomy" aria-labelledby="bitCap">
+        <figcaption id="bitCap"><b>k hashes into a bit array.</b> Select a query; the readout reports what the bits say
+          and whether the answer can be wrong.</figcaption>
+        <div class="segbar" id="bitSel" role="group" aria-label="Select a Bloom-filter query">
+          <button type="button" data-q="present" aria-pressed="false">a member</button>
+          <button type="button" data-q="absent" aria-pressed="false">a non-member</button>
+          <button type="button" data-q="fp" aria-pressed="false">a false positive</button>
+        </div>
+        <svg class="bitfig" id="bitfig" viewBox="0 0 440 176" role="img" aria-label="A Bloom filter as a bit array of twelve bits, with three of them set by earlier adds. Three queries hash three ways each. A member's three bits are all set, so the filter says probably present, correctly. A non-member has at least one zero bit, so the filter says definitely absent — this answer is never wrong. A false positive is a non-member whose three bits all happen to be set by other items, so the filter says probably present when the item was never added. Selecting a query lights its three bits and the readout names the answer and whether it can be wrong.">
+          <text class="cap" x="22" y="18">bit array (set bits in green) — three earlier adds</text>
+          <rect class="bit set" id="b0" x="22" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="36" y="44">1</text>
+          <rect class="bit" id="b1" x="56" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="70" y="44">0</text>
+          <rect class="bit set" id="b2" x="90" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="104" y="44">1</text>
+          <rect class="bit set" id="b3" x="124" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="138" y="44">1</text>
+          <rect class="bit" id="b4" x="158" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="172" y="44">0</text>
+          <rect class="bit set" id="b5" x="192" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="206" y="44">1</text>
+          <rect class="bit" id="b6" x="226" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="240" y="44">0</text>
+          <rect class="bit set" id="b7" x="260" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="274" y="44">1</text>
+          <rect class="bit set" id="b8" x="294" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="308" y="44">1</text>
+          <rect class="bit" id="b9" x="328" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="342" y="44">0</text>
+          <rect class="bit set" id="b10" x="362" y="26" width="28" height="28" rx="3"></rect><text class="bl" x="376" y="44">1</text>
+          <rect class="bit" id="b11" x="396" y="26" width="22" height="28" rx="3"></rect><text class="bl" x="407" y="44">0</text>
+          <g class="case present" data-q="present">
+            <rect class="q" x="22" y="74" width="126" height="40" rx="7"></rect>
+            <text class="ql" x="85" y="91">a member</text>
+            <text class="bl" x="85" y="106">bits 0,2,5 — all set</text>
+          </g>
+          <g class="case absent" data-q="absent">
+            <rect class="q" x="157" y="74" width="126" height="40" rx="7"></rect>
+            <text class="ql" x="220" y="91">a non-member</text>
+            <text class="bl" x="220" y="106">bits 1,4,6 — a zero</text>
+          </g>
+          <g class="case fp" data-q="fp">
+            <rect class="q" x="292" y="74" width="126" height="40" rx="7"></rect>
+            <text class="ql" x="355" y="91">a false positive</text>
+            <text class="bl" x="355" y="106">bits 3,7,10 — all set</text>
+          </g>
+          <text class="cap" x="22" y="140">a &ldquo;no&rdquo; needs one zero — never wrong. a &ldquo;yes&rdquo; needs all set — may be a false positive.</text>
+          <text class="cap" x="22" y="160">zero false negatives, by construction; false positives possible, at a tunable rate</text>
+        </svg>
+        <div class="readout" id="bitOut" aria-live="polite"></div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="how">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>How a Bloom filter works</h2>
+        <span class="ssrc">probabilistic-data-structures.md.txt &middot; membership</span>
+      </div>
+      <div class="prose">
+        <p>A Bloom filter is a bit array plus k hash functions. To add an item, hash it k ways and set the k bits. To
+          test an item, hash it the same k ways and read those bits: if <b>any</b> bit is zero the item is definitely
+          absent; if <b>all</b> are set the item is probably present. A false positive happens when other items
+          happened to set all of one absent item's bits. A false negative cannot happen &mdash; adding an item only
+          sets bits, never clears them, so a present item always reads back all-set.</p>
+        <p>The false-positive rate is a <b>dial</b>. More bits per item and more hash functions lower it; a 1% rate
+          for a million items is a typical reservation. You pay memory and a little CPU for a smaller error. The
+          commands are <b>module commands</b> &mdash; Valkey-Bloom or Redis-Stack, not the core engine:</p>
+      </div>
+      <pre class="code">BF.RESERVE usernames 0.01 1000000   <span class="cmt"># 1% false-positive rate, capacity 1M — a module command</span>
+BF.ADD usernames "john_doe"
+BF.EXISTS usernames "john_doe"</pre>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The Bloom-filter commands &mdash; <code>BF.RESERVE</code>,
+        <code>BF.ADD</code>, <code>BF.EXISTS</code>, <code>BF.MADD</code> &mdash; are provided by the Valkey-Bloom
+        module, not the core engine, so a deployment must load the module to use them; <code>BF.RESERVE</code> takes a
+        target error rate and capacity that fix the bit count and the number of hashes &mdash;
+        <a href="https://valkey.io/commands/" rel="noopener">valkey.io/commands</a>.</p>
+      <p class="take">A Bloom filter's error is one-sided by construction: a &ldquo;no&rdquo; is certain, a
+        &ldquo;yes&rdquo; may be a false positive at a rate you set. That asymmetry is what makes it useful in front
+        of an expensive lookup.</p>
+    </section>
+
+    <section id="penetration">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The signature use &mdash; cache penetration</h2>
+        <span class="ssrc">probabilistic-data-structures.md.txt &middot; cache penetration</span>
+      </div>
+      <div class="prose">
+        <p>Without a membership pre-check, a flood of requests for keys that do not exist each misses the cache and
+          falls through to the database &mdash; an attacker can turn &ldquo;look up a user that isn't there&rdquo;
+          into database load. A Bloom filter holding the set of real keys rejects the absent ones immediately: if the
+          filter says &ldquo;absent&rdquo;, skip the cache and the database entirely.</p>
+        <p>The zero-false-negative guarantee is what makes this safe &mdash; the filter never wrongly says
+          &ldquo;absent&rdquo; for a key that exists, so a real key is never rejected. A false <b>positive</b> only
+          costs one needless lookup, which the cache absorbs. The asymmetry lands exactly where it helps: the
+          dangerous answer (reject a real key) cannot happen, and the harmless answer (one extra lookup) is the only
+          error.</p>
+      </div>
+      <p class="take">A Bloom filter in front of the cache turns &ldquo;every absent key hits the database&rdquo; into
+        &ldquo;every absent key is rejected in memory&rdquo;, safely &mdash; because a &ldquo;no&rdquo; is never wrong
+        and a false &ldquo;yes&rdquo; costs only a lookup.</p>
+    </section>
+
+    <section id="cuckoo">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Cuckoo &mdash; Bloom with deletion</h2>
+        <span class="ssrc">probabilistic-data-structures.md.txt &middot; Cuckoo</span>
+      </div>
+      <div class="prose">
+        <p>A Bloom filter cannot delete: clearing a bit might unset a bit another item relies on, breaking the
+          no-false-negative guarantee. A <b>Cuckoo filter</b> stores small <b>fingerprints</b> in a cuckoo hash
+          table, so it supports deletion. The commands are <b>module commands</b>, <code>CF.*</code>:</p>
+      </div>
+      <pre class="code">CF.RESERVE sessions 1000000
+CF.ADD sessions "session:abc123"
+CF.EXISTS sessions "session:abc123"
+CF.DEL sessions "session:abc123"   <span class="cmt"># delete — what Bloom cannot do</span></pre>
+      <div class="prose">
+        <p>Choose Bloom when the set only grows and inserts dominate; choose Cuckoo when items must leave the filter
+          &mdash; tracking active sessions that expire, for instance, where a logged-out session should drop out of
+          the set. Hover the columns below to compare the trade.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="trCap">
+        <figcaption id="trCap"><b>Bloom vs Cuckoo.</b> Select a filter; the readout reports where it wins and what it
+          costs.</figcaption>
+        <div class="segbar" id="trSel" role="group" aria-label="Select Bloom or Cuckoo">
+          <button type="button" data-f="bloom" aria-pressed="false">Bloom (BF.*)</button>
+          <button type="button" data-f="cuckoo" aria-pressed="false">Cuckoo (CF.*)</button>
+        </div>
+        <svg class="trfig" id="trfig" viewBox="0 0 440 168" role="img" aria-label="Bloom and Cuckoo side by side. Bloom uses a bit array and k hashes; it cannot delete, has good space, faster inserts, and slightly slower lookups. Cuckoo stores fingerprints in a cuckoo hash table; it supports deletion, is more space-efficient at low false-positive rates, has slightly slower inserts, and faster lookups. Both guarantee no false negatives and allow false positives. Selecting one lights its column and the readout reports the trade.">
+          <g class="col bloom" data-f="bloom">
+            <rect x="22" y="28" width="190" height="120" rx="9"></rect>
+            <text class="cl" x="117" y="52">Bloom (BF.*)</text>
+            <text class="ct" x="117" y="74">bit array + k hashes</text>
+            <text class="ct" x="117" y="92">delete: no</text>
+            <text class="ct" x="117" y="108">insert: faster</text>
+            <text class="ct" x="117" y="124">lookup: slightly slower</text>
+            <text class="ct" x="117" y="140">module command</text>
+          </g>
+          <g class="col cuckoo" data-f="cuckoo">
+            <rect x="228" y="28" width="190" height="120" rx="9"></rect>
+            <text class="cl" x="323" y="52">Cuckoo (CF.*)</text>
+            <text class="ct" x="323" y="74">fingerprints, cuckoo hash</text>
+            <text class="ct" x="323" y="92">delete: yes</text>
+            <text class="ct" x="323" y="108">insert: slightly slower</text>
+            <text class="ct" x="323" y="124">lookup: faster</text>
+            <text class="ct" x="323" y="140">module command</text>
+          </g>
+        </svg>
+        <div class="readout" id="trOut" aria-live="polite"></div>
+      </figure>
+
+      <p class="take">Bloom and Cuckoo answer the same membership question with the same one-sided error; Cuckoo adds
+        deletion and faster lookups at a slightly slower insert. Reach for Cuckoo when items must leave the set.</p>
+    </section>
+
+    <section id="contrast">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The EchoMQ contrast &mdash; exact membership</h2>
+        <span class="ssrc">echo_mq/metrics.ex &middot; echo_mq/jobs.ex</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ also answers a membership question &mdash; &ldquo;have I already seen this idempotency
+          key?&rdquo; &mdash; but it answers it <b>exactly</b>, with a real key, not a filter:</p>
+      </div>
+      <figure class="frozen" aria-label="The EchoMQ exact dedup">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/metrics.ex &amp; jobs.ex &middot; exact membership<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># metrics.ex — every id stored at a real key</span>
+<b>def</b> get_deduplication_job_id(conn, queue, dedup_id) <b>do</b>
+  key = Keyspace.queue_key(queue, "de:" &lt;&gt; dedup_id)
+  <span class="fd">...</span>
+<b>end</b>
+
+<span class="fd">-- jobs.ex — @enqueue, the exact dup-refusal by job key</span>
+<b>if</b> redis.call('EXISTS', KEYS[1]) == 1 <b>then</b>
+  <b>return</b> 0
+<b>end</b></pre>
+      </figure>
+      <div class="prose">
+        <p>A Bloom filter's error is one-sided in the <b>wrong</b> direction for idempotency. It never wrongly says
+          &ldquo;absent&rdquo; &mdash; but it can wrongly say &ldquo;present&rdquo;, a false positive. For a cache
+          pre-check a false &ldquo;present&rdquo; is harmless (one extra real lookup). For dedup a false
+          &ldquo;present&rdquo; means &ldquo;already seen, drop it&rdquo; &mdash; and the job is lost, silently. So
+          EchoMQ stores every id exactly, pays O(n) memory, and accepts zero false positives.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A Bloom (or Cuckoo) filter: membership at a fraction of the exact memory, <b>no false negatives</b>, a
+            tunable false-positive rate. Safe in front of an expensive lookup.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">EchoMQ (counter-example)</span>
+          <p>The <code>emq:{q}:de:&lt;dedupId&gt;</code> key (plus the <code>@enqueue</code> <code>EXISTS</code>
+            refusal) is <b>exact</b> membership: O(n) memory, zero false positives. A false &ldquo;already seen&rdquo;
+            would drop a job, so the filter's one-sided error is unacceptable here.</p>
+        </div>
+      </div>
+
+      <p class="take">A Bloom filter's value is its one-sided error &mdash; a &ldquo;no&rdquo; is certain, so it is
+        safe to skip work on it; a &ldquo;yes&rdquo; may be wrong, so confirm it. Use it where a false positive is
+        cheap (a wasted cache lookup). Where a false positive is catastrophic &mdash; dropping a job &mdash; use the
+        exact key EchoMQ uses.</p>
+
+      <div class="doors">
+        <div class="door">
+          <span class="dr">/redis-patterns/data-modeling/primary-database/system-of-record</span>
+          <h3>The exact-dedup home</h3>
+          <p>The <code>emq:{q}:de:&lt;dedupId&gt;</code> key and the <code>@enqueue</code> <code>EXISTS</code> refusal
+            are taught in full in <a href="/redis-patterns/data-modeling/primary-database/system-of-record">R7.1, the
+            system of record</a>: the job HASH is the record of truth, and its membership check is exact for the same
+            reason the dedup is.</p>
+        </div>
+        <div class="door">
+          <span class="dr">/bcs</span>
+          <h3>The architecture</h3>
+          <p>The exact membership check follows from the Branded Component System discipline &mdash; the branded id is
+            the identity the <code>de:</code> key is built from. <a href="/bcs">The Branded Component System</a> is the
+            architecture EchoMQ is built to.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/data-types/probabilistic/bloom-filter/" rel="noopener">Redis &mdash; <em>Bloom filter</em></a> &mdash; the bit array, the k hashes, and the no-false-negative guarantee.</li>
+            <li><a href="https://redis.io/commands/bf.reserve/" rel="noopener">Redis &mdash; <em>BF.RESERVE</em></a> &mdash; create a Bloom filter with a target false-positive rate; a module command.</li>
+            <li><a href="https://redis.io/docs/latest/develop/data-types/probabilistic/cuckoo-filter/" rel="noopener">Redis &mdash; <em>Cuckoo filter</em></a> &mdash; a fingerprint filter that supports deletion.</li>
+            <li><a href="https://redis.io/commands/cf.reserve/" rel="noopener">Redis &mdash; <em>CF.RESERVE</em></a> &mdash; create a Cuckoo filter; a module command.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures">R7.03 &middot; Probabilistic data structures</a><span class="rs">the module hub and the exact-vs-probabilistic frame</span></li>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog">R7.03.1 &middot; HyperLogLog</a><span class="rs">cardinality, the count question filters do not answer</span></li>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures/count-min-and-t-digest">R7.03.3 &middot; Count-Min &amp; T-Digest</a><span class="rs">frequency and percentile estimation</span></li>
+            <li><a href="/redis-patterns/data-modeling/primary-database/system-of-record">R7.01.1 &middot; System of record</a><span class="rs">the exact de: dedup key in context</span></li>
+            <li><a href="/bcs">/bcs &middot; The Branded Component System</a><span class="rs">the architecture EchoMQ is built to</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog"><span class="pk">prev</span>&#8592; R7.03.1 &middot; HyperLogLog</a>
+      <a class="pgx" href="/redis-patterns/data-modeling/probabilistic-data-structures/count-min-and-t-digest"><span class="pk">next</span>R7.03.3 &middot; Count-Min &amp; T-Digest &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/data-modeling/probabilistic-data-structures">R7.03 &middot; Probabilistic data structures</a>
+        <a href="/redis-patterns/data-modeling/probabilistic-data-structures/hyperloglog">R7.03.1 &middot; HyperLogLog</a>
+        <a href="/redis-patterns/data-modeling/probabilistic-data-structures/count-min-and-t-digest">R7.03.3 &middot; Count-Min &amp; T-Digest</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0OGzMraP24h</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- hero: the bit array (hover-select, pure over the query) ---------- */
+  // A Bloom filter of 12 bits, 7 of them set by earlier adds. Three queries, each hashing 3 ways. The verdict is a
+  // pure function of which bits the query reads: all-set → probably present; any zero → definitely absent; all-set
+  // by coincidence → a false positive.
+  var QUERIES = {
+    present: {
+      bits: ['b0', 'b2', 'b5'],
+      verd: 'a member → all three bits set → probably present (correct)',
+      text: 'A member that was added has its three bits (0, 2, 5) all set, so the filter says "probably present". ' +
+        'This is correct — a present item always reads back all-set, because adding only sets bits. The only ' +
+        'uncertainty a "yes" carries is the false-positive case, not this one.'
+    },
+    absent: {
+      bits: ['b1', 'b4', 'b6'],
+      verd: 'a non-member → bit 1 (or 4, 6) is zero → definitely absent (never wrong)',
+      text: 'A non-member hashes to bits 1, 4, 6 — at least one is zero, so the filter says "definitely absent". ' +
+        'This answer can never be wrong: if the item had been added, those bits would be set. Zero false negatives, ' +
+        'by construction — which is what makes a "no" safe to act on.'
+    },
+    fp: {
+      bits: ['b3', 'b7', 'b10'],
+      verd: 'a false positive → bits set by OTHER items → "probably present" when it was never added',
+      text: 'A false positive is a non-member whose three bits (3, 7, 10) all happen to be set by other items. The ' +
+        'filter says "probably present" even though this item was never added. This is the only error a Bloom filter ' +
+        'makes, and its rate is the dial BF.RESERVE sets — never a false "absent".'
+    }
+  };
+  var bitfig = document.getElementById('bitfig');
+  var bitButtons = document.querySelectorAll('#bitSel button');
+  var bitOut = document.getElementById('bitOut');
+  var bitAllBits = ['b0','b1','b2','b3','b4','b5','b6','b7','b8','b9','b10','b11'];
+  function selectQuery(which) {
+    bitButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-q') === which ? 'true' : 'false');
+    });
+    if (bitfig) {
+      bitfig.classList.toggle('focus', !!which);
+      bitfig.querySelectorAll('.case').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-q') === which);
+      });
+    }
+    var hit = which && QUERIES[which] ? QUERIES[which].bits : [];
+    bitAllBits.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('hit', hit.indexOf(id) !== -1);
+    });
+    if (which && QUERIES[which]) {
+      if (bitOut) bitOut.innerHTML = '<span class="rk">readout &middot;</span> ' + QUERIES[which].text;
+    } else if (bitOut) {
+      bitOut.innerHTML = '<span class="rk">readout &middot;</span> Select a query. A <b>no</b> needs only one zero ' +
+        'bit and is never wrong; a <b>yes</b> needs all bits set and may be a false positive. Zero false negatives, ' +
+        'by construction.';
+    }
+  }
+  bitButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectQuery(b.getAttribute('data-q')); });
+  });
+  bitfig && bitfig.querySelectorAll('.case').forEach(function (g) {
+    g.addEventListener('mouseenter', function () { selectQuery(g.getAttribute('data-q')); });
+  });
+  selectQuery('present'); // initial render — correct without interaction
+
+  /* ---------- content: Bloom vs Cuckoo (hover-select, pure over the filter) ---------- */
+  // Two filters, same membership semantics. Selecting one is a pure map from the filter to its trade.
+  var FILTERS = {
+    bloom: {
+      verd: 'Bloom (BF.*) → no delete, good space, faster insert, slightly slower lookup',
+      text: 'A Bloom filter is a bit array plus k hashes. It cannot delete (clearing a bit could break another ' +
+        'item), has good space, faster inserts, and slightly slower lookups. Choose it when the set only grows and ' +
+        'inserts dominate. A module command (BF.*).'
+    },
+    cuckoo: {
+      verd: 'Cuckoo (CF.*) → supports delete, better space at low FP, slightly slower insert, faster lookup',
+      text: 'A Cuckoo filter stores fingerprints in a cuckoo hash table, so it supports deletion (CF.DEL). It is ' +
+        'more space-efficient at low false-positive rates and has faster lookups, at a slightly slower insert. Choose ' +
+        'it when items must leave the set — sessions that expire. A module command (CF.*).'
+    }
+  };
+  var trfig = document.getElementById('trfig');
+  var trButtons = document.querySelectorAll('#trSel button');
+  var trOut = document.getElementById('trOut');
+  function selectFilter(which) {
+    trButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-f') === which ? 'true' : 'false');
+    });
+    if (trfig) {
+      trfig.classList.toggle('focus', !!which);
+      trfig.querySelectorAll('.col').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-f') === which);
+      });
+    }
+    if (which && FILTERS[which]) {
+      if (trOut) trOut.innerHTML = '<span class="rk">readout &middot;</span> ' + FILTERS[which].text;
+    } else if (trOut) {
+      trOut.innerHTML = '<span class="rk">readout &middot;</span> Select a filter. Both answer membership with the ' +
+        'same one-sided error; <b>Cuckoo</b> adds deletion and faster lookups, <b>Bloom</b> has faster inserts. ' +
+        'Both are module commands.';
+    }
+  }
+  trButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectFilter(b.getAttribute('data-f')); });
+  });
+  trfig && trfig.querySelectorAll('.col').forEach(function (g) {
+    g.addEventListener('mouseenter', function () { selectFilter(g.getAttribute('data-f')); });
+  });
+  selectFilter('bloom'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

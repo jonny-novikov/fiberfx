@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jittered expiry &middot; Single-flight &amp; jittered TTL &middot; EchoMQ, In Depth</title>
+<meta name="description" content="expires_at/1 draws each row's death from ttl ± ttl·jitter so a cohort filled together never expires together. The sweeper runs ets.select_delete on a fixed tick, bounding memory by the declaration. Grounded in EchoStore.Table from echo/apps/echo_store.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:rgba(42,161,152,.08);border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.24em;color:var(--gold);display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+/* ---- header ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+/* ---- figures / code ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code{font-family:var(--mono);font-size:.9rem;line-height:1.6;color:var(--cream);background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .kw{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+/* ---- interactive ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.geo-readout{font-family:var(--mono);font-size:.93rem;color:var(--gold-bright);background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+.ctl input[type=range]{width:180px;accent-color:var(--echo)}
+.ctl .val{font-family:var(--mono);font-size:.9rem;color:var(--echo-bright)}
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){.bridge{grid-template-columns:1fr;gap:.7rem}.bridge .arrow{justify-self:center;transform:rotate(90deg)}}
+/* ---- refs ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+/* ---- stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media(max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+@media(max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><a href="/echomq/cache/single-flight-and-jittered-ttl">single-flight-and-jittered-ttl</a><span class="rsep">/</span><span class="rcur">jittered-expiry</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache">The Cache</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+      <span class="sep">/</span>
+      <span class="here">Jittered expiry</span>
+    </nav>
+    <p class="eyebrow">Single-flight &amp; jittered TTL &middot; dive 02</p>
+    <h1>Jittered<br><span class="ex">expiry</span></h1>
+    <p class="lede">A cohort filled together never expires together.</p>
+    <p class="kicker">A fixed TTL is a trap: a set of keys filled at the same millisecond expires at the
+      same millisecond, and every caller that touches any of them gets a miss simultaneously &mdash;
+      the thundering herd re-forms at the boundary, on a timer. <code class="inl">expires_at/1</code>
+      breaks the synchrony: each row's expiry is drawn from a <strong>uniform band around the declared
+      TTL</strong> (<code class="inl">ttl &plusmn; ttl&middot;jitter</code>), so a cohort's deaths are
+      spread across time, not stacked at one tick. The <strong>sweeper</strong> reclaims dead rows on a
+      fixed <code class="inl">sweep_ms</code> tick using <code class="inl">:ets.select_delete</code>
+      with a guard on the <code class="inl">expires_at</code> field &mdash; no per-row timer, no extra
+      process per entry, memory bounded by the declaration.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#expires-at">expires_at/1</a>
+      <a href="#sweeper">The sweeper</a>
+      <a href="#worked">Jitter band</a>
+      <a href="#bridge">Pattern &amp; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- SECTION: expires_at/1 -->
+  <section id="expires-at">
+    <h2><code class="inl" style="font-size:inherit">expires_at/1</code></h2>
+    <div class="prose">
+      <p>Every row inserted into L1 &mdash; by a flight completing or a <code class="inl">put/3-4</code>
+        call writing through &mdash; gets its expiry from <code class="inl">expires_at/1</code>. The
+        function takes the table's declared <code class="inl">spec</code>, reads the
+        <strong>monotonic clock</strong> in milliseconds, and adds the TTL plus a random offset drawn from
+        the jitter band.</p>
+      <p>The declared <code class="inl">jitter</code> is validated at <code class="inl">init/1</code> to be
+        in <code class="inl">0.0..0.5</code>. At <code class="inl">0.0</code> the spread is zero and every
+        row gets exactly <code class="inl">base</code>. At <code class="inl">0.5</code> the spread is half
+        the TTL, so a row may expire anywhere from <code class="inl">0.5&middot;ttl</code> to
+        <code class="inl">1.5&middot;ttl</code> after insertion.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Table — expires_at/1</span>
+<span class="cmt"># Returns the monotonic-ms timestamp at which this row should be</span>
+<span class="cmt"># considered dead. The jitter band is ± spread around base.</span>
+<span class="op">defp</span> <span class="fn">expires_at</span>(spec) <span class="op">do</span>
+  base   = System.<span class="fn">monotonic_time</span>(<span class="str">:millisecond</span>) + spec.ttl_ms
+  spread = trunc(spec.ttl_ms * spec.jitter)   <span class="cmt"># how far from base to allow</span>
+
+  <span class="kw">if</span> spread == 0 <span class="kw">do</span>
+    base     <span class="cmt"># jitter 0.0 → exactly TTL, no randomness (useful in tests)</span>
+  <span class="kw">else</span>
+    <span class="cmt"># :rand.uniform(n) returns 1..n; shift to -spread..(spread-1)</span>
+    <span class="cmt"># so the expiry is base - spread .. base + spread (approximately)</span>
+    base + :rand.<span class="fn">uniform</span>(2 * spread + 1) - spread - 1
+  <span class="kw">end</span>
+<span class="op">end</span></pre>
+
+    <p class="note">The monotonic clock (<code class="inl">:millisecond</code> epoch local to this node) is
+      the right choice here: it never leaps backwards on an NTP adjustment, so an expiry comparison
+      (<code class="inl">now &lt; expires_at</code>) is always valid within a single node's L1 table.
+      L2 TTL is a separate Valkey <code class="inl">PX</code> argument and uses the server clock.</p>
+  </section>
+
+  <!-- SECTION: the sweeper -->
+  <section id="sweeper">
+    <h2>The sweeper</h2>
+    <div class="prose">
+      <p>Jitter alone does not remove dead rows. ETS has no built-in TTL eviction: a row past its
+        <code class="inl">expires_at</code> stays in the table until something deletes it. The sweeper
+        closes the loop.</p>
+      <p><code class="inl">handle_info(:sweep)</code> is armed at <code class="inl">init/1</code> with
+        <code class="inl">Process.send_after(self(), :sweep, sweep_ms)</code> and re-arms itself at the end
+        of every pass. It runs <code class="inl">:ets.select_delete</code> with a match specification that
+        guards on the <code class="inl">expires_at</code> field (index <code class="inl">$1</code> in the
+        three-element tuple <code class="inl">{id, value, expires_at, version}</code>) and deletes every row
+        for which <code class="inl">expires_at &lt; now</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Table — handle_info(:sweep)</span>
+<span class="cmt"># Deletes every L1 row whose expires_at is before now (monotonic ms).</span>
+<span class="cmt"># The match spec tuple is {id, value, expires_at, version};</span>
+<span class="cmt"># $1 binds expires_at; the guard is expires_at < now.</span>
+<span class="cmt"># Counts :swept (rows removed) and :sweeps (passes), then re-arms.</span>
+<span class="op">def</span> <span class="fn">handle_info</span>(<span class="str">:sweep</span>, state) <span class="op">do</span>
+  now = System.<span class="fn">monotonic_time</span>(<span class="str">:millisecond</span>)
+
+  removed =
+    :ets.<span class="fn">select_delete</span>(state.name, [
+      {{<span class="str">:_</span>, <span class="str">:_</span>, <span class="str">:"$1"</span>, <span class="str">:_</span>}, [{<span class="str">:&lt;</span>, <span class="str">:"$1"</span>, now}], [<span class="kw">true</span>]}
+    ])
+
+  :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:swept</span>), removed)
+  :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:sweeps</span>), 1)
+  Process.<span class="fn">send_after</span>(self(), <span class="str">:sweep</span>, state.spec.sweep_ms)   <span class="cmt"># re-arm</span>
+  {<span class="str">:noreply</span>, state}
+<span class="op">end</span></pre>
+
+    <p class="take">The sweeper bounds memory by the declaration: a table with <code class="inl">sweep_ms:
+      1_000</code> and <code class="inl">ttl_ms: 60_000</code> will never accumulate more than roughly
+      <code class="inl">max_size</code> live rows older than the jittered TTL window. Dead rows are evicted
+      on a regular clock, not by luck.</p>
+  </section>
+
+  <!-- SECTION: worked interactive -->
+  <section id="worked">
+    <h2>The jitter band: before and after</h2>
+    <div class="prose">
+      <p>Set the TTL and jitter and compare two cohorts of rows: one with jitter, one without. Without
+        jitter, every row in the cohort expires at the same tick &mdash; a perfect thundering herd at the
+        boundary. With jitter the expirations spread across the band. The model runs the exact
+        <code class="inl">expires_at/1</code> arithmetic over a fixed cohort of 20 rows filled at the
+        same millisecond <code class="inl">t=0</code>.</p>
+    </div>
+    <figure class="fig" aria-labelledby="jitTitle">
+      <h4 id="jitTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Jitter band &middot; cohort expiry spread</h4>
+      <div class="controls">
+        <div class="ctl">
+          <label for="ttlRange">ttl_ms</label>
+          <input type="range" id="ttlRange" min="1000" max="30000" step="1000" value="10000">
+          <span class="val" id="ttlVal">10000</span>
+        </div>
+        <div class="ctl">
+          <label for="jitRange">jitter (0.0–0.5)</label>
+          <input type="range" id="jitRange" min="0" max="50" step="5" value="20">
+          <span class="val" id="jitVal">0.20</span>
+        </div>
+      </div>
+      <svg id="jitSvg" viewBox="0 0 480 200" role="img" aria-label="Two timelines side by side showing row expiry. Without jitter all 20 rows expire at the same tick (a spike). With jitter the expirations spread across a band, the width of which is controlled by the jitter slider.">
+        <!-- no-jitter side -->
+        <text x="120" y="18" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#a39c89" letter-spacing=".1em" text-transform="uppercase">NO JITTER</text>
+        <line x1="40" y1="170" x2="200" y2="170" stroke="#2a3252" stroke-width="1"></line>
+        <g id="noJitBars"></g>
+        <text id="noJitLabel" x="120" y="192" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#c4504c">all 20 expire at t=10000ms</text>
+
+        <!-- with-jitter side -->
+        <text x="360" y="18" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#a39c89" letter-spacing=".1em">WITH JITTER</text>
+        <line x1="280" y1="170" x2="440" y2="170" stroke="#2a3252" stroke-width="1"></line>
+        <g id="jitBars"></g>
+        <text id="jitLabel" x="360" y="192" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#6fdccf">spread across band</text>
+      </svg>
+      <div class="geo-readout" id="jitOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">Jitter trades a predictable single-tick expiry storm for a smooth drizzle across a
+      band &mdash; a cohort filled together still expires close together, never all at once. The sweeper
+      reclaims them across multiple ticks rather than in one pass.</p>
+  </section>
+
+  <!-- BRIDGE -->
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (jittered TTL)</span>
+        <p>Add a random offset to each item's TTL so a cohort filled together expires at different times,
+          preventing the mass-miss (thundering herd) that forms at a shared boundary. <a
+          href="/redis-patterns/caching">Redis Patterns Applied &middot; R1</a> teaches the TTL-staleness
+          and early-refresh patterns; jitter is the simplest form of the same defense.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (EchoStore.Table)</span>
+        <p><code class="inl">expires_at/1</code> draws from <code class="inl">base &plusmn; spread</code>
+          using <code class="inl">:rand.uniform</code>. The sweeper runs
+          <code class="inl">:ets.select_delete</code> with a guard on the stored
+          <code class="inl">expires_at</code> field on a fixed <code class="inl">sweep_ms</code> tick.
+          No per-row timer, no extra process.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: spread expirations. The implementation says: draw from a uniform band
+      at insert time, then reclaim in one select-delete pass per tick.</p>
+  </section>
+
+  <!-- REFS -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html">Erlang/OTP &mdash; <em>the ets module</em></a> &mdash; <code class="inl">:ets.select_delete</code> with a match spec is the sweeper's primitive.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the hashtag discipline the keyspace uses.</li>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the version field the row carries alongside its jittered expiry.</li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf">Helland &mdash; <em>Life Beyond Distributed Transactions</em></a> &mdash; the entity addressed by a key, kept close to its use.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a> &mdash; this module's hub.</li>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd">One fill per herd</a> &mdash; the coalescing law that <code class="inl">expires_at/1</code> feeds.</li>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">The full cache degrades</a> &mdash; <code class="inl">reclaim/1</code> runs the same select_delete on-demand.</li>
+          <li><a href="/echomq/cache">The Cache</a> &mdash; the chapter landing.</li>
+          <li><a href="/redis-patterns/caching">Redis Patterns Applied &middot; R1 Caching</a> &mdash; TTL-staleness and stampede patterns.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAGER -->
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd"><span aria-hidden="true">&larr;</span> One fill per herd</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">The full cache degrades <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd">One fill per herd</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">Jittered expiry</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">The full cache degrades</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- jitter band interactive ---------- */
+  /* Models the exact expires_at/1 arithmetic over a fixed cohort of 20 rows
+     all filled at t=0. The jitter is deterministic in presentation (we use
+     evenly-spaced positions to show the spread, not :rand.uniform). The
+     no-jitter side shows all 20 at base; the jitter side spreads them
+     across the [-spread, +spread] window. */
+  var COHORT = 20;
+
+  function renderJitter(ttl, jitterFrac) {
+    var spread = Math.round(ttl * jitterFrac);
+    var noJitSvg = document.getElementById('noJitBars');
+    var jitSvg   = document.getElementById('jitBars');
+    var noLabel  = document.getElementById('noJitLabel');
+    var jLabel   = document.getElementById('jitLabel');
+    var out      = document.getElementById('jitOut');
+
+    if (!noJitSvg || !jitSvg) return;
+
+    // no-jitter: all bars at x=120, one spike
+    var noHtml = '';
+    for (var i = 0; i < COHORT; i++) {
+      noHtml += '<rect x="118" y="' + (168 - (i + 1) * 7) + '" width="4" height="6" rx="1" fill="#c4504c" opacity="0.85"></rect>';
+    }
+    noJitSvg.innerHTML = noHtml;
+    if (noLabel) noLabel.textContent = 'all ' + COHORT + ' expire at t=' + ttl + 'ms';
+
+    // with-jitter: spread evenly across [-spread, +spread] band
+    var jHtml = '';
+    if (spread === 0) {
+      for (var j = 0; j < COHORT; j++) {
+        jHtml += '<rect x="358" y="' + (168 - (j + 1) * 7) + '" width="4" height="6" rx="1" fill="#c4504c" opacity="0.85"></rect>';
+      }
+      if (jLabel) jLabel.textContent = 'jitter=0 — same as no jitter';
+    } else {
+      var bandPx = 140; // total SVG width for the band
+      for (var k = 0; k < COHORT; k++) {
+        // evenly space across the jitter band
+        var frac = k / (COHORT - 1);
+        var xPos = 280 + Math.round(frac * bandPx);
+        jHtml += '<rect x="' + xPos + '" y="148" width="4" height="20" rx="2" fill="#2aa198" opacity="0.9"></rect>';
+      }
+      if (jLabel) jLabel.textContent = 'spread: ' + (ttl - spread) + 'ms to ' + (ttl + spread) + 'ms';
+    }
+    jitSvg.innerHTML = jHtml;
+
+    if (out) {
+      out.innerHTML = 'ttl_ms: <b>' + ttl + '</b> &mdash; jitter: <b>' + jitterFrac.toFixed(2) + '</b> &mdash; spread: <b>&plusmn;' + spread + 'ms</b><br>' +
+        'expires_at = base &plusmn; ' + spread + ' &mdash; band: <b>' + (ttl - spread) + '..' + (ttl + spread) + 'ms</b><br>' +
+        '<span class="dim">formula: base + :rand.uniform(' + (2 * spread + 1) + ') - ' + spread + ' - 1</span>';
+    }
+  }
+
+  var ttlRange = document.getElementById('ttlRange');
+  var jitRange = document.getElementById('jitRange');
+  var ttlVal   = document.getElementById('ttlVal');
+  var jitVal   = document.getElementById('jitVal');
+
+  function sync() {
+    var ttl = parseInt(ttlRange.value, 10);
+    var jf  = parseInt(jitRange.value, 10) / 100;
+    if (ttlVal) ttlVal.textContent = String(ttl);
+    if (jitVal) jitVal.textContent = jf.toFixed(2);
+    renderJitter(ttl, jf);
+  }
+
+  if (ttlRange) ttlRange.addEventListener('input', sync);
+  if (jitRange) jitRange.addEventListener('input', sync);
+  sync();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sid, t) { var el = document.getElementById(sid); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

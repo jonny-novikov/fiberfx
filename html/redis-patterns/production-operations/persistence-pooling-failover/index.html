@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.02 — Persistence, pooling & failover · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R8.02 module hub: operating the job store as a record of truth in production. Three guarantees on three real surfaces — survive a restart (infra/valkey/conf/valkey.conf: appendonly yes, appendfsync everysec, save ''), serve under load (EchoMQ.Pool: N pipelined connectors round-robined lock-free over a single-threaded server), and ride a failover (EchoMQ.Connector: capped jittered backoff, in-flight fail-not-replay). Applies R7.01 redis-as-primary-database; backed by Valkey 9. Three dives: RDB and AOF, pool sizing, READONLY-reconnect failover.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.frozen pre .fc{color:#e0a36b}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the posture figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.pflow{width:100%;height:auto;display:block;margin-top:4px}
+.pflow .node rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4}
+.pflow .node.surface rect{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.pflow .node.record rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.pflow .nlbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.pflow .nsub{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.pflow .pair{cursor:pointer;transition:opacity .18s ease}
+.pflow .pair .link{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.pflow .pair .glbl{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.pflow.focus .pair{opacity:.2}
+.pflow.focus .pair.on{opacity:1}
+.pflow.focus .pair.on .link{stroke:var(--r-red);stroke-width:2.6}
+.pflow.focus .pair.on .surface rect{stroke-width:2.6}
+.pflow.focus .pair.on .glbl{fill:var(--r-red);font-weight:700}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><span class="rcur">persistence-pooling-failover</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#restart">Restart</a>
+      <a href="#load">Load</a>
+      <a href="#failover">Failover</a>
+      <a href="#together">Together</a>
+      <a href="#dives">Dives</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.02 &#183; Production &amp; Operations &#8212; module hub</p>
+      <h1>Persistence, pooling <span class="hns">&amp; failover</span>.</h1>
+      <p class="lede">Operating the bus as a record of truth in production is three guarantees, not one: it must
+      <b>survive a restart</b>, <b>serve under load</b>, and <b>ride a failover</b>. R7.01 made the bus the record of
+      truth; this module keeps it one.</p>
+      <p class="heronote">Applies R7.01 redis-as-primary-database &#8212; reference the pattern, focus on the operations.
+      Grounding: infra/valkey/conf/valkey.conf (the persistence policy, verbatim) &#183; EchoMQ.Pool
+      (echo/apps/echo_mq/lib/echo_mq/pool.ex) &#183; EchoMQ.Connector (echo/apps/echo_wire/lib/echo_mq/connector.ex).
+      The engine is Valkey 9.</p>
+
+      <figure class="anatomy" aria-labelledby="postureCap">
+        <figcaption id="postureCap"><b>One record of truth, three production guarantees.</b> Select a guarantee to
+        light the real surface that delivers it; the readout names the move.</figcaption>
+        <div class="segbar" id="guarSel" role="group" aria-label="Select a production guarantee">
+          <button type="button" data-guar="restart" aria-pressed="false">Survive a restart</button>
+          <button type="button" data-guar="load" aria-pressed="false">Serve under load</button>
+          <button type="button" data-guar="failover" aria-pressed="false">Ride a failover</button>
+        </div>
+        <svg class="pflow" id="pflow" viewBox="0 0 480 250" role="img" aria-label="One record of truth in the centre maps to three production surfaces: survive a restart maps to valkey.conf with appendonly yes and appendfsync everysec; serve under load maps to EchoMQ.Pool, four pipelined connectors over a single command thread; ride a failover maps to EchoMQ.Connector, capped jittered backoff with in-flight fail-not-replay. Select a guarantee to light its surface.">
+          <g class="node record"><rect x="180" y="100" width="120" height="50" rx="9"></rect><text class="nlbl" x="240" y="121">record of truth</text><text class="nsub" x="240" y="137">the JOB HASH (R7.01)</text></g>
+
+          <g class="pair" data-guar="restart">
+            <path class="link" d="M210 100 Q140 60 120 50"></path>
+            <text class="glbl" x="150" y="60">survive restart</text>
+            <g class="node surface"><rect x="20" y="22" width="160" height="46" rx="8"></rect><text class="nlbl" x="100" y="42">valkey.conf</text><text class="nsub" x="100" y="57">AOF everysec &#183; save ""</text></g>
+          </g>
+          <g class="pair" data-guar="load">
+            <path class="link" d="M300 125 L360 125"></path>
+            <text class="glbl" x="332" y="116">serve load</text>
+            <g class="node surface"><rect x="300" y="102" width="160" height="46" rx="8"></rect><text class="nlbl" x="380" y="122">EchoMQ.Pool</text><text class="nsub" x="380" y="137">N pipelines, 1 thread</text></g>
+          </g>
+          <g class="pair" data-guar="failover">
+            <path class="link" d="M210 150 Q140 196 120 206"></path>
+            <text class="glbl" x="150" y="200">ride failover</text>
+            <g class="node surface"><rect x="20" y="184" width="160" height="46" rx="8"></rect><text class="nlbl" x="100" y="204">EchoMQ.Connector</text><text class="nsub" x="100" y="219">backoff &#183; fail-not-replay</text></g>
+          </g>
+        </svg>
+        <div class="readout" id="guarOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a guarantee.
+        The record survives a restart through the engine's persistence policy, serves under load through the connector
+        pool, and rides a failover through the connector's reconnect discipline.</div>
+        <p class="booknote">Static verdicts &#8212; restart &#8594; <code>appendfsync everysec</code> bounds loss to
+        ~1s &#183; load &#8594; <code>EchoMQ.Pool</code> hides RTT over one command thread &#183; failover &#8594;
+        <code>EchoMQ.Connector</code> reconnects on a jittered backoff and never replays an in-flight write.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The record into production</h2>
+        <span class="ssrc">applies R7.01 &#183; primary-database</span>
+      </div>
+      <div class="prose">
+        <p>R7.01 made the case that the bus <em>is</em> the record of truth: the <code>JOB</code> HASH carries
+        <code>state</code>, <code>attempts</code>, and <code>payload</code>, and Postgres holds only what must be
+        transactional. This module takes that record into production and answers the operational question R7.01 left
+        open &#8212; how does it stay one.</p>
+        <p>A record of truth is not a data model; it is a data model plus three operational guarantees. It must
+        <strong>survive a restart</strong> so the data outlives the process, <strong>serve under load</strong> so one
+        server feeds many callers without a head-of-line stall, and <strong>ride a failover</strong> so a dropped wire
+        recovers cleanly. Each guarantee lives on a different real surface, and this module reads each one. The pattern
+        is R7.01; the subject here is the operations.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p><code>redis-as-primary-database</code> in production: the record of truth must survive a restart, serve
+          under load, and ride a failover &#8212; three guarantees that turn a data model into a durable, available
+          record.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>valkey.conf</code> (<code>appendonly yes</code> + <code>appendfsync everysec</code> +
+          <code>save ""</code>, the durability dial) &#183; <code>EchoMQ.Pool</code> (N pipelined connectors hiding RTT
+          over a single-threaded server) &#183; <code>EchoMQ.Connector</code> (capped-jittered-backoff reconnect,
+          in-flight <strong>fail-not-replay</strong>).</p>
+        </div>
+      </div>
+
+      <p class="take">A record of truth is a data model plus three operational guarantees. The persistence policy keeps
+      the record across a restart, the pool keeps it served under load, and the reconnect discipline keeps it reachable
+      across a failover.</p>
+    </section>
+
+    <section id="restart">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Survive a restart &#8212; the persistence policy</h2>
+        <span class="ssrc">valkey.conf &#183; persistence block</span>
+      </div>
+      <div class="prose">
+        <p>The first guarantee is durability: the data outlives the process. The real <code>valkey.conf</code> makes the
+        append-only log the single source of durability. <code>appendonly yes</code> records every keyspace-changing
+        write to a log on disk; <code>appendfsync everysec</code> flushes that log on a background thread once a second,
+        bounding crash loss to about one second of writes; <code>save ""</code> turns snapshotting off so it never
+        competes for a second fork; <code>aof-use-rdb-preamble yes</code> keeps the rewrite fast.
+        <code>propagation-error-behavior panic</code> fails a write rather than acknowledge data that may not survive,
+        and <code>maxmemory-policy noeviction</code> rejects writes loudly under memory pressure instead of dropping a
+        job &#8212; the R7.01 tie.</p>
+        <p>Dive 1 takes this block apart line by line. It is distinct from R8.01&#8217;s
+        <code>persistence-safe-settings</code>, which is the <strong>kernel</strong> layer (the
+        <code>vm.overcommit_memory</code> sysctl for the save fork); here it is the <strong>Valkey persistence
+        policy</strong> itself. The two are halves of one posture &#8212; cross-reference, not duplicate.</p>
+      </div>
+
+      <figure class="frozen">
+        <figcaption>infra/valkey/conf/valkey.conf &#183; AOF is the single source of durability<span class="tag">frozen</span></figcaption>
+        <pre><span class="fc"># ---- Persistence: AOF is the single source of durability ----</span>
+appendonly <b>yes</b>
+appendfsync <b>everysec</b>             <span class="fd">&#8592; ~1 s loss bound, fsync on a background thread</span>
+aof-use-rdb-preamble <b>yes</b>         <span class="fd">&#8592; compact preamble: a fast rewrite</span>
+<b>save ""</b>                          <span class="fd">&#8592; RDB off: one fork source, not two</span>
+dir /data
+propagation-error-behavior <b>panic</b>   <span class="fd">&#8592; fail the write rather than ack lost data</span></pre>
+      </figure>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>With <code>appendonly</code> on and
+      <code>appendfsync everysec</code>, the append-only file is replayed at startup to rebuild the in-memory dataset,
+      and the loss bound after a crash is roughly one second of writes &#8212; the balance Valkey recommends, durability
+      close to <code>always</code> at a fraction of its fsync cost &#8212;
+      <a href="https://valkey.io/topics/persistence/" rel="noopener">valkey.io/topics/persistence</a>.</p>
+    </section>
+
+    <section id="load">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Serve under load &#8212; the pool</h2>
+        <span class="ssrc">EchoMQ.Pool &#183; pool.ex</span>
+      </div>
+      <div class="prose">
+        <p>The second guarantee is throughput under concurrency. <code>EchoMQ.Pool</code> is a fixed pool of pipelined
+        connectors with lock-free round-robin dispatch: <code>next/1</code> advances an <code>:atomics</code> counter
+        and a caller hits the next member; the default <code>size: 4</code>. The sharp production insight is the one
+        most pool sizing gets wrong. Valkey runs commands <strong>single-threaded</strong> &#8212; the real
+        <code>valkey.conf</code> sets <code>io-threads 1</code> and its comment reads <em>&#8220;command execution is
+        single-threaded.&#8221;</em> So a pool does <strong>not</strong> buy N&#215; server parallelism &#8212; it hides
+        round-trip latency by keeping the one command thread fed via pipelining.</p>
+        <p>Size for pipeline depth and RTT-hiding, not for cores; over-sizing only adds sockets the single thread
+        serializes anyway. Dive 2 derives that insight. It is the same <code>EchoMQ.Pool</code> R6.05 teaches as the
+        concurrency primitive &#8212; here it is <em>sized</em> for production rather than introduced.</p>
+      </div>
+
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/pool.ex &#183; lock-free round-robin<span class="tag">frozen</span></figcaption>
+        <pre><span class="fc"># A fixed pool of pipelined connectors with lock-free round-robin</span>
+<span class="fc"># dispatch. Each member is already a pipeline, so a small pool</span>
+<span class="fc"># multiplies throughput without checkout ceremony.</span>
+size = Keyword.get(opts, :size, <b>4</b>)
+
+defp next(name) do
+  {size, at} = :persistent_term.get({__MODULE__, name})
+  member(name, rem(<b>:atomics.add_get(at, 1, 1)</b>, size) + 1)
+end</pre>
+      </figure>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A pipeline sends several commands without waiting for
+      each reply, so the round-trip latency is paid once for the batch rather than per command &#8212; which is exactly
+      what a single command thread needs to stay fed &#8212;
+      <a href="https://redis.io/docs/latest/develop/use/pipelining/" rel="noopener">redis.io/docs/&#8230;/pipelining</a>.</p>
+    </section>
+
+    <section id="failover">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Ride a failover &#8212; the reconnect discipline</h2>
+        <span class="ssrc">EchoMQ.Connector &#183; connector.ex</span>
+      </div>
+      <div class="prose">
+        <p>The third guarantee is reachability across a disruption. When a primary fails over to a replica, a client
+        that keeps writing to the old node gets a Valkey <code>-READONLY</code> reply &#8212; the signal that a failover
+        happened. A resilient client must reconnect to the new primary. <code>EchoMQ.Connector</code> grounds the
+        reconnect discipline: <em>supervised reconnect with capped jittered backoff, re-fencing on every
+        reconnect</em>; <em>in-flight callers failed with <code>:disconnected</code> on socket loss &#8212; never
+        replayed, because the connector cannot know what is idempotent</em>; and an idle heartbeat that PINGs a quiet
+        wire so dead peers are noticed before the next caller pays for the discovery.</p>
+        <p>The shipped deploy is a standalone Fly node, so a failover here is a socket drop and a reconnect to the same
+        restarted server; the discipline is the same one a Sentinel- or Cluster-aware client uses to re-resolve a new
+        primary. Dive 3 is honest about the seam: the connector handles failover by <strong>socket-drop and
+        reconnect</strong>, not by parsing <code>-READONLY</code> &#8212; the <code>-READONLY</code> reply is the
+        signal (the pattern), the connector&#8217;s reconnect is the real grounding.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A replica refuses writes and answers <em>&#8220;You
+      can&#8217;t write against a read only replica&#8221;</em>; a client that gets <code>-READONLY</code> has been
+      talking to a node that is no longer the primary, and should reconnect to the promoted one &#8212;
+      <a href="https://valkey.io/topics/replication/" rel="noopener">valkey.io/topics/replication</a>.</p>
+    </section>
+
+    <section id="together">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Putting it together</h2>
+        <span class="ssrc">one posture, three layers</span>
+      </div>
+      <div class="prose">
+        <p>The three surfaces are one posture seen from three layers. A restart hits the persistence policy: the
+        append-only log replays and the record is whole. A load spike hits the pool: the four pipelined connectors keep
+        the single command thread fed without one slow caller stalling the rest. A failover hits the connector: the
+        socket drops, in-flight callers get a clean <code>:disconnected</code>, and the supervised reconnect re-fences
+        and resumes. Because a pool member <em>is</em> an <code>EchoMQ.Connector</code>, the pool inherits the reconnect
+        discipline for free.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; codemojex&#8217;s in-flight state, protected</span>
+        <h3>Why a job store chooses this engine</h3>
+        <p>codemojex keeps its game and <code>JOB</code> state in Valkey (the bus and the store) while money lives in
+        Postgres &#8212; the R7.01 per-datum split. So Valkey&#8217;s AOF durability is exactly what carries in-flight
+        game and <code>JOB</code> state across a restart, and the <code>EchoMQ.Pool</code> fronts the bot workers&#8217;
+        notify queue, where an <code>EchoMQ.Consumer</code> drains the <code>emq:{q}:</code> keyspace. The persistence,
+        pool, and reconnect lines, side by side:</p>
+        <figure class="frozen">
+          <figcaption>the production posture &#183; three surfaces, one record<span class="tag">frozen</span></figcaption>
+          <pre>valkey.conf      appendfsync everysec    <span class="fd">&#8592; survive a restart (~1 s loss)</span>
+EchoMQ.Pool      size: 4, :atomics      <span class="fd">&#8592; serve under load (RTT-hiding)</span>
+EchoMQ.Connector backoff + fail-not-replay <span class="fd">&#8592; ride a failover (at-most-once)</span></pre>
+        </figure>
+        <p>The EchoMQ protocol depth &#8212; the lane consumers, the leases, the Lua &#8212; is the dedicated
+        <a href="/echomq/proof">/echomq</a> course; this module stays on the operations.</p>
+      </div>
+    </section>
+
+    <section id="dives">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>The three dives</h2>
+        <span class="ssrc">restart &#8594; load &#8594; failover</span>
+      </div>
+      <div class="prose">
+        <p>Each dive takes one guarantee and the real surface that delivers it, in the arc <em>survive &#8594; serve
+        &#8594; ride</em>: the engine&#8217;s persistence policy, the connector pool sized for a single-threaded server,
+        and the connector&#8217;s reconnect discipline. Read them in order &#8212; durability starts.</p>
+      </div>
+
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/production-operations/persistence-pooling-failover/rdb-and-aof">
+          <div class="top"><span class="num">R8.02.1</span><span class="pill built">built</span></div>
+          <p class="t">RDB and AOF &#8212; the durability dial</p>
+          <p class="o">The real <code>valkey.conf</code> persistence block, verbatim: AOF as the single source of
+          durability, <code>everysec</code>&#8217;s one-second loss bound, <code>save ""</code> retiring RDB.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing">
+          <div class="top"><span class="num">R8.02.2</span><span class="pill built">built</span></div>
+          <p class="t">Pool sizing &#8212; pipeline depth, not cores</p>
+          <p class="o"><code>EchoMQ.Pool</code> and the single-threaded-server insight: size for the depth that keeps
+          one command thread fed across the round trip, not for cores it does not use.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/production-operations/persistence-pooling-failover/readonly-reconnect-failover">
+          <div class="top"><span class="num">R8.02.3</span><span class="pill built">built</span></div>
+          <p class="t">READONLY, reconnect &amp; failover</p>
+          <p class="o">The <code>-READONLY</code> signal and <code>EchoMQ.Connector</code>&#8217;s reconnect discipline:
+          capped jittered backoff, re-fence, in-flight fail-not-replay.</p>
+        </a>
+      </div>
+
+      <p class="take">Three dives, one record of truth: keep it across a restart, serve it under load, and reach it
+      across a failover &#8212; the persistence policy, the pool, and the reconnect discipline working as one posture.</p>
+
+      <p class="booknote">After R8.02 the chapter continues with the case studies &#8212; Pinterest, Twitter/X, and Uber
+      &#8212; then the capstone hands off to the dedicated EchoMQ course. Return to the
+      <a href="/redis-patterns/production-operations">Production &amp; Operations chapter</a> to continue, open
+      <a href="/echomq/proof">the EchoMQ Proof pillar</a> for the production evidence, or
+      <a href="/bcs/fly">Codemojex on Fly</a> for where this <code>valkey.conf</code> actually runs.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/persistence/" rel="noopener">Valkey &mdash; <em>Persistence</em></a> &mdash; the append-only file, the <code>everysec</code> fsync policy, and the roughly one-second loss bound after a crash.</li>
+            <li><a href="https://valkey.io/topics/replication/" rel="noopener">Valkey &mdash; <em>Replication</em></a> &mdash; primary/replica roles and the <code>-READONLY</code> reply returned to a client after a failover.</li>
+            <li><a href="https://redis.io/docs/latest/develop/use/pipelining/" rel="noopener">Redis &mdash; <em>Pipelining</em></a> &mdash; why a pipeline hides round-trip latency on a single command thread, the premise behind pool sizing.</li>
+            <li><a href="https://valkey.io/topics/sentinel/" rel="noopener">Valkey &mdash; <em>Sentinel</em></a> &mdash; automatic failover and how a resilient client re-resolves the new primary after a <code>-READONLY</code> reply.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/primary-database">R7.01 &#183; Redis as a primary database</a><span class="rs">the pattern this module operates</span></li>
+            <li><a href="/redis-patterns/production-operations/kernel-tuning">R8.01 &#183; Kernel tuning</a><span class="rs">the host layer beneath this posture</span></li>
+            <li><a href="/redis-patterns/flow-control/worker-concurrency">R6.05 &#183; Worker concurrency</a><span class="rs">the same EchoMQ.Pool, as the primitive</span></li>
+            <li><a href="/echomq/proof">/echomq &#183; the Proof pillar</a><span class="rs">conformance, telemetry, production evidence</span></li>
+            <li><a href="/bcs/fly">/bcs &#183; Production on Fly</a><span class="rs">where this valkey.conf runs</span></li>
+            <li><a href="/echo-persistence">/echo-persistence</a><span class="rs">the durability floor beyond AOF</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/production-operations/kernel-tuning"><span class="pk">previous</span>&#8592; R8.01 &#183; Kernel tuning</a>
+      <a class="pgx" href="/redis-patterns/production-operations/persistence-pooling-failover/rdb-and-aof"><span class="pk">next</span>R8.02.1 &#183; RDB and AOF &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/rdb-and-aof">R8.02.1 &#183; RDB and AOF</a>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing">R8.02.2 &#183; Pool sizing</a>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/readonly-reconnect-failover">R8.02.3 &#183; READONLY-reconnect failover</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echo-persistence">The persistence floor</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: a production guarantee -> its real surface (pure over a fixed dataset) ---------- */
+  var GUARS = {
+    'restart':  { surface: 'infra/valkey/conf/valkey.conf', move: 'appendonly yes + appendfsync everysec, save "" off', what: 'the append-only log fsyncs once a second on a background thread, so a crash loses at most about one second of writes; RDB is off so one fork serves' },
+    'load':     { surface: 'EchoMQ.Pool (pool.ex)', move: 'size: 4 pipelined connectors, round-robined lock-free via :atomics', what: 'over a single-threaded server (io-threads 1) the pool hides round-trip latency rather than buying parallelism the server does not have' },
+    'failover': { surface: 'EchoMQ.Connector (connector.ex)', move: 'capped jittered backoff, re-fence, in-flight fail-not-replay', what: 'a -READONLY reply or a dropped socket triggers a supervised reconnect; in-flight callers fail :disconnected and are never replayed, because idempotency is the caller’s to know' }
+  };
+  // pure: guarantee key -> readout HTML
+  function describeGuar(guar) {
+    var g = GUARS[guar];
+    return '<span class="rk">surface &#183;</span> ' + g.surface + '<br>' +
+      '<span class="rk">move &#183;</span> <b>' + g.move + '</b><br>' +
+      '<span class="rk">what &#183;</span> ' + g.what;
+  }
+  var pflow = document.getElementById('pflow');
+  var guarButtons = document.querySelectorAll('#guarSel button');
+  var guarOut = document.getElementById('guarOut');
+  // pure: highlight a guarantee's pair, sync the buttons, fill the readout — hover or click.
+  function selectGuar(guar) {
+    guarButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-guar') === guar ? 'true' : 'false');
+    });
+    if (pflow) {
+      pflow.classList.toggle('focus', !!guar);
+      pflow.querySelectorAll('.pair').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-guar') === guar);
+      });
+    }
+    if (guarOut) {
+      guarOut.innerHTML = guar
+        ? describeGuar(guar)
+        : '<span class="rk">readout &#183;</span> Select a guarantee. The record survives a restart through the engine’s persistence policy, serves under load through the connector pool, and rides a failover through the connector’s reconnect discipline.';
+    }
+  }
+  guarButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var guar = b.getAttribute('data-guar');
+      selectGuar(b.getAttribute('aria-pressed') === 'true' ? null : guar);
+    });
+  });
+  if (pflow) {
+    pflow.querySelectorAll('.pair').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectGuar(g.getAttribute('data-guar')); });
+      g.addEventListener('mouseleave', function () { selectGuar(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zero cost when absent · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The opt-in property of EchoMQ.Meter: every emission guards :erlang.function_exported(:telemetry, :execute, 3), so with no :telemetry dependency loaded an emit is a no-op and an attach answers :ok with no effect — the bus carries no :telemetry dependency edge, and a host opts in by adding :telemetry itself. The guard protects only the events, never the wrapped work: span/3 always runs fun.(). The module is named EchoMQ.Meter, collision-free against the frozen first-generation telemetry surface that loads on the same code path. Real echo_mq code, no Lua.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="red"]{background:var(--redis-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- guard svg ---- */
+.gd-mv rect, .gd-mv path{transition:opacity .18s ease}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/proof">proof</a><span class="rsep">/</span><a href="/echomq/proof/telemetry-and-the-read-plane">telemetry-and-the-read-plane</a><span class="rsep">/</span><span class="rcur">zero-cost-when-absent</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/proof">The Proof</a>
+        <span class="sep">/</span>
+        <a href="/echomq/proof/telemetry-and-the-read-plane">Telemetry &amp; the read plane</a>
+        <span class="sep">/</span>
+        <span class="here">Zero cost when absent</span>
+      </nav>
+      <p class="eyebrow">Telemetry &amp; the read plane &middot; dive 02</p>
+      <h1>Zero cost <span class="ex">when absent</span></h1>
+      <p class="lede">Make the telemetry dependency optional, and pay nothing when the host has not opted in.</p>
+      <p class="kicker">A library that meters itself has a choice: <strong>depend on</strong> the telemetry library and force
+        it on every host, or make the dependency <strong>optional</strong> and pay nothing when the host has not opted in.
+        <code class="inl">EchoMQ.Meter</code> takes the second path, on a single guard. The property is worth stating
+        plainly: <strong>the bus carries no <code class="inl">:telemetry</code> dependency edge.</strong> A host that wants
+        metering adds <code class="inl">:telemetry</code> itself; a host that does not is never charged for the emitter
+        calls in the lifecycle. Flip the dependency on the right to see what an emit does in each world.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#guard">The single guard</a>
+        <a href="#cost">The cost, both worlds</a>
+        <a href="#name">The name is collision-avoidance</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="gdTitle">
+      <h4 id="gdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The guard &middot; one boolean decides</h4>
+      <svg viewBox="0 0 460 240" role="img" aria-label="Every emission asks one question: is :telemetry loaded? answered by :erlang.function_exported(:telemetry, :execute, 3). If true, the rooted event is executed and the handler runs. If false, the emit does nothing and answers :ok — a no-op; the event never fires, so an attached handler is harmless. The path taken depends only on whether the dependency was added.">
+        <!-- the question -->
+        <rect x="120" y="12" width="220" height="46" rx="9" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="230" y="30" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">every emission asks:</text>
+        <text x="230" y="46" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#6fdccf">function_exported(:telemetry, :execute, 3)?</text>
+        <!-- branches -->
+        <g stroke="#46507a" fill="none" stroke-width="1.3">
+          <path d="M180 58 L100 100" marker-end="url(#ahg)"></path>
+          <path d="M280 58 L360 100" marker-end="url(#ahg)"></path>
+        </g>
+        <text x="118" y="80" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#a7c9b1">true</text>
+        <text x="346" y="80" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#f2948c">false</text>
+        <defs>
+          <marker id="ahg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- loaded branch -->
+        <g class="gd-mv" id="gd-loaded">
+          <rect x="20" y="100" width="170" height="54" rx="9" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="105" y="120" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#6fdccf">:telemetry.execute(…)</text>
+          <text x="105" y="135" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#ece4d0">the rooted event fires</text>
+          <text x="105" y="147" text-anchor="middle" font-family="Manrope,sans-serif" font-size="7.5" fill="#a39c89">attached handlers run</text>
+          <path d="M105 154 L105 186" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahg)" opacity=".85"></path>
+          <rect x="36" y="186" width="138" height="34" rx="8" fill="rgba(123,163,135,.13)" stroke="#7ba387"></rect>
+          <text x="105" y="200" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#a7c9b1">metered: numbers flow</text>
+          <text x="105" y="212" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">host added :telemetry</text>
+        </g>
+        <!-- absent branch -->
+        <g class="gd-mv" id="gd-absent">
+          <rect x="270" y="100" width="170" height="54" rx="9" fill="rgba(196,80,76,.1)" stroke="#c4504c"></rect>
+          <text x="355" y="120" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#f2948c">do nothing → :ok</text>
+          <text x="355" y="135" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#ece4d0">a no-op</text>
+          <text x="355" y="147" text-anchor="middle" font-family="Manrope,sans-serif" font-size="7.5" fill="#a39c89">no event constructed</text>
+          <path d="M355 154 L355 186" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahg)" opacity=".85"></path>
+          <rect x="286" y="186" width="138" height="34" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+          <text x="355" y="200" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#9fc0ea">free: a branch and a return</text>
+          <text x="355" y="212" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">no dependency edge</text>
+        </g>
+      </svg>
+      <div class="geo-readout" id="gdOut" aria-live="polite">Flip the dependency below to see which branch an emit takes.</div>
+      <div class="controls" style="margin-top:1rem;margin-bottom:0">
+        <div class="solid-select" id="gdSel" role="group" aria-label="Is :telemetry loaded?">
+          <button type="button" data-g="loaded" data-c="echo" class="active" aria-pressed="true">:telemetry added</button>
+          <button type="button" data-g="absent" data-c="red" aria-pressed="false">no :telemetry</button>
+        </div>
+      </div>
+    </figure>
+  </div>
+
+  <section id="guard">
+    <h2>The guard &mdash; <code class="inl">function_exported(:telemetry, :execute, 3)</code></h2>
+    <div class="prose">
+      <p>Before any emission, the meter asks one question: <strong>is <code class="inl">:telemetry</code> actually
+        loaded?</strong> It answers with a runtime check &mdash;
+        <code class="inl">:erlang.function_exported(:telemetry, :execute, 3)</code> &mdash; which is
+        <code class="inl">true</code> only if the module is present and that function is exported. If the dependency was
+        never added, the check is <code class="inl">false</code>, and:</p>
+      <p><strong><code class="inl">emit/3</code></strong> does nothing and answers <code class="inl">:ok</code> &mdash; a
+        no-op. <strong><code class="inl">attach/4</code></strong> does nothing and answers <code class="inl">:ok</code>
+        &mdash; the handler is never registered, and that is harmless, because the event it would have caught never fires
+        either. So an emit in a hot lifecycle path is, when telemetry is absent, a branch on a boolean and a return: no
+        event constructed, no handler list walked, no dependency loaded. The cost is a function-export lookup, not a
+        metering pipeline.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Meter</span>
+<span class="cmt"># The single guard: is :telemetry actually loaded? Answered at runtime by the</span>
+<span class="cmt"># function-export check — true only if the module is present and execute/3 is</span>
+<span class="cmt"># exported. If the dependency was never added, this is false, so every emission</span>
+<span class="cmt"># is a no-op. The bus carries NO :telemetry dependency edge — a host opts in by</span>
+<span class="cmt"># adding :telemetry itself.</span>
+<span class="op">defp</span> <span class="fn">loaded?</span>, <span class="op">do:</span> <span class="op">:erlang</span>.<span class="fn">function_exported</span>(<span class="str">:telemetry</span>, <span class="str">:execute</span>, <span class="res">3</span>)
+
+<span class="cmt"># emit/3: with :telemetry loaded, fire the rooted event; without it, do nothing</span>
+<span class="cmt"># and answer :ok. An emit in a hot path is a branch on a boolean, never a</span>
+<span class="cmt"># metering pipeline.</span>
+<span class="op">def</span> <span class="fn">emit</span>(event_suffix, measurements, metadata) <span class="op">when</span> is_list(event_suffix) <span class="op">do</span>
+  <span class="op">if</span> <span class="fn">loaded?</span>() <span class="op">do</span>
+    <span class="fn">apply</span>(<span class="str">:telemetry</span>, <span class="str">:execute</span>, [[<span class="op">@root</span> | event_suffix], measurements, metadata])
+  <span class="op">end</span>
+
+  <span class="str">:ok</span>
+<span class="op">end</span></pre>
+
+    <p class="note">The same guard wraps <code class="inl">attach/4</code>, <code class="inl">attach_many/4</code>, and
+      <code class="inl">span/3</code>. The one careful asymmetry is in <code class="inl">span/3</code>: the guard protects
+      only the <strong>events</strong>, never the <strong>work</strong>. With telemetry absent, <code class="inl">span/3</code>
+      runs the wrapped function directly and returns its result &mdash; the metering vanishes, the computation does not. A
+      block you wrapped to measure is never skipped because nobody is listening.</p>
+  </section>
+
+  <section id="cost">
+    <h2>The cost, both worlds</h2>
+    <div class="prose">
+      <p>The claim &mdash; <em>zero cost when absent</em> &mdash; is meant literally, so it is worth pricing both worlds
+        side by side. The same line of lifecycle code, <code class="inl">Meter.job_completed(…)</code>, runs in both;
+        what differs is only whether the host added the dependency. Pick a world to see what that one call does.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="costTitle">
+      <h4 id="costTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One emit call &middot; what it costs</h4>
+      <div class="controls">
+        <div class="solid-select" id="costSel" role="group" aria-label="Pick a world">
+          <button type="button" data-w="opt" data-c="echo" class="active" aria-pressed="true">host opted in</button>
+          <button type="button" data-w="none" data-c="blue" aria-pressed="false">host did not</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 96" role="img" aria-label="The same emit call, two worlds. With the dependency added, the call constructs the event and dispatches to attached handlers — metering happens. Without it, the call is a boolean branch and a return — no event, no dependency, no cost.">
+        <rect x="14" y="14" width="220" height="68" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="124" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">the call does</text>
+        <text id="cost-do" x="124" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#6fdccf">·</text>
+        <rect x="246" y="14" width="220" height="68" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="356" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">the dependency edge</text>
+        <text id="cost-dep" x="356" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#6fdccf">·</text>
+      </svg>
+      <div class="geo-readout" id="costOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">A queue is infrastructure &mdash; it sits beneath an application with its own opinions about
+      observability. The opt-in guard makes metering a <em>decision the host makes</em>, not a tax the library levies: the
+      cost of the feature, to a host that does not use it, is <strong>zero</strong> &mdash; and the guard makes that claim
+      literally true.</p>
+  </section>
+
+  <section id="name">
+    <h2>The name is collision-avoidance, not decoration</h2>
+    <div class="prose">
+      <p>There is a second reason the module is called <code class="inl">EchoMQ.Meter</code>, and it is load-bearing. A
+        frozen first-generation reference already defines a telemetry module under the obvious name, and <strong>both load
+        on one code path.</strong> A same-named module would shadow the bus's telemetry surface
+        <strong>non-deterministically</strong> &mdash; whichever loaded last would win, and the answer would depend on load
+        order. The capability here is that same metering surface re-derived; the <strong>name is chosen to be
+        collision-free</strong> so the bus's meter and the frozen reference never contend for one module name. Teaching the
+        surface, the name to reach for is <code class="inl">EchoMQ.Meter</code> &mdash; that is the module the bus exposes,
+        and the one this whole module is about.</p>
+      <p>This is the same instinct the BCS law expresses at the system boundary: a surface should not collide with, or
+        depend on, a neighbour to hold itself up. The meter avoids both &mdash; no telemetry dependency edge (the guard),
+        and no module-name collision (the name) &mdash; so it slots into any host cleanly, metered or not.</p>
+    </div>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Instrument the system, but do not make instrumentation mandatory &mdash; a library's observability should be the
+          host's choice. <a href="/redis-patterns/production-operations">Production Operations</a> teaches running the
+          tier.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p>Every emission guards <code class="inl">function_exported(:telemetry, :execute, 3)</code>, so with no
+          <code class="inl">:telemetry</code> loaded an emit is a no-op and an attach answers <code class="inl">:ok</code>
+          &mdash; no dependency edge &mdash; and the module name is chosen collision-free so it never shadows the frozen
+          reference on the shared code path.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: instrument, but do not impose. The implementation imposes nothing &mdash; a guard makes
+      the dependency optional, and a chosen name keeps it from colliding.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; optional dependency, chosen name</h2>
+    <div class="prose">
+      <p>One runtime check &mdash; <code class="inl">:erlang.function_exported(:telemetry, :execute, 3)</code> &mdash; makes
+        the telemetry dependency optional: with it absent, every emit is a no-op and every attach answers
+        <code class="inl">:ok</code>, so the bus carries no <code class="inl">:telemetry</code> dependency edge and a host
+        opts in by adding the dep. The guard protects only the events, never the wrapped work. And the module is named
+        <code class="inl">EchoMQ.Meter</code> to stay collision-free against the frozen reference on the shared code path.
+        The next dive turns from push to pull: the read plane, which has no dependency to guard at all.</p>
+    </div>
+    <p class="note">Next in the module: <strong>The read plane</strong> &mdash; <code class="inl">EchoMQ.Metrics</code>,
+      the pull side that answers a question by reading the structures, never by changing them.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the zero-cost guard and the optional-dependency property are grounded.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/man/erlang.html#function_exported-3">Erlang/OTP &mdash; <em>erlang:function_exported/3</em></a> &mdash; the runtime check the zero-cost guard is built on.</li>
+          <li><a href="https://hexdocs.pm/telemetry/readme.html">Elixir &mdash; <em>the :telemetry library</em></a> &mdash; the optional dependency a host opts into.</li>
+          <li><a href="https://hexdocs.pm/telemetry/telemetry.html">Erlang/OTP &mdash; <em>:telemetry.execute/3</em></a> &mdash; the execute the guard gates.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/proof/telemetry-and-the-read-plane">Telemetry &amp; the read plane</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/proof/telemetry-and-the-read-plane/the-telemetry-surface">The telemetry surface</a> &mdash; the events the guard protects.</li>
+          <li><a href="/echomq/proof/telemetry-and-the-read-plane/the-read-plane">The read plane</a> &mdash; the pull side, with no dependency to guard.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the owned wire the connector meters on the same tree.</li>
+          <li><a href="/bcs/together">The Branded Component System &middot; together</a> &mdash; the manuscript chapter where the four libraries are one umbrella.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/proof/telemetry-and-the-read-plane/the-telemetry-surface"><span aria-hidden="true">&larr;</span>&nbsp; The telemetry surface</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/proof/telemetry-and-the-read-plane/the-read-plane">The read plane <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/proof/telemetry-and-the-read-plane">Telemetry &amp; the read plane</a>
+        <a href="/echomq/proof/telemetry-and-the-read-plane/the-telemetry-surface">The telemetry surface</a>
+        <a href="/echomq/proof/telemetry-and-the-read-plane/zero-cost-when-absent">Zero cost when absent</a>
+        <a href="/echomq/proof/telemetry-and-the-read-plane/the-read-plane">The read plane</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/proof">The Proof</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- content interactive 1: the guard, one boolean (real loaded?/emit) ---------- */
+  var GUARD = {
+    loaded: { on: 'gd-loaded', off: 'gd-absent',
+      title: ':telemetry added → the event fires',
+      note: 'function_exported(:telemetry, :execute, 3) is true: emit constructs the rooted [:emq, …] event and dispatches to attached handlers — the host gets its numbers' },
+    absent: { on: 'gd-absent', off: 'gd-loaded',
+      title: 'no :telemetry → a no-op',
+      note: 'the check is false: emit does nothing and answers :ok; no event is constructed, no handler walked, no dependency loaded — a branch on a boolean and a return' }
+  };
+  function renderGuard(key) {
+    var v = GUARD[key];
+    if (!v) return;
+    var on = document.getElementById(v.on); if (on) on.setAttribute('opacity', '1');
+    var off = document.getElementById(v.off); if (off) off.setAttribute('opacity', '.16');
+    var out = document.getElementById('gdOut');
+    if (out) out.innerHTML = '<b>' + v.title + '</b><br><span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#gdSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#gdSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderGuard(b.getAttribute('data-g'));
+    });
+  });
+  renderGuard('loaded'); // initial render — correct without interaction
+
+  /* ---------- content interactive 2: one emit call, two worlds (the cost) ---------- */
+  var COST = {
+    opt:  { does: 'construct + dispatch', dep: 'present (host added it)', dc: '#6fdccf', pc: '#a7c9b1',
+      desc: 'the host added :telemetry: Meter.job_completed(…) builds the [:emq, :job, :complete] event and dispatches to handlers — metering happens, the host pays for what it asked for' },
+    none: { does: 'a branch → :ok', dep: 'none', dc: '#9fc0ea', pc: '#9fc0ea',
+      desc: 'the host did not: the same call is loaded?() = false then :ok — no event, no handler walk, no dependency edge. The cost of the feature, unused, is zero' }
+  };
+  function renderCost(key) {
+    var v = COST[key];
+    if (!v) return;
+    var d = document.getElementById('cost-do'); if (d) { d.textContent = v.does; d.setAttribute('fill', v.dc); }
+    var p = document.getElementById('cost-dep'); if (p) { p.textContent = v.dep; p.setAttribute('fill', v.pc); }
+    var out = document.getElementById('costOut');
+    if (out) out.innerHTML = 'call: <b>' + v.does + '</b> &middot; dependency: <b>' + v.dep + '</b><br>' +
+      '<span class="dim">' + v.desc + '</span>';
+  }
+  document.querySelectorAll('#costSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#costSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderCost(b.getAttribute('data-w'));
+    });
+  });
+  renderCost('opt'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

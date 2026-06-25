@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The two lanes &middot; Coherence &middot; EchoMQ, In Depth</title>
+<meta name="description" content="One 29-byte payload, two carriers. The broadcast lane is a single PUBLISH applied by EchoStore.Ring — at-most-once, refuse-and-count under storm. The job lane is an enqueue over EchoMQ's fair lanes, remembered by EchoStore.Journal — at-least-once, crash-surviving. The table's coherence: mode picks by the cost of staleness. Grounded in echo/apps/echo_store.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:rgba(42,161,152,.08);border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.24em;color:var(--gold);display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+/* ---- header ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+/* ---- figures / code ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code{font-family:var(--mono);font-size:.9rem;line-height:1.6;color:var(--cream);background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .kw{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .at{color:var(--blue-bright)}
+/* ---- interactive ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.geo-readout{font-family:var(--mono);font-size:.93rem;color:var(--gold-bright);background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .warn{color:var(--gold-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media(max-width:760px){.bridge{grid-template-columns:1fr;gap:.7rem}.bridge .arrow{justify-self:center;transform:rotate(90deg)}}
+/* ---- door ---- */
+.door{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+/* ---- refs ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+/* ---- stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media(max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+@media(max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><a href="/echomq/cache/coherence">coherence</a><span class="rsep">/</span><span class="rcur">the-two-lanes</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache">The Cache</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache/coherence">Coherence</a>
+      <span class="sep">/</span>
+      <span class="here">The two lanes</span>
+    </nav>
+    <p class="eyebrow">Coherence &middot; dive 02</p>
+    <h1>The two<br><span class="ex">lanes</span></h1>
+    <p class="lede">One payload, two carriers &mdash; the choice is what a lost message costs.</p>
+    <p class="kicker">The 29-byte message can ride two different lanes, and the table chooses by declaring its
+      <code class="inl">coherence</code> mode. The choice is not about throughput &mdash; both are cheap &mdash; it is
+      about <strong>what a lost message costs</strong>. The <strong>broadcast lane</strong> is a single
+      <code class="inl">PUBLISH</code>, applied by <code class="inl">EchoStore.Ring</code>: at-most-once, for surfaces
+      where a lost message costs <em>one TTL of staleness</em>. The <strong>job lane</strong> is an enqueue over
+      EchoMQ&rsquo;s fair lanes, remembered by <code class="inl">EchoStore.Journal</code>: at-least-once,
+      crash-surviving, for surfaces where a stale read <em>costs money</em>. Same truth, different promise.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#payload">One payload, two addresses</a>
+      <a href="#broadcast">The broadcast lane</a>
+      <a href="#job">The job lane</a>
+      <a href="#worked">Pick a lane</a>
+      <a href="#bridge">Pattern &amp; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- SECTION: one payload, two addresses -->
+  <section id="payload">
+    <h2>One payload, two addresses</h2>
+    <div class="prose">
+      <p>The same <code class="inl">payload(id, version)</code> from the previous dive feeds both lanes; only the
+        carrier differs. Each lane has its own address &mdash; a channel for broadcast, a queue for the job lane &mdash;
+        and both share the cache&rsquo;s <code class="inl">{table}</code> hashtag, so a broadcast channel and the L2 keys
+        it invalidates land on the same Valkey Cluster slot.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Coherence — the two lanes and their addresses</span>
+<span class="cmt"># Same 29-byte payload(id, version); two carriers; the table picks by the</span>
+<span class="cmt"># cost of a missed invalidation.</span>
+<span class="op">def</span> <span class="fn">channel</span>(table), <span class="op">do</span>: <span class="str">"ecc:{"</span> &lt;&gt; table &lt;&gt; <span class="str">"}:coh"</span>   <span class="cmt"># the broadcast address</span>
+<span class="op">def</span> <span class="fn">queue</span>(table),   <span class="op">do</span>: <span class="str">"ecc.coh."</span> &lt;&gt; table           <span class="cmt"># the job-lane address</span>
+
+<span class="cmt"># Broadcast: fire-and-forget, one wire hop, returns the receiver count.</span>
+<span class="op">def</span> <span class="fn">broadcast</span>(conn, table, id, version) <span class="op">do</span>
+  Connector.<span class="fn">command</span>(conn, [<span class="str">"PUBLISH"</span>, <span class="fn">channel</span>(table), <span class="fn">payload</span>(id, version)])
+<span class="op">end</span>
+
+<span class="cmt"># Job lane: at-least-once over EchoMQ's fair lanes. The lane mints a JOB id</span>
+<span class="cmt"># and carries the same coherence payload as the job's body.</span>
+<span class="op">def</span> <span class="fn">enqueue</span>(conn, table, group, id, version) <span class="op">do</span>
+  Lanes.<span class="fn">enqueue</span>(conn, <span class="fn">queue</span>(table), group, BrandedId.<span class="fn">generate!</span>(<span class="str">"JOB"</span>), <span class="fn">payload</span>(id, version))
+<span class="op">end</span></pre>
+
+    <p class="note">The job-lane queue is named <code class="inl">ecc.coh.&lt;table&gt;</code> &mdash; its own queue under
+      EchoMQ &mdash; so a coherence job is an ordinary job: claimed, retried, and deduplicated by its <code class="inl">JOB</code>
+      id like any other.</p>
+
+    <figure class="fig" aria-labelledby="addrTitle">
+      <h4 id="addrTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One payload, two addresses &middot; pick a table</h4>
+      <div class="controls">
+        <div class="solid-select" id="adSel" role="group" aria-label="The table whose coherence addresses to compose">
+          <button type="button" data-ad="board" data-c="echo" class="active" aria-pressed="true">board</button>
+          <button type="button" data-ad="wallet" data-c="blue" aria-pressed="false">wallet</button>
+          <button type="button" data-ad="room" data-c="gold" aria-pressed="false">room</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 150" role="img" aria-label="One coherence payload addressed two ways for a chosen table. The broadcast lane uses the channel ecc open-brace table close-brace colon coh; the job lane uses the queue ecc dot coh dot table. Both carry the same payload and share the table hashtag.">
+        <defs>
+          <marker id="aha" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- payload -->
+        <rect x="14" y="56" width="96" height="38" rx="8" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+        <text x="62" y="73" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#ece4d0">payload(id,ver)</text>
+        <text x="62" y="86" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">29 bytes</text>
+
+        <!-- channel address -->
+        <rect x="180" y="22" width="220" height="40" rx="9" fill="rgba(42,161,152,.1)" stroke="#2aa198"></rect>
+        <text x="290" y="40" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#a39c89">channel/1 &middot; broadcast</text>
+        <text x="290" y="54" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#6fdccf" id="adChan">ecc:{board}:coh</text>
+        <path d="M110 68 L178 48" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#aha)"></path>
+
+        <!-- queue address -->
+        <rect x="180" y="88" width="220" height="40" rx="9" fill="rgba(90,135,196,.1)" stroke="#5a87c4"></rect>
+        <text x="290" y="106" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#a39c89">queue/1 &middot; job lane</text>
+        <text x="290" y="120" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#9fc0ea" id="adQueue">ecc.coh.board</text>
+        <path d="M110 82 L178 102" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#aha)"></path>
+
+        <text x="430" y="44" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">{table}</text>
+        <text x="430" y="54" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">hashtag</text>
+      </svg>
+      <div class="geo-readout" id="adOut" aria-live="polite"></div>
+    </figure>
+  </section>
+
+  <!-- SECTION: the broadcast lane -->
+  <section id="broadcast">
+    <h2>The broadcast lane &mdash; at-most-once, for cheap staleness</h2>
+    <div class="prose">
+      <p><code class="inl">broadcast/4</code> is a single <code class="inl">PUBLISH</code>. There is no acknowledgement
+        and no retry: if a subscriber is briefly disconnected when the message goes out, it never sees it &mdash; and
+        that is acceptable precisely because <strong>a lost broadcast costs one TTL of staleness</strong>. The missed
+        row expires on its jittered clock and re-fills with the current value. For a board, a leaderboard, a presence
+        count &mdash; read-mostly data where a second of staleness is invisible &mdash; that is the right trade.</p>
+      <p>The applier on the receiving side is <code class="inl">EchoStore.Ring</code>: a bounded ring with <strong>one
+        producer and one applier</strong>, the Disruptor&rsquo;s shape on the BEAM. Two <code class="inl">:atomics</code>
+        carry the head/tail sequences, an ETS table holds the preallocated slots, and <strong>occupancy = tail &minus;
+        head</strong> is the backpressure gauge anyone can read at any time. Wakes are <strong>edge-triggered</strong>
+        &mdash; one <code class="inl">:wake</code> only on the empty&rarr;non-empty transition &mdash; so a busy burst
+        costs one message however many items flow through it.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Ring — publish/2 (single producer)</span>
+<span class="cmt"># When the ring is full the publish is refused and counted — never blocked,</span>
+<span class="cmt"># never overwritten. The broadcast lane is at-most-once by its substrate's</span>
+<span class="cmt"># contract, and a counted drop under storm keeps that contract honest where</span>
+<span class="cmt"># silent overwriting or unbounded queueing would trade it for a worse one.</span>
+<span class="op">def</span> <span class="fn">publish</span>(name, item) <span class="op">do</span>
+  rt = :persistent_term.<span class="fn">get</span>({<span class="at">__MODULE__</span>, name})
+  tail = :atomics.<span class="fn">get</span>(rt.seq, 1)
+  head = :atomics.<span class="fn">get</span>(rt.seq, 2)
+
+  <span class="kw">if</span> tail - head &gt;= rt.capacity <span class="op">do</span>
+    :counters.<span class="fn">add</span>(rt.counters, <span class="at">@counters</span>[<span class="str">:dropped</span>], 1)
+    <span class="str">:dropped</span>                       <span class="cmt"># full: refuse and count, do not block</span>
+  <span class="op">else</span>
+    next = tail + 1
+    :ets.<span class="fn">insert</span>(rt.slots, {rem(next, rt.capacity), item})
+    :atomics.<span class="fn">put</span>(rt.seq, 1, next)
+    :counters.<span class="fn">add</span>(rt.counters, <span class="at">@counters</span>[<span class="str">:published</span>], 1)
+    <span class="cmt"># one wake only on the empty -> non-empty edge</span>
+    <span class="kw">if</span> tail == :atomics.<span class="fn">get</span>(rt.seq, 2) <span class="op">do</span>
+      send(rt.applier, <span class="str">:wake</span>)
+      :counters.<span class="fn">add</span>(rt.counters, <span class="at">@counters</span>[<span class="str">:wakes</span>], 1)
+    <span class="op">end</span>
+    <span class="str">:ok</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="note">A full ring drops and counts; it does not block the table&rsquo;s owner and it does not overwrite a
+      slot another item is using. <strong>Surfaces that cannot accept a drop do not ride this lane</strong> &mdash; they
+      ride the job lane, which does not pass through the ring at all.</p>
+  </section>
+
+  <!-- SECTION: the job lane -->
+  <section id="job">
+    <h2>The job lane &mdash; at-least-once, for staleness that costs money</h2>
+    <div class="prose">
+      <p><code class="inl">enqueue/5</code> puts the same payload on <code class="inl">ecc.coh.&lt;table&gt;</code> over
+        EchoMQ&rsquo;s fair lanes. Now the message is a <strong>job</strong>: admitted once (the bus deduplicates the
+        job id), claimed by a worker, retried on failure, surviving a crash. This is the lane for data where <strong>a
+        stale read costs money</strong> &mdash; a wallet balance, an inventory count, a settlement &mdash; where
+        &ldquo;the row will expire eventually&rdquo; is not good enough.</p>
+      <p>The memory behind the job lane is <code class="inl">EchoStore.Journal</code>, a transactional outbox standing
+        <em>beside</em> the bus (the bus stays volatile by decision D-2). Its <code class="inl">applied</code> table
+        records the last version applied per name and <strong>survives the node, the cache, and the bus</strong> &mdash;
+        so even a coherence intent replayed after a crash answers correctly. The deep durability of that lane is the
+        subject of the next dive and the <a href="/echo-persistence">Echo Persistence</a> floor.</p>
+    </div>
+
+    <h3 style="margin-top:1.6rem">Choosing the lane</h3>
+    <div class="prose">
+      <p>The table&rsquo;s declared spec carries one field, <code class="inl">coherence: :none | :broadcast |
+        :tracking</code>:</p>
+      <ul style="margin:0 0 1.05rem;padding-left:1.4rem;color:var(--cream-soft)">
+        <li style="margin-bottom:.45rem"><code class="inl">:none</code> &mdash; no coherence lane; the cache relies on
+          TTL expiry alone (fine for derived, short-lived data).</li>
+        <li style="margin-bottom:.45rem"><code class="inl">:broadcast</code> &mdash; the <code class="inl">PUBLISH</code>
+          + Ring lane: at-most-once, cheap, for read-mostly data.</li>
+        <li><code class="inl">:tracking</code> &mdash; RESP3 server-assisted client tracking, where Valkey itself pushes
+          the invalidation; the store opts into the server-push instead of carrying its own message.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- SECTION: worked interactive -->
+  <section id="worked">
+    <h2>Pick a lane by the cost of staleness</h2>
+    <div class="prose">
+      <p>Pick a data class and read the lane the <code class="inl">coherence:</code> mode selects, the verb it runs, the
+        substrate that applies it, and its delivery guarantee. The model maps each cost-of-staleness to the real lane
+        over a fixed set of codemojex-style read surfaces.</p>
+    </div>
+    <figure class="fig" aria-labelledby="laneTitle">
+      <h4 id="laneTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">coherence: &middot; the cost picks the lane</h4>
+      <div class="controls">
+        <div class="solid-select" id="laneSel" role="group" aria-label="Data class scenario">
+          <button type="button" data-ln="board" data-c="echo" class="active" aria-pressed="true">a board read (cheap)</button>
+          <button type="button" data-ln="wallet" data-c="blue" aria-pressed="false">a wallet balance (costly)</button>
+          <button type="button" data-ln="derived" data-c="gold" aria-pressed="false">a derived view (TTL only)</button>
+          <button type="button" data-ln="storm" data-c="echo" aria-pressed="false">broadcast under storm</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 190" role="img" aria-label="The coherence mode selects a lane. The broadcast lane runs PUBLISH applied by EchoStore.Ring with at-most-once delivery; under storm a full ring refuses and counts the drop. The job lane runs Lanes.enqueue remembered by EchoStore.Journal with at-least-once delivery. The none mode relies on TTL expiry alone.">
+        <defs>
+          <marker id="ahl" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- payload source -->
+        <rect x="14" y="80" width="96" height="36" rx="8" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+        <text x="62" y="96" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#ece4d0">payload(id,ver)</text>
+        <text x="62" y="108" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">29 bytes</text>
+
+        <!-- broadcast lane -->
+        <g id="g-bcast">
+          <rect x="170" y="22" width="150" height="44" rx="9" fill="rgba(42,161,152,.12)" stroke="#2aa198"></rect>
+          <text x="245" y="40" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">broadcast lane</text>
+          <text x="245" y="53" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#6fdccf">PUBLISH ecc:{t}:coh</text>
+          <text x="245" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">EchoStore.Ring · at-most-once</text>
+        </g>
+        <path d="M110 90 L168 56" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahl)" id="arBcast"></path>
+
+        <!-- job lane -->
+        <g id="g-job">
+          <rect x="170" y="124" width="150" height="44" rx="9" fill="rgba(90,135,196,.1)" stroke="#5a87c4"></rect>
+          <text x="245" y="142" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">job lane</text>
+          <text x="245" y="155" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#9fc0ea">Lanes.enqueue ecc.coh.t</text>
+          <text x="245" y="164" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">EchoStore.Journal · at-least-once</text>
+        </g>
+        <path d="M110 106 L168 138" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahl)" id="arJob"></path>
+
+        <!-- verdict box -->
+        <rect x="360" y="76" width="110" height="44" rx="9" fill="rgba(16,22,43,.7)" stroke="#2a3252" id="laneBox"></rect>
+        <text x="415" y="94" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#d7cfb9" id="laneTag">broadcast</text>
+        <text x="415" y="107" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89" id="laneGuar">at-most-once</text>
+        <path d="M320 60 L360 88" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahl)" id="arOutB"></path>
+        <path d="M320 140 L360 110" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahl)" id="arOutJ"></path>
+      </svg>
+      <div class="geo-readout" id="laneOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">Same 29-byte truth, two promises: the cheap lane lets a lost message cost one TTL; the durable lane
+      makes the message survive a crash. The data class &mdash; not a default &mdash; picks which.</p>
+  </section>
+
+  <!-- BRIDGE -->
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (pub/sub invalidation vs durable queue)</span>
+        <p>An invalidation can be a fire-and-forget signal or a guaranteed-delivery job. You pick per data class by what
+          a missed message costs &mdash; a stale board self-heals on TTL; a stale balance does not.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (Coherence + Ring + Journal)</span>
+        <p><code class="inl">broadcast/4</code> &rarr; <code class="inl">PUBLISH</code> &rarr;
+          <code class="inl">Ring</code> (at-most-once, refuse-and-count under storm);
+          <code class="inl">enqueue/5</code> &rarr; <code class="inl">Lanes.enqueue</code> &rarr;
+          <code class="inl">Journal</code> (at-least-once, crash-surviving). One <code class="inl">payload/2</code> feeds
+          both; the <code class="inl">coherence:</code> field selects.</p>
+      </div>
+    </div>
+    <p class="take">The cheap lane and the durable lane carry the identical truth; what differs is the promise.</p>
+
+    <div class="door">
+      <p class="dl">What the receiver does</p>
+      <p>The next dive is what lands on the far side of either lane: <a href="/echomq/cache/coherence/newer-wins-the-conditional-drop">the
+        one conditional drop</a> that makes both lanes safe to deliver twice or out of order, and the journal&rsquo;s
+        durable memory that folds to <a href="/echo-persistence">Echo Persistence</a>. The fair lanes the job lane rides
+        are <a href="/echomq/queue">the Queue</a>.</p>
+    </div>
+  </section>
+
+  <!-- REFS -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/publish/">Valkey &mdash; <em>PUBLISH</em></a> &mdash; the one wire hop of the broadcast lane.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code class="inl">{table}</code> hashtag co-locating the coherence channel with the cache&rsquo;s keys.</li>
+          <li><a href="https://lmax-exchange.github.io/disruptor/disruptor.html">LMAX &mdash; <em>The Disruptor</em></a> &mdash; the single-producer/single-consumer ring <code class="inl">EchoStore.Ring</code> translates to the BEAM.</li>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the version both lanes carry.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache/coherence">Coherence</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/cache/coherence/a-message-about-a-name">A message about a name</a> &mdash; the payload both lanes carry.</li>
+          <li><a href="/echomq/cache/coherence/newer-wins-the-conditional-drop">Newer wins: the conditional drop</a> &mdash; what either lane delivers to.</li>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the fair lanes the job lane rides.</li>
+          <li><a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor behind the job lane.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAGER -->
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/cache/coherence/a-message-about-a-name"><span aria-hidden="true">&larr;</span> A message about a name</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache/coherence/newer-wins-the-conditional-drop">Newer wins: the conditional drop <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/cache/coherence">Coherence on the Bus</a>
+        <a href="/echomq/cache/coherence/a-message-about-a-name">A message about a name</a>
+        <a href="/echomq/cache/coherence/the-two-lanes">The two lanes</a>
+        <a href="/echomq/cache/coherence/newer-wins-the-conditional-drop">Newer wins: the conditional drop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: one payload, two addresses ---------- */
+  var ADDR = {
+    board:  { chan: 'ecc:{board}:coh',  queue: 'ecc.coh.board' },
+    wallet: { chan: 'ecc:{wallet}:coh', queue: 'ecc.coh.wallet' },
+    room:   { chan: 'ecc:{room}:coh',   queue: 'ecc.coh.room' }
+  };
+  function renderAddr(key) {
+    var v = ADDR[key]; if (!v) return;
+    var c = document.getElementById('adChan'); if (c) c.textContent = v.chan;
+    var q = document.getElementById('adQueue'); if (q) q.textContent = v.queue;
+    var out = document.getElementById('adOut');
+    if (out) {
+      out.innerHTML = 'table <b>' + key + '</b>: the same <b>payload(id, version)</b> is addressed two ways<br>' +
+        'broadcast channel: <b>' + v.chan + '</b><br>' +
+        'job-lane queue: <b>' + v.queue + '</b><br>' +
+        '<span class="dim">the channel carries the {' + key + '} hashtag, so it lands on the same Valkey slot as the cache’s ecc keys; the queue is the lane’s own EchoMQ queue</span>';
+    }
+  }
+  document.querySelectorAll('#adSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#adSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderAddr(b.getAttribute('data-ad'));
+    });
+  });
+  renderAddr('board');
+
+  /* ---------- worked interactive: the coherence: mode selects a lane ---------- */
+  var LANES = {
+    board: {
+      mode: ':broadcast', verb: 'broadcast/4 → PUBLISH ecc:{t}:coh', sub: 'EchoStore.Ring',
+      guar: 'at-most-once', tag: 'broadcast', box: '#2aa198', lit: 'g-bcast',
+      title: 'a board read (cheap staleness)',
+      says: 'a lost message costs one TTL — the row re-fills with the current value',
+      note: 'read-mostly data: the broadcast lane is fire-and-forget, applied by the Disruptor-shaped Ring'
+    },
+    wallet: {
+      mode: ':broadcast (over the job queue)', verb: 'enqueue/5 → Lanes.enqueue ecc.coh.t', sub: 'EchoStore.Journal',
+      guar: 'at-least-once', tag: 'job', box: '#5a87c4', lit: 'g-job',
+      title: 'a wallet balance (staleness costs money)',
+      says: 'the message must survive a crash — it rides the at-least-once job lane',
+      note: 'the JOB id is admitted once; the Journal remembers the last version per name, so a replayed intent answers correctly'
+    },
+    derived: {
+      mode: ':none', verb: 'no coherence lane', sub: 'TTL expiry only',
+      guar: 'TTL only', tag: ':none', box: '#d4a85a', lit: '',
+      title: 'a derived view (short-lived)',
+      says: 'no lane at all — the jittered TTL alone keeps it fresh enough',
+      note: 'derived, droppable data: coherence: :none relies on expiry; no message is sent'
+    },
+    storm: {
+      mode: ':broadcast', verb: 'PUBLISH → Ring at capacity', sub: 'EchoStore.Ring (full)',
+      guar: 'at-most-once (drop counted)', tag: 'dropped', box: '#c4504c', lit: 'g-bcast',
+      title: 'broadcast under storm',
+      says: 'a full ring refuses the publish and counts :dropped — never blocks, never overwrites',
+      note: 'at-most-once by the substrate’s contract: a counted drop is the honest failure; surfaces that cannot accept it ride the job lane'
+    }
+  };
+
+  function renderLane(key) {
+    var v = LANES[key];
+    if (!v) return;
+    ['g-bcast', 'g-job'].forEach(function (gid) {
+      var g = document.getElementById(gid);
+      if (g) g.setAttribute('opacity', (v.lit === gid) ? '1' : '.3');
+    });
+    var box = document.getElementById('laneBox'); if (box) box.setAttribute('stroke', v.box);
+    var tag = document.getElementById('laneTag'); if (tag) tag.textContent = v.tag;
+    var guar = document.getElementById('laneGuar'); if (guar) guar.textContent = v.guar;
+    var out = document.getElementById('laneOut');
+    if (out) {
+      var cls = (key === 'storm') ? 'bad' : (key === 'derived' ? 'warn' : 'ok');
+      out.innerHTML = '<b>' + v.title + '</b><br>' +
+        'mode: <b>' + v.mode + '</b><br>' +
+        'verb: <span class="dim">' + v.verb + '</span><br>' +
+        'substrate: <b>' + v.sub + '</b> &middot; guarantee: <span class="' + cls + '">' + v.guar + '</span><br>' +
+        '<span class="dim">' + v.note + '</span>';
+    }
+  }
+  document.querySelectorAll('#laneSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#laneSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderLane(b.getAttribute('data-ln'));
+    });
+  });
+  renderLane('board');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sid, t) { var el = document.getElementById(sid); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

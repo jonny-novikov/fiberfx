@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7.02.3 — capped structures · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R7.02.3 · A compact encoding saves bytes on a structure; a cap bounds how many bytes it can ever take. A List or Stream that grows without limit is a memory leak waiting for traffic. LTRIM list 0 N keeps a List to its newest N; XTRIM MAXLEN ~ keeps a Stream to roughly its newest N. EchoMQ does both: the per-group wake list is LTRIM-capped at 64 (lanes.ex), the streams are XTRIM MAXLEN ~-capped (stream.ex, trim/4), with ~ the safe default that trims in whole macro-nodes and never inside the window.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-family:var(--mono);font-size:13px;margin:0 0 18px}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{margin:0;color:var(--b-ink)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the grow-then-cap figure (stepper) ---------- */
+.growfig{width:100%;height:auto;display:block;margin-top:4px}
+.growfig .track{fill:#ecf0e9;stroke:var(--b-line);stroke-width:1}
+.growfig .grown{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.2;transition:width .2s ease}
+.growfig .kept{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.4;transition:width .2s ease}
+.growfig .cut{fill:none;stroke:var(--b-ns);stroke-width:1.4;stroke-dasharray:3 3}
+.growfig .cl{stroke:var(--b-ns);stroke-width:1.6;stroke-dasharray:4 3}
+.growfig .gl{font:11px var(--mono);fill:var(--b-dim);text-anchor:start}
+.growfig .gv{font:12px var(--mono);font-weight:700;text-anchor:end}
+.growfig .gv.cap{fill:var(--r-red)}
+.growstep{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px;align-items:center}
+.growstep .lab{font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.segbtn{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbtn:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbtn[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+/* ---------- the maxlen-mode figure (hover-select) ---------- */
+.maxfig{width:100%;height:auto;display:block;margin-top:4px}
+.maxfig .mode{cursor:pointer;transition:opacity .18s ease}
+.maxfig .mode rect.frame{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.maxfig .mode.on rect.frame{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.maxfig .node{fill:#ecf0e9;stroke:var(--b-line);stroke-width:1}
+.maxfig .node.win{fill:var(--r-red-tint);stroke:var(--r-red)}
+.maxfig .node.extra{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-dasharray:2 2}
+.maxfig .mt{font:12px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.maxfig .ms{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.maxfig.focus .mode{opacity:.32}
+.maxfig.focus .mode.on{opacity:1}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling">data-modeling</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling/memory-optimization">memory-optimization</a><span class="rsep">/</span><span class="rcur">capped-structures</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#hazard">The hazard</a>
+      <a href="#ltrim">LTRIM</a>
+      <a href="#xtrim">XTRIM MAXLEN</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling/memory-optimization">Memory optimization</a>
+          <span class="sep">/</span>
+          <span class="here">capped structures</span>
+        </nav>
+        <p class="kicker">R7.02.3 &middot; dive 3</p>
+        <h1>A bounded structure cannot <span class="hns">leak</span>.</h1>
+        <p class="lede">A compact encoding saves bytes on a structure; a cap bounds how many bytes it can ever take. A
+          List or Stream that grows without limit is a memory leak waiting for traffic.</p>
+        <p class="heronote">The fix is to trim it where it is written: <code>LTRIM list 0 N</code> keeps a List to its
+          newest N; <code>XTRIM&hellip;MAXLEN ~</code> keeps a Stream to roughly its newest N. EchoMQ does both &mdash;
+          the per-group wake list is capped at 64, the streams are <code>MAXLEN ~</code>-capped &mdash; so the ceiling is
+          a property of the code, not a hope about volume. Step the list past the cap; watch <code>LTRIM</code> clamp
+          it.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#hazard">The hazard</a>
+          <a href="#ltrim">LTRIM &middot; the wake list</a>
+          <a href="#xtrim">XTRIM MAXLEN ~</a>
+          <a href="#refs">References</a>
+        </div>
+      </section>
+
+      <figure class="anatomy" aria-labelledby="growCap">
+        <figcaption id="growCap"><b>Grow, then cap.</b> Push entries onto the list; <code>LTRIM list 0 63</code> keeps
+          at most 64 and discards the rest, so the size is fixed no matter the traffic.</figcaption>
+        <div class="growstep" id="growSel" role="group" aria-label="Push entries and apply the cap">
+          <button type="button" class="segbtn" data-g="10" aria-pressed="false">10 pushed</button>
+          <button type="button" class="segbtn" data-g="64" aria-pressed="false">64 pushed</button>
+          <button type="button" class="segbtn" data-g="200" aria-pressed="true">200 pushed</button>
+          <button type="button" class="segbtn" data-g="5000" aria-pressed="false">5,000 pushed</button>
+          <span class="lab">&mdash; cap: LTRIM 0 63 (at most 64)</span>
+        </div>
+        <svg class="growfig" id="growfig" viewBox="0 0 440 130" role="img" aria-label="A bar showing a List that grows with pushes against an LTRIM cap of 64 entries. The pushed count grows with each step, but after LTRIM 0 63 only the newest 64 entries are kept and the rest are discarded. The kept portion never exceeds the cap; the discarded portion grows with the traffic. The readout names the pushed count, the kept count, and the discarded count.">
+          <text class="gl" x="20" y="22">pushed onto the list (grows with traffic)</text>
+          <rect class="track" x="20" y="28" width="400" height="22" rx="4"></rect>
+          <rect class="grown" id="growGrown" x="20" y="28" width="200" height="22" rx="4"></rect>
+          <text class="gv" id="growGrownV" x="412" y="44">&mdash;</text>
+          <text class="gl" x="20" y="78">kept after LTRIM 0 63 (capped at 64)</text>
+          <rect class="track" x="20" y="84" width="400" height="22" rx="4"></rect>
+          <rect class="kept" id="growKept" x="20" y="84" width="50" height="22" rx="4"></rect>
+          <line class="cl" x1="71" y1="80" x2="71" y2="110"></line>
+          <text class="gv cap" id="growKeptV" x="412" y="100">&mdash;</text>
+        </svg>
+        <div class="readout" id="growOut" aria-live="polite"></div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="hazard">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The unbounded structure is the hazard</h2>
+        <span class="ssrc">memory-optimization.md.txt &middot; the leak</span>
+      </div>
+      <div class="prose">
+        <p>Lists and Streams are append-friendly: <code>LPUSH</code>/<code>RPUSH</code> and <code>XADD</code> are O(1),
+          so it is easy to write to them on a hot path and never remove. Left alone, they grow with traffic forever, and
+          a structure that only grows will eventually exhaust memory &mdash; at which point, under <code>noeviction</code>,
+          writes start failing. A cap removes the hazard at the source: bound the structure when you write it, and its
+          size is fixed no matter how much traffic arrives.</p>
+        <p>A cap is also when a List or Stream leaves its compact encoding behind safely. The point of a cap is not the
+          encoding, though &mdash; it is the absolute ceiling: a capped structure cannot leak, by construction.</p>
+      </div>
+      <p class="take">An append-only structure with no cap is a memory leak waiting for traffic. Bound it where it is
+        written and its size is fixed.</p>
+    </section>
+
+    <section id="ltrim">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2><code>LTRIM</code> &mdash; the wake list at 64</h2>
+        <span class="ssrc">echo_mq/lanes.ex &middot; the bounded ring</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ's fair-lanes layer keeps a per-group <strong>wake list</strong>: a short signal list a parked consumer
+          watches, written on the hot admission path. If it were unbounded it would grow with every admitted job. It is
+          not &mdash; it is capped the moment it is pushed:</p>
+      </div>
+      <figure class="frozen" aria-label="The EchoMQ wake-list cap, verbatim">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/lanes.ex &middot; the wake<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd">-- the grouped-admission script, the wake bookkeeping</span>
+redis.call('LPUSH', KEYS[7], '1')
+redis.call('LTRIM', KEYS[7], 0, 63)</pre>
+      </figure>
+      <div class="prose">
+        <p><code>LPUSH</code> adds a marker; <code>LTRIM KEYS[7], 0, 63</code> immediately keeps only indices 0 through
+          63 &mdash; at most 64 entries &mdash; and discards the rest. The list is a bounded ring, never an unbounded
+          log: one wake is enough to rotate a parked consumer back to service, so 64 markers is generous headroom and
+          the memory is fixed. The moduledoc frames the layer: <em>&ldquo;the ring is the rota &mdash; a list holding
+          exactly the lanes that can be served right now.&rdquo;</em></p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>LTRIM key start stop</code> keeps only the elements
+        in the inclusive range and removes the rest, so <code>LPUSH</code> then <code>LTRIM 0 63</code> is the idiom for a
+        bounded ring of at most 64 entries &mdash;
+        <a href="https://valkey.io/commands/ltrim/" rel="noopener">valkey.io/commands/ltrim</a>.</p>
+
+      <p class="take">The cheapest cap is a fixed-length ring: <code>LPUSH</code> the new entry, <code>LTRIM 0 N</code>
+        to keep the newest N. EchoMQ's wake list is one such ring, bounded at 64 where it is written.</p>
+    </section>
+
+    <section id="xtrim">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2><code>XTRIM&hellip;MAXLEN ~</code> &mdash; the stream cap</h2>
+        <span class="ssrc">echo_mq/stream.ex &middot; trim/4 &middot; the approx trade</span>
+      </div>
+      <div class="prose">
+        <p>A Stream is the retained, replayable log. EchoMQ trims it to a declared retention window over
+          <code>XTRIM</code>, issued directly:</p>
+      </div>
+      <figure class="frozen" aria-label="The EchoMQ.Stream trim/4 function, verbatim">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/stream.ex &middot; trim/4<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># the maxlen window — XTRIM issued direct, no new Lua</span>
+<b>def</b> trim(conn, queue, name, {:maxlen, count, approx?})
+    <b>when</b> is_binary(queue) <b>and</b> is_binary(name) <b>and</b> is_integer(count) <b>and</b> count &gt;= 0 <b>and</b>
+           is_boolean(approx?) <b>do</b>
+  key = stream_key(queue, name)
+  xtrim(conn, ["XTRIM", key, "MAXLEN", approx_flag(approx?), Integer.to_string(count)])
+<b>end</b>
+
+<b>defp</b> approx_flag(<b>true</b>), <b>do:</b> "~"
+<b>defp</b> approx_flag(<b>false</b>), <b>do:</b> "="</pre>
+      </figure>
+      <div class="prose">
+        <p>The third argument, <code>approx?</code>, selects the trim mode &mdash; and it is the memory-vs-exactness
+          trade. Select a mode to see where each trims:</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="maxCap">
+        <figcaption id="maxCap"><b><code>MAXLEN ~</code> vs <code>MAXLEN =</code>.</b> Select a mode; the readout reports
+          where the trim boundary falls and what the trade buys.</figcaption>
+        <div class="segbar" id="maxSel" role="group" aria-label="Select a trim mode">
+          <button type="button" data-x="approx" aria-pressed="false">MAXLEN ~ (approx)</button>
+          <button type="button" data-x="exact" aria-pressed="false">MAXLEN = (exact)</button>
+        </div>
+        <svg class="maxfig" id="maxfig" viewBox="0 0 440 168" role="img" aria-label="A stream drawn as macro-nodes against a retention window. The exact mode MAXLEN equals trims precisely to the window edge, splitting a macro-node so the count is exact, at a higher cost. The approximate mode MAXLEN tilde trims only whole macro-node boundaries, keeping a few extra entries beyond the window — it may under-trim but never over-trims, never deleting inside the window, and is cheaper. Selecting a mode lights it and the readout reports the boundary and the trade.">
+          <g class="mode" data-x="approx">
+            <rect class="frame" x="20" y="28" width="400" height="56" rx="7"></rect>
+            <text class="mt" x="60" y="50">MAXLEN ~</text>
+            <text class="ms" x="60" y="66">whole nodes</text>
+            <rect class="node win" x="150" y="40" width="48" height="30"></rect>
+            <rect class="node win" x="202" y="40" width="48" height="30"></rect>
+            <rect class="node extra" x="254" y="40" width="48" height="30"></rect>
+            <text class="ms" x="278" y="80">a few extra</text>
+          </g>
+          <g class="mode" data-x="exact">
+            <rect class="frame" x="20" y="98" width="400" height="56" rx="7"></rect>
+            <text class="mt" x="60" y="120">MAXLEN =</text>
+            <text class="ms" x="60" y="136">exact edge</text>
+            <rect class="node win" x="150" y="110" width="48" height="30"></rect>
+            <rect class="node win" x="202" y="110" width="48" height="30"></rect>
+            <rect class="node win" x="254" y="110" width="24" height="30"></rect>
+            <text class="ms" x="300" y="130">cut precisely</text>
+          </g>
+        </svg>
+        <div class="readout" id="maxOut" aria-live="polite"></div>
+      </figure>
+
+      <div class="prose">
+        <p><code>true</code> selects <code>~</code> (the <strong>safe</strong> default): Valkey trims in whole
+          macro-node boundaries, which is cheaper, may <strong>under-trim</strong> (the stream can briefly hold a few
+          more than <code>count</code>), but <strong>never over-trims</strong> &mdash; it can never delete an entry
+          inside the window. <code>false</code> selects <code>=</code>: trim exactly to the window edge, at a higher
+          cost. Either way the blast radius is bounded by the window, and <code>trim/4</code> answers
+          <code>{:ok, removed_count}</code> &mdash; the integer <code>XTRIM</code> returns. The <code>~</code> form is the
+          right default precisely because the goal is a bound, not an exact count.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Bound a structure so it cannot leak: <code>LTRIM list 0 N</code> keeps a List to its newest N;
+            <code>XTRIM&hellip;MAXLEN ~</code> keeps a Stream to roughly its newest N, trading exactness for a cheaper
+            trim.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>The per-group wake list is <code>LTRIM KEYS[7], 0, 63</code>-capped at 64 (<code>lanes.ex</code>); the
+            streams are <code>XTRIM&hellip;MAXLEN ~</code>-capped (<code>stream.ex</code>, with <code>~</code> the safe
+            default). The memory ceiling is fixed in the code that writes the structure.</p>
+        </div>
+      </div>
+
+      <p class="take">The cheapest guarantee against a memory leak is a cap at the write. EchoMQ caps the wake list at
+        64 and trims its streams with the approximate <code>MAXLEN ~</code>, so neither structure can grow without bound
+        &mdash; exactness given up only where a bound, not a precise size, is what matters.</p>
+
+      <div class="doors">
+        <div class="door">
+          <span class="dr">R7.01 &middot; in this course</span>
+          <h3>The same record, under <code>noeviction</code></h3>
+          <p>A cap stops a structure leaking; <code>noeviction</code> governs what happens when memory is exhausted
+            anyway &mdash; the write fails loudly rather than a key vanishing.
+            <a href="/redis-patterns/data-modeling/primary-database">Redis as a primary database</a> grounds that
+            posture in the same job HASH this module keeps compact.</p>
+        </div>
+        <div class="door">
+          <span class="dr">/bcs/fly</span>
+          <h3>The <code>maxmemory 512mb</code> guardrail</h3>
+          <p>Caps keep individual structures bounded; <code>maxmemory 512mb</code> is the loud ceiling on the whole
+            keyspace. The committed config and its production posture &mdash; Valkey on a Fly machine &mdash; is the
+            Branded Component System <a href="/bcs/fly">production chapter</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/ltrim/" rel="noopener">Valkey &mdash; <em>LTRIM</em></a> &mdash; keep a List to a range so it becomes a bounded ring; the wake-list cap at 64.</li>
+            <li><a href="https://valkey.io/commands/xtrim/" rel="noopener">Valkey &mdash; <em>XTRIM</em></a> &mdash; trim a Stream to <code>MAXLEN</code>; the <code>~</code> flag trims in whole macro-nodes, never inside the window.</li>
+            <li><a href="https://valkey.io/commands/xadd/" rel="noopener">Valkey &mdash; <em>XADD</em></a> &mdash; append with an inline <code>MAXLEN ~</code> cap on the same write.</li>
+            <li><a href="https://valkey.io/topics/streams-intro/" rel="noopener">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the retained log, capped retention, and the approximate-trim trade.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/memory-optimization">R7.02 &middot; Memory optimization</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/data-modeling/memory-optimization/listpack-and-intset">R7.02.1 &middot; listpack and intset</a><span class="rs">the compact encodings a small structure earns</span></li>
+            <li><a href="/redis-patterns/data-modeling/memory-optimization/short-field-names">R7.02.2 &middot; short field names</a><span class="rs">keeping the row in the compact encoding</span></li>
+            <li><a href="/redis-patterns/data-modeling/primary-database">R7.01 &middot; Redis as a primary database</a><span class="rs">the same job HASH, under <code>noeviction</code></span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/data-modeling/memory-optimization/short-field-names"><span class="pk">prev</span>&#8592; R7.02.2 &middot; short field names</a>
+      <a class="pgx" href="/redis-patterns/data-modeling/memory-optimization"><span class="pk">back to the hub</span>R7.02 &middot; Memory optimization &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/data-modeling/memory-optimization">R7.02 &middot; Memory optimization</a>
+        <a href="/redis-patterns/data-modeling/memory-optimization/listpack-and-intset">R7.02.1 &middot; listpack and intset</a>
+        <a href="/redis-patterns/data-modeling/memory-optimization/short-field-names">R7.02.2 &middot; short field names</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/bcs/fly">The Branded Component System — production</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0OGHHvgMw4Q</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- hero: grow then cap (stepper, pure over the pushed count) ---------- */
+  // A list grows with pushes but LTRIM 0 63 keeps at most 64. The model is a pure function of the pushed count:
+  // kept = min(pushed, 64), discarded = pushed - kept. Bars are clamped widths against the track.
+  var CAP = 64, TRACK = 400;
+  // pure: pushed -> {kept, discarded, grownW, keptW}
+  function growModel(pushed) {
+    var kept = Math.min(pushed, CAP);
+    var discarded = pushed - kept;
+    // the grown bar scales with the pushed count on a soft log-ish scale capped to the track; kept is a fixed fraction
+    var grownW = Math.max(20, Math.min(TRACK, TRACK * (Math.log10(pushed + 1) / Math.log10(5000 + 1))));
+    var keptW = (kept / CAP) * (TRACK * 0.6); // 64 entries occupy 60% of the track at the cap
+    return { pushed: pushed, kept: kept, discarded: discarded, grownW: grownW, keptW: keptW };
+  }
+  var growButtons = document.querySelectorAll('#growSel button');
+  var growGrown = document.getElementById('growGrown');
+  var growKept = document.getElementById('growKept');
+  var growGrownV = document.getElementById('growGrownV');
+  var growKeptV = document.getElementById('growKeptV');
+  var growOut = document.getElementById('growOut');
+  function fmt(n) { return n.toLocaleString('en-US'); }
+  function selectGrow(pushed) {
+    growButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', parseInt(b.getAttribute('data-g'), 10) === pushed ? 'true' : 'false');
+    });
+    var m = growModel(pushed);
+    if (growGrown) growGrown.setAttribute('width', m.grownW.toFixed(0));
+    if (growKept) growKept.setAttribute('width', m.keptW.toFixed(0));
+    if (growGrownV) growGrownV.textContent = fmt(m.pushed);
+    if (growKeptV) growKeptV.textContent = m.kept + (m.kept === CAP ? ' (cap)' : '');
+    if (growOut) {
+      var msg = m.discarded > 0
+        ? 'After LTRIM 0 63 the list holds <b>' + m.kept + '</b> entries and ' + fmt(m.discarded) + ' are discarded. ' +
+          'The kept size never exceeds 64 no matter how much arrives — the memory is fixed.'
+        : 'All ' + m.kept + ' entries are within the cap of 64, so nothing is discarded yet. Past 64, LTRIM keeps only ' +
+          'the newest 64 and the size stops growing.';
+      growOut.innerHTML = '<span class="rk">readout &middot; ' + fmt(m.pushed) + ' pushed &middot;</span> ' + msg;
+    }
+  }
+  growButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectGrow(parseInt(b.getAttribute('data-g'), 10)); });
+    b.addEventListener('mouseenter', function () { selectGrow(parseInt(b.getAttribute('data-g'), 10)); });
+  });
+  selectGrow(200); // initial render — correct without interaction
+
+  /* ---------- xtrim: MAXLEN ~ vs MAXLEN = (hover-select, pure over the mode) ---------- */
+  // Two trim modes. Each is a pure record of where the boundary falls and what the trade buys.
+  var MODE = {
+    approx: {
+      text: 'MAXLEN ~ trims only whole macro-node boundaries. It is cheaper and may UNDER-trim — the stream can briefly ' +
+        'hold a few entries beyond the window — but it NEVER over-trims, so it can never delete inside the window. The ' +
+        'safe default the driver uses, because the goal is a bound, not an exact count.'
+    },
+    exact: {
+      text: 'MAXLEN = trims precisely to the window edge, splitting a macro-node so the kept count is exact. It costs ' +
+        'more work for that precision. The opt-in, for when a precise size — not just a bound — is required. Either way ' +
+        'the blast radius is the window: a trim can never delete an entry inside it.'
+    }
+  };
+  var maxfig = document.getElementById('maxfig');
+  var maxButtons = document.querySelectorAll('#maxSel button');
+  var maxOut = document.getElementById('maxOut');
+  function selectMax(which) {
+    maxButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-x') === which ? 'true' : 'false');
+    });
+    if (maxfig) {
+      maxfig.classList.toggle('focus', !!which);
+      maxfig.querySelectorAll('.mode').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-x') === which);
+      });
+    }
+    if (which && MODE[which]) {
+      if (maxOut) maxOut.innerHTML = '<span class="rk">readout &middot;</span> ' + MODE[which].text;
+    } else if (maxOut) {
+      maxOut.innerHTML = '<span class="rk">readout &middot;</span> Select a mode. <b>~</b> trims whole macro-nodes ' +
+        '(cheaper, may under-trim, never inside the window); <b>=</b> trims to the exact edge. EchoMQ defaults to ~.';
+    }
+  }
+  maxButtons.forEach(function (b) {
+    b.addEventListener('click', function () { selectMax(b.getAttribute('data-x')); });
+  });
+  maxfig && maxfig.querySelectorAll('.mode').forEach(function (g) {
+    g.addEventListener('mouseenter', function () { selectMax(g.getAttribute('data-x')); });
+  });
+  selectMax('approx'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,630 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run and the verdict · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="EchoMQ.Conformance.run(conn, queue): walk scenarios/0 once, run each scenario on a per-scenario sub-queue (queue dot name) so the braced keyspace is disjoint, purge what it mints (KEYS emq:{q}:* then DEL — no residue), print one CONF line per scenario plus a closing tally, and return {:ok, n} when all pass or {:error, failed_names} otherwise. A raising scenario becomes a named failure, never a crash. The count n is the live total, re-pinned in the two pinning tests, never hardcoded. Real echo_mq code, no Lua.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="red"]{background:var(--redis-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+.conlog{font-family:var(--mono);font-size:.86rem;line-height:1.7;color:var(--cream-soft);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:.8rem 1rem;margin-top:1rem;min-height:9.5rem;white-space:pre-wrap;overflow-wrap:anywhere}
+.conlog .ok{color:var(--sage-bright)}
+.conlog .bad{color:var(--redis-bright)}
+.conlog .dim{color:var(--cream-dim)}
+.conlog .tally{color:var(--gold-bright)}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/proof">proof</a><span class="rsep">/</span><a href="/echomq/proof/the-conformance-suite">the-conformance-suite</a><span class="rsep">/</span><span class="rcur">run-and-the-verdict</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/proof">The Proof</a>
+        <span class="sep">/</span>
+        <a href="/echomq/proof/the-conformance-suite">The conformance suite</a>
+        <span class="sep">/</span>
+        <span class="here">Run &amp; the verdict</span>
+      </nav>
+      <p class="eyebrow">The conformance suite &middot; dive 02</p>
+      <h1>Run, and the <span class="ex">verdict</span></h1>
+      <p class="lede">Walk the list once, isolate each clause on its own sub-queue, clean up behind it, and answer one verdict.</p>
+      <p class="kicker"><code class="inl">run(conn, queue)</code> walks <code class="inl">scenarios/0</code> once. For each
+        <code class="inl">{name, contract}</code> it derives a <strong>per-scenario sub-queue</strong> &mdash;
+        <code class="inl">queue &lt;&gt; "." &lt;&gt; name</code> &mdash; runs the clause there, <strong>purges what it
+        minted</strong>, prints one <code class="inl">CONF</code> line, and records pass or fail. After the loop it prints a
+        closing tally and returns the verdict: <code class="inl">{:ok, n}</code> when every clause passed,
+        <code class="inl">{:error, failed_names}</code> otherwise &mdash; naming exactly which clause broke. The set grows,
+        so <code class="inl">n</code> is the <strong>live total</strong>, re-pinned, never a literal on the page.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#loop">The loop</a>
+        <a href="#isolate">Sub-queues &amp; the purge</a>
+        <a href="#verdict">Reading the verdict</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="loopTitle">
+      <h4 id="loopTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One pass &middot; per clause</h4>
+      <svg viewBox="0 0 460 240" role="img" aria-label="One pass of run/2 per clause: derive a per-scenario sub-queue (queue dot name), run the clause against the live server on that disjoint braced keyspace, purge everything under its prefix so nothing is left behind, and emit one CONF line recording pass or fail. After the whole list, a closing tally and the verdict — ok n, or error with the failed names.">
+        <!-- sub-queue -->
+        <rect x="120" y="10" width="220" height="42" rx="9" fill="rgba(90,135,196,.13)" stroke="#5a87c4"></rect>
+        <text x="230" y="28" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">derive a sub-queue</text>
+        <text x="230" y="44" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#9fc0ea">queue &lt;&gt; "." &lt;&gt; name</text>
+        <path d="M230 52 L230 70" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahr)"></path>
+        <defs>
+          <marker id="ahr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- run -->
+        <rect x="120" y="70" width="220" height="42" rx="9" fill="rgba(42,161,152,.13)" stroke="#2aa198"></rect>
+        <text x="230" y="88" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">run the clause on it</text>
+        <text x="230" y="104" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#6fdccf">apply_scenario(name, conn, q)</text>
+        <path d="M230 112 L230 130" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahr)"></path>
+        <!-- purge -->
+        <rect x="120" y="130" width="220" height="42" rx="9" fill="rgba(196,80,76,.12)" stroke="#c4504c"></rect>
+        <text x="230" y="148" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">purge what it minted</text>
+        <text x="230" y="164" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#f2948c">KEYS emq:{q}:* → DEL</text>
+        <path d="M230 172 L230 190" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahr)"></path>
+        <!-- CONF line -->
+        <rect x="120" y="190" width="220" height="40" rx="9" fill="rgba(212,168,90,.12)" stroke="#d4a85a"></rect>
+        <text x="230" y="208" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">emit one CONF line</text>
+        <text x="230" y="223" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#f0cd7f">CONF &lt;name&gt; ok -- &lt;contract&gt;</text>
+        <!-- loop arrow -->
+        <path d="M120 210 L70 210 L70 31 L120 31" stroke="#46507a" fill="none" stroke-width="1.2" stroke-dasharray="3 2" marker-end="url(#ahr)"></path>
+        <text x="58" y="124" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#5a6488" transform="rotate(-90 58 124)">next clause</text>
+      </svg>
+      <div class="geo-readout" id="loopOut" aria-live="polite">A single pass of the loop, repeated once per clause in the list.</div>
+    </figure>
+  </div>
+
+  <section id="loop">
+    <h2>One loop, one verdict</h2>
+    <div class="prose">
+      <p><code class="inl">run/2</code> is a comprehension over <code class="inl">scenarios()</code>. Each iteration runs
+        one clause and records a <code class="inl">{name, ok}</code> pair; the verdict is a fold over those pairs. A
+        clause that <em>raises</em> is caught and turned into a <strong>named failure</strong> &mdash; the run never
+        crashes, it reports.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Conformance</span>
+<span class="cmt"># Run every scenario on a per-scenario sub-queue of `queue`, purge what it</span>
+<span class="cmt"># mints, print one CONF line each + a closing tally. Returns {:ok, n} when all</span>
+<span class="cmt"># pass, {:error, failed_names} otherwise. The set grows by additive minor; the</span>
+<span class="cmt"># count n is the LIVE total, re-pinned in the two pinning tests, never hardcoded here.</span>
+<span class="op">def</span> <span class="fn">run</span>(conn, queue) <span class="op">when</span> is_binary(queue) <span class="op">do</span>
+  results =
+    <span class="op">for</span> {name, contract} &lt;- <span class="fn">scenarios</span>() <span class="op">do</span>
+      q = queue &lt;&gt; <span class="str">"."</span> &lt;&gt; Atom.<span class="fn">to_string</span>(name)   <span class="cmt"># a disjoint braced keyspace per clause</span>
+
+      verdict =
+        <span class="op">try</span> <span class="op">do</span>
+          <span class="fn">apply_scenario</span>(name, conn, q)            <span class="cmt"># drive the public surface / raw wire</span>
+        <span class="op">rescue</span>
+          e -&gt; {<span class="str">:fail</span>, Exception.<span class="fn">message</span>(e)}       <span class="cmt"># a raise becomes a NAMED failure, never a crash</span>
+        <span class="op">end</span>
+
+      <span class="fn">purge</span>(conn, q)                               <span class="cmt"># KEYS emq:{q}:* then DEL — leave no residue</span>
+      ok = verdict == <span class="str">:ok</span>
+      IO.<span class="fn">puts</span>(<span class="str">"CONF #{name} #{if ok, do: "ok", else: "FAIL #{inspect(verdict)}"} -- #{contract}"</span>)
+      {name, ok}
+    <span class="op">end</span>
+
+  failed = <span class="op">for</span> {name, <span class="op">false</span>} &lt;- results, <span class="op">do:</span> name
+  IO.<span class="fn">puts</span>(<span class="str">"CONFORMANCE #{length(results) - length(failed)}/#{length(results)}"</span>)
+  <span class="op">if</span> failed == [], <span class="op">do:</span> {<span class="str">:ok</span>, length(results)}, <span class="op">else:</span> {<span class="str">:error</span>, failed}
+<span class="op">end</span></pre>
+    <p class="take">The verdict is a fold: pass every clause and the answer is <code class="inl">{:ok, n}</code> for the
+      live total; fail any and it is <code class="inl">{:error, failed_names}</code> &mdash; the contract names what broke.</p>
+  </section>
+
+  <section id="isolate">
+    <h2>Sub-queues &amp; the purge</h2>
+    <div class="prose">
+      <p>Each clause gets its own queue suffix, so the braced keyspace <code class="inl">emq:{queue.name}:</code> is
+        <strong>disjoint</strong> from every other clause's. Two clauses never collide, and a failure is named, not
+        smeared across the run. Because the queue name carries the <code class="inl">{&hellip;}</code> hashtag, all of a
+        clause's keys still hash to one slot &mdash; the suite respects the same placement law the bus does.</p>
+      <p>After each clause, <code class="inl">run/2</code> deletes everything under that sub-queue's prefix &mdash;
+        <code class="inl">KEYS emq:{q}:*</code> then <code class="inl">DEL</code> the matches. The suite leaves the server
+        as it found it, so you can run it against a live system and it cleans up behind itself.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.Conformance</span>
+<span class="cmt"># Delete everything under this sub-queue's braced prefix. The suite leaves the</span>
+<span class="cmt"># server as it found it, so it can run against a live system without residue.</span>
+<span class="op">defp</span> <span class="fn">purge</span>(conn, q) <span class="op">do</span>
+  {<span class="str">:ok</span>, keys} = Connector.<span class="fn">command</span>(conn, [<span class="str">"KEYS"</span>, <span class="str">"emq:{"</span> &lt;&gt; q &lt;&gt; <span class="str">"}:*"</span>])
+  <span class="op">if</span> keys != [], <span class="op">do:</span> {<span class="str">:ok</span>, _} = Connector.<span class="fn">command</span>(conn, [<span class="str">"DEL"</span> | keys])
+  <span class="str">:ok</span>
+<span class="op">end</span></pre>
+    <p class="note">Isolation by name plus the purge is what makes the suite safe to run against a live server: no clause
+      sees another's keys, and none leaves any behind. The braced suffix is the same hashtag discipline the whole bus
+      uses, so the cleanup sweep is a single-slot <code class="inl">KEYS</code> over one queue's keyspace, not a scan of
+      the server.</p>
+  </section>
+
+  <section id="verdict">
+    <h2>Reading the verdict</h2>
+    <div class="prose">
+      <p>The output is one <code class="inl">CONF &lt;name&gt; ok -- &lt;contract&gt;</code> line per clause, then
+        <code class="inl">CONFORMANCE &lt;passed&gt;/&lt;total&gt;</code>. A green run ends <code class="inl">{:ok, n}</code>;
+        a single failing clause yields <code class="inl">{:error, [name]}</code> &mdash; naming exactly which clause of
+        the contract a port (or a regression) broke, with the rest of the run already cleaned up. Run the model below over
+        a fixed list: an all-pass run, and one where a single clause fails.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="runTitle">
+      <h4 id="runTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A run &middot; stream the CONF lines</h4>
+      <div class="controls">
+        <div class="solid-select" id="runSel" role="group" aria-label="Pick a run outcome">
+          <button type="button" data-r="pass" data-c="sage" class="active" aria-pressed="true">all pass</button>
+          <button type="button" data-r="fail" data-c="red" aria-pressed="false">one clause fails</button>
+        </div>
+        <div class="ctl">
+          <button type="button" id="runGo" class="btn ghost" style="cursor:pointer">&#9654;&nbsp; run it</button>
+        </div>
+      </div>
+      <div class="conlog" id="conLog" aria-live="polite">Pick an outcome and press &ldquo;run it&rdquo; to stream the CONF lines.</div>
+    </figure>
+    <p class="take">One <code class="inl">CONF</code> line per clause, a closing tally, and a single verdict that either
+      says <code class="inl">{:ok, n}</code> or names the clause that broke &mdash; and the run cleaned up after itself.</p>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A coordination test must isolate each case and clean up after itself, or one case's residue poisons the next.
+          <a href="/redis-patterns/coordination">Coordination</a> teaches the atomic primitives the run asserts.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">run/2</code> gives every clause a disjoint braced sub-queue and purges it &mdash; isolation by
+          name, no residue, one named verdict &mdash; and a raise becomes a named failure, so the run reports rather than
+          crashes.</p>
+      </div>
+    </div>
+    <p class="take">The pattern asks for isolation and cleanup; the run gives both by name, and answers one verdict the
+      contract can stand behind.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; one pass, one verdict</h2>
+    <div class="prose">
+      <p><code class="inl">run(conn, queue)</code> walks <code class="inl">scenarios/0</code> once, runs each clause on a
+        disjoint braced sub-queue, purges what it mints, prints one <code class="inl">CONF</code> line each plus a closing
+        tally, and returns <code class="inl">{:ok, n}</code> or <code class="inl">{:error, failed_names}</code>. The count is
+        the live total, never a literal on the page. Next: how the set grows to a larger <code class="inl">n</code> without
+        breaking the wire.</p>
+    </div>
+    <p class="note">Next in the module: <strong>The additive-minor law</strong> &mdash; how a clause is added (a minor)
+      and why changing one is a wire break (a major).</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the run loop, the isolation, and the purge are grounded.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://www.oreilly.com/library/view/test-driven-development/0321146530/">Beck &mdash; <em>Test-Driven Development</em></a> &mdash; the self-contained, self-cleaning scenario.</li>
+          <li><a href="https://valkey.io/commands/keys/">Valkey &mdash; <em>KEYS</em></a> &mdash; the prefix sweep the purge issues over one queue's keyspace.</li>
+          <li><a href="https://valkey.io/commands/del/">Valkey &mdash; <em>DEL</em></a> &mdash; the cleanup that leaves no residue.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{q}</code> hashtag the sub-queue keeps on one slot.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/proof/the-conformance-suite">The conformance suite</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/proof/the-conformance-suite/the-scenarios">The scenarios</a> &mdash; the list <code>run/2</code> walks.</li>
+          <li><a href="/echomq/proof/the-conformance-suite/the-additive-minor-law">The additive-minor law</a> &mdash; how the count grows.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the braced keyspace each sub-queue lives in.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/proof/the-conformance-suite/the-scenarios"><span aria-hidden="true">&larr;</span>&nbsp; The scenarios</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/proof/the-conformance-suite/the-additive-minor-law">The additive-minor law <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/proof/the-conformance-suite">The conformance suite</a>
+        <a href="/echomq/proof/the-conformance-suite/the-scenarios">The scenarios</a>
+        <a href="/echomq/proof/the-conformance-suite/run-and-the-verdict">Run &amp; the verdict</a>
+        <a href="/echomq/proof/the-conformance-suite/the-additive-minor-law">The additive-minor law</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/proof">The Proof</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- worked interactive: stream the CONF lines of a run (fixed dataset, the real CONF line shape) ---------- */
+  /* The loop emits "CONF <name> ok|FAIL -- <contract>" per clause, then
+     "CONFORMANCE <passed>/<total>", then the verdict {:ok, n} | {:error, [name]}.
+     The dataset is a fixed head-of-list slice; the "fail" outcome flips one clause. */
+  var CLAUSES = [
+    { name: 'fence',     contract: 'the version fence is claimed before any work' },
+    { name: 'mint',      contract: 'enqueue writes the three-field row' },
+    { name: 'duplicate', contract: 'a second enqueue answers duplicate, changes nothing' },
+    { name: 'kind',      contract: 'an ORD name in the job position is refused' },
+    { name: 'order',     contract: 'the pending set walks newest-first by name' },
+    { name: 'claim',     contract: 'claim mints token 1 and moves the row to active' },
+    { name: 'stale',     contract: 'a stale token is refused EMQSTALE; the live one settles' },
+    { name: 'complete',  contract: 'complete retires the row everywhere' }
+  ];
+  var FAIL_AT = 'stale'; // the one clause that fails in the "fail" outcome
+  var log = document.getElementById('conLog');
+  var timer = null;
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function runStream(outcome) {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (!log) return;
+    log.innerHTML = '';
+    var i = 0, passed = 0, failedNames = [];
+    timer = setInterval(function () {
+      if (i < CLAUSES.length) {
+        var c = CLAUSES[i];
+        var isFail = (outcome === 'fail' && c.name === FAIL_AT);
+        if (isFail) { failedNames.push(c.name); } else { passed++; }
+        var cls = isFail ? 'bad' : 'ok';
+        var verd = isFail ? 'FAIL {:fail, "stale token not refused"}' : 'ok';
+        log.innerHTML += '<span class="dim">CONF</span> ' + esc(c.name) + ' <span class="' + cls + '">' + verd +
+          '</span> <span class="dim">-- ' + esc(c.contract) + '</span>\n';
+        i++;
+      } else {
+        clearInterval(timer); timer = null;
+        var total = CLAUSES.length;
+        log.innerHTML += '<span class="tally">CONFORMANCE ' + passed + '/' + total + '</span>\n';
+        if (failedNames.length === 0) {
+          log.innerHTML += '<span class="ok">→ {:ok, ' + total + '}</span>  <span class="dim">(n = the live total, re-pinned)</span>';
+        } else {
+          log.innerHTML += '<span class="bad">→ {:error, [:' + failedNames.join(', :') + ']}</span>  <span class="dim">(the clause that broke is named; the run cleaned up)</span>';
+        }
+      }
+    }, 360);
+  }
+  var outcome = 'pass';
+  document.querySelectorAll('#runSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      outcome = b.getAttribute('data-r');
+      document.querySelectorAll('#runSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+    });
+  });
+  var go = document.getElementById('runGo');
+  if (go) go.addEventListener('click', function () { runStream(outcome); });
+
+  /* ---------- framing readout: the loop steps (static, correct without interaction) ---------- */
+  var loopOut = document.getElementById('loopOut');
+  if (loopOut) loopOut.innerHTML = '<b>one pass</b> <span class="dim">— derive a sub-queue → run the clause → purge its keyspace → emit one CONF line; repeated once per clause, then a closing tally + the verdict</span>';
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

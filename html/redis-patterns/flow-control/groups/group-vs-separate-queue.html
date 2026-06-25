@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.03.3 — Group vs separate queue · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.03.3 dive: one queue with groups gives per-tenant config, limits, and operations inside one keyspace slot; N separate queues give hard isolation but no cross-tenant fairness and N× the operational surface. The multi-tenant operations angle — EchoMQ.Lanes gives limit/4, pause/3, reassign/4, reap_group/4, drain/3, and depth/3 per tenant in one {q} slot, with the ring as the scheduler; the @greassign script moves a job between lanes atomically because both share the slot. Grounded in echo/apps/echo_mq — lanes.ex.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+.dtable{width:100%;border-collapse:collapse;margin:4px 0 18px;font-size:.9rem}
+.dtable th,.dtable td{border:1px solid var(--b-line);padding:8px 12px;text-align:left;vertical-align:top}
+.dtable th{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--b-dim);background:var(--b-card)}
+.dtable td code{font-size:.86em}
+.dtable .ch-s{font-family:var(--mono);font-weight:700;color:var(--r-red)}
+.dtable .ch-e{font-family:var(--mono);font-weight:700;color:var(--b-ts)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the compare figure (hover-select) ---------- */
+.vflow{width:100%;height:auto;display:block;margin-top:4px}
+.vflow .dim{cursor:pointer;transition:opacity .18s ease}
+.vflow .dim .lbl{font:10.5px var(--mono);fill:var(--b-ink);text-anchor:start;font-weight:700}
+.vflow .dim .ga rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.vflow .dim .sq rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.3}
+.vflow .dim text.cell{font:9.5px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.vflow .hd{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle;font-weight:700}
+.vflow.focus .dim{opacity:.22}
+.vflow.focus .dim.on{opacity:1}
+.vflow.focus .dim.on .ga rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+.vflow.focus .dim.on .sq rect{stroke:var(--r-red);stroke-width:2.2}
+/* ---------- the ops figure (hover-select) ---------- */
+.oflow{width:100%;height:auto;display:block;margin-top:4px}
+.oflow .op{cursor:pointer;transition:opacity .18s ease}
+.oflow .op rect{fill:var(--b-pay-tint);stroke:var(--b-line);stroke-width:1.3}
+.oflow .op text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.oflow .op .ob{font-weight:700}
+.oflow .slot{fill:none;stroke:var(--b-ts);stroke-width:1.4;stroke-dasharray:4 3}
+.oflow .slotl{font:9.5px var(--mono);fill:var(--b-ts);text-anchor:middle;font-weight:700}
+.oflow.focus .op{opacity:.24}
+.oflow.focus .op.on{opacity:1}
+.oflow.focus .op.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><a href="/redis-patterns/flow-control/groups">groups</a><span class="rsep">/</span><span class="rcur">group-vs-separate-queue</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#designs">The two designs</a>
+      <a href="#ops">Per-tenant ops</a>
+      <a href="#trade">The deciding trade</a>
+      <a href="#applied">Applied</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control/groups">Groups</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Group vs separate queue</span>
+      </nav>
+      <p class="kicker">R6.03.3 &#183; Groups &#8212; dive</p>
+      <h1>Group <span class="hns">vs separate queue</span>.</h1>
+      <p class="lede">One queue with groups gives per-tenant config, limits, and operations inside <b>one keyspace
+      slot</b>; N separate queues give hard isolation but no cross-tenant fairness and N&#215; the operational
+      surface. The question is not <em>can I separate the tenants</em> &#8212; both do &#8212; it is who runs the
+      scheduler, and what each tenant costs to operate.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/lanes.ex &#183; the per-tenant operations set
+      EchoMQ.Lanes.{limit/4, pause/3, reassign/4, reap_group/4, drain/3, depth/3} over one emq:{q}: slot, the ring
+      as the cross-tenant scheduler. The multi-tenant-operations angle (R6.02's lanes-vs-queues is the fairness
+      angle).</p>
+
+      <figure class="anatomy" aria-labelledby="vCap">
+        <figcaption id="vCap"><b>One queue with groups against N separate queues.</b> Select a dimension to read
+        how each design scores it. Both separate the tenants; they differ on fairness, the scheduler, and
+        per-tenant cost.</figcaption>
+        <div class="segbar" id="vSel" role="group" aria-label="Select a dimension to compare">
+          <button type="button" data-d="iso" aria-pressed="false">isolation</button>
+          <button type="button" data-d="fair" aria-pressed="false">cross-tenant fairness</button>
+          <button type="button" data-d="sched" aria-pressed="false">the scheduler</button>
+          <button type="button" data-d="cost" aria-pressed="false">per-tenant cost</button>
+        </div>
+        <svg class="vflow" id="vflow" viewBox="0 0 460 196" role="img" aria-label="A comparison grid with two columns, one queue with groups and N separate queues, across four dimensions. Isolation: groups share storage, separate queues are fully isolated. Cross-tenant fairness: groups have it via the ring, separate queues do not. The scheduler: groups have the ring built in, separate queues need an external one. Per-tenant cost: groups cost one hash field, separate queues cost one whole queue. Select a dimension to read the row.">
+          <text class="hd" x="240" y="18">one queue + groups</text>
+          <text class="hd" x="392" y="18">N separate queues</text>
+          <g class="dim" data-d="iso">
+            <text class="lbl" x="14" y="48">isolation</text>
+            <g class="ga"><rect x="176" y="32" width="128" height="26" rx="4"></rect><text class="cell" x="240" y="49">shared store</text></g>
+            <g class="sq"><rect x="316" y="32" width="128" height="26" rx="4"></rect><text class="cell" x="380" y="49">fully isolated</text></g>
+          </g>
+          <g class="dim" data-d="fair">
+            <text class="lbl" x="14" y="84">fairness</text>
+            <g class="ga"><rect x="176" y="68" width="128" height="26" rx="4"></rect><text class="cell" x="240" y="85">built in (the ring)</text></g>
+            <g class="sq"><rect x="316" y="68" width="128" height="26" rx="4"></rect><text class="cell" x="380" y="85">none across queues</text></g>
+          </g>
+          <g class="dim" data-d="sched">
+            <text class="lbl" x="14" y="120">scheduler</text>
+            <g class="ga"><rect x="176" y="104" width="128" height="26" rx="4"></rect><text class="cell" x="240" y="121">the rota, built in</text></g>
+            <g class="sq"><rect x="316" y="104" width="128" height="26" rx="4"></rect><text class="cell" x="380" y="121">external, yours</text></g>
+          </g>
+          <g class="dim" data-d="cost">
+            <text class="lbl" x="14" y="156">per-tenant</text>
+            <g class="ga"><rect x="176" y="140" width="128" height="26" rx="4"></rect><text class="cell" x="240" y="157">one hash field</text></g>
+            <g class="sq"><rect x="316" y="140" width="128" height="26" rx="4"></rect><text class="cell" x="380" y="157">one whole queue</text></g>
+          </g>
+          <text x="240" y="186" style="font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle">groups buy fairness + low cost &#183; separate queues buy isolation</text>
+        </svg>
+        <div class="readout" id="vOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a dimension.
+        Both designs separate the tenants. One queue with groups gives <b>cross-tenant fairness from the ring</b> and
+        a per-tenant cost of one hash field; N separate queues give hard isolation but no cross-tenant fairness, an
+        external scheduler to write, and the cost of a whole queue per tenant.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="designs">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The two designs</h2>
+        <span class="ssrc">isolation vs fairness</span>
+      </div>
+      <div class="prose">
+        <p>There are two honest ways to carry many tenants on a queue.</p>
+        <p><strong>N separate queues.</strong> Each tenant gets its own queue &#8212; its own keyspace, its own
+        consumers, its own retention. Isolation is total: a tenant cannot see, starve, or even name another tenant's
+        work. The cost is that nothing balances them. Fairness across tenants now lives <em>outside</em> the queue,
+        in whatever process selects which queue a worker polls next; with N queues and a fixed worker pool, that
+        scheduler is yours to write, and getting it fair is the same rota problem moved up a layer. Every tenant
+        also multiplies the operational surface: N sets of metrics, N pause switches, N retention policies, N things
+        to provision when a tenant is added.</p>
+        <p><strong>One queue with groups.</strong> Every tenant is a lane in one queue &#8212; one keyspace, one
+        ring, one set of consumers. The rota that serves the lanes <em>is</em> the cross-tenant scheduler, built
+        into the claim, so fairness is free and there is nothing to write. Per-tenant control is data: a ceiling is
+        a <code>glimit</code> hash field, a pause is a <code>paused</code> set member, a tenant is created by its
+        first job. The cost is the converse of isolation: tenants share storage, failure domain, and retention, so a
+        design that needs those split per tenant cannot use groups.</p>
+      </div>
+      <p class="take">Both designs separate tenants. Separate queues buy total isolation and pay for it with an
+      external scheduler and N&#215; the operations; one queue with groups buys built-in fairness and cheap
+      per-tenant control, and pays with a shared store.</p>
+    </section>
+
+    <section id="ops">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>What one queue with groups can do per tenant</h2>
+        <span class="ssrc">lanes.ex &#183; the per-tenant set</span>
+      </div>
+      <div class="prose">
+        <p>The group design is not "one queue, no per-tenant levers" &#8212; <code>EchoMQ.Lanes</code> gives a full
+        per-tenant operations set inside the one <code>{q}</code> slot:</p>
+        <ul>
+          <li><strong>A per-tenant concurrency ceiling.</strong> <code>EchoMQ.Lanes.limit(conn, q, group, n)</code>
+          caps one tenant's in-flight work without affecting the rest &#8212; the <code>glimit</code>/
+          <code>gactive</code> semaphore.</li>
+          <li><strong>Park and unpark one tenant.</strong> <code>EchoMQ.Lanes.pause(conn, q, group)</code> and
+          <code>resume/3</code> hold a single tenant while the others keep running.</li>
+          <li><strong>Move work between tenants.</strong> <code>EchoMQ.Lanes.reassign(conn, q, job_id,
+          dst_group)</code> moves a pending job from its lane to another in one atomic script; the source group is
+          read from the job row, so the move cannot disagree with what the row records, and the mint-ordered place
+          is kept. There is no numeric per-job priority to set &#8212; "matters more now" is a change of lane, not a
+          score.</li>
+          <li><strong>Recover one tenant on demand.</strong> <code>EchoMQ.Lanes.reap_group(conn, q, group)</code>
+          returns one tenant's expired-lease jobs to its own lane without a queue-wide scan &#8212; a crashed tenant
+          re-queues behind its own identity and never jumps the rota.</li>
+          <li><strong>Drain one tenant.</strong> <code>EchoMQ.Lanes.drain(conn, q, group)</code> empties one lane's
+          pending backlog and drops it from the ring, leaving every sibling lane, the ceiling config, and the
+          in-flight work alone.</li>
+          <li><strong>Read one tenant's depth.</strong> <code>EchoMQ.Lanes.depth(conn, q, group)</code> is the
+          lane's pending count.</li>
+        </ul>
+        <p>Each of these is one operation against one tenant. The same operations across N separate queues are N
+        queues to enumerate, N connections to address, and a separate scheduler to keep them fair &#8212; the
+        per-tenant levers exist, but the cross-tenant balance and the per-tenant cost do not come for free.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="oCap">
+        <figcaption id="oCap"><b>Six per-tenant operations, one slot.</b> Select an operation to read what it does
+        to one tenant. Every lever acts on a single lane inside the one <code>{q}</code> slot, the siblings
+        untouched.</figcaption>
+        <div class="segbar" id="oSel" role="group" aria-label="Select a per-tenant operation">
+          <button type="button" data-o="limit" aria-pressed="false">limit/4</button>
+          <button type="button" data-o="pause" aria-pressed="false">pause/3</button>
+          <button type="button" data-o="reassign" aria-pressed="false">reassign/4</button>
+          <button type="button" data-o="reap" aria-pressed="false">reap_group/4</button>
+          <button type="button" data-o="drain" aria-pressed="false">drain/3</button>
+          <button type="button" data-o="depth" aria-pressed="false">depth/3</button>
+        </div>
+        <svg class="oflow" id="oflow" viewBox="0 0 460 188" role="img" aria-label="Six per-tenant operations inside one queue slot: limit caps in-flight work, pause holds a lane, reassign moves a job to another lane, reap_group recovers one tenant's expired leases, drain empties one lane, and depth reads a lane's pending count. Each acts on one lane in the one slot. Select an operation to highlight it.">
+          <rect class="slot" x="10" y="26" width="440" height="124" rx="8"></rect>
+          <text class="slotl" x="60" y="42">emq:{q}: slot</text>
+          <g class="op" data-o="limit"><rect x="28" y="54" width="126" height="36" rx="5"></rect><text class="ob" x="91" y="72">limit/4</text><text x="91" y="84">cap in-flight</text></g>
+          <g class="op" data-o="pause"><rect x="167" y="54" width="126" height="36" rx="5"></rect><text class="ob" x="230" y="72">pause/3</text><text x="230" y="84">hold a lane</text></g>
+          <g class="op" data-o="reassign"><rect x="306" y="54" width="126" height="36" rx="5"></rect><text class="ob" x="369" y="72">reassign/4</text><text x="369" y="84">move a job</text></g>
+          <g class="op" data-o="reap"><rect x="28" y="100" width="126" height="36" rx="5"></rect><text class="ob" x="91" y="118">reap_group/4</text><text x="91" y="130">recover leases</text></g>
+          <g class="op" data-o="drain"><rect x="167" y="100" width="126" height="36" rx="5"></rect><text class="ob" x="230" y="118">drain/3</text><text x="230" y="130">empty a lane</text></g>
+          <g class="op" data-o="depth"><rect x="306" y="100" width="126" height="36" rx="5"></rect><text class="ob" x="369" y="118">depth/3</text><text x="369" y="130">pending count</text></g>
+          <text x="230" y="174" style="font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle">every lever acts on one lane &#183; the sibling lanes are untouched</text>
+        </svg>
+        <div class="readout" id="oOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an operation.
+        Each lever acts on one tenant inside the one <code>{q}</code> slot &#8212; cap its in-flight work, hold its
+        lane, move a job to another lane, recover its expired leases, empty its backlog, or read its depth &#8212;
+        with every sibling lane untouched.</div>
+      </figure>
+    </section>
+
+    <section id="trade">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The deciding trade</h2>
+        <span class="ssrc">lanes.ex &#183; the @greassign atomicity</span>
+      </div>
+      <div class="prose">
+        <p>The reassign script shows why the group design holds together as one slot. The move is atomic by
+        construction because both lanes share the one <code>{q}</code> hash tag &#8212; a cross-queue move is not
+        even expressible:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Lanes &#183; echo/apps/echo_mq &#8212; the @greassign script: move a pending job between two lanes of one slot<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd">local</span> g = redis.call(<b>'HGET'</b>, KEYS[1], <b>'group'</b>)   <span class="fd">&#8592; the row is authoritative</span>
+<span class="fd">if</span> <span class="fd">not</span> g <span class="fd">then return</span> -1 <span class="fd">end</span>
+<span class="fd">if</span> g == ARGV[2] <span class="fd">then return</span> 0 <span class="fd">end</span>
+<span class="fd">local</span> src_lane = ARGV[3] .. <b>'g:'</b> .. g .. <b>':pending'</b>
+<span class="fd">if</span> redis.call(<b>'ZREM'</b>, src_lane, ARGV[1]) == 0 <span class="fd">then return</span> -2 <span class="fd">end</span>
+redis.call(<b>'ZADD'</b>, KEYS[2], 0, ARGV[1])          <span class="fd">&#8592; enter dst at mint order</span>
+redis.call(<b>'HSET'</b>, KEYS[1], <b>'group'</b>, ARGV[2])    <span class="fd">&#8592; the row now records dst</span></pre>
+      </figure>
+      <div class="prose">
+        <p>Moving a job between two separate queues is a two-queue transaction &#8212; remove from one, add to the
+        other, atomically, across keys that may live on different slots. Between two lanes of one queue it is a
+        single script on one slot, and the group is outside the braces so the move stays inside the <code>{q}</code>
+        tag. That is the structural payoff: one queue with groups buys per-tenant operations <em>and</em> atomic
+        cross-tenant moves, because everything shares one slot.</p>
+        <p>So the rule is about what must be split. If tenants need separate storage, separate failure domains, or
+        separate retention, separate queues are correct and the scheduler is the price. If tenants share all of that
+        and what is needed is fairness plus per-tenant levers, one queue with groups is correct &#8212; the rota is
+        the scheduler, the levers are data, and a tenant costs one hash field, not one queue.</p>
+      </div>
+      <table class="dtable">
+        <thead><tr><th>Dimension</th><th>One queue + groups</th><th>N separate queues</th></tr></thead>
+        <tbody>
+          <tr><td>Isolation</td><td>shared store, failure domain, retention</td><td class="ch-e">total &#8212; separate everything</td></tr>
+          <tr><td>Cross-tenant fairness</td><td class="ch-s">built in &#8212; the ring rota</td><td>none; an external scheduler needed</td></tr>
+          <tr><td>Per-tenant config</td><td class="ch-s">a hash field (<code>glimit</code>, <code>gweight</code>)</td><td>queue-level config, per queue</td></tr>
+          <tr><td>Atomic cross-tenant move</td><td class="ch-s">one script (<code>reassign/4</code>), one slot</td><td>a two-queue transaction across slots</td></tr>
+          <tr><td>Operational surface</td><td class="ch-s">one queue's metrics + per-lane levers</td><td>N&#215; metrics, pause switches, policies</td></tr>
+        </tbody>
+      </table>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Multi-tenant work is partitioned either by isolation (a resource per tenant) or by fairness (a shared
+          resource scheduled per tenant). The choice is what must be split, and who runs the scheduler.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>One queue with <code>EchoMQ.Lanes</code> groups gives per-tenant <code>limit/4</code>,
+          <code>pause/3</code>, <code>reassign/4</code>, <code>reap_group/4</code>, and <code>drain/3</code> inside
+          one <code>{q}</code> slot with the rota as the scheduler; N separate queues give isolation but move
+          fairness and N&#215; the operations outside the queue.</p>
+        </div>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A multi-key script is legal only when its keys live on
+      one slot, which a key's <code>{q}</code> hash tag guarantees: every lane, the ring, and the
+      <code>glimit</code>/<code>gactive</code> hashes of a queue carry the same <code>{q}</code> brace, so they all
+      hash to one of 16384 slots and a script touching several of them never raises CROSSSLOT &#8212; across
+      separate queues, the keys are on separate slots and no single script can span them &#8212;
+      <a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The pattern, applied</h2>
+        <span class="ssrc">echo/apps/codemojex</span>
+      </div>
+      <div class="prose">
+        <p>In codemojex &#8212; a Telegram emoji-guessing game on the same stack &#8212; rooms share one queue as
+        lanes rather than each holding its own: a room is created by its first guess
+        (<code>emq:{cm}:g:&lt;PLR&hellip;&gt;:pending</code>), served its fair turn by the rota, capped by a per-room
+        ceiling, and recoverable on its own &#8212; without one queue, one metric, and one pause switch per room of
+        the game. The set of rooms is open and changes constantly, so a lane-per-room costs a hash field where a
+        queue-per-room would cost a queue.</p>
+        <p>Wiring the per-tenant operations into a control plane at scale &#8212; the dashboards, the per-tenant
+        alerts, the operator tooling that drives <code>pause</code> and <code>reassign</code> &#8212; is the queue's
+        scaling layer, taught in the EchoMQ course rather than here.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The per-tenant operations layer</h3>
+          <p>The Queue pillar drives the per-tenant levers at scale: the operator tooling over <code>limit</code>,
+          <code>pause</code>, <code>reassign</code>, <code>reap_group</code>, and <code>drain</code> on one slot.</p>
+        </a>
+        <a class="door" href="/bcs/bus/jobs-and-lanes">
+          <span class="dr">/bcs/bus/jobs-and-lanes</span>
+          <h3>The lane as the unit</h3>
+          <p>Part B3.2: a queue is a set of lanes named by branded ids; the lane is the unit of fairness and of
+          control, and ungrouped work is never claimed.</p>
+        </a>
+        <a class="door" href="/redis-patterns/coordination/hash-tag-colocation">
+          <span class="dr">R2</span>
+          <h3>Why one slot makes it atomic</h3>
+          <p>The coordination chapter builds hash-tag co-location: the <code>{q}</code> tag that pins a queue's keys
+          to one slot, which is what lets one script span the lanes.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the hash-tag rule that pins a queue's keys to one slot, so a single script can span its lanes.</li>
+            <li><a href="https://valkey.io/commands/zadd/" rel="noopener">Valkey &mdash; <em>ZADD</em></a> &mdash; add the moved job to the destination lane at score zero, keeping its mint-ordered place.</li>
+            <li><a href="https://valkey.io/commands/zrem/" rel="noopener">Valkey &mdash; <em>ZREM</em></a> &mdash; remove the job from the source lane; a zero return proves it was not pending, and the move aborts.</li>
+            <li><a href="https://docs.aws.amazon.com/whitepapers/latest/saas-architecture-fundamentals/tenant-isolation.html" rel="noopener">AWS &mdash; <em>Tenant isolation</em></a> &mdash; the shared-resource versus siloed-resource trade for multi-tenant systems.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control/groups">R6.03 &#183; Groups &amp; multi-tenant fairness</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/flow-control/groups/round-robin-across-tenants">R6.03.1 &#183; Round-robin across tenants</a><span class="rs">the rota that is the built-in scheduler</span></li>
+            <li><a href="/redis-patterns/flow-control/groups/per-group-concurrency">R6.03.2 &#183; Per-group concurrency</a><span class="rs">the per-tenant ceiling, a hash field</span></li>
+            <li><a href="/redis-patterns/coordination/hash-tag-colocation">R2 &#183; Hash-tag co-location</a><span class="rs">the <code>{q}</code> tag that pins a queue to one slot</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the per-tenant operations at scale</span></li>
+            <li><a href="/bcs/bus">/bcs/bus</a><span class="rs">the Valkey-native bus and the fair-lanes architecture</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/flow-control/groups/per-group-concurrency"><span class="pk">prev</span>&#8592; R6.03.2 &#183; Per-group concurrency</a>
+      <a class="pgx" href="/redis-patterns/flow-control/groups"><span class="pk">up</span>R6.03 &#183; Groups &amp; multi-tenant fairness &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/flow-control/groups/round-robin-across-tenants">R6.03.1 &#183; Round-robin across tenants</a>
+        <a href="/redis-patterns/flow-control/groups/per-group-concurrency">R6.03.2 &#183; Per-group concurrency</a>
+        <a href="/redis-patterns/flow-control/groups/group-vs-separate-queue">R6.03.3 &#183; Group vs separate queue</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: the comparison (pure lookup over a fixed dataset) ---------- */
+  var DIM = {
+    iso:   { ga: 'shared store, failure domain, retention', sq: 'fully isolated — separate everything', note: 'the one dimension separate queues win; a design that must split storage cannot use groups' },
+    fair:  { ga: 'built in — the ring serves every lane in turn', sq: 'none across queues', note: 'cross-tenant fairness is free with groups; with separate queues it has to be built' },
+    sched: { ga: 'the rota, built into the claim', sq: 'external — yours to write and keep fair', note: 'the scheduler is the hidden cost of separate queues; the ring is the group design free' },
+    cost:  { ga: 'one hash field per tenant', sq: 'one whole queue per tenant', note: 'with an open or large tenant set, a queue each is impractical; a lane each is cheap' }
+  };
+  function describeDim(d) {
+    var s = DIM[d];
+    if (!s) return '';
+    return '<span class="rk">groups &#183;</span> <b>' + s.ga + '</b><br>' +
+      '<span class="rk">separate &#183;</span> ' + s.sq + '<br>' +
+      '<span class="rk">note &#183;</span> ' + s.note;
+  }
+  wireHoverSelect('vflow', '#vSel button', 'vOut', 'data-d', '.dim', describeDim,
+    '<span class="rk">readout &#183;</span> Select a dimension. Both designs separate the tenants. One queue with groups gives <b>cross-tenant fairness from the ring</b> and a per-tenant cost of one hash field; N separate queues give hard isolation but no cross-tenant fairness, an external scheduler to write, and the cost of a whole queue per tenant.');
+
+  /* ---------- Interactive 2: the per-tenant ops (pure lookup over a fixed dataset) ---------- */
+  var OP = {
+    limit:    { sig: 'EchoMQ.Lanes.limit/4', does: 'cap one tenant’s in-flight work (glimit); a lane at its ceiling is de-ringed — the siblings keep flowing' },
+    pause:    { sig: 'EchoMQ.Lanes.pause/3', does: 'hold one lane (add to paused, drop from the ring); its backlog and in-flight work are untouched' },
+    reassign: { sig: 'EchoMQ.Lanes.reassign/4', does: 'move a pending job to another lane in one atomic script — "matters more now" is a change of lane, not a score' },
+    reap:     { sig: 'EchoMQ.Lanes.reap_group/4', does: 'recover one tenant’s expired-lease jobs to its own lane, without a queue-wide scan; it never jumps the rota' },
+    drain:    { sig: 'EchoMQ.Lanes.drain/3', does: 'empty one lane’s pending backlog and drop it from the ring; every sibling lane and the config survive' },
+    depth:    { sig: 'EchoMQ.Lanes.depth/3', does: 'read one lane’s pending count (ZCARD) — a per-tenant queue depth' }
+  };
+  function describeOp(o) {
+    var s = OP[o];
+    if (!s) return '';
+    return '<span class="rk">surface &#183;</span> <b>' + s.sig + '</b><br>' +
+      '<span class="rk">does &#183;</span> ' + s.does;
+  }
+  wireHoverSelect('oflow', '#oSel button', 'oOut', 'data-o', '.op', describeOp,
+    '<span class="rk">readout &#183;</span> Select an operation. Each lever acts on one tenant inside the one <code>{q}</code> slot &#8212; cap its in-flight work, hold its lane, move a job to another lane, recover its expired leases, empty its backlog, or read its depth &#8212; with every sibling lane untouched.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

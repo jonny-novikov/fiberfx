@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Newer wins: the conditional drop &middot; Coherence &middot; EchoMQ, In Depth</title>
+<meta name="description" content="The pillar's one inline Lua, in two beats: drop_l2/4 hands the :coherence_drop script one key and the incoming version; the script GETs the stored value, recovers its version from the version <> value frame, and DELs the L2 row only when the incoming version's eleven-byte payload is greater. One transition, so a late stale invalidation can never erase a newer row. The journal's applied memory keeps the verdict durable past a crash. Grounded in echo/apps/echo_store.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:rgba(42,161,152,.08);border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.24em;color:var(--gold);display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+/* ---- header ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+/* ---- figures / code ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code{font-family:var(--mono);font-size:.9rem;line-height:1.6;color:var(--cream);background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .kw{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .at{color:var(--blue-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+.beat{font-family:var(--sans);font-size:.66rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:1.6rem 0 .2rem;display:flex;align-items:center;gap:.5rem}
+.beat::before{content:"";width:18px;height:1px;background:var(--echo);display:inline-block}
+/* ---- interactive ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.geo-readout{font-family:var(--mono);font-size:.93rem;color:var(--gold-bright);background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .warn{color:var(--gold-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media(max-width:760px){.bridge{grid-template-columns:1fr;gap:.7rem}.bridge .arrow{justify-self:center;transform:rotate(90deg)}}
+/* ---- door ---- */
+.door{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+/* ---- refs ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+/* ---- stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media(max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+@media(max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><a href="/echomq/cache/coherence">coherence</a><span class="rsep">/</span><span class="rcur">newer-wins-the-conditional-drop</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache">The Cache</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache/coherence">Coherence</a>
+      <span class="sep">/</span>
+      <span class="here">Newer wins: the conditional drop</span>
+    </nav>
+    <p class="eyebrow">Coherence &middot; dive 03</p>
+    <h1>Newer wins:<br>the <span class="ex">conditional drop</span></h1>
+    <p class="lede">One transition, one script &mdash; so a late stale message can never erase a newer row.</p>
+    <p class="kicker">Both lanes deliver the same 29-byte message; what the receiver does with it must be
+      <strong>atomic and conditional</strong>. The naive move &mdash; read the stored version, compare, delete if newer
+      &mdash; is a read-then-write race: a newer write could land between the read and the delete, and the late stale
+      invalidation would erase it. The fix is to do the read, the compare, and the delete in <strong>one server-side
+      transition</strong>. That is the pillar&rsquo;s one inline Lua, <code class="inl">:coherence_drop</code>, taught
+      here in two beats &mdash; the named handle <code class="inl">drop_l2/4</code>, then the real script body &mdash;
+      and closed with the journal&rsquo;s durable memory that keeps the verdict past a crash.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#why">Why a script</a>
+      <a href="#beats">The two beats</a>
+      <a href="#worked">A late vs a newer message</a>
+      <a href="#journal">The journal remembers</a>
+      <a href="#bridge">Pattern &amp; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- SECTION: why a script -->
+  <section id="why">
+    <h2>Why a script at all</h2>
+    <div class="prose">
+      <p>The receiver must compare the incoming version against the one it has stored and delete the row only if the
+        incoming is newer &mdash; and it must do so without a window in which a concurrent write can be lost. A
+        read-then-write from the client opens exactly that window. The <code class="inl">:coherence_drop</code> script
+        closes it: <code class="inl">GET</code>, compare, conditional <code class="inl">DEL</code>, all inside one
+        atomic server-side step. And because the comparison is the deduplication (the previous dive&rsquo;s
+        <code class="inl">newer?</code> logic), the script is safe to run more than once and out of order.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="raceTitle">
+      <h4 id="raceTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The race window &middot; client steps vs one transition</h4>
+      <div class="controls">
+        <div class="solid-select" id="rcSel" role="group" aria-label="How the drop is applied">
+          <button type="button" data-rc="client" data-c="blue" class="active" aria-pressed="true">client read-then-write</button>
+          <button type="button" data-rc="script" data-c="echo" aria-pressed="false">one atomic script</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 150" role="img" aria-label="Two ways to apply the drop. A client read-then-write does GET, then compares in the client, then DELs — leaving a window in which a concurrent newer write can be lost. The coherence_drop script does GET, compare, and conditional DEL in one atomic server-side step, with no window.">
+        <defs>
+          <marker id="ahr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- step boxes -->
+        <rect x="20" y="50" width="86" height="34" rx="7" fill="rgba(42,161,152,.12)" stroke="#2aa198"></rect>
+        <text x="63" y="71" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#ece4d0">GET</text>
+        <rect x="150" y="50" width="86" height="34" rx="7" fill="rgba(42,161,152,.12)" stroke="#2aa198"></rect>
+        <text x="193" y="71" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#ece4d0">compare</text>
+        <rect x="280" y="50" width="86" height="34" rx="7" fill="rgba(196,80,76,.1)" stroke="#c4504c"></rect>
+        <text x="323" y="71" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#f2948c">DEL?</text>
+        <path d="M106 67 L148 67" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahr)"></path>
+        <path d="M236 67 L278 67" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahr)"></path>
+
+        <!-- the window marker (client) / the wrap marker (script) -->
+        <rect id="rcWin" x="14" y="40" width="358" height="54" rx="10" fill="none" stroke="#c4504c" stroke-width="1.4" stroke-dasharray="5 4"></rect>
+        <text id="rcWinLbl" x="193" y="32" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#f2948c">⟵ window: a concurrent newer write here is lost ⟶</text>
+        <text x="193" y="112" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488" id="rcFoot">three round trips · the client holds the gap open</text>
+      </svg>
+      <div class="geo-readout" id="rcOut" aria-live="polite"></div>
+    </figure>
+  </section>
+
+  <!-- SECTION: the two beats -->
+  <section id="beats">
+    <h2>The two beats</h2>
+
+    <p class="beat">Beat one &middot; the named handle</p>
+    <div class="prose">
+      <p><code class="inl">EchoStore.Coherence.drop_l2/4</code> is the Elixir verb. It hands the script exactly one key
+        &mdash; the L2 row, built by the keyspace, the single owner of where data lives &mdash; and one value, the
+        incoming version. The script constructs no key; <code class="inl">ARGV[1]</code> is a value it compares, never
+        a key it builds.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Coherence — drop_l2/4 (beat one: the handle)</span>
+<span class="cmt"># @drop is the :coherence_drop script, registered inline at module load.</span>
+<span class="cmt"># The host builds KEYS through the keyspace; the script constructs no key.</span>
+<span class="cmt"># ARGV[1] is the incoming version — a VALUE the script compares, never a key.</span>
+<span class="at">@drop</span> Script.<span class="fn">new</span>(<span class="str">:coherence_drop</span>, <span class="str">"""</span>
+<span class="str">      ... the script body — see beat two ...</span>
+<span class="str">      """</span>)
+
+<span class="op">def</span> <span class="fn">drop_l2</span>(conn, table, id, version) <span class="op">do</span>
+  Connector.<span class="fn">eval</span>(conn, <span class="at">@drop</span>, [Keyspace.<span class="fn">key</span>(table, id)], [version])
+<span class="op">end</span></pre>
+
+    <p class="note">The handle returns <code class="inl">{:ok, 1}</code> when it dropped the row and
+      <code class="inl">{:ok, 0}</code> when it left it alone &mdash; a one-bit verdict the caller can count.</p>
+
+    <p class="beat">Beat two &middot; the <code class="inl" style="font-size:inherit">:coherence_drop</code> body</p>
+    <div class="prose">
+      <p>Here is the real script body, deeply commented. <code class="inl">KEYS[1]</code> is the L2 row;
+        <code class="inl">ARGV[1]</code> is the incoming 14-byte version. The stored value is the
+        <code class="inl">version &lt;&gt; value</code> frame the writer set, so the stored version&rsquo;s 11-byte
+        payload is <code class="inl">string.sub(cur, 4, 14)</code> and the incoming one is
+        <code class="inl">string.sub(ARGV[1], 4, 14)</code>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt">-- :coherence_drop — KEYS[1] = the L2 row (ecc:{table}:id), ARGV[1] = the</span>
+<span class="cmt">-- incoming 14-byte version. One transition: read, compare, conditionally</span>
+<span class="cmt">-- delete. A late stale invalidation can NEVER erase a newer row.</span>
+
+<span class="op">local</span> cur = redis.call(<span class="str">'GET'</span>, <span class="rdx">KEYS[1]</span>)
+
+<span class="cmt">-- (1) the row is already gone: nothing to drop.</span>
+<span class="op">if</span> <span class="op">not</span> cur <span class="op">then</span> <span class="op">return</span> <span class="res">0</span> <span class="op">end</span>
+
+<span class="cmt">-- (2) a malformed frame (shorter than one version): it cannot be trusted</span>
+<span class="cmt">-- to carry a comparable version, so drop it and report a drop.</span>
+<span class="op">if</span> #cur &lt; <span class="res">14</span> <span class="op">then</span>
+  redis.call(<span class="str">'DEL'</span>, <span class="rdx">KEYS[1]</span>)
+  <span class="op">return</span> <span class="res">1</span>
+<span class="op">end</span>
+
+<span class="cmt">-- (3) the comparison: the incoming version's 11-byte snowflake payload</span>
+<span class="cmt">-- (bytes 4..14 of ARGV[1]) against the stored frame's version payload</span>
+<span class="cmt">-- (bytes 4..14 of cur — the version is the frame's prefix). Lua's string</span>
+<span class="cmt">-- order on these Base62 bytes is mint order (the order theorem), so this is</span>
+<span class="cmt">-- exactly newer?/2 done server-side. Delete only when strictly newer.</span>
+<span class="op">if</span> string.sub(<span class="rdx">ARGV[1]</span>, <span class="res">4</span>, <span class="res">14</span>) &gt; string.sub(cur, <span class="res">4</span>, <span class="res">14</span>) <span class="op">then</span>
+  redis.call(<span class="str">'DEL'</span>, <span class="rdx">KEYS[1]</span>)
+  <span class="op">return</span> <span class="res">1</span>
+<span class="op">end</span>
+
+<span class="cmt">-- (4) the stored version is at least as new: leave the row untouched.</span>
+<span class="op">return</span> <span class="res">0</span></pre>
+
+    <div class="prose" style="margin-top:1.4rem">
+      <p>Four branches, one of which deletes conditionally. The properties fall straight out:</p>
+      <ul style="margin:0 0 1.05rem;padding-left:1.4rem;color:var(--cream-soft)">
+        <li style="margin-bottom:.5rem"><strong>A late stale invalidation can never erase a newer row.</strong> If a
+          slow node finally delivers an old version after a newer write has landed, branch (3) compares the old payload
+          against the newer stored payload, finds it <em>not greater</em>, and falls through to branch (4): the row
+          stays.</li>
+        <li style="margin-bottom:.5rem"><strong>Idempotent.</strong> Replay the same version and branch (3) compares it
+          against itself (if the row survived) or finds the row gone (branch 1) &mdash; either way nothing is erased
+          twice.</li>
+        <li><strong>The frame is self-describing.</strong> The script never needs a side table of versions; the version
+          is the prefix of the value it guards, so the comparison reads the truth straight out of the row it might
+          delete.</li>
+      </ul>
+      <p>This is the version-guarded counterpart to module 01&rsquo;s <code class="inl">invalidate/3</code>, which
+        <code class="inl">DEL</code>s <strong>unconditionally</strong> &mdash; the admin override, used when you mean
+        &ldquo;drop this now regardless.&rdquo; <code class="inl">drop_l2/4</code> is what a <em>coherence message</em>
+        runs, and it is safe to deliver more than once and out of order precisely because of branch (3).</p>
+    </div>
+  </section>
+
+  <!-- SECTION: worked interactive -->
+  <section id="worked">
+    <h2>A late message vs a newer message</h2>
+    <div class="prose">
+      <p>Step the <code class="inl">:coherence_drop</code> script over a fixed stored row with a known version. Send a
+        message and read the branch taken and the verdict &mdash; the late stale message leaves the row, the newer one
+        deletes it, a replay is a no-op, and a corrupt frame is dropped.</p>
+    </div>
+    <figure class="fig" aria-labelledby="dropTitle">
+      <h4 id="dropTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">:coherence_drop &middot; four branches, one stored row</h4>
+      <div class="controls">
+        <div class="solid-select" id="drSel" role="group" aria-label="Incoming message scenario">
+          <button type="button" data-dr="newer" data-c="echo" class="active" aria-pressed="true">newer version</button>
+          <button type="button" data-dr="stale" data-c="blue" aria-pressed="false">late stale version</button>
+          <button type="button" data-dr="replay" data-c="gold" aria-pressed="false">replay (same)</button>
+          <button type="button" data-dr="corrupt" data-c="blue" aria-pressed="false">corrupt frame</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 190" role="img" aria-label="The four branches of the coherence_drop script over one stored row. Branch one returns zero when the row is gone. Branch two deletes a malformed frame. Branch three compares the incoming version payload against the stored one and deletes only when strictly newer. Branch four returns zero, leaving the row, when the stored version is at least as new.">
+        <defs>
+          <marker id="ahd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- stored row -->
+        <rect x="14" y="78" width="120" height="40" rx="8" fill="rgba(212,168,90,.1)" stroke="#46507a"></rect>
+        <text x="74" y="94" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">stored ecc:{t}:id</text>
+        <text x="74" y="106" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#f0cd7f">ver=…0NgV1u8kZ20</text>
+
+        <!-- GET -->
+        <circle cx="200" cy="98" r="16" fill="rgba(42,161,152,.16)" stroke="#2aa198" id="getNode"></circle>
+        <text x="200" y="101" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#ece4d0">GET</text>
+        <path d="M134 98 L182 98" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahd)"></path>
+
+        <!-- DEL outcome -->
+        <rect x="300" y="36" width="160" height="42" rx="9" fill="rgba(196,80,76,.08)" stroke="#2a3252" id="boxDel"></rect>
+        <text x="380" y="54" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#f2948c">DEL KEYS[1]</text>
+        <text x="380" y="67" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">return 1 — dropped</text>
+        <path d="M214 88 L298 62" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahd)" id="arDel"></path>
+
+        <!-- keep outcome -->
+        <rect x="300" y="118" width="160" height="42" rx="9" fill="rgba(42,161,152,.08)" stroke="#2a3252" id="boxKeep"></rect>
+        <text x="380" y="136" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#6fdccf">row untouched</text>
+        <text x="380" y="149" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">return 0 — kept</text>
+        <path d="M214 108 L298 138" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahd)" id="arKeep"></path>
+
+        <text x="240" y="182" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488" id="branchTag">branch (3): string.sub(ARGV[1],4,14) &gt; string.sub(cur,4,14)</text>
+      </svg>
+      <div class="geo-readout" id="drOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The script does not trust delivery order. It trusts the version: only a strictly newer payload
+      deletes the row, so a message that arrives late, twice, or both is harmless.</p>
+  </section>
+
+  <!-- SECTION: the journal remembers -->
+  <section id="journal">
+    <h2>The journal remembers &mdash; the durable floor</h2>
+    <div class="prose">
+      <p>The L1 half of the receiver lives in <code class="inl">EchoStore.Table.apply_coherence/3</code>, which evicts
+        the local ETS row under the same <code class="inl">Coherence.newer?/2</code> test and ticks
+        <code class="inl">:coh_applied</code> when it drops and <code class="inl">:coh_stale</code> when it declines &mdash;
+        so the cache&rsquo;s <code class="inl">stats/1</code> reports, honestly, how many coherence messages were newer
+        and how many were stale. The job lane&rsquo;s worker does not call <code class="inl">drop_l2/4</code> directly;
+        it goes through <code class="inl">EchoStore.Journal</code>, whose <code class="inl">apply_and_remember/4</code>
+        checks the version against the lane&rsquo;s <strong>memory</strong> first.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Journal — apply_and_remember/4 (the memory in front of the apply)</span>
+<span class="cmt"># The `applied` table survives the node, the cache, and the bus. A replayed</span>
+<span class="cmt"># old intent answers stale from the journal even when L1 has forgotten the</span>
+<span class="cmt"># row — durability for the obligation, not only the optimization.</span>
+<span class="op">def</span> <span class="fn">handle_call</span>({<span class="str">:apply_and_remember</span>, table, name_id, version}, _from, s) <span class="op">do</span>
+  reply =
+    <span class="kw">case</span> <span class="fn">fetch_applied</span>(s, name_id) <span class="kw">do</span>
+      remembered <span class="kw">when</span> is_binary(remembered) -&gt;
+        <span class="kw">if</span> Coherence.<span class="fn">newer?</span>(version, remembered),
+          <span class="op">do</span>: <span class="fn">apply_and_record</span>(s, table, name_id, version),
+          <span class="op">else</span>: {<span class="str">:ok</span>, <span class="str">:remembered_stale</span>}
+
+      <span class="kw">nil</span> -&gt;
+        <span class="fn">apply_and_record</span>(s, table, name_id, version)
+    <span class="kw">end</span>
+
+  {<span class="str">:reply</span>, reply, s}
+<span class="op">end</span></pre>
+
+    <div class="prose" style="margin-top:1.4rem">
+      <p><code class="inl">intend_and_enqueue/4</code> is the outbox in one verb &mdash; mint a
+        <code class="inl">JOB</code> id, record the intent, enqueue, mark enqueued &mdash; and the crash windows between
+        those steps are covered by <code class="inl">replay/2</code> plus the bus&rsquo;s job-id dedup plus newer-wins.
+        The <code class="inl">applied</code> table is the lane&rsquo;s <strong>memory of the last version per name</strong>,
+        so even after L1 has dropped the row and the bus has forgotten the job, a replayed old intent is answered
+        <em>stale from the journal</em> &mdash; the row is never resurrected by a late delivery.</p>
+    </div>
+
+    <div class="door">
+      <p class="dl">The durable floor</p>
+      <p>That durable substrate beneath the volatile cache and bus is <a href="/echo-persistence">Echo
+        Persistence</a>: the outbox is a small, mostly-idle table standing beside the bus, and the deep durability dial
+        &mdash; a bounded window, a checkpoint per K, a commit-per-record replicated off-box &mdash; lives there. The
+        manuscript narrative of the same substrate is <a href="/bcs/store">the Branded Component System &middot; the
+        Store</a>.</p>
+    </div>
+  </section>
+
+  <!-- BRIDGE -->
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (conditional, idempotent invalidation)</span>
+        <p>An invalidation that may arrive late, twice, or out of order must be safe anyway &mdash; so it is applied as
+          an atomic compare-and-delete keyed on a logical version, not a blind delete.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (:coherence_drop + the journal)</span>
+        <p>One inline Lua does read-compare-delete server-side; <code class="inl">string.sub(_, 4, 14)</code> reads the
+          version straight out of the <code class="inl">version &lt;&gt; value</code> frame; the journal&rsquo;s
+          <code class="inl">applied</code> table keeps the verdict durable so a replayed old intent answers stale even
+          after the row is gone.</p>
+      </div>
+    </div>
+    <p class="take">One script, one transition: the cache that serves a hot read from local memory is also the cache
+      that <em>cannot</em> be corrupted by a stale message, no matter how the message arrived.</p>
+  </section>
+
+  <!-- REFS -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/eval/">Valkey &mdash; <em>EVAL</em></a> &mdash; the atomic server-side transition the conditional drop runs in.</li>
+          <li><a href="https://valkey.io/commands/del/">Valkey &mdash; <em>DEL</em></a> &mdash; the conditional delete inside the script.</li>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the version whose byte order the <code class="inl">string.sub</code> comparison reads as mint order.</li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf">Helland &mdash; <em>Life Beyond Distributed Transactions</em></a> &mdash; the durable outbox beside the bus, an entity addressed by a name.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache/coherence">Coherence</a> &mdash; the module hub.</li>
+          <li><a href="/echomq/cache/coherence/the-two-lanes">The two lanes</a> &mdash; the carriers this script receives from.</li>
+          <li><a href="/echomq/cache/cache-aside-two-layers">Cache-aside, two layers</a> &mdash; the unconditional <code class="inl">invalidate/3</code> admin drop this guards against.</li>
+          <li><a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor the journal folds into.</li>
+          <li><a href="/bcs/store">The Branded Component System &middot; the Store</a> &mdash; the manuscript chapter this pillar realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAGER -->
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/cache/coherence/the-two-lanes"><span aria-hidden="true">&larr;</span> The two lanes</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache/coherence">Module hub <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/cache/coherence">Coherence on the Bus</a>
+        <a href="/echomq/cache/coherence/a-message-about-a-name">A message about a name</a>
+        <a href="/echomq/cache/coherence/the-two-lanes">The two lanes</a>
+        <a href="/echomq/cache/coherence/newer-wins-the-conditional-drop">Newer wins: the conditional drop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: the race window vs one transition ---------- */
+  var RACE = {
+    client: {
+      win: '#c4504c', dash: '5 4', lbl: '⟵ window: a concurrent newer write here is lost ⟶',
+      foot: 'three round trips · the client holds the gap open',
+      out: '<b>client read-then-write</b> — GET, compare in the client, then DEL: between the read and the delete a newer write can land, and the late stale DEL erases it. <span class="bad">a lossy window</span>'
+    },
+    script: {
+      win: '#2aa198', dash: '0', lbl: 'one atomic transition — no window',
+      foot: 'one EVAL · the server holds nothing open',
+      out: '<b>one atomic script</b> — :coherence_drop does GET, compare, and conditional DEL in a single server-side step. <span class="ok">no window: nothing can interleave</span>'
+    }
+  };
+  function renderRace(key) {
+    var v = RACE[key]; if (!v) return;
+    var win = document.getElementById('rcWin');
+    if (win) { win.setAttribute('stroke', v.win); win.setAttribute('stroke-dasharray', v.dash); }
+    var lbl = document.getElementById('rcWinLbl');
+    if (lbl) { lbl.textContent = v.lbl; lbl.setAttribute('fill', key === 'script' ? '#6fdccf' : '#f2948c'); }
+    var foot = document.getElementById('rcFoot'); if (foot) foot.textContent = v.foot;
+    var out = document.getElementById('rcOut'); if (out) out.innerHTML = v.out;
+  }
+  document.querySelectorAll('#rcSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#rcSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderRace(b.getAttribute('data-rc'));
+    });
+  });
+  renderRace('client');
+
+  /* ---------- worked interactive: the :coherence_drop script over a fixed stored row ---------- */
+  /* The stored version payload is "0NgV1u8kZ20"; the four scenarios exercise
+     the script's four branches. The comparison is the exact strictly-greater
+     test on the 11-byte payloads. */
+  var DROP = {
+    newer: {
+      branch: '(3) strictly newer', del: true,
+      incoming: 'ver=…0NgWEfAEJfs (newer)',
+      cmp: 'string.sub(ARGV[1],4,14) "0NgWEfAEJfs" > stored "0NgV1u8kZ20" → true',
+      verdict: 'DEL KEYS[1] · return 1', cls: 'ok',
+      note: 'the version moved forward — the L2 row is dropped and the next read re-fills'
+    },
+    stale: {
+      branch: '(4) stored at least as new', del: false,
+      incoming: 'ver=…0NgUaa11Q00 (older)',
+      cmp: 'string.sub(ARGV[1],4,14) "0NgUaa11Q00" > stored "0NgV1u8kZ20" → false',
+      verdict: 'return 0 · row kept', cls: 'bad',
+      note: 'a late stale invalidation: the comparison fails, so the newer stored row is never erased'
+    },
+    replay: {
+      branch: '(4) stored at least as new', del: false,
+      incoming: 'ver=…0NgV1u8kZ20 (same)',
+      cmp: 'string.sub(ARGV[1],4,14) "0NgV1u8kZ20" > stored "0NgV1u8kZ20" → false',
+      verdict: 'return 0 · row kept', cls: 'warn',
+      note: 'idempotent: re-applying the same version is not strictly greater, so it is a no-op'
+    },
+    corrupt: {
+      branch: '(2) malformed frame', del: true,
+      incoming: 'stored frame #cur < 14',
+      cmp: '#cur < 14 → cannot carry a comparable version',
+      verdict: 'DEL KEYS[1] · return 1', cls: 'warn',
+      note: 'a frame too short to hold a version is dropped unconditionally and a drop is reported'
+    }
+  };
+
+  function renderDrop(key) {
+    var v = DROP[key];
+    if (!v) return;
+    var boxDel = document.getElementById('boxDel'), boxKeep = document.getElementById('boxKeep');
+    var arDel = document.getElementById('arDel'), arKeep = document.getElementById('arKeep');
+    if (boxDel) boxDel.setAttribute('stroke', v.del ? '#c4504c' : '#2a3252');
+    if (boxKeep) boxKeep.setAttribute('stroke', v.del ? '#2a3252' : '#2aa198');
+    if (arDel) arDel.setAttribute('stroke', v.del ? '#c4504c' : '#46507a');
+    if (arKeep) arKeep.setAttribute('stroke', v.del ? '#46507a' : '#2aa198');
+    var tag = document.getElementById('branchTag');
+    if (tag) tag.textContent = 'branch ' + v.branch;
+    var out = document.getElementById('drOut');
+    if (out) {
+      out.innerHTML = '<b>incoming:</b> ' + v.incoming + '<br>' +
+        'branch: <b>' + v.branch + '</b><br>' +
+        'compare: <span class="dim">' + v.cmp + '</span><br>' +
+        'verdict: <span class="' + v.cls + '">' + v.verdict + '</span><br>' +
+        '<span class="dim">' + v.note + '</span>';
+    }
+  }
+  document.querySelectorAll('#drSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#drSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderDrop(b.getAttribute('data-dr'));
+    });
+  });
+  renderDrop('newer');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sid, t) { var el = document.getElementById(sid); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

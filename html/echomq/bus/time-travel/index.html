@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Time-travel · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="Time-travel in the EchoMQ Bus: read the retained log by a mint instant. Because the stream is ordered by mint, a %DateTime{} is an exact id position, so a historical window is a range read, not a scan. EchoMQ.Stream.read_window/6 reads a closed [t0, t1]; read_since/5 reads an open [t0, ∞); both compute their XRANGE bounds host-side from minid_floor/1 and maxid_ceil/1 — zero new Lua, id-math over the shipped read/6. The use cases: backtest, audit, debug. All real echo_mq code, grounded in echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);background:rgba(42,161,152,.08);
+  border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.rev{font-family:var(--sans);font-size:.78rem;color:var(--echo-bright);border:1px solid var(--echo);
+  border-radius:999px;padding:.22rem .7rem;display:inline-flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
+.rev a{color:var(--echo-bright);text-decoration:none}
+.rev a:hover{color:var(--cream);text-decoration:underline}
+
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.applied{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.applied .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.applied p{margin:0;color:var(--cream-soft);font-size:.96rem}
+.door{margin:1rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+input[type=range]{accent-color:var(--echo);width:min(360px,72vw)}
+
+/* ---- contents cards ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.soon{color:var(--echo-bright);border-color:var(--echo)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.2rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);line-height:1.45}
+
+/* ---- up next ---- */
+.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem;margin-top:1.2rem}
+.upnext .mod .t{font-size:1.04rem}
+@media(max-width:860px){.upnext{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.upnext{grid-template-columns:1fr}}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><span class="rcur">time-travel</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/bus">The Bus</a>
+      <span class="sep">/</span>
+      <span class="here">Time-travel</span>
+    </nav>
+    <p class="rev">&larr; the depth behind <a href="/redis-patterns/streams-events">redis-patterns R5 &middot; Streams &amp; Events</a></p>
+    <p class="eyebrow">The Bus &middot; module 04</p>
+    <h1>Time is the <span class="ex">address</span></h1>
+    <p class="lede">Read the log as it stood at a moment &mdash; because the order is the mint, an instant is an exact position.</p>
+    <p class="kicker">Module 03's consumer group reads the log <strong>forward</strong>: new entries, as they arrive.
+      This module reads it <strong>backward in time</strong> &mdash; a historical window selected by a wall-clock
+      instant. <em>What did the log look like between 14:30 and 14:32?</em> is a single bounded read. It works because
+      the stream is <strong>ordered by mint</strong>: a <code class="inl">%DateTime{}</code> is not something to scan
+      for, it is an <strong>exact id position</strong>. So a time window is a <strong>range read, not a scan</strong>
+      &mdash; <code class="inl">read_window/6</code> for a closed <span class="math">[t0, t1]</span>,
+      <code class="inl">read_since/5</code> for an open <span class="math">[t0, &infin;)</span>, both computing their
+      <code class="inl">XRANGE</code> bounds host-side. <strong>Zero new Lua</strong>; the whole feature is id-math over
+      a read that already shipped. It is <strong>all real code</strong>.</p>
+    <div class="toc-mini">
+      <a href="#window">A window is the bounds</a>
+      <a href="#mods">The dives</a>
+      <a href="#upnext">The rest of the pillar</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- ===================== A WINDOW IS THE BOUNDS (framing interactive) ===================== -->
+  <section id="window">
+    <h2>A window is the bounds</h2>
+    <div class="prose">
+      <p>Every entry id is <code class="inl">"&lt;ms&gt;-&lt;seq&gt;"</code> &mdash; a millisecond and a 22-bit tail. So a
+        time window <span class="math">[t0, t1]</span> compiles to a pair of id bounds, and the read returns exactly the
+        entries inside. Drag the window across the mint-ordered log below: the readout shows the two bounds it becomes
+        and which entries fall in. Toggle to the open <span class="math">[t0, &infin;)</span> form and the upper bound
+        switches from <code class="inl">maxid_ceil(t1)</code> to <code class="inl">+</code>, the stream top.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="winTitle">
+      <h4 id="winTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A mint-ordered log &middot; drag the window</h4>
+      <div class="controls">
+        <div class="solid-select" id="formSel" role="group" aria-label="The window form">
+          <button type="button" data-form="closed" data-c="blue" class="active" aria-pressed="true">closed [t0, t1]</button>
+          <button type="button" data-form="open" data-c="echo" aria-pressed="false">open [t0, &infin;)</button>
+        </div>
+        <div class="ctl">
+          <label for="t0">window start &mdash; t0</label>
+          <input type="range" id="t0" min="0" max="9" step="1" value="2" aria-label="window start, an index into the log">
+        </div>
+        <div class="ctl" id="t1wrap">
+          <label for="t1">window end &mdash; t1</label>
+          <input type="range" id="t1" min="0" max="9" step="1" value="6" aria-label="window end, an index into the log">
+        </div>
+      </div>
+      <svg viewBox="0 0 480 150" role="img" aria-label="A row of ten mint-ordered EVT entries on a time axis. A window from t0 to t1 highlights the entries whose mint instant falls inside it; the entries outside are dimmed. The window compiles to a lower id bound from minid_floor of t0 and, for a closed window, an upper id bound from maxid_ceil of t1, or the stream top + for an open window.">
+        <line x1="20" y1="100" x2="460" y2="100" stroke="#2a3252" stroke-width="2"></line>
+        <text x="20" y="92" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#5a6488">mint time &rarr;</text>
+        <text x="446" y="92" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#5a6488">tail &mdash; newest</text>
+        <!-- the window band -->
+        <rect id="win-band" x="100" y="40" width="180" height="48" rx="6" fill="rgba(90,135,196,.12)" stroke="#5a87c4" stroke-dasharray="3 2" stroke-width="1.4"></rect>
+        <!-- the ten entry cells, generated below -->
+        <g id="cells" font-family="JetBrains Mono,monospace" font-size="7" fill="#ece4d0"></g>
+        <text id="lbl-from" x="100" y="118" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#9fc0ea">from</text>
+        <text id="lbl-to" x="280" y="118" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#9fc0ea">to</text>
+      </svg>
+      <div class="geo-readout" id="winOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The window is the bounds; the bounds are exact; the read is <code class="inl">XRANGE</code>. A
+      <code class="inl">%DateTime{}</code> never scans the log &mdash; it addresses it.</p>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="mods">
+    <h2>The dives</h2>
+    <div class="prose">
+      <p>Three dives: the address arithmetic, the two reads it composes, and the three things you do with them. Each
+        grounds in the real <code class="inl">echo/apps/echo_mq</code> code &mdash;
+        <code class="inl">EchoMQ.Stream.read_window/6</code>, <code class="inl">read_since/5</code>,
+        <code class="inl">minid_floor/1</code>, <code class="inl">maxid_ceil/1</code> &mdash; no new Lua.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill built">built</span> page ready to read</span>
+    </div>
+    <div class="mods">
+      <a class="mod" href="/echomq/bus/time-travel/time-is-the-address"><div class="top"><span class="num">01</span><span class="pill built">built</span></div><p class="t">Time is the address</p><p class="o">The id math: <code class="inl">minid_floor/1</code> the half-open lower edge, <code class="inl">maxid_ceil/1</code> the inclusive upper inverse &mdash; exact because the stream is mint-ordered.</p></a>
+      <a class="mod" href="/echomq/bus/time-travel/the-two-reads"><div class="top"><span class="num">02</span><span class="pill built">built</span></div><p class="t">The two reads</p><p class="o"><code class="inl">read_since/5</code> the open window, <code class="inl">read_window/6</code> the closed one &mdash; both delegate to the byte-frozen <code class="inl">read/6</code>; the inverted window raises before the wire.</p></a>
+      <a class="mod" href="/echomq/bus/time-travel/backtest-audit-debug"><div class="top"><span class="num">03</span><span class="pill built">built</span></div><p class="t">Backtest, audit, debug</p><p class="o">One read, three questions &mdash; worked on a codemojex round's <code class="inl">GES</code> activity feed, replayed over its open&rarr;settle window.</p></a>
+    </div>
+
+    <div class="applied">
+      <p class="dl">Redis Patterns Applied</p>
+      <p>This is the depth behind the <a href="/redis-patterns">Redis Patterns Applied</a> chapter that doors here:
+        <a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a> &mdash; the time-range read over
+        an event log, the event-sourcing replay, and the audit query, made concrete on the wire as id-math over
+        <code class="inl">XRANGE</code>. There the pattern is the door; here is the address arithmetic.</p>
+    </div>
+
+    <div class="door">
+      <p class="dl">The live log, and the door past it</p>
+      <p>A mint-instant read covers the <strong>live log</strong> &mdash; the entries still resident on the stream.
+        Deep history beyond it &mdash; what a retention policy has trimmed &mdash; is not lost: it folds to the durable
+        floor, and the archive's merge-read serves <em>archived &cup; live</em> as one mint-ordered stream. That is the
+        next module's surface, and the Bus pillar's door to <a href="/echo-persistence">Echo Persistence</a> &mdash;
+        retention bounds the live log, and <code class="inl">EchoStore.StreamArchive</code> folds what it trims to the
+        durable <code class="inl">EchoStore.Graft</code> floor.</p>
+    </div>
+  </section>
+
+  <!-- ===================== THE REST OF THE PILLAR ===================== -->
+  <section id="upnext">
+    <h2>The rest of the pillar</h2>
+    <div class="prose">
+      <p>Time-travel is one reading of the retained log. The <strong>consumer group</strong> before it reads the live
+        tail forward; <strong>retention &amp; the archive</strong> after it bounds the log and folds what it trims to
+        disk. Beneath them all, the <strong>stream log</strong> is the writer whose order theorem makes the mint
+        instant an exact address.</p>
+    </div>
+    <div class="upnext">
+      <a class="mod" href="/echomq/bus/the-stream-log"><div class="top"><span class="num">02</span><span class="pill built">built</span></div><p class="t">The stream log</p><p class="o">The append-only writer and the order theorem that makes time an exact address.</p></a>
+      <a class="mod" href="/echomq/bus/the-consumer-group"><div class="top"><span class="num">03</span><span class="pill built">built</span></div><p class="t">Consumer groups</p><p class="o">The reliable forward read: at-least-once, resumable, idempotent on the branded id.</p></a>
+      <a class="mod" href="/echomq/bus"><div class="top"><span class="num">05</span><span class="pill soon">soon</span></div><p class="t">Retention &amp; the archive</p><p class="o">Bound the live log, then fold the trimmed segments to the durable Graft floor &mdash; the door to persistence.</p></a>
+      <a class="mod" href="/echomq/bus"><div class="top"><span class="num">&uarr;</span><span class="pill built">built</span></div><p class="t">The Bus</p><p class="o">The pillar landing: the two surfaces over one wire, and all of its modules.</p></a>
+    </div>
+    <p class="note">The stream log and the consumer group are ready to read; retention &amp; the archive is on the build
+      front, added as its pages land.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/xrange/">Valkey &mdash; <em>XRANGE</em></a> &mdash; the range read both time-travel functions delegate to.</li>
+          <li><a href="https://valkey.io/topics/streams-intro/">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the <code class="inl">ms-seq</code> entry id the bounds are expressed in.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code class="inl">{q}</code> hashtag co-locates a queue and its stream on one of 16384 slots.</li>
+          <li><a href="https://dl.acm.org/doi/10.1145/359545.359563">Lamport &mdash; <em>Time, Clocks, and the Ordering of Events</em></a> &mdash; the order a mint-instant read reads by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/time-travel/time-is-the-address">Time is the address</a> &mdash; the floor/ceil id math.</li>
+          <li><a href="/echomq/bus/time-travel/the-two-reads">The two reads</a> &mdash; <code class="inl">read_since/5</code> and <code class="inl">read_window/6</code>.</li>
+          <li><a href="/echomq/bus/time-travel/backtest-audit-debug">Backtest, audit, debug</a> &mdash; the three use cases, worked on codemojex.</li>
+          <li><a href="/echomq/bus/the-stream-log">The stream log</a> &mdash; the order theorem that makes the address exact.</li>
+          <li><a href="/echomq/bus">The Bus</a> &mdash; the pillar landing.</li>
+          <li><a href="/bcs/bus">The Branded Component System &middot; the Bus</a> &mdash; the manuscript chapter this module realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Chapter navigation">
+      <a class="btn ghost" href="/echomq/bus/the-consumer-group"><span aria-hidden="true">&larr;</span> Consumer groups</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus/time-travel/time-is-the-address">Time is the address <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/bus/time-travel">Time-travel</a>
+        <a href="/echomq/bus/time-travel/time-is-the-address">Time is the address</a>
+        <a href="/echomq/bus/time-travel/the-two-reads">The two reads</a>
+        <a href="/echomq/bus/time-travel/backtest-audit-debug">Backtest, audit, debug</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: a window over a mint-ordered log (pure id-math over a fixed dataset) ----------
+     Ten EVT entries, each minted at a fixed millisecond. A window [t0, t1] (or [t0, ∞)) compiles to:
+       from = minid_floor(t0_ms) = "<ms>-0", to = maxid_ceil(t1_ms) = "<ms>-4194303"  (4194303 == 0x3FFFFF),
+     or to = "+" for the open form. An entry is IN iff from <= its id <= to (the exact half-open/inclusive edges). */
+  var MAXSEQ = 4194303; // 0x3FFFFF — the maximal 22-bit node|seq tail (Stream.maxid_ceil/1)
+  // ten fixed entries: ms offset from a base, and a sequence at that ms
+  var BASE_MS = 1714573800000; // 2024-05-01 14:30:00 UTC, illustrative
+  var ENTRIES = [
+    { ms: BASE_MS + 0,     seq: 11 }, { ms: BASE_MS + 14000,  seq: 3  },
+    { ms: BASE_MS + 27000, seq: 7  }, { ms: BASE_MS + 41000,  seq: 0  },
+    { ms: BASE_MS + 53000, seq: 19 }, { ms: BASE_MS + 66000,  seq: 2  },
+    { ms: BASE_MS + 78000, seq: 9  }, { ms: BASE_MS + 90000,  seq: 5  },
+    { ms: BASE_MS + 102000,seq: 1  }, { ms: BASE_MS + 118000, seq: 14 }
+  ];
+  var N = ENTRIES.length;
+  var X0 = 40, X1 = 446, CY = 64;
+  function cx(i) { return X0 + (X1 - X0) * (i / (N - 1)); }
+  function hhmm(ms) {
+    var d = new Date(ms);
+    return ('0' + d.getUTCHours()).slice(-2) + ':' + ('0' + d.getUTCMinutes()).slice(-2);
+  }
+  // render the ten cells once
+  (function buildCells() {
+    var g = document.getElementById('cells');
+    if (!g) return;
+    var svgns = 'http://www.w3.org/2000/svg';
+    for (var i = 0; i < N; i++) {
+      var x = cx(i);
+      var r = document.createElementNS(svgns, 'rect');
+      r.setAttribute('id', 'cell-' + i);
+      r.setAttribute('x', (x - 13).toFixed(1)); r.setAttribute('y', '52');
+      r.setAttribute('width', '26'); r.setAttribute('height', '24'); r.setAttribute('rx', '4');
+      r.setAttribute('fill', 'rgba(42,161,152,.14)'); r.setAttribute('stroke', '#2aa198');
+      g.appendChild(r);
+      var t = document.createElementNS(svgns, 'text');
+      t.setAttribute('x', x.toFixed(1)); t.setAttribute('y', '67'); t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('font-size', '6.5'); t.setAttribute('fill', '#ece4d0');
+      t.textContent = 'EVT';
+      g.appendChild(t);
+      var tm = document.createElementNS(svgns, 'text');
+      tm.setAttribute('x', x.toFixed(1)); tm.setAttribute('y', '46'); tm.setAttribute('text-anchor', 'middle');
+      tm.setAttribute('font-size', '6'); tm.setAttribute('fill', '#5a6488');
+      tm.textContent = hhmm(ENTRIES[i].ms);
+      g.appendChild(tm);
+    }
+  })();
+
+  var form = 'closed';
+  function render() {
+    var t0i = parseInt(document.getElementById('t0').value, 10);
+    var t1i = parseInt(document.getElementById('t1').value, 10);
+    if (form === 'closed' && t1i < t0i) { t1i = t0i; document.getElementById('t1').value = t0i; }
+    var t0ms = ENTRIES[t0i].ms;
+    var t1ms = (form === 'closed') ? ENTRIES[t1i].ms : null;
+    var from = t0ms + '-0';
+    var to = (form === 'closed') ? (t1ms + '-' + MAXSEQ) : '+';
+
+    // position the band
+    var band = document.getElementById('win-band');
+    var lx = cx(t0i) - 16;
+    var rx = (form === 'closed') ? (cx(t1i) + 16) : (X1 + 8);
+    band.setAttribute('x', lx.toFixed(1));
+    band.setAttribute('width', (rx - lx).toFixed(1));
+    document.getElementById('lbl-from').setAttribute('x', cx(t0i).toFixed(1));
+    document.getElementById('lbl-to').setAttribute('x', (form === 'closed' ? cx(t1i) : (X1 - 6)).toFixed(1));
+    document.getElementById('lbl-to').textContent = (form === 'closed') ? 'to' : '+';
+
+    // mark each cell in/out by the exact bound test on ms (seq <= MAXSEQ always)
+    var inCount = 0, ids = [];
+    for (var i = 0; i < N; i++) {
+      var e = ENTRIES[i];
+      var inWin = (e.ms > t0ms || (e.ms === t0ms)) && (form === 'open' ? true : (e.ms < t1ms || e.ms === t1ms));
+      var cell = document.getElementById('cell-' + i);
+      if (cell) {
+        cell.setAttribute('opacity', inWin ? '1' : '.2');
+        cell.setAttribute('stroke', inWin ? '#6fdccf' : '#2a3252');
+      }
+      if (inWin) { inCount++; ids.push(hhmm(e.ms)); }
+    }
+
+    var out = document.getElementById('winOut');
+    var call = (form === 'closed')
+      ? 'read_window(conn, "cm", "feed", t0, t1)'
+      : 'read_since(conn, "cm", "feed", t0)';
+    out.innerHTML =
+      'call: <b>' + call + '</b><br>' +
+      'from = <b>minid_floor(t0)</b> = <span class="dim">"' + from + '"</span> &nbsp; ' +
+      'to = <b>' + (form === 'closed' ? 'maxid_ceil(t1)' : '"+"') + '</b> = <span class="dim">"' + to + '"</span><br>' +
+      '<b>' + inCount + '</b> entr' + (inCount === 1 ? 'y' : 'ies') + ' in the window <span class="dim">(' + (ids.join(', ') || 'none') + ')</span>, in mint order';
+  }
+  document.querySelectorAll('#formSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      form = b.getAttribute('data-form');
+      document.querySelectorAll('#formSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      document.getElementById('t1wrap').style.opacity = (form === 'open') ? '.4' : '1';
+      document.getElementById('t1').disabled = (form === 'open');
+      render();
+    });
+  });
+  document.getElementById('t0').addEventListener('input', render);
+  document.getElementById('t1').addEventListener('input', render);
+  render();
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

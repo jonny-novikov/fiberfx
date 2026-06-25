@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The door to persistence · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The archive is one rung of the persistence floor, the durable substrate beneath the volatile tiers, and durability is a dial a system turns per surface: hold nothing, a bounded in-heap window + a checkpoint per K, or commit-per-record + replicate off-box (EchoStore.Graft → Tigris). The stream tier sits across the last two — a bounded live log and an archive on the durable floor, with merge_read serving archived ∪ live as one mint-ordered stream: deep history without resident memory. The comparison is Oban, which keeps jobs in the same Postgres as the data (one transaction); Echo separates the bus from the store and buys an in-memory hot path + the dial, giving up that one-transaction coupling. The whole floor is taught at Echo Persistence and narrated at /bcs/persistence. Real echo_store code, no Lua.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- the persistence door ---- */
+.door{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.2rem 1.3rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.1),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .55rem}
+.door p{margin:0 0 .7rem;color:var(--cream-soft);font-size:.98rem}
+.door p:last-child{margin:0}
+.door .go{font-family:var(--sans);font-weight:700;font-size:.92rem;color:var(--ink);background:var(--echo-bright);
+  display:inline-flex;align-items:center;gap:.5rem;padding:.6rem 1.05rem;border-radius:11px;border:1px solid transparent}
+.door .go:hover{background:var(--echo);color:var(--ink)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="red"]{background:var(--redis-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+
+/* ---- dial svg ---- */
+.dial-mv rect, .dial-mv circle{transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><a href="/echomq/bus/retention-and-archive">retention-and-archive</a><span class="rsep">/</span><span class="rcur">the-door-to-persistence</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus">The Bus</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a>
+        <span class="sep">/</span>
+        <span class="here">The door to persistence</span>
+      </nav>
+      <p class="eyebrow">Retention &amp; the archive &middot; dive 03</p>
+      <h1>The door to <span class="ex">persistence</span></h1>
+      <p class="lede">Durability is a dial a system turns &mdash; and the stream's archive is one rung of the floor beneath the whole stack.</p>
+      <p class="kicker">The archive is one rung of a larger structure: the <strong>persistence floor</strong>, the durable
+        substrate beneath the volatile tiers. Above it sit the fast, droppable tiers &mdash; the in-heap window, the Valkey
+        bus and warm L2. Beneath it sits durable, replicated storage &mdash; the native <code class="inl">EchoStore.Graft</code>
+        engine on CubDB, on to Tigris object storage. Durability is not a switch; it is a <strong>dial</strong> a system
+        turns, per surface, for the guarantee that surface needs. Turn it up where you need every record to survive the box;
+        turn it down where the data is cheap to recompute. The Bus's stream archive is one position on that dial &mdash; and
+        this page is the door to the whole of it. It is <strong>all real code</strong>.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#dial">The durability dial</a>
+        <a href="#deep">Deep history, no resident memory</a>
+        <a href="#oban">The comparison &mdash; Oban</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="dialTitle">
+      <h4 id="dialTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The durability dial &middot; pick a position</h4>
+      <figcaption class="controls" style="margin-top:.2rem">
+        <div class="solid-select" id="dialSel" role="group" aria-label="Pick a durability position">
+          <button type="button" data-d="none" data-c="blue" class="active" aria-pressed="true">hold nothing</button>
+          <button type="button" data-d="window" data-c="gold" aria-pressed="false">window + checkpoint</button>
+          <button type="button" data-d="commit" data-c="echo" aria-pressed="false">commit + replicate</button>
+        </div>
+      </figcaption>
+      <svg viewBox="0 0 460 168" role="img" aria-label="A durability dial with three positions, from cheapest and least durable to most durable and most costly: hold nothing (the data is derived and recomputed), a bounded in-heap window with a checkpoint per K records, and commit-per-record with off-box replication. The selected position is highlighted; the cost rises and the durability rises from left to right.">
+        <!-- the dial track -->
+        <line x1="60" y1="48" x2="400" y2="48" stroke="#2a3252" stroke-width="3"></line>
+        <g class="dial-mv">
+          <circle id="d-none" cx="60" cy="48" r="11" fill="rgba(90,135,196,.18)" stroke="#5a87c4" stroke-width="2"></circle>
+          <circle id="d-window" cx="230" cy="48" r="11" fill="rgba(16,22,43,.6)" stroke="#46507a" stroke-width="2"></circle>
+          <circle id="d-commit" cx="400" cy="48" r="11" fill="rgba(16,22,43,.6)" stroke="#46507a" stroke-width="2"></circle>
+        </g>
+        <text x="60" y="78" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#9fc0ea">hold nothing</text>
+        <text x="230" y="78" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#f0cd7f">window + ckpt</text>
+        <text x="400" y="78" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#6fdccf">commit + replicate</text>
+        <!-- the cost / durability axes -->
+        <text x="60" y="100" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#5a6488">cheapest</text>
+        <text x="400" y="100" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#5a6488">most durable</text>
+        <path d="M70 110 L390 110" stroke="#46507a" fill="none" stroke-width="1" marker-end="url(#ahd)" opacity=".7"></path>
+        <text x="230" y="106" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#5a6488">cost &amp; durability rise &rarr;</text>
+        <defs>
+          <marker id="ahd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- the stream-tier band -->
+        <rect x="170" y="128" width="290" height="30" rx="7" fill="rgba(42,161,152,.08)" stroke="#2aa198" stroke-dasharray="3 2"></rect>
+        <text x="315" y="147" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#6fdccf">the stream tier sits across these two</text>
+      </svg>
+      <div class="geo-readout" id="dialOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="dial">
+    <h2>The durability dial</h2>
+    <div class="prose">
+      <p>Durability is a <strong>dial</strong> a system turns, in three positions ordered by how much each costs and how
+        much it keeps:</p>
+      <p><strong>Hold nothing.</strong> The data is derived and droppable &mdash; recompute it. The cheapest position; no
+        durable write at all (the ETS head cache that fronts a read). <strong>A bounded window + a checkpoint per K.</strong>
+        Keep a bounded slice in heap and checkpoint it to disk every K records. The middle position; bounded memory, bounded
+        loss on a crash, cheap steady state (the stream's live tail bounded by retention, folded to the floor per beat).
+        <strong>Commit-per-record + replicate off-box.</strong> Commit every record durably and replicate it off the machine.
+        The most durable position; every record survives the box (the Graft engine committing pages, the streamer shipping
+        them to Tigris).</p>
+      <p>The stream tier sits <strong>across positions 2 and 3</strong>: the live log holds a bounded window (retention),
+        and the archive commits each trimmed record to the floor and on to the remote. The hot enqueue path touches only the
+        small, mostly-idle outbox beside the bus &mdash; never a database on the path of every dequeue or ack. You turn the
+        dial up where you need durability and pay for it; you turn it down where the data is cheap to recompute, and keep the
+        hot path fast.</p>
+    </div>
+    <p class="take">One dial, three positions &mdash; and each surface picks its own. The stream keeps a bounded live tail
+      and a durable archive, so it is fast at the head and deep at the floor at once.</p>
+  </section>
+
+  <section id="deep">
+    <h2>Deep history, no resident memory</h2>
+    <div class="prose">
+      <p>The merge-read is what makes the dial pay off: the deep feed survives <strong>without resident memory of it</strong>.
+        <code class="inl">merge_read/5</code> serves <em>archived &cup; live</em> as one mint-ordered stream &mdash; the
+        archive read from the engine's reserved page range below the watermark <code class="inl">W</code>, the live tail read
+        from the stream above it. A reader queries a stream's whole past beside its present, and the past costs no live
+        memory: it is on the floor, page-ordered by the branded id, fetched only when a read reaches for it. A stream is
+        <strong>bounded in RAM and deep in history</strong> at the same time &mdash; the two used to be a trade; here they
+        are not.</p>
+      <p>In the words of the manuscript: <em>&ldquo;the stream archive folds trimmed <code class="inl">EchoMQ.Stream</code>
+        segments into the same floor &mdash; deep history without resident memory,&rdquo;</em> and <em>&ldquo;what a system
+        trims is kept, not lost.&rdquo;</em></p>
+    </div>
+
+    <figure class="fig" aria-labelledby="memTitle">
+      <h4 id="memTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A deep read &middot; how far back can a reader go</h4>
+      <div class="controls">
+        <div class="ctl">
+          <label for="back">read back &mdash; records into the past</label>
+          <input type="range" id="back" min="1" max="9" step="1" value="3" aria-label="how far back the read reaches, in records">
+        </div>
+      </div>
+      <svg viewBox="0 0 460 132" role="img" aria-label="A read window reaching back over a stream split into a small resident live tail and a large durable archive on the floor. As the read reaches further back, it crosses the watermark into the archive — and the resident memory it costs stays constant, because the archive is fetched from disk page by page, not held in heap.">
+        <!-- the live tail (small, resident) -->
+        <rect x="330" y="24" width="120" height="34" rx="7" fill="rgba(90,135,196,.13)" stroke="#5a87c4"></rect>
+        <text x="390" y="40" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#9fc0ea">live tail · resident</text>
+        <text x="390" y="52" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">small, in RAM</text>
+        <!-- the archive (large, on the floor) -->
+        <rect x="20" y="24" width="300" height="34" rx="7" fill="rgba(42,161,152,.1)" stroke="#2aa198"></rect>
+        <text x="170" y="40" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#6fdccf">the archive · on the floor (CubDB → Tigris)</text>
+        <text x="170" y="52" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">deep, fetched page by page</text>
+        <!-- the read window bar -->
+        <rect id="back-bar" x="300" y="70" width="150" height="16" rx="5" fill="rgba(212,168,90,.2)" stroke="#d4a85a"></rect>
+        <text x="235" y="106" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#f0cd7f">the read reaches back; resident memory stays constant</text>
+        <text id="wmark" x="330" y="20" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#f0cd7f">W</text>
+      </svg>
+      <div class="geo-readout" id="memOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">The dial's payoff is concrete: the resident footprint is the live tail's size, fixed by retention,
+      whether a read reaches back ten records or ten million. The archive's depth costs disk, not heap &mdash; and a polyglot
+      reader finds the seam from the wire cache without a store call.</p>
+  </section>
+
+  <section id="oban">
+    <h2>The comparison &mdash; Oban</h2>
+    <div class="prose">
+      <p>The contrast that names the trade is <strong>Oban</strong>. Oban keeps jobs in the <strong>same</strong> Postgres as
+        the application data, so a job and a row commit in <strong>one transaction</strong> &mdash; you cannot enqueue work
+        and forget to do it, because the enqueue and the state change are atomic together. That coupling is real and valuable.
+        Echo <strong>gives it up</strong>: it separates the bus from the store, so the enqueue and the data write are not one
+        transaction. What it buys for that is an <strong>in-memory hot path</strong> (the enqueue touches the bus, not a
+        database) and the <strong>dial</strong> (each surface picks its own durability).</p>
+      <p>State the trade beside the win: Echo does <strong>not</strong> have Oban's one-transaction coupling; it has a fast
+        path and a per-surface dial instead. Neither is free. The right tool depends on which guarantee the workload needs
+        &mdash; the atomic job-and-data commit, or the fast head with a tunable floor.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="obTitle">
+      <h4 id="obTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The trade &middot; one transaction, or a tunable floor</h4>
+      <div class="controls">
+        <div class="solid-select" id="obSel" role="group" aria-label="Compare Oban and Echo">
+          <button type="button" data-o="oban" data-c="blue" class="active" aria-pressed="true">Oban · one Postgres</button>
+          <button type="button" data-o="echo" data-c="echo" aria-pressed="false">Echo · bus + store</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 132" role="img" aria-label="Two architectures side by side. Oban keeps the job and the data in one Postgres, committed in one transaction — coupled, durable on the path of every enqueue. Echo separates the bus from the store: the enqueue touches an in-memory outbox beside the bus, and durability is a dial the store turns separately — fast at the head, with a floor each surface tunes.">
+        <!-- oban: one box -->
+        <g id="ob-oban">
+          <rect x="40" y="30" width="160" height="40" rx="8" fill="rgba(90,135,196,.14)" stroke="#5a87c4"></rect>
+          <text x="120" y="48" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">one Postgres</text>
+          <text x="120" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">job + data, one txn</text>
+          <text x="120" y="90" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#9fc0ea">coupled · atomic · durable per enqueue</text>
+        </g>
+        <!-- echo: bus + store -->
+        <g id="ob-echo">
+          <rect x="260" y="24" width="86" height="34" rx="7" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="303" y="38" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#ece4d0">the bus</text>
+          <text x="303" y="50" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" fill="#a39c89">in-memory outbox</text>
+          <rect x="356" y="24" width="86" height="34" rx="7" fill="rgba(212,168,90,.14)" stroke="#d4a85a"></rect>
+          <text x="399" y="38" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#ece4d0">the store</text>
+          <text x="399" y="50" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" fill="#a39c89">the dial</text>
+          <path d="M346 41 L356 41" stroke="#46507a" fill="none" stroke-width="1.2" stroke-dasharray="2 2"></path>
+          <text x="351" y="90" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#6fdccf">separated · fast head · tunable floor</text>
+        </g>
+        <line x1="230" y1="20" x2="230" y2="100" stroke="#2a3252" stroke-dasharray="3 3"></line>
+        <text x="235" y="118" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">two trades; neither is free</text>
+      </svg>
+      <div class="geo-readout" id="obOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">Echo gives up Oban's one-transaction coupling for an in-memory hot path and a per-surface dial &mdash; a
+      trade, stated beside the win, never a free upgrade.</p>
+  </section>
+
+  <section id="door">
+    <h2>Walk through the door</h2>
+    <div class="prose">
+      <p>The whole floor &mdash; the single-writer Graft engine, the lazy partial reader at a snapshot, the portable Tigris
+        remote, the commit-LSN cursor a replica reads from, and the stream archive that folds trimmed segments into the same
+        engine &mdash; is taught in full next door. The Bus's archive is one rung of that floor; here is the door to the rest
+        of it.</p>
+    </div>
+    <div class="door">
+      <p class="dl">The persistence floor &mdash; in full</p>
+      <p><strong>Echo Persistence</strong> is the durable floor beneath the whole stack: <code class="inl">EchoStore.Graft</code>,
+        a native-BEAM build of lazy, partial, strongly-consistent, page-based replication on object storage &mdash; the
+        single-writer engine on CubDB, the lazy reader that fetches only the pages a read touches, the portable Tigris remote
+        behind a create-only commit fence, and the stream archive this module folds into. The manuscript narrates the same
+        substrate at <a href="/bcs/persistence">The Branded Component System &middot; the persistence floor</a>.</p>
+      <p><a class="go" href="/echo-persistence">Open Echo Persistence <span aria-hidden="true">&rarr;</span></a></p>
+    </div>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A durable log archives its history off the hot store and serves deep reads from it, so the live store stays
+          small. <a href="/redis-patterns/streams-events">Streams &amp; Events</a> teaches the durable, replayable log; the
+          durability dial is the floor beneath it.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_store)</span>
+        <p><code class="inl">EchoStore.StreamArchive</code> folds trimmed <code class="inl">EVT</code> segments into the
+          native <code class="inl">EchoStore.Graft</code> engine (CubDB &rarr; Tigris), and the merge-read serves archived
+          &cup; live as one mint-ordered stream &mdash; deep history without resident memory, the durability dial turned to
+          keep-and-replicate.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: keep deep history off the hot path. The implementation makes that a <strong>dial</strong>
+      &mdash; the same branded id from the bus to the floor, the guarantee tuned per surface.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; one rung of the floor</h2>
+    <div class="prose">
+      <p>The archive is one rung of the persistence floor, and durability is a dial &mdash; hold nothing, a bounded window +
+        a checkpoint, or commit-per-record + replicate off-box. The stream tier sits across the last two: a bounded live log
+        and an archive on the durable floor, with the merge-read serving deep history without resident memory. The comparison
+        is Oban &mdash; Echo gives up the one-transaction coupling for an in-memory hot path and the dial. The whole floor is
+        one door away. That completes the Bus pillar's reading of the retained log: published, appended, consumed, replayed by
+        instant, bounded, and kept.</p>
+    </div>
+    <p class="note">The door out: <a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor in full, and
+      <a href="/bcs/persistence">The Branded Component System &middot; the persistence floor</a>, its narrative.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the durability dial, the durable engine, and the Oban comparison are grounded.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://github.com/orbitinghail/graft">orbitinghail &mdash; <em>Graft</em></a> &mdash; the lazy, partial, strongly-consistent page-replication engine <code>EchoStore.Graft</code> builds natively on the BEAM.</li>
+          <li><a href="https://www.tigrisdata.com/docs/objects/conditionals/">Tigris &mdash; <em>conditional object operations</em></a> &mdash; the create-only commit fence that makes object storage a transactional remote at the dial's top position.</li>
+          <li><a href="https://hexdocs.pm/oban/Oban.html">Sorin et al. &mdash; <em>Oban</em></a> &mdash; the same-Postgres job coupling Echo gives up for an in-memory hot path and the durability dial.</li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf">Helland &mdash; <em>Life Beyond Distributed Transactions (CIDR 2007)</em></a> &mdash; entities made durable and addressed by identity across a boundary, the floor's frame.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/bus/retention-and-archive/nothing-is-lost">Nothing is lost</a> &mdash; the fold this dive opens the floor behind.</li>
+          <li><a href="/echomq/bus/retention-and-archive/retention-is-a-policy">Retention is a policy</a> &mdash; the trim the fold runs before.</li>
+          <li><a href="/echomq/bus">The Bus</a> &mdash; the pillar landing.</li>
+          <li><a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor in full.</li>
+          <li><a href="/bcs/persistence">The Branded Component System &middot; the persistence floor</a> &mdash; the manuscript chapter this floor realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/bus/retention-and-archive/nothing-is-lost"><span aria-hidden="true">&larr;</span>&nbsp; Nothing is lost</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus/retention-and-archive">Back to the module <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a>
+        <a href="/echomq/bus/retention-and-archive/retention-is-a-policy">Retention is a policy</a>
+        <a href="/echomq/bus/retention-and-archive/nothing-is-lost">Nothing is lost</a>
+        <a href="/echomq/bus/retention-and-archive/the-door-to-persistence">The door to persistence</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/echo-persistence">Echo Persistence</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- content interactive 1: the durability dial (the three positions) ---------- */
+  var DIAL = {
+    none: { title: 'hold nothing', cost: 'cheapest', dur: 'none (recomputed)',
+      ex: 'the ETS head cache that fronts a read',
+      note: 'the data is derived and droppable — no durable write at all; recompute it. The cheapest position, and not where the stream tier sits' },
+    window: { title: 'a bounded window + a checkpoint per K', cost: 'low, steady', dur: 'bounded loss on a crash',
+      ex: 'the stream’s live tail bounded by retention',
+      note: 'keep a bounded slice in heap and checkpoint to disk every K records — bounded memory, bounded loss, cheap steady state. The stream’s LIVE tail sits here' },
+    commit: { title: 'commit-per-record + replicate off-box', cost: 'highest', dur: 'every record survives the box',
+      ex: 'the Graft engine committing pages → Tigris',
+      note: 'commit every record durably and replicate it off the machine — the most durable, most costly position. The stream’s ARCHIVE sits here (StreamArchive.fold/3 → Tigris)' }
+  };
+  function renderDial(key) {
+    var v = DIAL[key];
+    var out = document.getElementById('dialOut');
+    if (!v || !out) return;
+    var ids = { none: 'd-none', window: 'd-window', commit: 'd-commit' };
+    var colors = { none: ['rgba(90,135,196,.2)', '#5a87c4'], window: ['rgba(212,168,90,.2)', '#d4a85a'], commit: ['rgba(42,161,152,.2)', '#2aa198'] };
+    Object.keys(ids).forEach(function (k) {
+      var c = document.getElementById(ids[k]);
+      if (!c) return;
+      if (k === key) { c.setAttribute('fill', colors[k][0]); c.setAttribute('stroke', colors[k][1]); c.setAttribute('r', '13'); }
+      else { c.setAttribute('fill', 'rgba(16,22,43,.6)'); c.setAttribute('stroke', '#46507a'); c.setAttribute('r', '11'); }
+    });
+    out.innerHTML = '<b>' + v.title + '</b><br>' +
+      'cost: <span class="dim">' + v.cost + '</span> &middot; durability: <b>' + v.dur + '</b><br>' +
+      'on the stack: <span class="ok">' + v.ex + '</span><br>' +
+      '<span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#dialSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#dialSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderDial(b.getAttribute('data-d'));
+    });
+  });
+  renderDial('none'); // initial render — correct without interaction
+
+  /* ---------- content interactive 2: deep read, constant resident memory ---------- */
+  var BACK = document.getElementById('back');
+  function renderBack() {
+    var n = BACK ? parseInt(BACK.value, 10) : 3;
+    var out = document.getElementById('memOut');
+    // the read bar grows left from the live tail into the archive; resident stays constant
+    var bar = document.getElementById('back-bar');
+    // tail starts at x=330..450; each record back extends ~34px left, clamped at x=20
+    var leftX = Math.max(20, 330 - (n - 1) * 38);
+    var w = 450 - leftX;
+    if (bar) { bar.setAttribute('x', leftX); bar.setAttribute('width', w); }
+    var crossed = n >= 2; // reaching back past the live tail crosses W into the archive
+    if (out) out.innerHTML =
+      'read back: <b>' + n + ' record' + (n === 1 ? '' : 's') + '</b> ' + (crossed ? '<span class="ok">(into the archive)</span>' : '<span class="dim">(live tail only)</span>') + '<br>' +
+      'resident memory: <b>constant</b> <span class="dim">— the live tail’s size, fixed by retention</span><br>' +
+      '<span class="dim">' + (crossed
+        ? 'the read crosses the watermark W into the archive — fetched from CubDB page by page, not held in heap; the deeper the read, the more DISK it touches, never more RAM'
+        : 'the read is within the resident live tail — no archive page touched yet; reach further back to cross W') + '</span>';
+  }
+  if (BACK) BACK.addEventListener('input', renderBack);
+  renderBack(); // initial render — correct without interaction
+
+  /* ---------- content interactive 3: the Oban trade ---------- */
+  var OB = {
+    oban: { title: 'Oban · one Postgres', has: 'job + data in ONE transaction', gives: 'a durable write on the path of every enqueue',
+      note: 'the job and the row commit together — you cannot enqueue work and forget to do it; the coupling is atomic and valuable, but every enqueue touches the database' },
+    echo: { title: 'Echo · bus + store, separated', has: 'an in-memory hot path + the durability dial', gives: 'the one-transaction coupling',
+      note: 'the enqueue touches an in-memory outbox beside the bus, not a database; durability is a dial the store turns per surface — fast at the head, with a floor each surface tunes. Echo GIVES UP Oban’s atomic coupling for it' }
+  };
+  function renderOb(key) {
+    var v = OB[key];
+    var out = document.getElementById('obOut');
+    if (!v || !out) return;
+    var oban = document.getElementById('ob-oban'), echo = document.getElementById('ob-echo');
+    if (oban) oban.setAttribute('opacity', key === 'oban' ? '1' : '.28');
+    if (echo) echo.setAttribute('opacity', key === 'echo' ? '1' : '.28');
+    var verb = key === 'echo' ? 'gives up' : 'has on every enqueue';
+    out.innerHTML = '<b>' + v.title + '</b><br>' +
+      'has: <span class="ok">' + v.has + '</span><br>' +
+      (key === 'echo' ? 'gives up: <span class="bad">' + v.gives + '</span><br>' : 'cost: <span class="dim">' + v.gives + '</span><br>') +
+      '<span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#obSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#obSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderOb(b.getAttribute('data-o'));
+    });
+  });
+  renderOb('oban'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

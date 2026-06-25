@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6 · Flow Control &amp; Scale — Redis Patterns Applied · jonnify</title>
+<meta name="description" content="Staying stable under load. Flow control is the set of moves that keep a queue correct when demand exceeds what one moment can absorb: bound throughput to a budget, keep tenants fair, enqueue in bulk without a round trip per job, and plan worker capacity. Grounded in EchoMQ's real shipped flow-control layer — the emq:{q}:limiter counter read with EchoMQ.Metrics.get_rate_limit_ttl/3, the fair-lane ring in EchoMQ.Lanes, and EchoMQ.Jobs.enqueue_many/4 — worked through codemojex's traffic, with doors into the EchoMQ Queue pillar and the BCS bus.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+.skip{position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50}
+.skip:focus{left:0}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero / crumbs ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.note{font-family:var(--mono);font-size:13px;color:var(--b-dim);border-left:3px solid var(--b-ts);padding-left:14px;margin:16px 0 0;max-width:78ch}
+
+/* ---------- lifecycle diagram (light) ---------- */
+.rp rect{fill:var(--b-paper);stroke:var(--b-line)}
+.rp .hit{stroke:var(--b-node)}
+.rp .miss{stroke:var(--r-red)}
+.rp .lock{fill:var(--r-red-tint);stroke:var(--r-red)}
+.rp text{font-family:var(--sans);fill:var(--b-ink);font-size:14px}
+.rp .lbl{font-family:var(--mono);fill:var(--b-dim);font-size:11px}
+.rp .flow{fill:none;stroke-width:1.6}
+.rp .back{fill:none;stroke:var(--b-ts);stroke-width:1.6;stroke-dasharray:5 4}
+
+/* ---------- the flow-control lifecycle (hover-select stages) ---------- */
+.flc{width:100%;height:auto;display:block;margin-top:4px}
+.flc .stage rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.flc .stage text{font-family:var(--sans);fill:var(--b-ink);font-size:13px;text-anchor:middle}
+.flc .stage .sl{font-family:var(--mono);fill:var(--b-dim);font-size:10px;text-anchor:middle}
+.flc .stage.gate rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.flc .stage.ring rect{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.flc .arr{fill:none;stroke:#68705f;stroke-width:1.6}
+.flc .stg{cursor:pointer}
+.flc.focus .stage{opacity:.28}
+.flc.focus .stage.on{opacity:1}
+.flc.focus .stage.on rect{stroke-width:2.6}
+
+/* ---------- use-case grid ---------- */
+.uses{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+.uses .use{border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;background:var(--b-card)}
+.uses .use h4{font-family:var(--mono);font-size:.95rem;margin:0 0 4px;color:var(--b-ink)}
+.uses .use p{font-family:var(--sans);font-size:.84rem;color:var(--b-dim);margin:0;line-height:1.45}
+@media(max-width:680px){.uses{grid-template-columns:1fr}}
+
+/* ---------- doors / vnote ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+.vnote{font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--b-dim);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:10px 13px;margin:16px 0 0;max-width:80ch}
+.vnote b{color:var(--b-ink)}
+
+/* ---------- the chapter map (cards) ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.mod.work{border-left:3px solid var(--r-red)}
+.mod.work .num::after{content:" · workshop";color:var(--b-dim)}
+
+/* ---------- up next ---------- */
+.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:14px}
+.upnext .mod .t{font-size:.92rem}
+@media(max-width:860px){.upnext{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.upnext{grid-template-columns:1fr}}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><span class="rcur">flow-control</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#why">Why &amp; when</a>
+      <a href="#what">The patterns</a>
+      <a href="#apply">How to apply</a>
+      <a href="#workshop">Workshop</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <!-- ===================== HERO / OVERVIEW ===================== -->
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span class="sep">/</span>
+        <span class="here">R6 · Flow Control &amp; Scale</span>
+      </nav>
+      <p class="kicker">R6 · Flow Control &amp; Scale</p>
+      <h1>Staying stable under <span class="hns">load</span>.</h1>
+      <p class="lede">A queue that runs and orders work has not yet learned to survive a flood. Flow control is the
+        set of moves that keep the system stable under load &#8212; bound throughput to a budget, keep tenants fair,
+        enqueue in bulk, and plan worker capacity &#8212; all without losing correctness.</p>
+      <p class="heronote">The grounding is EchoMQ's real, shipped flow-control layer (<code>echo/apps/echo_mq</code>),
+        backed by Valkey. The rate limiter spends down a counter key (<code>emq:{q}:limiter</code>) against a
+        configured <code>max</code> over its own window, read with <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code>;
+        the fair-lane ring in <code>EchoMQ.Lanes</code> rotates one step per claim so every lane is served in turn;
+        and <code>EchoMQ.Jobs.enqueue_many/4</code> admits many jobs in one wire flush. Worked through
+        <b>codemojex</b>'s traffic. This chapter keeps the work of R3&#8211;R5 stable when demand exceeds what one
+        moment can absorb.</p>
+      <div class="toc-mini">
+        <a href="#why">Why &amp; when</a>
+        <a href="#what">The patterns</a>
+        <a href="#apply">How to apply</a>
+        <a href="#workshop">Workshop</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <!-- ===================== WHY & WHEN ===================== -->
+    <section id="why">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Why &amp; when</h2>
+        <span class="ssrc">echo/apps/echo_mq</span>
+      </div>
+      <div class="prose">
+        <p>A queue that distributes and orders work still trusts every caller to be well-behaved. Under load that
+          trust breaks: one tenant floods the engine, a burst of writes outpaces the workers, a thousand small
+          enqueues each pay a full round trip. Flow control is how the system stays correct and stable when demand
+          exceeds what one moment can absorb. Each demand below has one matching technique, and the chapter is the
+          set of those answers.</p>
+      </div>
+      <div class="uses">
+        <div class="use"><h4>Throughput must stay under a budget</h4><p>Cap how much work is admitted per unit of time &#8212; count what is admitted in the current window, refuse or defer once the count reaches the limit, and reset when the window rolls. The budget lives in the engine, not in any one worker.</p></div>
+        <div class="use"><h4>Every tenant gets a fair turn</h4><p>Under contention, no single tenant should starve the rest &#8212; a rota serves every lane in turn, and a weight tilts the share without ever letting a lane jump the line. Fairness is constructed, not hashed.</p></div>
+        <div class="use"><h4>Bulk work must not pay per-item round trips</h4><p>Admitting a thousand jobs one wire call at a time is a thousand round trips &#8212; one flush admits them all, in input order, under the same idempotency as a single add.</p></div>
+        <div class="use"><h4>Worker capacity must be planned, not guessed</h4><p>Each claim costs a fetch from the engine &#8212; concurrency is bounded by that per-claim cost and by the per-lane ceiling, so capacity is planned against the real fetch rather than assumed.</p></div>
+      </div>
+      <figure class="anatomy" aria-labelledby="flcCap">
+        <figcaption id="flcCap"><b>The flow-control lifecycle &#8212; enqueue &#8594; the limiter gate &#8594; the
+          fair-lane ring &#8594; claim.</b> Select a stage to see the real EchoMQ surface behind it; the gate spends
+          a counter against <code>max</code>, the ring rotates one step per claim.</figcaption>
+        <div class="segbar" id="flcSel" role="group" aria-label="Flow-control lifecycle stages">
+          <button type="button" data-st="enqueue" aria-pressed="false">enqueue</button>
+          <button type="button" data-st="gate" aria-pressed="false">the limiter gate</button>
+          <button type="button" data-st="ring" aria-pressed="false">the fair-lane ring</button>
+          <button type="button" data-st="claim" aria-pressed="false">claim</button>
+        </div>
+        <svg class="flc" id="flcfig" viewBox="0 0 1000 168" role="img" aria-label="A job moves left to right through four flow-control stages. First it is enqueued onto a lane. Next it passes the limiter gate, where a counter is spent against a configured max over a window. Then it enters the fair-lane ring, a rota that rotates one step per claim so every lane is served in turn. Finally it is claimed by a worker, leased on the server clock. Select a stage to light it and read the real EchoMQ surface behind it.">
+          <g class="stage" id="st-enqueue" data-st="enqueue">
+            <rect x="22" y="54" width="190" height="52" rx="11"></rect>
+            <text x="117" y="78">enqueue</text>
+            <text class="sl" x="117" y="96">onto a lane</text>
+          </g>
+          <path class="arr" d="M212 80 L268 80" marker-end="url(#fa)"></path>
+          <g class="stage gate" id="st-gate" data-st="gate">
+            <rect x="268" y="54" width="200" height="52" rx="11"></rect>
+            <text x="368" y="78">limiter gate</text>
+            <text class="sl" x="368" y="96">counter vs max · window</text>
+          </g>
+          <path class="arr" d="M468 80 L524 80" marker-end="url(#fa)"></path>
+          <g class="stage ring" id="st-ring" data-st="ring">
+            <rect x="524" y="54" width="200" height="52" rx="11"></rect>
+            <text x="624" y="78">fair-lane ring</text>
+            <text class="sl" x="624" y="96">rota · one step per claim</text>
+          </g>
+          <path class="arr" d="M724 80 L780 80" marker-end="url(#fa)"></path>
+          <g class="stage" id="st-claim" data-st="claim">
+            <rect x="780" y="54" width="190" height="52" rx="11"></rect>
+            <text x="875" y="78">claim</text>
+            <text class="sl" x="875" y="96">leased on the clock</text>
+          </g>
+          <defs>
+            <marker id="fa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#68705f"></path></marker>
+          </defs>
+        </svg>
+        <div class="readout" id="flcOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a stage to see the real EchoMQ surface behind it.</div>
+      </figure>
+      <p class="take">Every technique in this chapter answers one demand load makes on the queue &#8212; bound the
+        throughput, keep tenants fair, enqueue in bulk, and plan capacity &#8212; each one a real move in EchoMQ's
+        flow-control layer.</p>
+    </section>
+
+    <!-- ===================== WHAT (the module cards) ===================== -->
+    <section id="what">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The patterns</h2>
+        <span class="ssrc">six modules &#183; one built</span>
+      </div>
+      <div class="prose">
+        <p>One teaching module is built; the rest are specified. Rate limiting is the one new catalog pattern here;
+          the others are flow-control techniques that compose primitives from earlier chapters. Each module is a hub
+          with its dives, grounded in the real EchoMQ flow-control layer.</p>
+      </div>
+      <div class="legend">
+        <span><span class="pill built">built</span> ready to read</span>
+        <span><span class="pill soon">soon</span> specified</span>
+      </div>
+      <div class="mods">
+        <a class="mod" href="/redis-patterns/flow-control/rate-limiting"><div class="top"><span class="num">R6.01</span><span class="pill built">built</span></div><p class="t">Rate limiting</p><p class="o">Cap work to a budget per window &#8212; the <code>emq:{q}:limiter</code> counter spent to <code>max</code>, read with <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code>.</p></a>
+        <a class="mod" href="/redis-patterns/flow-control/fairness"><div class="top"><span class="num">R6.02</span><span class="pill built">built</span></div><p class="t">Fairness under load</p><p class="o">Prevent starvation &#8212; the rota serves every lane in turn, weights tilt the share.</p></a>
+        <a class="mod" href="/redis-patterns/flow-control/groups"><div class="top"><span class="num">R6.03</span><span class="pill built">built</span></div><p class="t">Groups &amp; multi-tenant fairness</p><p class="o">Share capacity fairly across tenants &#8212; round-robin lanes with a per-group concurrency ceiling.</p></a>
+        <a class="mod" href="/redis-patterns/flow-control/batches"><div class="top"><span class="num">R6.04</span><span class="pill built">built</span></div><p class="t">Batches &amp; pipelining</p><p class="o">Bulk enqueue in one wire flush, with a per-item verdict for each job.</p></a>
+        <a class="mod" href="/redis-patterns/flow-control/worker-concurrency"><div class="top"><span class="num">R6.05</span><span class="pill built">built</span></div><p class="t">Worker concurrency</p><p class="o">The per-claim fetch ceiling and how to plan capacity.</p></a>
+        <a class="mod work" href="/redis-patterns/flow-control/workshop"><div class="top"><span class="num">R6.06</span><span class="pill built">built</span></div><p class="t">Workshop</p><p class="o">Rate-limit and fairly schedule codemojex's API and jobs.</p></a>
+      </div>
+    </section>
+
+    <!-- ===================== HOW TO APPLY (interactive) ===================== -->
+    <section id="apply">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>How to apply</h2>
+        <span class="ssrc">name the load problem &#183; the technique follows</span>
+      </div>
+      <div class="prose">
+        <p>The hard part is matching the flow-control technique to the load problem you have. The four moves below
+          are how a queue stays stable while many callers share it. Name the load problem, and the technique &#8212;
+          and the real EchoMQ surface that becomes it &#8212; follows.</p>
+      </div>
+      <figure class="anatomy" aria-labelledby="pickTitle">
+        <figcaption id="pickTitle">Name the load problem &#183; get the flow-control technique and the EchoMQ surface that becomes it</figcaption>
+        <div class="segbar" id="pickSel" role="group" aria-label="Load problems">
+          <button type="button" data-k="cap" aria-pressed="false">Cap throughput to a budget</button>
+          <button type="button" data-k="fair" aria-pressed="false">Keep tenants fair</button>
+          <button type="button" data-k="ceiling" aria-pressed="false">Bound a tenant's concurrency</button>
+          <button type="button" data-k="bulk" aria-pressed="false">Enqueue in bulk, one round trip</button>
+        </div>
+        <div class="readout" id="pickOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a load problem to see the technique and the real EchoMQ surface that answers it.</div>
+      </figure>
+      <p class="take">There is no single flow-control trick &#8212; only the technique that answers the load problem
+        you have, each one a real move in EchoMQ's flow-control layer.</p>
+    </section>
+
+    <!-- ===================== WORKSHOP + the application doors ===================== -->
+    <section id="workshop">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The workshop</h2>
+        <span class="ssrc">echo/apps/codemojex &#183; EchoMQ.Lanes</span>
+      </div>
+      <div class="prose">
+        <p>The chapter closes with <strong>R6.06</strong>: rate-limit and fairly schedule codemojex's API and its
+          jobs. codemojex is a Telegram emoji-guessing game on the same stack; a flood of guesses from one room must
+          not starve the engine for everyone else. The budget is a per-queue counter &#8212;
+          <code>emq:{q}:limiter</code> spent down to <code>max</code> over its window &#8212; global across every bot
+          worker, because the counter lives in Valkey, not in any one process. Fairness rides the same fair-lane
+          ring: each room is a lane the rota serves in turn, so a busy room takes its share and no more. Bulk admits
+          ride <code>EchoMQ.Jobs.enqueue_many/4</code>, one wire flush for a burst of guesses.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The scaling layer in depth</h3>
+          <p>The EchoMQ Queue pillar absorbed groups, batches, lifecycle, fairness, and the rate limit &#8212; the scaling-layer depth (the limiter wired at the claim point, fair lanes, concurrency) lives there, rung by rung.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>Fair lanes &amp; the architecture</h3>
+          <p>The manuscript bus chapter (B3) the figures are drawn from &#8212; the Valkey-native bus, the rota of fair lanes, and the BCS law that a system gates ingress on one branded namespace.</p>
+        </a>
+      </div>
+      <p class="vnote"><b>Notes on Valkey.</b> The <code>{q}</code> hashtag pins every key of one queue &#8212;
+        <code>emq:{q}:limiter</code>, <code>emq:{q}:meta</code>, the ring, the lanes &#8212; to one of the 16384
+        cluster hash slots (CRC16 of the hashtag bytes, modulo 16384). One slot keeps a multi-key script legal
+        &#8212; no CROSSSLOT &#8212; and co-locates the limiter counter every worker spends.
+        <span style="color:var(--b-ts)">valkey.io/topics/cluster-spec</span></p>
+    </section>
+
+    <!-- ===================== UP NEXT ===================== -->
+    <section id="upnext">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Up next</h2>
+        <span class="ssrc">R7&#8211;R8</span>
+      </div>
+      <div class="prose">
+        <p>R6 keeps the queue stable under load. Each later chapter is a different concern over the same work
+          &#8212; how the data lives in RAM, then running the tier in production.</p>
+      </div>
+      <div class="upnext">
+        <div class="mod"><div class="top"><span class="num">R7</span><span class="pill soon">soon</span></div><p class="t">Data Modeling</p><p class="o">How data lives in RAM.</p></div>
+        <div class="mod"><div class="top"><span class="num">R8</span><span class="pill soon">soon</span></div><p class="t">Production &amp; Ops</p><p class="o">Running the tier at scale.</p></div>
+      </div>
+    </section>
+
+    <!-- ===================== REFERENCES ===================== -->
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <p class="refgrp">Sources</p>
+          <ul>
+            <li><a href="https://valkey.io/commands/incr/" rel="noopener">Valkey &mdash; <em>INCR</em></a> &mdash; the atomic counter increment behind the fixed-window rate-limit count.</li>
+            <li><a href="https://valkey.io/commands/expire/" rel="noopener">Valkey &mdash; <em>EXPIRE</em></a> &mdash; set the window's lifetime so the budget resets when the key expires.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{q}</code> hash tag forces a queue's keys onto one of the 16384 slots.</li>
+            <li><a href="https://stripe.com/blog/rate-limiters" rel="noopener">Stripe &mdash; <em>Scaling your API with rate limiters</em></a> &mdash; the request-rate techniques a production limiter composes: token bucket, fixed window, concurrency.</li>
+          </ul>
+        </div>
+        <div>
+          <p class="refgrp">Related in this course</p>
+          <ul>
+            <li><a href="/redis-patterns/flow-control/rate-limiting">R6.01 &middot; Rate limiting</a><span class="rs">cap work to a budget per window &#8212; the limiter counter spent to max</span></li>
+            <li><a href="/echomq/queue">EchoMQ &middot; the Queue pillar</a><span class="rs">the scaling layer in depth &#8212; the limiter at the claim point, fair lanes, concurrency</span></li>
+            <li><a href="/bcs/bus">The Branded Component System &middot; the bus</a><span class="rs">the Valkey-native bus and the fair-lanes architecture, manuscript B3</span></li>
+            <li><a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a><span class="rs">the durable, replayable log the previous chapter records</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PAGER ===================== -->
+    <nav class="pager" aria-label="Chapter navigation">
+      <a class="pgx" href="/redis-patterns/streams-events"><span class="pk">prev</span>&#8592; R5 · Streams &amp; Events</a>
+      <a class="pgx" href="/redis-patterns/flow-control/rate-limiting"><span class="pk">begin</span>R6.01 · Rate limiting &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/redis-patterns/flow-control/rate-limiting">R6.01 &#183; Rate limiting</a>
+        <a href="/echomq/queue">EchoMQ &#183; the Queue pillar</a>
+        <a href="/bcs/bus">The Branded Component System &#183; the bus</a>
+        <a href="/redis-patterns/streams-events">R5 &#183; Streams &amp; Events</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Course home</a>
+        <a href="/echomq/queue">EchoMQ — the Queue pillar</a>
+        <a href="/bcs/bus">The Branded Component System — the bus</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0OGHHvg33z7</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: the flow-control lifecycle (pure over the chosen stage) ---------- */
+  // The four stages are read non-destructively. Which stage is lit, and the readout, are a pure function of the
+  // selection over a fixed table; the SVG groups highlight on hover AND click.
+  var FLC = {
+    enqueue: { text: 'A job is <b>enqueued</b> onto its lane — <code>EchoMQ.Lanes.enqueue/5</code> writes the row and adds the id to <code>emq:{q}:g:&lt;group&gt;:pending</code> at score 0, keeping mint order. One idempotent script: an id already present is a no-op (<code>:duplicate</code>).' },
+    gate:    { text: 'The <b>limiter gate</b> spends a counter against a configured <code>max</code> over a window. <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code> reads <code>emq:{q}:limiter</code> against <code>max</code> (from <code>emq:{q}:meta</code>): when the counter has reached <code>max</code> and the window has time left, the remaining <code>PTTL</code> is the back-off an over-budget job waits.' },
+    ring:    { text: 'The <b>fair-lane ring</b> is a rota of serviceable lanes. <code>EchoMQ.Lanes.claim/3</code> rotates it one step (<code>LMOVE</code>) before serving the head of that lane, so every lane is served in turn — fairness is constructed, not hashed. <code>weight/4</code> tilts a lane\'s share without letting it jump the line.' },
+    claim:   { text: 'A worker <b>claims</b> the head of the rotated lane, leased on the <b>server clock</b> (<code>TIME</code>), with <code>attempts</code> as the fencing token (<code>HINCRBY</code>). The job moves to the active set; a lane at its <code>glimit</code> ceiling is dropped from the ring until a job completes.' }
+  };
+  var flcfig = document.getElementById('flcfig');
+  var flcButtons = document.querySelectorAll('#flcSel button');
+  var flcOut = document.getElementById('flcOut');
+  // pure: stage key (or null) -> applies the view
+  function selectFlc(st) {
+    flcButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-st') === st ? 'true' : 'false');
+    });
+    if (flcfig) {
+      flcfig.classList.toggle('focus', !!st);
+      flcfig.querySelectorAll('.stage').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-st') === st);
+      });
+    }
+    if (st && FLC[st]) {
+      if (flcOut) flcOut.innerHTML = '<span class="rk">readout &#183;</span> ' + FLC[st].text;
+    } else if (flcOut) {
+      flcOut.innerHTML = '<span class="rk">readout &#183;</span> Select a stage to see the real EchoMQ surface behind it.';
+    }
+  }
+  flcButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var st = b.getAttribute('data-st');
+      selectFlc(b.getAttribute('aria-pressed') === 'true' ? null : st);
+    });
+  });
+  if (flcfig) {
+    flcfig.querySelectorAll('.stage').forEach(function (g) {
+      g.classList.add('stg');
+      g.addEventListener('mouseenter', function () { selectFlc(g.getAttribute('data-st')); });
+      g.addEventListener('mouseleave', function () { selectFlc(null); });
+    });
+  }
+
+  /* ---------- Interactive: name the load problem, get the flow-control technique (pure lookup, no storage) ---------- */
+  var PICK = {
+    cap:     { name: "A fixed-window counter", art: "emq:{q}:limiter · EchoMQ.Metrics.get_rate_limit_ttl/3", one: "Cap throughput to a budget per window: a counter (emq:{q}:limiter) is spent down to a configured max, and the window is the key's own TTL. EchoMQ.Metrics.get_rate_limit_ttl/3 reads the remaining window — the back-off an over-budget job waits — and [:emq, :rate_limit, :hit] is the telemetry receipt." },
+    fair:    { name: "The fair-lane ring", art: "EchoMQ.Lanes.claim/3 · the rota", one: "Keep tenants fair: EchoMQ.Lanes holds a rota of serviceable lanes and rotates it one step per claim (claim/3, an LMOVE), so every lane is served in turn. weight/4 tilts a lane's share without letting it jump the line — fairness by construction, not by hashing." },
+    ceiling: { name: "The per-lane concurrency ceiling", art: "EchoMQ.Lanes.limit/4 · glimit", one: "Bound a tenant's in-flight work: EchoMQ.Lanes.limit/4 sets a lane's glimit, and a lane at its ceiling is dropped from the ring until a job completes. This is a concurrency cap, distinct from the time-rate limiter — it bounds how many run at once, not how fast they admit." },
+    bulk:    { name: "Pipelined bulk admission", art: "EchoMQ.Jobs.enqueue_many/4 · one wire flush", one: "Enqueue in bulk without a round trip per job: EchoMQ.Jobs.enqueue_many/4 pipelines every admit into one wire flush, with per-item verdicts (:enqueued / :duplicate) in input order under the same idempotency as a single enqueue/4. A burst of jobs costs one flush, not one round trip each." }
+  };
+
+  function renderPick(k) {
+    var d = PICK[k];
+    var out = document.getElementById('pickOut');
+    if (!d || !out) return;
+    out.innerHTML = '<span class="rk">readout &#183;</span> <b>' + d.name + '</b> &middot; <span class="rk">' + d.art + '</span><br>' + d.one;
+  }
+
+  document.querySelectorAll('#pickSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var on = b.getAttribute('aria-pressed') !== 'true';
+      document.querySelectorAll('#pickSel button').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+      if (on) { b.setAttribute('aria-pressed', 'true'); renderPick(b.getAttribute('data-k')); }
+      else {
+        var out = document.getElementById('pickOut');
+        if (out) out.innerHTML = '<span class="rk">readout &#183;</span> Select a load problem to see the technique and the real EchoMQ surface that answers it.';
+      }
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

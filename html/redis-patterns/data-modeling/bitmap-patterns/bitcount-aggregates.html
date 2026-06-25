@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7.04.2 — bitcount aggregates · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R7.04.2 · Once flags are bits, the analytics are bit arithmetic. BITCOUNT answers how many are set as a population count; BITOP combines several bitmaps with AND / OR / XOR / NOT into a new one; BITPOS finds the first set or unset bit — none of them enumerate the entities. A segment question becomes one BITOP plus one BITCOUNT, over the bits, in the engine. Bitmaps are exact; the probabilistic structures of R7.03 are the approximate counterparts you reach for when exact storage is too expensive.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the count figure (hover-select over a row of bits) ---------- */
+.countfig{width:100%;height:auto;display:block;margin-top:4px}
+.countfig .bit rect{fill:#ecf0e9;stroke:var(--b-line);stroke-width:1;transition:fill .15s ease,stroke .15s ease}
+.countfig .bit.one rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.4}
+.countfig .bit.lit rect{stroke:var(--b-ts);stroke-width:2.4}
+.countfig .bit.one.lit rect{fill:var(--r-red)}
+.countfig .bv{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.countfig .bit.one .bv{fill:var(--b-ns);font-weight:700}
+.countfig .bit.one.lit .bv{fill:var(--b-card)}
+.countfig .cl{font:10px var(--mono);fill:var(--b-dim);text-anchor:start}
+/* ---------- the bitop figure (two bitmaps → result) ---------- */
+.opfig{width:100%;height:auto;display:block;margin-top:4px}
+.opfig .bit rect{fill:#ecf0e9;stroke:var(--b-line);stroke-width:1;transition:fill .15s ease,stroke .15s ease}
+.opfig .bit.one rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.3}
+.opfig .row.res .bit rect{fill:var(--b-card)}
+.opfig .row.res .bit.one rect{fill:var(--r-red);stroke:var(--r-red)}
+.opfig .bv{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.opfig .bit.one .bv{fill:var(--b-ns);font-weight:700}
+.opfig .row.res .bit.one .bv{fill:var(--b-card)}
+.opfig .rl{font:11px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:end}
+.opfig .rk{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:start}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling">data-modeling</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling/bitmap-patterns">bitmap-patterns</a><span class="rsep">/</span><span class="rcur">bitcount-aggregates</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#count">BITCOUNT</a>
+      <a href="#bitop">BITOP</a>
+      <a href="#bitpos">BITPOS</a>
+      <a href="#bloom">The contrast</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling/bitmap-patterns">Bitmaps</a>
+          <span class="sep">/</span>
+          <span class="here">bitcount aggregates</span>
+        </nav>
+        <p class="kicker">R7.04.2 &middot; dive 2</p>
+        <h1>The analytics are <span class="hns">bit arithmetic</span>.</h1>
+        <p class="lede">Once flags are bits, the analytics are bit arithmetic. <code>BITCOUNT</code> answers "how many are
+          set"; <code>BITOP</code> combines bitmaps with AND / OR / XOR / NOT; <code>BITPOS</code> finds the first set or
+          unset bit.</p>
+        <p class="heronote">None of them enumerate the entities. A segment question becomes one <code>BITOP</code>
+          followed by one <code>BITCOUNT</code>, over the bits, in the engine &mdash; which is what makes bitmaps an
+          analytics encoding rather than only a flag store. Select a range; the readout runs the population count over
+          the bits below.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#count">BITCOUNT</a>
+          <a href="#bitop">BITOP</a>
+          <a href="#bitpos">BITPOS</a>
+          <a href="#bloom">The contrast</a>
+        </div>
+      </section>
+
+      <figure class="anatomy" aria-labelledby="countCap">
+        <figcaption id="countCap"><b>A 16-bit row of <code>users:active</code>.</b> Select a range; the readout reports
+          the population count over it.</figcaption>
+        <div class="segbar" id="countSel" role="group" aria-label="A BITCOUNT range to run">
+          <button type="button" data-c="all" aria-pressed="false">BITCOUNT (all)</button>
+          <button type="button" data-c="byte0" aria-pressed="false">… 0 0 (byte 0)</button>
+          <button type="button" data-c="byte1" aria-pressed="false">… 1 1 (byte 1)</button>
+        </div>
+        <svg class="countfig" id="countfig" viewBox="0 0 440 96" role="img" aria-label="A 16-bit row of the users:active bitmap, offsets 0 to 15, some set to 1. Selecting BITCOUNT all counts every set bit; selecting a byte range counts only the set bits in offsets 0 to 7 or 8 to 15, highlighting that range. The readout reports the count.">
+          <text class="cl" id="countLabel" x="14" y="16">offsets 0–15 &middot; set: 1, 3, 4, 9, 12, 14</text>
+          <g id="countBits"></g>
+        </svg>
+        <div class="readout" id="countOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a range.
+          <code>BITCOUNT users:active</code> over offsets 0&ndash;15 counts the set bits &mdash; six of them.</div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="count">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>BITCOUNT &mdash; the population count</h2>
+        <span class="ssrc">bitmap-patterns.md.txt &middot; count the set bits</span>
+      </div>
+      <div class="prose">
+        <p><code>BITCOUNT key</code> counts the set bits in the string &mdash; the number of flagged entities. The optional
+          <code>start</code>/<code>end</code> restrict it to a byte range, or a bit range with the <code>BIT</code>
+          modifier:</p>
+      </div>
+      <pre class="code"><b>BITCOUNT</b> users:active              <span class="cmt"># count every set bit</span>
+<b>BITCOUNT</b> users:active 0 0          <span class="cmt"># set bits in byte 0</span>
+<b>BITCOUNT</b> users:active 0 0 BIT      <span class="cmt"># set bits in bit 0 (the BIT range form)</span></pre>
+      <div class="prose">
+        <p>The work is a popcount, which the engine does in hardware-sized steps over the string, so counting a
+          million-flag bitmap is one fast scan, not a million reads. <code>BITCOUNT</code> is the size of any cohort,
+          window, or flag set: daily active users, online users, holders of a feature &mdash; each is the count of one
+          bitmap.</p>
+      </div>
+      <p class="take"><code>BITCOUNT</code> is the size of a set of flags, computed as a popcount over the bits &mdash; the
+        whole-bitmap count, or a byte/bit range.</p>
+    </section>
+
+    <section id="bitop">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>BITOP &mdash; combine bitmaps into a cohort</h2>
+        <span class="ssrc">bitmap-patterns.md.txt &middot; AND / OR / XOR / NOT</span>
+      </div>
+      <div class="prose">
+        <p><code>BITOP</code> writes a new bitmap from a bitwise operation over one or more inputs &mdash; a cohort is one
+          <code>BITOP</code> plus a <code>BITCOUNT</code>. Select an operation; the result row is computed from the two
+          input rows, bit by bit:</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="opCap">
+        <figcaption id="opCap"><b>Two attribute bitmaps, one result.</b> <code>premium</code> and <code>mobile</code> over
+          offsets 0&ndash;11; select an operation and the result is computed bitwise.</figcaption>
+        <div class="segbar" id="opSel" role="group" aria-label="A BITOP operation to apply">
+          <button type="button" data-o="and" aria-pressed="false">BITOP AND</button>
+          <button type="button" data-o="or" aria-pressed="false">BITOP OR</button>
+          <button type="button" data-o="xor" aria-pressed="false">BITOP XOR</button>
+          <button type="button" data-o="not" aria-pressed="false">BITOP NOT premium</button>
+        </div>
+        <svg class="opfig" id="opfig" viewBox="0 0 440 150" role="img" aria-label="Three rows of 12 bits. The top row is the premium bitmap, the middle row is the mobile bitmap, and the bottom row is the result of the selected operation. AND sets a result bit where both inputs are set; OR where either is; XOR where exactly one is; NOT inverts premium. The readout reports the operation and the resulting count.">
+          <g id="opRows"></g>
+        </svg>
+        <div class="readout" id="opOut" aria-live="polite"><span class="rk">readout &middot;</span> Select an operation.
+          <code>premium</code> is set at {1, 3, 4, 7, 9}; <code>mobile</code> at {3, 4, 6, 9, 10} &mdash; pick AND, OR,
+          XOR, or NOT to see the result bitmap and its count.</div>
+      </figure>
+
+      <pre class="code"><b>SETBIT</b> users:premium 12345 1
+<b>SETBIT</b> users:mobile  12345 1
+<b>BITOP AND</b> cohort:premium_mobile users:premium users:mobile
+<b>BITCOUNT</b> cohort:premium_mobile                       <span class="cmt"># premium AND mobile</span>
+<b>BITOP NOT</b> users:not_mobile users:mobile              <span class="cmt"># complement, then</span>
+<b>BITOP AND</b> cohort:premium_desktop users:premium users:not_mobile  <span class="cmt"># premium AND NOT mobile</span></pre>
+      <div class="prose">
+        <p>Every attribute is a bitmap; every segment is a boolean expression over them. The result bitmap is the same
+          size as its inputs and can itself feed another <code>BITOP</code> &mdash; cohorts compose. <code>BITOP</code> is
+          <strong>O(N)</strong> in the length of the longest input string, so the cost is the size of the largest bitmap,
+          and very large ones are sharded by id range.</p>
+      </div>
+      <p class="take">A cohort is a boolean expression over attribute bitmaps: <code>BITOP AND/OR/XOR/NOT</code> writes the
+        result, <code>BITCOUNT</code> sizes it, and the result composes into the next expression.</p>
+    </section>
+
+    <section id="bitpos">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>BITPOS &mdash; the first set or unset bit</h2>
+        <span class="ssrc">bitmap-patterns.md.txt &middot; locate an edge</span>
+      </div>
+      <div class="prose">
+        <p><code>BITPOS key bit</code> returns the offset of the first bit equal to <code>bit</code> (0 or 1), optionally
+          within a range:</p>
+      </div>
+      <pre class="code"><b>BITPOS</b> users:active 1          <span class="cmt"># offset of the first set bit  → first active id</span>
+<b>BITPOS</b> users:active 0          <span class="cmt"># offset of the first unset bit → first free slot</span>
+<b>BITPOS</b> users:active 1 100 200  <span class="cmt"># within a byte range</span></pre>
+      <div class="prose">
+        <p>It answers "the first active entity" or "the first free slot" without scanning client-side &mdash; useful for
+          allocating the next id in a dense space, or finding where a run of activity begins.</p>
+      </div>
+      <p class="take"><code>BITPOS</code> locates the first set or unset bit &mdash; the first active id, or the first free
+        slot &mdash; in the engine, not in a client loop.</p>
+    </section>
+
+    <section id="bloom">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The Bloom-filter alternative &mdash; and the contrast</h2>
+        <span class="ssrc">bitmap-patterns.md.txt &middot; exact vs approximate</span>
+      </div>
+      <div class="prose">
+        <p>A bitmap can stand in for a Bloom filter: hash an item to k positions with k hashes and set them; membership is
+          "all k bits set". If any is 0 the item is definitely absent; if all are 1 it is probably present, with false
+          positives whose rate depends on the bitmap size and k. That is the same accuracy-for-memory trade R7.03 teaches
+          as a first-class structure &mdash; and where a real Bloom filter belongs, the module commands <code>BF.*</code>
+          size it and choose the hashes for you.</p>
+        <p>The contrast is the point. Bitmaps as taught here are <strong>exact</strong>: <code>BITCOUNT</code> over a flag
+          set is the true count (no estimate), and <code>GETBIT</code> is a definite yes/no for a known offset. You reach
+          for the probabilistic structures of R7.03 only when the cardinality is so large that even one bit per entity is
+          too much, and a bounded error rate is acceptable.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p><code>BITCOUNT</code> is an exact popcount; <code>BITOP AND/OR/XOR/NOT</code> composes cohorts;
+            <code>BITPOS</code> finds the first set/unset bit &mdash; all over the bits, in the engine.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">where it grounds</span>
+          <p>A <strong>standalone</strong> core-Valkey example. These are exact answers; R7.03's HyperLogLog and Bloom
+            filters are the approximate counterparts you reach for when exact storage is too expensive.</p>
+        </div>
+      </div>
+
+      <p class="take">Bitmaps turn a flag store into an analytics one: <code>BITCOUNT</code> for the size of a set,
+        <code>BITOP</code> to compose cohorts, <code>BITPOS</code> to find an edge &mdash; exactly, and without enumerating
+        entities. The approximate versions are a deliberate trade (R7.03), not the default.</p>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>BITOP destkey op key [key ...]</code> is O(N) in the
+        length of the longest input string and writes a result the size of that input; <code>BITCOUNT</code> is a
+        population count with an optional <code>BYTE</code>/<code>BIT</code> range modifier &mdash;
+        <a href="https://valkey.io/commands/bitop/" rel="noopener">valkey.io/commands/bitop</a>.</p>
+
+      <div class="doors">
+        <div class="door">
+          <span class="dr">R7.03 &middot; in this course</span>
+          <h3>The approximate counterpart</h3>
+          <p>When exact storage is too expensive, the <a href="/redis-patterns/data-modeling/probabilistic-data-structures">probabilistic
+            data structures</a> trade a bounded error for fixed memory &mdash; HyperLogLog for cardinality, Bloom filters
+            for membership. Bitmap analytics are the exact baseline they depart from.</p>
+        </div>
+        <div class="door">
+          <span class="dr">R7.04.3 &middot; in this course</span>
+          <h3>daily-active patterns</h3>
+          <p><code>BITOP</code> over a series of daily bitmaps is where the analytics earn their keep: WAU, MAU, and
+            retention cohorts. The next dive:
+            <a href="/redis-patterns/data-modeling/bitmap-patterns/daily-active-patterns">daily-active patterns</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/bitcount/" rel="noopener">Valkey &mdash; <em>BITCOUNT</em></a> &mdash; population count over the whole String or a byte/bit range.</li>
+            <li><a href="https://valkey.io/commands/bitop/" rel="noopener">Valkey &mdash; <em>BITOP</em></a> &mdash; AND / OR / XOR / NOT across bitmaps into a result bitmap; O(N) in the longest input.</li>
+            <li><a href="https://valkey.io/commands/bitpos/" rel="noopener">Valkey &mdash; <em>BITPOS</em></a> &mdash; the offset of the first set or unset bit.</li>
+            <li><a href="https://redis.io/docs/latest/develop/data-types/bitmaps/" rel="noopener">Redis &mdash; <em>Bitmaps</em></a> &mdash; the bitmap data-type overview.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/bitmap-patterns">R7.04 &middot; Bitmaps</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/data-modeling/bitmap-patterns/1-bit-flags">R7.04.1 &middot; 1-bit flags</a><span class="rs"><code>SETBIT</code>/<code>GETBIT</code>, the offset is the id</span></li>
+            <li><a href="/redis-patterns/data-modeling/bitmap-patterns/daily-active-patterns">R7.04.3 &middot; daily-active patterns</a><span class="rs"><code>BITOP</code> over daily bitmaps for windows and cohorts</span></li>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures">R7.03 &middot; Probabilistic data structures</a><span class="rs">the approximate counterpart to exact bitmap analytics</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/data-modeling/bitmap-patterns/1-bit-flags"><span class="pk">prev</span>&#8592; R7.04.1 &middot; 1-bit flags</a>
+      <a class="pgx" href="/redis-patterns/data-modeling/bitmap-patterns/daily-active-patterns"><span class="pk">next</span>R7.04.3 &middot; daily-active patterns &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/data-modeling/bitmap-patterns">R7.04 &middot; Bitmaps</a>
+        <a href="/redis-patterns/data-modeling/bitmap-patterns/1-bit-flags">R7.04.1 &middot; 1-bit flags</a>
+        <a href="/redis-patterns/data-modeling/bitmap-patterns/daily-active-patterns">R7.04.3 &middot; daily-active patterns</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/bcs/overview">The Branded Component System — overview</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0OGHHvgR3kP</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- hero: BITCOUNT over a 16-bit row (hover-select, pure over the range) ---------- */
+  // A fixed 16-bit row of users:active, set = {1,3,4,9,12,14}. Each range is a pure function over that bitmap: count
+  // every set bit, or only those in byte 0 (offsets 0–7) or byte 1 (offsets 8–15). The row is rendered from the array.
+  var CN = 16;
+  var CSET = [1, 3, 4, 9, 12, 14];
+  var chas = function (i) { return CSET.indexOf(i) !== -1; };
+  var inByte = function (i, b) { return i >= b * 8 && i < b * 8 + 8; };
+  var countIn = function (lo, hi) { return CSET.filter(function (i) { return i >= lo && i <= hi; }).length; };
+  var COUNT = {
+    all:   { lo: 0,  hi: 15, label: 'whole bitmap', text: function () {
+      return 'BITCOUNT users:active — a popcount over the whole string. <b>' + countIn(0, 15) + '</b> bits set at ' +
+        'offsets ' + CSET.join(', ') + ', so ' + countIn(0, 15) + ' active users.'; } },
+    byte0: { lo: 0,  hi: 7,  label: 'byte 0 (offsets 0–7)', text: function () {
+      return 'BITCOUNT users:active 0 0 — counts the set bits in byte 0 (offsets 0–7). <b>' + countIn(0, 7) + '</b> ' +
+        'set there: ' + CSET.filter(function (i) { return i <= 7; }).join(', ') + '.'; } },
+    byte1: { lo: 8,  hi: 15, label: 'byte 1 (offsets 8–15)', text: function () {
+      return 'BITCOUNT users:active 1 1 — counts the set bits in byte 1 (offsets 8–15). <b>' + countIn(8, 15) + '</b> ' +
+        'set there: ' + CSET.filter(function (i) { return i >= 8; }).join(', ') + '.'; } }
+  };
+  var countBits = document.getElementById('countBits');
+  var svgNS = 'http://www.w3.org/2000/svg';
+  function buildCount(lo, hi) {
+    if (!countBits) return;
+    countBits.textContent = '';
+    var BW = 25, BH = 26, X0 = 14, Y = 26, GAP = 2;
+    for (var i = 0; i < CN; i++) {
+      var x = X0 + i * (BW + GAP);
+      var g = document.createElementNS(svgNS, 'g');
+      var cls = 'bit' + (chas(i) ? ' one' : '') + ((lo != null && i >= lo && i <= hi) ? ' lit' : '');
+      g.setAttribute('class', cls);
+      var rect = document.createElementNS(svgNS, 'rect');
+      rect.setAttribute('x', x); rect.setAttribute('y', Y);
+      rect.setAttribute('width', BW); rect.setAttribute('height', BH); rect.setAttribute('rx', '3');
+      var t = document.createElementNS(svgNS, 'text');
+      t.setAttribute('class', 'bv'); t.setAttribute('x', x + BW / 2); t.setAttribute('y', Y + BH / 2 + 3);
+      t.textContent = chas(i) ? '1' : '0';
+      g.appendChild(rect); g.appendChild(t);
+      countBits.appendChild(g);
+      var lbl = document.createElementNS(svgNS, 'text');
+      lbl.setAttribute('class', 'bv'); lbl.setAttribute('x', x + BW / 2); lbl.setAttribute('y', Y + BH + 12);
+      lbl.textContent = String(i);
+      countBits.appendChild(lbl);
+    }
+  }
+  var countButtons = document.querySelectorAll('#countSel button');
+  var countOut = document.getElementById('countOut');
+  function selectCount(c) {
+    countButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-c') === c ? 'true' : 'false');
+    });
+    var m = c ? COUNT[c] : null;
+    buildCount(m ? m.lo : null, m ? m.hi : null);
+    if (m && countOut) {
+      countOut.innerHTML = '<span class="rk">readout &middot;</span> ' + m.text();
+    } else if (countOut) {
+      countOut.innerHTML = '<span class="rk">readout &middot;</span> Select a range. <code>BITCOUNT users:active</code> ' +
+        'over offsets 0&ndash;15 counts the set bits &mdash; six of them.';
+    }
+  }
+  countButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var c = b.getAttribute('data-c');
+      selectCount(b.getAttribute('aria-pressed') === 'true' ? null : c);
+    });
+    b.addEventListener('mouseenter', function () { selectCount(b.getAttribute('data-c')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#countSel button[aria-pressed="true"]');
+      selectCount(pressed ? pressed.getAttribute('data-c') : null);
+    });
+  });
+  buildCount(null, null); // initial render — correct without interaction
+
+  /* ---------- BITOP: two bitmaps → result (hover-select, pure over the operation) ---------- */
+  // Two fixed 12-bit attribute bitmaps. Each operation is the real bitwise function applied per offset; the result row
+  // and its count are computed, never hard-coded.
+  var ON = 12;
+  var PREM = [1, 3, 4, 7, 9];     // premium
+  var MOB  = [3, 4, 6, 9, 10];    // mobile
+  var has = function (arr, i) { return arr.indexOf(i) !== -1; };
+  function applyOp(op) {
+    var res = [];
+    for (var i = 0; i < ON; i++) {
+      var a = has(PREM, i), b = has(MOB, i), v = false;
+      if (op === 'and') v = a && b;
+      else if (op === 'or') v = a || b;
+      else if (op === 'xor') v = a !== b;
+      else if (op === 'not') v = !a;
+      if (v) res.push(i);
+    }
+    return res;
+  }
+  var opRows = document.getElementById('opRows');
+  function rowG(label, kind, present, y) {
+    var g = document.createElementNS(svgNS, 'g');
+    g.setAttribute('class', 'row' + (kind ? ' ' + kind : ''));
+    var lt = document.createElementNS(svgNS, 'text');
+    lt.setAttribute('class', 'rl'); lt.setAttribute('x', '78'); lt.setAttribute('y', y + 17);
+    lt.textContent = label;
+    g.appendChild(lt);
+    var BW = 25, X0 = 88, GAP = 2;
+    for (var i = 0; i < ON; i++) {
+      var x = X0 + i * (BW + GAP);
+      var bg = document.createElementNS(svgNS, 'g');
+      bg.setAttribute('class', 'bit' + (has(present, i) ? ' one' : ''));
+      var rect = document.createElementNS(svgNS, 'rect');
+      rect.setAttribute('x', x); rect.setAttribute('y', y);
+      rect.setAttribute('width', BW); rect.setAttribute('height', 24); rect.setAttribute('rx', '3');
+      var t = document.createElementNS(svgNS, 'text');
+      t.setAttribute('class', 'bv'); t.setAttribute('x', x + BW / 2); t.setAttribute('y', y + 16);
+      t.textContent = has(present, i) ? '1' : '0';
+      bg.appendChild(rect); bg.appendChild(t);
+      g.appendChild(bg);
+    }
+    return g;
+  }
+  var opButtons = document.querySelectorAll('#opSel button');
+  var opOut = document.getElementById('opOut');
+  var OPMETA = {
+    and: { sym: 'AND', desc: 'a result bit where BOTH premium and mobile are set — premium-and-mobile' },
+    or:  { sym: 'OR',  desc: 'a result bit where EITHER is set — the union' },
+    xor: { sym: 'XOR', desc: 'a result bit where EXACTLY ONE is set — the symmetric difference' },
+    not: { sym: 'NOT', desc: 'every premium bit inverted — the complement of premium' }
+  };
+  function selectOp(op) {
+    opButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-o') === op ? 'true' : 'false');
+    });
+    var res = op ? applyOp(op) : [];
+    if (opRows) {
+      opRows.textContent = '';
+      opRows.appendChild(rowG('premium', '', PREM, 16));
+      opRows.appendChild(rowG('mobile', '', MOB, 56));
+      opRows.appendChild(rowG(op ? ('= ' + OPMETA[op].sym) : '= result', 'res', res, 104));
+    }
+    if (op && opOut) {
+      var m = OPMETA[op];
+      opOut.innerHTML = '<span class="rk">readout &middot;</span> BITOP ' + m.sym + ' — ' + m.desc + '. The result is set ' +
+        'at {' + res.join(', ') + '}, so BITCOUNT of the result is <b>' + res.length + '</b>.';
+    } else if (opOut) {
+      opOut.innerHTML = '<span class="rk">readout &middot;</span> Select an operation. <code>premium</code> is set at ' +
+        '{1, 3, 4, 7, 9}; <code>mobile</code> at {3, 4, 6, 9, 10} &mdash; pick AND, OR, XOR, or NOT to see the result ' +
+        'bitmap and its count.';
+    }
+  }
+  opButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var op = b.getAttribute('data-o');
+      selectOp(b.getAttribute('aria-pressed') === 'true' ? null : op);
+    });
+    b.addEventListener('mouseenter', function () { selectOp(b.getAttribute('data-o')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#opSel button[aria-pressed="true"]');
+      selectOp(pressed ? pressed.getAttribute('data-o') : null);
+    });
+  });
+  selectOp(null); // initial render — the two input rows, no result yet
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

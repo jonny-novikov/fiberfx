@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One fill per herd &middot; Single-flight &amp; jittered TTL &middot; EchoMQ, In Depth</title>
+<meta name="description" content="The second law of EchoStore.Table: concurrent misses on the same key coalesce onto a single in-flight load. The owner's handle_call({:fill, id}) appends waiters rather than starting a second flight; the spawn_monitor'd task GETs L2, runs the loader, and replies the one answer to every waiter.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:rgba(42,161,152,.08);border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / code / take ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code{font-family:var(--mono);font-size:.9rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .kw{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .at{color:var(--elixir-bright)}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;
+  padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.geo-readout{font-family:var(--mono);font-size:.93rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;
+  white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+.ctl input[type=range]{width:180px;accent-color:var(--echo)}
+.ctl .val{font-family:var(--mono);font-size:.9rem;color:var(--echo-bright)}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){.bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+
+/* ---- stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;
+  border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media(max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+
+@media(max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><a href="/echomq/cache/single-flight-and-jittered-ttl">single-flight-and-jittered-ttl</a><span class="rsep">/</span><span class="rcur">one-fill-per-herd</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache">The Cache</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+      <span class="sep">/</span>
+      <span class="here">One fill per herd</span>
+    </nav>
+    <p class="eyebrow">Single-flight &amp; jittered TTL &middot; dive 01</p>
+    <h1>One fill<br>per <span class="ex">herd</span></h1>
+    <p class="lede">Concurrent misses on the same key coalesce onto a single in-flight load.</p>
+    <p class="kicker">On a cache miss, <code class="inl">fetch/3</code> sends <code class="inl">{:fill,
+      id}</code> to the owner. The owner's <code class="inl">handle_call/3</code> is where the second law
+      holds: if a flight for this id is already in progress, <strong>append the caller to its waiters and
+      count <code class="inl">:coalesced</code></strong> &mdash; start no second flight. The flight is a
+      <code class="inl">spawn_monitor</code>'d task: it GETs L2, runs the declared loader on a miss, writes
+      both layers, and sends one result message back. The owner then replies <strong>that one answer to every
+      waiter</strong>. A crashed flight fails all its waiters with
+      <code class="inl">{:error, {:flight_crashed, reason}}</code> &mdash; no caller wedges.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#coalesce">The coalescing handler</a>
+      <a href="#flight">The flight</a>
+      <a href="#worked">Worked example</a>
+      <a href="#bridge">Pattern &amp; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- SECTION: the coalescing handler -->
+  <section id="coalesce">
+    <h2>The coalescing handler</h2>
+    <div class="prose">
+      <p>Before <code class="inl">fetch/3</code> sends <code class="inl">{:fill, id}</code>, it already did
+        a caller-side <code class="inl">:ets.lookup</code> and found a miss. But time has passed: the owner's
+        <code class="inl">handle_call({:fill, id})</code> re-checks L1 first, because a flight from an
+        earlier caller may have already won the race and inserted the row. If the row is now there and still
+        valid, the handler replies immediately as a <code class="inl">:hit</code>, counts it, and never starts
+        a flight.</p>
+      <p>If L1 is still empty, the handler looks in <code class="inl">state.flights</code>. Two outcomes:</p>
+      <ul style="margin:0 0 1.05rem;padding-left:1.5rem;color:var(--cream-soft)">
+        <li style="margin-bottom:.5rem"><strong>A flight exists for this id:</strong> append <code class="inl">from</code> to its waiters, count <code class="inl">:coalesced</code>, reply <code class="inl">:noreply</code>. No second flight.</li>
+        <li><strong>No flight exists:</strong> call <code class="inl">launch_flight/2</code>, record <code class="inl">{ref, [from]}</code> in <code class="inl">state.flights[id]</code>, reply <code class="inl">:noreply</code>.</li>
+      </ul>
+      <p>Both branches return <code class="inl">{:noreply, state}</code> &mdash; the owner is never blocked
+        waiting for the load. Its mailbox continues to drain normally.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Table — handle_call({:fill, id})</span>
+<span class="cmt"># The second law: one fill per herd. The owner re-checks L1 first (the</span>
+<span class="cmt"># race may have been won while this message was in the mailbox), then</span>
+<span class="cmt"># either appends to an existing flight or starts the first one.</span>
+<span class="op">def</span> <span class="fn">handle_call</span>({<span class="str">:fill</span>, id}, from, state) <span class="op">do</span>
+  now = System.<span class="fn">monotonic_time</span>(<span class="str">:millisecond</span>)
+
+  <span class="kw">case</span> :ets.<span class="fn">lookup</span>(state.name, id) <span class="kw">do</span>
+    [{^id, value, expires_at, _version}] <span class="kw">when</span> now &lt; expires_at -&gt;
+      <span class="cmt"># The race was won: another flight filled L1 between the caller's</span>
+      <span class="cmt"># miss and this message landing. Reply as a hit; no flight needed.</span>
+      :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:hits</span>), 1)
+      {<span class="str">:reply</span>, {<span class="str">:ok</span>, value, <span class="str">:hit</span>}, state}
+
+    _ -&gt;
+      <span class="kw">case</span> Map.<span class="fn">fetch</span>(state.flights, id) <span class="kw">do</span>
+        {<span class="str">:ok</span>, {ref, waiters}} -&gt;
+          <span class="cmt"># A flight is already in progress. Append this caller to its</span>
+          <span class="cmt"># waiter list. The :coalesced counter records the save.</span>
+          :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:coalesced</span>), 1)
+          {<span class="str">:noreply</span>, <span class="fn">put_in</span>(state.flights[id], {ref, [from | waiters]})}
+
+        <span class="str">:error</span> -&gt;
+          <span class="cmt"># No flight exists. Start one; record its monitor ref and this</span>
+          <span class="cmt"># caller as the first waiter in state.flights[id].</span>
+          ref = <span class="fn">launch_flight</span>(state, id)
+          {<span class="str">:noreply</span>, <span class="fn">put_in</span>(state.flights[id], {ref, [from]})}
+      <span class="kw">end</span>
+  <span class="kw">end</span>
+<span class="op">end</span></pre>
+  </section>
+
+  <!-- SECTION: the flight -->
+  <section id="flight">
+    <h2>The flight</h2>
+    <div class="prose">
+      <p><code class="inl">launch_flight/2</code> spawns an anonymous function under a monitor. It carries
+        the owner's connector, loader, TTL, and a <strong>freshly minted version id</strong> of the table's
+        declared kind. Inside the spawned process:</p>
+      <ol style="margin:0 0 1.05rem;padding-left:1.5rem;color:var(--cream-soft)">
+        <li style="margin-bottom:.5rem">Issue <code class="inl">GET ecc:{table}:id</code> to L2.</li>
+        <li style="margin-bottom:.5rem">On <code class="inl">nil</code>: run <code class="inl">loader.(id)</code> and on success <code class="inl">SET ecc:{table}:id (version &lt;&gt; value) PX ttl_ms</code>; send <code class="inl">{:fill, value, version}</code>.</li>
+        <li style="margin-bottom:.5rem">On a valid L2 frame (<code class="inl">&lt;&lt;version::binary-14, value::binary&gt;&gt;</code>): send <code class="inl">{:l2, value, version}</code>.</li>
+        <li>On a short frame or loader error: send <code class="inl">{:error, reason}</code>.</li>
+      </ol>
+      <p>The spawned process sends <code class="inl">send(owner, {:flight, id, result})</code> and exits.
+        <code class="inl">handle_info({:flight, id, result})</code> pops the flight map entry, demonitors,
+        inserts into L1 via <code class="inl">insert/4</code>, and calls
+        <code class="inl">Enum.each(waiters, &amp;GenServer.reply(&amp;1, reply))</code> &mdash;
+        <strong>the one answer to every waiter in one sweep</strong>.</p>
+      <p>A crash before the send fires <code class="inl">handle_info({:DOWN, ref, :process, _pid, reason})</code>.
+        The owner finds the matching flight, replies <code class="inl">{:error, {:flight_crashed, reason}}</code>
+        to every waiter, and removes the entry. No caller is left waiting on a dead pid.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Table — handle_info({:flight, id, result})</span>
+<span class="cmt"># The flight sent its result back to the owner. Pop the flights entry,</span>
+<span class="cmt"># demonitor the process, classify the result, insert into L1, and reply</span>
+<span class="cmt"># that one answer to every waiter in the list.</span>
+<span class="op">def</span> <span class="fn">handle_info</span>({<span class="str">:flight</span>, id, result}, state) <span class="op">do</span>
+  {{ref, waiters}, flights} = Map.<span class="fn">pop</span>(state.flights, id)
+  Process.<span class="fn">demonitor</span>(ref, [<span class="str">:flush</span>])
+
+  reply =
+    <span class="kw">case</span> result <span class="kw">do</span>
+      {<span class="str">:l2</span>, value, version} -&gt;
+        <span class="cmt"># Found in L2 — the fill sources the L2 frame; count it.</span>
+        :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:l2_hits</span>), 1)
+        <span class="fn">insert</span>(state, id, value, version)
+        {<span class="str">:ok</span>, value, <span class="str">:l2</span>}
+
+      {<span class="str">:fill</span>, value, version} -&gt;
+        <span class="cmt"># Loader ran and wrote both layers; count the fill.</span>
+        :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:fills</span>), 1)
+        <span class="fn">insert</span>(state, id, value, version)
+        {<span class="str">:ok</span>, value, <span class="str">:fill</span>}
+
+      {<span class="str">:error</span>, _} = err -&gt; err
+    <span class="kw">end</span>
+
+  <span class="cmt"># The one answer fans out to every waiter atomically.</span>
+  Enum.<span class="fn">each</span>(waiters, &amp;GenServer.<span class="fn">reply</span>(&amp;1, reply))
+  {<span class="str">:noreply</span>, %{state | flights: flights}}
+<span class="op">end</span>
+
+<span class="cmt"># handle_info({:DOWN, …}) — the flight crashed before sending its message.</span>
+<span class="cmt"># Fail every waiter cleanly; no caller wedges on a dead process.</span>
+<span class="op">def</span> <span class="fn">handle_info</span>({<span class="str">:DOWN</span>, ref, <span class="str">:process</span>, _pid, reason}, state) <span class="op">do</span>
+  <span class="kw">case</span> Enum.<span class="fn">find</span>(state.flights, <span class="kw">fn</span> {_id, {r, _}} -&gt; r == ref <span class="kw">end</span>) <span class="kw">do</span>
+    {id, {^ref, waiters}} -&gt;
+      Enum.<span class="fn">each</span>(waiters, &amp;GenServer.<span class="fn">reply</span>(&amp;1, {<span class="str">:error</span>, {<span class="str">:flight_crashed</span>, reason}}))
+      {<span class="str">:noreply</span>, %{state | flights: Map.<span class="fn">delete</span>(state.flights, id)}}
+    nil -&gt;
+      {<span class="str">:noreply</span>, state}
+  <span class="kw">end</span>
+<span class="op">end</span></pre>
+  </section>
+
+  <!-- SECTION: worked example interactive -->
+  <section id="worked">
+    <h2>Worked example: the coalesce counter</h2>
+    <div class="prose">
+      <p>Drag the slider to set how many callers miss simultaneously on the same key. The model runs the
+        exact <code class="inl">handle_call</code> logic: first caller starts a flight, every subsequent
+        caller appends and increments <code class="inl">:coalesced</code>. The loader is called exactly once.
+        Read the running counter and the <code class="inl">fetch/3</code> results.</p>
+    </div>
+    <figure class="fig" aria-labelledby="wrkTitle">
+      <h4 id="wrkTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Coalesce counter &middot; concurrent misses on one id</h4>
+      <div class="controls">
+        <div class="ctl">
+          <label for="callerRange">concurrent callers</label>
+          <input type="range" id="callerRange" min="1" max="100" step="1" value="1">
+          <span class="val" id="callerVal">1</span>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 130" role="img" aria-label="A bar chart showing the proportion of callers that started a flight (always 1) versus those that were coalesced into it (all others). The :coalesced counter equals callers minus 1.">
+        <text x="14" y="20" font-family="JetBrains Mono,monospace" font-size="9" fill="#a39c89">flights started</text>
+        <rect id="barFlight" x="14" y="28" width="4" height="18" rx="3" fill="#2aa198"></rect>
+        <text id="lblFlight" x="24" y="41" font-family="JetBrains Mono,monospace" font-size="10" fill="#6fdccf">1</text>
+
+        <text x="14" y="70" font-family="JetBrains Mono,monospace" font-size="9" fill="#a39c89">:coalesced (callers saved)</text>
+        <rect id="barCoal" x="14" y="78" width="4" height="18" rx="3" fill="#d4a85a"></rect>
+        <text id="lblCoal" x="24" y="91" font-family="JetBrains Mono,monospace" font-size="10" fill="#f0cd7f">0</text>
+
+        <text id="lblLoader" x="14" y="122" font-family="JetBrains Mono,monospace" font-size="9" fill="#a39c89">loader calls: 1 &mdash; regardless of herd size</text>
+      </svg>
+      <div class="geo-readout" id="wrkOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The owner's mailbox serializes concurrent misses so the loader is called exactly once &mdash;
+      and <code class="inl">:coalesced</code> is the counter that proves it.</p>
+  </section>
+
+  <!-- BRIDGE -->
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (stampede prevention)</span>
+        <p>On a cache miss under load, a single-flight (or lock-on-miss) serializes concurrent fills so only
+          one caller reaches the backing store. The others wait on the result. <a href="/redis-patterns/caching">Redis
+          Patterns Applied &middot; R1</a> teaches the stampede-prevention pattern.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (EchoStore.Table)</span>
+        <p>The owner's GenServer mailbox is the serialization point. The first <code class="inl">{:fill, id}</code>
+          starts a <code class="inl">spawn_monitor</code>'d flight; each subsequent one appends to
+          <code class="inl">state.flights[id]</code>. One loader call; one <code class="inl">Enum.each</code>
+          fans the result out.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: run the loader once, share the result. The implementation makes the
+      owner's mailbox the lock &mdash; no external lock service, no separate registry.</p>
+  </section>
+
+  <!-- REFS -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html">Erlang/OTP &mdash; <em>the ets module</em></a> &mdash; the read-concurrent L1 table the flight writes into.</li>
+          <li><a href="https://valkey.io/commands/get/">Valkey &mdash; <em>GET</em></a> &mdash; the L2 probe the flight issues first.</li>
+          <li><a href="https://valkey.io/commands/set/">Valkey &mdash; <em>SET</em></a> &mdash; the framed write after a loader fill.</li>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the mint-time id minted fresh for each fill's version.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a> &mdash; this module's hub.</li>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">Jittered expiry</a> &mdash; the clock the flight's insert uses.</li>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">The full cache degrades</a> &mdash; what happens when <code class="inl">insert/4</code> finds a full table.</li>
+          <li><a href="/echomq/cache">The Cache</a> &mdash; the chapter landing.</li>
+          <li><a href="/bcs/store">The Branded Component System &middot; the Store</a> &mdash; B4.2 "one fill per herd".</li>
+          <li><a href="/redis-patterns/caching">Redis Patterns Applied &middot; R1 Caching</a> &mdash; the stampede-prevention pattern.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAGER -->
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/cache/single-flight-and-jittered-ttl"><span aria-hidden="true">&larr;</span> Module hub</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">Jittered expiry <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd">One fill per herd</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">Jittered expiry</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">The full cache degrades</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- worked example: coalesce counter ---------- */
+  /* Models the exact handle_call logic over a fixed dataset:
+     callers concurrent misses on id "PLR0KHTOWnGLuC".
+     First caller: launch_flight. Each subsequent: append + :coalesced.
+     Loader called exactly once regardless of herd size. */
+  var MAX_BAR = 440;
+  function renderWorked(n) {
+    var coalesced = Math.max(0, n - 1);
+    var flightBar = document.getElementById('barFlight');
+    var coalBar   = document.getElementById('barCoal');
+    var lblFlight = document.getElementById('lblFlight');
+    var lblCoal   = document.getElementById('lblCoal');
+    var out       = document.getElementById('wrkOut');
+    if (flightBar) flightBar.setAttribute('width', '4');  // always 1 flight
+    if (coalBar)   coalBar.setAttribute('width', String(Math.max(4, Math.round(coalesced / Math.max(n, 1) * MAX_BAR))));
+    if (lblFlight) lblFlight.textContent = '1';
+    if (lblCoal)   lblCoal.textContent   = String(coalesced);
+    if (out) {
+      out.innerHTML = '<b>' + n + ' concurrent miss' + (n > 1 ? 'es' : '') + '</b> on id PLR0KHTOWnGLuC<br>' +
+        'flights started: <b>1</b> &mdash; loader calls: <b>1</b><br>' +
+        ':coalesced counter: <b>' + coalesced + '</b><br>' +
+        (n > 1
+          ? '<span class="ok">all ' + n + ' callers receive {:ok, value, :fill}</span> &mdash; one loader call, ' + n + ' answers fanned out'
+          : '<span class="ok">1 caller receives {:ok, value, :fill}</span>');
+    }
+  }
+  var callerRange = document.getElementById('callerRange');
+  var callerVal   = document.getElementById('callerVal');
+  if (callerRange) {
+    callerRange.addEventListener('input', function () {
+      var n = parseInt(callerRange.value, 10);
+      if (callerVal) callerVal.textContent = String(n);
+      renderWorked(n);
+    });
+  }
+  renderWorked(1);
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sid, t) { var el = document.getElementById(sid); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,972 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workshop &mdash; A codemojex near-cache, end to end &middot; The Cache &middot; EchoMQ, In Depth</title>
+<meta name="description" content="The Cache pillar's closing capstone: one codemojex read surface near-cached, end to end. Declare a cache in the directory, hit at ETS speed with the kind gate at the door, survive a herd with one fill and a jittered clock, then invalidate from another node with a message about a name. All real Elixir, grounded in echo/apps/echo_store and echo/apps/codemojex.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);background:rgba(42,161,152,.08);
+  border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.rev{font-family:var(--sans);font-size:.78rem;color:var(--echo-bright);border:1px solid var(--echo);
+  border-radius:999px;padding:.22rem .7rem;display:inline-flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
+.rev a{color:var(--echo-bright);text-decoration:none}
+.rev a:hover{color:var(--cream);text-decoration:underline}
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.door{margin:1rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){.bridge{grid-template-columns:1fr;gap:.7rem}.bridge .arrow{justify-self:center;transform:rotate(90deg)}}
+/* ---- stage rail ---- */
+.steps-rail{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:1rem}
+@media (max-width:760px){.steps-rail{grid-template-columns:repeat(2,1fr)}}
+.steps-rail button{font-family:var(--sans);font-weight:600;font-size:.78rem;cursor:pointer;
+  text-align:left;padding:.55rem .7rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease;line-height:1.25}
+.steps-rail button:hover{border-color:var(--cream-dim)}
+.steps-rail button.active{color:var(--ink);background:var(--echo-bright);border-color:transparent;font-weight:700}
+.steps-rail button .sn{display:block;font-family:var(--mono);font-size:.66rem;opacity:.8;margin-bottom:.15rem}
+/* ---- feed log (the worked builder) ---- */
+.feedlog{font-family:var(--mono);font-size:.82rem;color:var(--cream-soft);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;margin-top:1rem}
+.feedlog .row{display:grid;grid-template-columns:auto auto 1fr;gap:.5rem .9rem;align-items:baseline;
+  padding:.28rem 0;border-bottom:1px solid rgba(42,50,82,.5)}
+.feedlog .row:last-child{border-bottom:0}
+.feedlog .evt{color:var(--echo-bright)}
+.feedlog .ev{color:var(--gold-bright)}
+.feedlog .pl{color:var(--cream-dim);word-break:break-word}
+.feedlog .hd{color:var(--cream-dim);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--line)}
+.pipe-leg{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-family:var(--sans);font-size:.72rem;color:var(--cream-dim);margin-top:.6rem}
+.pipe-leg span{display:inline-flex;align-items:center;gap:.35rem}
+.pipe-leg i{width:11px;height:11px;border-radius:3px;display:inline-block}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+/* ---- hero-split ---- */
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO (split) ===================== -->
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/cache">The Cache</a>
+        <span class="sep">/</span>
+        <span class="here">Workshop</span>
+      </div>
+      <p class="rev">&larr; the depth behind <strong>redis-patterns R1 &middot; Caching</strong></p>
+      <p class="eyebrow">The Cache &middot; workshop &middot; end to end</p>
+      <h1>A codemojex <span class="ex">near-cache</span></h1>
+      <p class="lede">Four moves, two layers, one game read &mdash; declared, hit, herd-proofed, and kept honest across nodes.</p>
+      <p class="kicker">This page closes the Cache pillar by building <strong>one thing</strong> out of all three
+        modules: a <strong>codemojex</strong> game read near-cached. On every guess, the scorer needs the game and its
+        secret &mdash; the hottest read in the game. So we <strong>declare</strong> a cache in the directory
+        (<code class="inl">Codemojex.Tables</code>), <strong>hit</strong> it at ETS speed with the kind gate at the door
+        (<code class="inl">EchoStore.Table.fetch/3</code>), <strong>survive</strong> a herd with one fill and a jittered
+        clock, then <strong>invalidate</strong> from another node with a message about a name
+        (<code class="inl">EchoStore.Coherence</code>). The thread through all four is one branded id &mdash; the
+        entity's own 14-byte id is the value's version, the coherence clock, and the key the gate checks. Step through
+        the build on the right.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#declare">1 &middot; Declare</a>
+        <a href="#hit">2 &middot; Hit</a>
+        <a href="#herd">3 &middot; Survive</a>
+        <a href="#invalidate">4 &middot; Invalidate</a>
+        <a href="#build">The cache, built</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="pipeTitle">
+      <h4 id="pipeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The build &middot; step through the four moves</h4>
+      <div class="steps-rail" id="stepRail" role="group" aria-label="The four build moves">
+        <button type="button" data-step="declare" class="active" aria-pressed="true"><span class="sn">move 1</span>declare</button>
+        <button type="button" data-step="hit" aria-pressed="false"><span class="sn">move 2</span>hit</button>
+        <button type="button" data-step="herd" aria-pressed="false"><span class="sn">move 3</span>survive</button>
+        <button type="button" data-step="invalidate" aria-pressed="false"><span class="sn">move 4</span>invalidate</button>
+      </div>
+      <svg viewBox="0 0 480 268" role="img" aria-label="A codemojex near-cache built in four moves. Move 1: Codemojex.Tables registers the :cm_games cache (kind GAM) in the EchoStore directory, with a kind, TTL, jitter, and coherence mode. Move 2: a guess scorer reads the game through fetch/3 — a caller-side ets.lookup answers a hit, the kind gate refuses a wrong-namespace id, and a miss consults the owner. Move 3: concurrent misses on one game coalesce onto a single flight that checks L2 Valkey and falls through to the Postgres loader; expiry is jittered and a full cache degrades to pass-through. Move 4: a write on another node sends a coherence message about a name, and node B drops its row only if the incoming version is newer. The selected move is highlighted; earlier moves stay lit because each builds on the last.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- ===== MOVE 1: DECLARE (the directory) ===== -->
+        <g id="g-declare">
+          <rect x="14" y="14" width="150" height="34" rx="8" fill="rgba(212,168,90,.16)" stroke="#d4a85a"></rect>
+          <text x="89" y="29" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">EchoStore.Directory</text>
+          <text x="89" y="41" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">register :cm_games (GAM)</text>
+          <path d="M89 48 L89 64" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+        </g>
+
+        <!-- the caller / scorer -->
+        <g id="g-caller">
+          <rect x="14" y="116" width="88" height="36" rx="8" fill="rgba(42,161,152,.16)" stroke="#2aa198"></rect>
+          <text x="58" y="132" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">ScoreWorker</text>
+          <text x="58" y="145" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">fetch_game(id)</text>
+        </g>
+
+        <!-- ===== MOVE 2: HIT (L1 ETS, the kind gate) ===== -->
+        <g id="g-hit">
+          <rect x="132" y="64" width="96" height="52" rx="9" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="180" y="82" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10.5" fill="#ece4d0">L1 &middot; :cm_games</text>
+          <text x="180" y="95" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">:ets.lookup</text>
+          <text x="180" y="105" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#6fdccf">kind gate: GAM</text>
+          <text x="180" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" fill="#5a6488">caller-side</text>
+        </g>
+        <path d="M102 132 L130 100" stroke="#46507a" fill="none" stroke-width="1.4" marker-end="url(#ah)"></path>
+        <text x="112" y="126" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#5a6488">hit</text>
+
+        <!-- ===== MOVE 3: SURVIVE (single flight, jitter, L2, loader) ===== -->
+        <g id="g-herd">
+          <rect x="14" y="170" width="88" height="18" rx="5" fill="rgba(42,161,152,.1)" stroke="#46507a"></rect>
+          <text x="58" y="182" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#6fdccf">+ N misses &rarr; 1 flight</text>
+          <rect x="252" y="64" width="92" height="52" rx="9" fill="rgba(90,135,196,.14)" stroke="#5a87c4"></rect>
+          <text x="298" y="82" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">owner</text>
+          <text x="298" y="95" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">single flight</text>
+          <text x="298" y="105" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#9fc0ea">{:fill, id}</text>
+          <text x="298" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" fill="#5a6488">jitter &middot; degrade</text>
+          <path d="M228 90 L250 90" stroke="#46507a" fill="none" stroke-width="1.4" marker-end="url(#ah)"></path>
+          <text x="240" y="84" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#5a6488">miss</text>
+        </g>
+
+        <!-- L2 Valkey + the Postgres loader -->
+        <g id="g-store">
+          <rect x="372" y="40" width="96" height="38" rx="9" fill="rgba(90,135,196,.14)" stroke="#5a87c4"></rect>
+          <text x="420" y="56" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">L2 &middot; Valkey</text>
+          <text x="420" y="69" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#9fc0ea">GET ecc:{cm_games}:GAM</text>
+          <rect x="372" y="100" width="96" height="38" rx="9" fill="rgba(212,168,90,.14)" stroke="#d4a85a"></rect>
+          <text x="420" y="116" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">load_game/1</text>
+          <text x="420" y="129" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#f0cd7f">Postgres &middot; SET &hellip; PX</text>
+          <path d="M344 80 L370 60" stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ah)" opacity=".9"></path>
+          <path d="M344 100 L370 116" stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ah)" opacity=".9"></path>
+          <text x="360" y="112" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6" fill="#5a6488">nil</text>
+        </g>
+
+        <!-- ===== MOVE 4: INVALIDATE (a message about a name) ===== -->
+        <g id="g-inval">
+          <rect x="252" y="170" width="100" height="34" rx="8" fill="rgba(212,168,90,.13)" stroke="#d4a85a"></rect>
+          <text x="302" y="184" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">node A writes</text>
+          <text x="302" y="196" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">id : version &middot; 29 bytes</text>
+          <rect x="252" y="222" width="216" height="30" rx="7" fill="rgba(42,161,152,.1)" stroke="#46507a"></rect>
+          <text x="360" y="234" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#9fc0ea">broadcast PUBLISH ecc:{t}:coh / job lane / :tracking</text>
+          <text x="360" y="246" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#6fdccf">node B drop_l2/4 &mdash; newer? &rarr; DEL</text>
+          <path d="M302 204 L302 220" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <path d="M180 116 L260 170" stroke="#c4504c" fill="none" stroke-width="1.1" marker-end="url(#ah)" opacity=".75" stroke-dasharray="3 2"></path>
+        </g>
+
+        <text x="240" y="264" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488">one branded id: the value's version · the coherence clock · the gated key</text>
+      </svg>
+      <div class="geo-readout" id="pipeOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <!-- ===================== MOVE 1 ===================== -->
+  <section id="declare">
+    <h2>Move 1 &mdash; declare a codemojex cache</h2>
+    <div class="prose">
+      <p>The first law of the near-cache: <strong>the cache is declared, not discovered.</strong> A codemojex cache
+        exists only because <code class="inl">Codemojex.Tables</code> registered its full specification at start. The
+        directory is the roster of every declared cache on the node, and a cache absent from it does not exist. codemojex
+        declares three: <code class="inl">:cm_games</code> (kind <code class="inl">GAM</code>, a game and its secret),
+        <code class="inl">:cm_emojisets</code> (kind <code class="inl">EMS</code>, the emoji layout), and
+        <code class="inl">:cm_sessions</code> (kind <code class="inl">SES</code>, the first mutable one).</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/codemojex — Codemojex.Tables (the declaration site)</span>
+<span class="cmt"># Three declared L1-over-L2 caches in front of Postgres on the scoring hot path.</span>
+<span class="cmt"># Each registers a full spec; a cache absent from the directory does not exist.</span>
+children = [
+  <span class="cmt"># the games near-cache: a game + its secret, read on every guess score.</span>
+  Supervisor.<span class="fn">child_spec</span>(
+    {EchoStore.Table,
+     name: <span class="rdx">:cm_games</span>,        <span class="cmt"># the declared cache name (the L1 :ets table name)</span>
+     kind: <span class="str">"GAM"</span>,            <span class="cmt"># the namespace the kind gate enforces on every id</span>
+     loader: &amp;<span class="fn">load_game</span>/<span class="res">1</span>,   <span class="cmt"># the 1-arity fall-through to the system of record</span>
+     coherence: <span class="str">:none</span>,       <span class="cmt"># immutable for the game's life — never goes stale</span>
+     ttl_ms: <span class="res">600_000</span>,
+     max_size: <span class="res">50_000</span>},
+    id: <span class="str">:cm_games_table</span>
+  )
+  <span class="cmt"># … :cm_emojisets (EMS) and :cm_sessions (SES, :tracking) declared the same way.</span>
+]
+<span class="cmt"># started :rest_for_one under the EchoStore.Directory, so a directory restart</span>
+<span class="cmt"># cascades to the tables and they re-register — the roster cannot silently empty.</span></pre>
+
+    <div class="prose">
+      <p>Under the hood the table's <code class="inl">init/1</code> does the registration the directory monitors &mdash;
+        and the monitor is the point: a crashed cache leaves the roster the instant it leaves the node.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_store — EchoStore.Table.init/1 (the declared registration)</span>
+:ets.<span class="fn">new</span>(name, [<span class="str">:set</span>, <span class="str">:public</span>, <span class="str">:named_table</span>, read_concurrency: <span class="str">true</span>])  <span class="cmt"># the L1 tier</span>
+spec = %{kind: kind, ttl_ms: ttl_ms, jitter: jitter, max_size: max_size,
+         sweep_ms: sweep_ms, coherence: coherence, counters: counters}
+<span class="str">:ok</span> = EchoStore.Directory.<span class="fn">register</span>(name, spec, <span class="fn">self</span>())  <span class="cmt"># monitored — a :DOWN drops the row</span></pre>
+
+    <div class="prose">
+      <p>An operator enumerates every declared cache with <code class="inl">EchoStore.tables/0</code> &mdash;
+        <code class="inl">[{:cm_emojisets, spec}, {:cm_games, spec}, {:cm_sessions, spec}]</code>, sorted &mdash; and reads
+        one spec with <code class="inl">EchoStore.spec(:cm_games)</code>. The L2 key the cache will address is
+        <code class="inl">EchoStore.Keyspace.key("cm_games", game_id)</code> &rarr;
+        <code class="inl">ecc:{cm_games}:GAM&hellip;</code> &mdash; a fresh prefix beside <code class="inl">emq:</code>,
+        the <code class="inl">{cm_games}</code> hashtag landing every key of this cache on one of 16384 Valkey Cluster
+        slots, with the id shape-checked before the key is composed.</p>
+    </div>
+    <p class="take">A codemojex cache is a written-down thing &mdash; a kind, a TTL, a coherence mode, registered and
+      watched. There are no ambient caches, only declared ones.</p>
+  </section>
+
+  <!-- ===================== MOVE 2 ===================== -->
+  <section id="hit">
+    <h2>Move 2 &mdash; hit at ETS speed</h2>
+    <div class="prose">
+      <p>With the table declared, the scorer reads the game through <code class="inl">Codemojex.Cache.fetch_game/1</code>
+        &mdash; the read-hot seam over <code class="inl">EchoStore.Table.fetch/3</code>. <strong>The read path never
+        enters the owning process.</strong> A hit is a caller-side <code class="inl">:ets.lookup</code> in the scorer's
+        own process, so reads scale with schedulers, not with one GenServer's mailbox.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/codemojex — Codemojex.Cache.fetch_game/1 (the read-hot seam)</span>
+<span class="cmt"># Read a game through the L1/L2 cache, falling back to the system of record. The</span>
+<span class="cmt"># cached value is term_to_binary(game_map); EchoStore frames it with the game's</span>
+<span class="cmt"># own id as the version. A direct Postgres fallback covers the boot window only.</span>
+<span class="op">def</span> <span class="fn">fetch_game</span>(game_id) <span class="op">do</span>
+  <span class="op">case</span> EchoStore.Table.<span class="fn">fetch</span>(<span class="rdx">:cm_games</span>, game_id) <span class="op">do</span>
+    {<span class="str">:ok</span>, bin, _source} <span class="op">when</span> is_binary(bin) <span class="op">-&gt;</span> :erlang.<span class="fn">binary_to_term</span>(bin)
+    _ <span class="op">-&gt;</span> Codemojex.Store.<span class="fn">game</span>(game_id)
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><code class="inl">fetch/3</code> runs the <strong>kind law first</strong>, then tries the layers in order &mdash;
+        a hit answers in the caller's process and never touches the owner; a miss is the only owner call.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_store — EchoStore.Table.fetch/3 (the cache-aside read)</span>
+<span class="cmt"># 1. find the cache in the directory (absent → {:error, :no_such_cache});</span>
+<span class="cmt"># 2. GATE the id: 14 bytes, namespace == the table's declared kind, BrandedId.valid?</span>
+<span class="cmt">#    — a wrong-namespace id is refused at the door, before either layer is touched;</span>
+<span class="cmt"># 3. a caller-side :ets.lookup — a live row (now &lt; expires_at) is {:ok, value, :hit}</span>
+<span class="cmt">#    and NEVER touches the owner; a miss is the only owner call: {:fill, id}.</span>
+<span class="op">def</span> <span class="fn">fetch</span>(name, id, timeout <span class="op">\\</span> <span class="res">10_000</span>) <span class="op">do</span>
+  <span class="op">case</span> EchoStore.<span class="fn">spec</span>(name) <span class="op">do</span>
+    <span class="str">:error</span> <span class="op">-&gt;</span> {<span class="str">:error</span>, <span class="str">:no_such_cache</span>}
+    {<span class="str">:ok</span>, spec} <span class="op">-&gt;</span>
+      <span class="op">with</span> <span class="str">:ok</span> <span class="op">&lt;-</span> <span class="fn">gate</span>(spec.kind, id) <span class="op">do</span>
+        now = System.<span class="fn">monotonic_time</span>(<span class="str">:millisecond</span>)
+        <span class="op">case</span> :ets.<span class="fn">lookup</span>(name, id) <span class="op">do</span>
+          [{<span class="op">^</span>id, value, expires_at, _v}] <span class="op">when</span> now &lt; expires_at <span class="op">-&gt;</span>
+            {<span class="str">:ok</span>, value, <span class="str">:hit</span>}                <span class="cmt"># in the caller's process — no owner, no wire</span>
+          _ <span class="op">-&gt;</span>
+            GenServer.<span class="fn">call</span>(name, {<span class="str">:fill</span>, id}, timeout)  <span class="cmt"># the only path that consults the owner</span>
+        <span class="op">end</span>
+      <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>The answer is tagged with its <strong>source</strong>: <code class="inl">:hit</code> (L1, in the caller's
+        process), <code class="inl">:l2</code> (found in the shared Valkey), or <code class="inl">:fill</code> (loaded
+        through the declared loader and written to both layers). The <code class="inl">gate/2</code> is the series' oldest
+        law riding into the cache unchanged &mdash; a <code class="inl">PLR&hellip;</code> id handed to the
+        <code class="inl">:cm_games</code> cache (kind <code class="inl">GAM</code>) is <code class="inl">{:error,
+        :kind}</code>, refused before any key is composed. And the L2 frame is self-describing: a cached value is stored
+        as <code class="inl">version &lt;&gt; value</code> and split as <code class="inl">&lt;&lt;version::binary-14,
+        value::binary&gt;&gt;</code>, so the game's own <code class="inl">GAM</code> id rides with the bytes.</p>
+    </div>
+    <p class="take">A hit is a lookup in your own process, gated by the brand. The owning GenServer is consulted only
+      when L1 has nothing &mdash; the read scales with schedulers, not a mailbox.</p>
+  </section>
+
+  <!-- ===================== MOVE 3 ===================== -->
+  <section id="herd">
+    <h2>Move 3 &mdash; survive a herd</h2>
+    <div class="prose">
+      <p>A cache that serves a hot read must not stampede when a popular game's row expires, and must not grow without
+        bound. The second law holds on the miss path: <strong>one fill per herd.</strong> When a thousand guesses arrive
+        for one game the instant its row expires, the owner runs <strong>one</strong> flight, not a thousand.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_store — EchoStore.Table.handle_call({:fill, id}) (single-flight)</span>
+<span class="cmt"># Re-check L1 first — the race may have been won between the caller's miss and this</span>
+<span class="cmt"># call. Then: if a flight for this id already exists, append the caller to its</span>
+<span class="cmt"># waiters and count :coalesced — start NO second flight. Else launch one flight.</span>
+<span class="op">case</span> Map.<span class="fn">fetch</span>(state.flights, id) <span class="op">do</span>
+  {<span class="str">:ok</span>, {ref, waiters}} <span class="op">-&gt;</span>
+    :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:coalesced</span>), <span class="res">1</span>)
+    {<span class="str">:noreply</span>, <span class="fn">put_in</span>(state.flights[id], {ref, [from | waiters]})}   <span class="cmt"># join the herd</span>
+  <span class="str">:error</span> <span class="op">-&gt;</span>
+    ref = <span class="fn">launch_flight</span>(state, id)             <span class="cmt"># the FIRST caller's single flight</span>
+    {<span class="str">:noreply</span>, <span class="fn">put_in</span>(state.flights[id], {ref, [from]})}
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>The flight is a <code class="inl">spawn_monitor</code>d task, so the owner is never blocked: it
+        <code class="inl">GET</code>s the L2 key, and on a miss runs the declared <code class="inl">load_game/1</code>
+        loader (the fall-through to Postgres), <code class="inl">SET</code>s both layers, and sends back one result.
+        <code class="inl">handle_info({:flight, id, result})</code> replies <strong>the one answer to every waiter</strong>
+        and clears the flight; a flight crash fails all its waiters with <code class="inl">{:flight_crashed,
+        reason}</code> &mdash; no caller wedges.</p>
+      <p>Two more guards keep the cache bounded and herd-free. Expiry is <strong>jittered</strong> so a cohort of games
+        filled together never expires in step; and a full cache <strong>degrades to pass-through, it never fails</strong>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_store — the jittered clock + the full-cache degrade</span>
+<span class="cmt"># base = now + ttl; spread = ttl * jitter; the deadline is base ± a uniform band</span>
+<span class="cmt"># of width spread — so no two rows filled together share an exact expiry instant.</span>
+<span class="op">defp</span> <span class="fn">expires_at</span>(spec) <span class="op">do</span>
+  base = System.<span class="fn">monotonic_time</span>(<span class="str">:millisecond</span>) + spec.ttl_ms
+  spread = <span class="fn">trunc</span>(spec.ttl_ms * spec.jitter)
+  <span class="op">if</span> spread == <span class="res">0</span>, <span class="op">do:</span> base, <span class="op">else:</span> base + :rand.<span class="fn">uniform</span>(<span class="res">2</span> * spread + <span class="res">1</span>) - spread - <span class="res">1</span>
+<span class="op">end</span>
+
+<span class="cmt"># a full cache serves its caller from L2/loader and SKIPS only the cache write:</span>
+<span class="op">cond</span> <span class="op">do</span>
+  size &lt; state.spec.max_size <span class="op">-&gt;</span> :ets.<span class="fn">insert</span>(state.name, {id, value, <span class="fn">expires_at</span>(state.spec), version})
+  <span class="fn">reclaim</span>(state) &gt; <span class="res">0</span>         <span class="op">-&gt;</span> :ets.<span class="fn">insert</span>(state.name, {id, value, <span class="fn">expires_at</span>(state.spec), version})
+  <span class="str">true</span> <span class="op">-&gt;</span>
+    :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:full_skips</span>), <span class="res">1</span>)
+    <span class="str">:skip</span>                       <span class="cmt"># degrade to pass-through, never refuse a read</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>The cache reports itself honestly through <code class="inl">EchoStore.Table.stats(:cm_games)</code> &mdash; the
+        live counters (<code class="inl">hits</code>, <code class="inl">misses</code>, <code class="inl">fills</code>,
+        <code class="inl">l2_hits</code>, <code class="inl">coalesced</code>, <code class="inl">swept</code>,
+        <code class="inl">full_skips</code>, <code class="inl">sweeps</code>) plus the ETS size. The manuscript states the
+        law plainly: <em>&ldquo;a cohort filled together never expires together and a herd never forms at the second
+        boundary; a sweeper reclaims dead rows on a fixed tick, so memory is bounded by the declaration rather than by
+        luck.&rdquo;</em></p>
+    </div>
+    <p class="take">One fill per herd, a jittered clock, and a full cache that passes through &mdash; the hot read stays
+      cheap under load and the footprint stays what the table declared.</p>
+  </section>
+
+  <!-- ===================== MOVE 4 ===================== -->
+  <section id="invalidate">
+    <h2>Move 4 &mdash; invalidate from another node</h2>
+    <div class="prose">
+      <p>The games and emoji-set caches are <code class="inl">coherence: :none</code> because their entities are immutable
+        for the game's life &mdash; they can never go stale. But codemojex's <strong>sessions</strong> table
+        (<code class="inl">:cm_sessions</code>, kind <code class="inl">SES</code>) is the first mutable one, and there the
+        third law bites: <strong>a write on one node must not leave a stale read on another.</strong> When a player's
+        session is revoked, every BEAM node holding it in L1 must drop it &mdash; fast.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/codemojex — the sessions table is declared :tracking (cm.4 auth)</span>
+<span class="cmt"># RESP3 server-assisted client-side caching: Valkey itself pushes an invalidation</span>
+<span class="cmt"># for any write or DEL to the ecc:{cm_sessions}: prefix, and the owner evicts the</span>
+<span class="cmt"># L1 row — so a revoked SES is dropped from EVERY node's L1 immediately. :none here</span>
+<span class="cmt"># would be a defect: a revoked session surviving in L1 would keep authenticating.</span>
+{EchoStore.Table,
+ name: <span class="rdx">:cm_sessions</span>, kind: <span class="str">"SES"</span>, loader: &amp;<span class="fn">load_session</span>/<span class="res">1</span>,
+ coherence: <span class="str">:tracking</span>, ttl_ms: <span class="res">86_400_000</span>, max_size: <span class="res">100_000</span>}</pre>
+
+    <div class="prose">
+      <p>For a versioned write that costs money if read stale, the same pillar carries coherence as <strong>a message
+        about a name</strong> &mdash; <code class="inl">EchoStore.Coherence</code>. A write mints a new version, and an
+        invalidation carries exactly two identities (the cached <code class="inl">id</code> and the writer's mint-time
+        <code class="inl">version</code>, 29 bytes) over a broadcast lane (<code class="inl">broadcast/4</code> &rarr;
+        <code class="inl">PUBLISH ecc:{table}:coh</code>, at-most-once) or a job lane (<code class="inl">enqueue/5</code>
+        &rarr; <code class="inl">Lanes.enqueue</code>, at-least-once). Node B applies it with the conditional drop, which
+        deletes the L2 row <strong>only if the incoming version is newer</strong>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_store — EchoStore.Coherence.drop_l2/4 (newer-wins, the named handle)</span>
+<span class="cmt"># Conditionally drop the L2 row: deleted only when `version` is newer than the</span>
+<span class="cmt"># version framed into the stored value — one transition, one script, so a late</span>
+<span class="cmt"># stale invalidation can NEVER erase a newer row. The one Lua of the pillar (the</span>
+<span class="cmt"># :coherence_drop script) lives in module 03 — linked, not re-printed here.</span>
+<span class="op">def</span> <span class="fn">drop_l2</span>(conn, table, id, version) <span class="op">do</span>
+  Connector.<span class="fn">eval</span>(conn, <span class="rdx">@drop</span>, [Keyspace.<span class="fn">key</span>(table, id)], [version])
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p><code class="inl">newer?/2</code> is the whole engine: it compares the <strong>11-byte snowflake payloads</strong>
+        of two branded ids and ignores the namespace, so the order theorem's <span class="math">lexicographic ==
+        chronological</span> property holds across kinds &mdash; coherence needs <strong>no coordinator, no lock, and no
+        clock but the one already inside every id</strong>. Application is idempotent by construction (the same message
+        applied twice answers stale the second time).</p>
+    </div>
+
+    <div class="door">
+      <p class="dl">The lane that remembers</p>
+      <p>The deep durability &mdash; a crash-surviving coherence job whose <code class="inl">applied</code> table
+        remembers the last version per name even after L1 forgot the row &mdash; folds to the durable journal floor at
+        <a href="/echo-persistence">Echo Persistence</a>. The full Lua body and the two lanes are taught in
+        <a href="/echomq/cache/coherence">module 03</a>; this move names the move.</p>
+    </div>
+    <p class="take">One write becomes one small message about a name; every other node decides <em>newer or not</em> by
+      the clock minted into that name &mdash; and a revoked session is gone everywhere at once.</p>
+  </section>
+
+  <!-- ===================== THE CACHE, BUILT (worked interactive) ===================== -->
+  <section id="build">
+    <h2>The cache, built &mdash; one game's reads</h2>
+    <div class="prose">
+      <p>Run a sequence of reads against a freshly declared <code class="inl">:cm_games</code> cache and watch it warm.
+        The first read for a game <strong>misses</strong> in both layers and runs the loader; a concurrent burst on that
+        game <strong>coalesces</strong> onto one flight; later reads are <strong>hits</strong>. A wrong-kind id is refused
+        by the gate; an expiry sweep clears the row; a coherence message drops it newer-wins. The <code class="inl">GAM</code>
+        ids are real branded ids decoded the same way the footer stamp is &mdash; the value's version <em>is</em> a
+        mint-time id.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="bldTitle">
+      <h4 id="bldTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The read sequence &middot; advance the cache</h4>
+      <div class="controls" style="margin-bottom:.6rem">
+        <div class="solid-select" id="bldStep" role="group" aria-label="Advance the cache">
+          <button type="button" data-act="next" data-c="echo" class="active">advance the read &rarr;</button>
+          <button type="button" data-act="wrong" data-c="gold">read a wrong-kind id</button>
+          <button type="button" data-act="invalidate" data-c="blue">invalidate (newer wins)</button>
+          <button type="button" data-act="reset" data-c="sage">reset</button>
+        </div>
+      </div>
+      <div class="pipe-leg" aria-hidden="true">
+        <span><i style="background:#6fdccf"></i> :hit (caller-side L1)</span>
+        <span><i style="background:#9fc0ea"></i> :l2 / :fill (owner flight)</span>
+        <span><i style="background:#d4a85a"></i> coalesced / gated / dropped</span>
+      </div>
+      <div class="feedlog" id="feedLog" aria-live="polite">
+        <div class="row hd"><span>GAM id</span><span>source</span><span>what happened</span></div>
+      </div>
+      <div class="geo-readout" id="bldOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="prose">
+      <p>The builder runs the real read path: <code class="inl">Codemojex.Cache.fetch_game/1</code> over
+        <code class="inl">EchoStore.Table.fetch/3</code>, with the kind gate at the door and the single-flight coalesce
+        on the miss. Each row's <code class="inl">GAM</code> id is the game's own branded id &mdash; the same id that
+        frames the cached value as its version, that the gate checks against the <code class="inl">:cm_games</code> kind,
+        and that a coherence comparison would read as its clock. One id, three jobs.</p>
+    </div>
+    <p class="take">One cache, three laws &mdash; declared so it exists, hit at ETS speed behind the gate, herd-proofed
+      and bounded, kept coherent by the clock in every id.</p>
+  </section>
+
+  <!-- ===================== BRIDGE ===================== -->
+  <section id="bridge">
+    <h2>Pattern &rarr; implementation</h2>
+    <div class="prose">
+      <p>A read-through cache, single-flighted under a herd, with bus-coherent invalidation is the <em>pattern</em> the
+        Redis Patterns Applied course frames &mdash; and its caching chapter applies these same moves to this same
+        codemojex read surface from the pattern side. Here it is built from the implementation side.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>Cache-aside with a near-cache: serve a read from local memory, fill once per herd on a miss, jitter the TTL,
+          and invalidate coherently when another node writes.
+          <a href="/redis-patterns/caching">R1 &middot; Caching</a> applies the cache-aside, stampede-prevention, and
+          session patterns from that side.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_store)</span>
+        <p><code class="inl">EchoStore.Directory.register/3</code>, <code class="inl">EchoStore.Table.fetch/3</code>
+          (the single-flight + jittered clock), and <code class="inl">EchoStore.Coherence.drop_l2/4</code> over the real
+          <code class="inl">Codemojex.{Cache, Tables, Store}</code> seam &mdash; the branded <code class="inl">GAM</code>
+          id the thread through all of them.</p>
+      </div>
+    </div>
+    <p class="take">The same near-cache idea, read two ways: the pattern names the moves; the pillar shows the shipped
+      code that makes them, end to end.</p>
+  </section>
+
+  <!-- ===================== RECAP ===================== -->
+  <section id="recap">
+    <h2>Recap &mdash; the pillar, exercised</h2>
+    <div class="prose">
+      <p>The Cache pillar taught three laws over two layers; this workshop built one codemojex near-cache out of all
+        three. <strong>Declare</strong> the cache so it exists, <strong>hit</strong> at ETS speed with the kind gate at
+        the door, <strong>survive</strong> a herd with one fill and a jittered clock, <strong>invalidate</strong> from
+        another node with a message about a name. The games cache never goes stale (<code class="inl">:none</code>); the
+        sessions cache is evicted everywhere the instant it is revoked (<code class="inl">:tracking</code>). The thread
+        through all four is one branded id &mdash; the entity's own 14-byte id is the value's version, the coherence
+        clock, and the key the gate checks, minted once and carried unchanged.</p>
+    </div>
+    <p class="note">The next floor down &mdash; the lane that remembers a coherence verdict past a crash, the durability
+      dial in full &mdash; is <a href="/echo-persistence">the persistence floor</a>. And the architecture law these
+      figures realize is <a href="/bcs/store">the BCS store chapter</a>.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html">Erlang/OTP &mdash; <em>the ets module</em></a> &mdash; the public, read-concurrent L1 table a hit reads directly, in the caller's process.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code class="inl">{cm_games}</code> hashtag landing every <code class="inl">ecc:</code> key of one cache on one of 16384 slots.</li>
+          <li><a href="https://valkey.io/commands/set/">Valkey &mdash; <em>SET</em></a> &mdash; the <code>SET &hellip; PX</code> the writer and the flight issue direct to L2.</li>
+          <li><a href="https://valkey.io/blog/new-hash-table/">Söderqvist &mdash; <em>A new hash table</em></a> &mdash; the L2 Valkey the near-cache fronts, costed at rest.</li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf">Helland &mdash; <em>Life Beyond Distributed Transactions</em></a> &mdash; the entity addressed by a key, cached close to where it is used.</li>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the time-ordered id every cached value is framed with, whose byte order is the coherence comparison.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache/cache-aside-two-layers">Cache-aside, two layers</a> &mdash; moves 1&ndash;2: the declared tiers and the cache-aside read.</li>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a> &mdash; move 3: one fill per herd, the jittered clock, the degrade.</li>
+          <li><a href="/echomq/cache/coherence">Coherence on the Bus</a> &mdash; move 4: a message about a name, the two lanes, the conditional drop.</li>
+          <li><a href="/echomq/cache">The Cache</a> &mdash; the pillar landing this workshop closes.</li>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the fair lanes a crash-surviving coherence job rides.</li>
+          <li><a href="/echomq/bus">The Bus</a> &mdash; the wire a coherence broadcast rides.</li>
+          <li><a href="/redis-patterns/caching">redis-patterns &middot; Caching</a> &mdash; the pattern side of the door.</li>
+          <li><a href="/bcs/store">bcs &middot; the Store</a> &mdash; the manuscript chapter (B4) these figures realize.</li>
+          <li><a href="/echo-persistence">The persistence floor</a> &mdash; the durable journal that remembers a coherence verdict past a crash.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/cache/coherence"><span aria-hidden="true">&larr;</span>&nbsp; Coherence on the Bus</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache">The Cache <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This pillar</h4>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/cache/cache-aside-two-layers">Cache-aside, two layers</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+        <a href="/echomq/cache/coherence">Coherence on the Bus</a>
+        <a href="/echomq/cache/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns/caching">Redis Patterns Applied</a>
+        <a href="/echo-persistence">The persistence floor</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: the four build moves (pure lookup over a fixed dataset) ---------- */
+  var MOVES = {
+    declare: { title: 'move 1 · declare', call: 'EchoStore.Directory.register/3', wire: 'the directory roster', law: 'declared, not discovered',
+      says: 'Codemojex.Tables registers :cm_games (GAM) at start, monitored',
+      note: 'the spec is a kind, a TTL, a jitter, a coherence mode; a cache absent from the directory does not exist, and a :DOWN drops its row the instant it leaves the node' },
+    hit: { title: 'move 2 · hit', call: 'EchoStore.Table.fetch/3', wire: ':ets.lookup · GET ecc:{cm_games}:GAM…', law: 'the kind gate, caller-side',
+      says: 'the scorer reads the game at ETS speed, in its own process',
+      note: 'the kind gate runs first (14 bytes · namespace == GAM · valid?); a hit is :ets.lookup and never touches the owner; a miss is the only owner call' },
+    herd: { title: 'move 3 · survive', call: 'launch_flight · expires_at/1 · insert/4', wire: 'GET → SET … PX (one per herd)', law: 'one fill per herd; jitter; degrade',
+      says: 'concurrent misses collapse to one flight; the clock is jittered; full = pass-through',
+      note: 'the flight is spawn_monitor’d so the owner never blocks; a full cache serves from L2/loader and skips only the write — it never refuses a read' },
+    invalidate: { title: 'move 4 · invalidate', call: 'EchoStore.Coherence.drop_l2/4 · :tracking', wire: 'PUBLISH ecc:{t}:coh / Lanes.enqueue / RESP3 push', law: 'newer wins',
+      says: 'a write on node A sends a message about a name; node B drops newer-wins',
+      note: 'newer? compares the 11-byte payloads across kinds — no coordinator, no lock, no clock but the id’s; a revoked SES is evicted everywhere via :tracking' }
+  };
+  // which SVG groups light up per move (earlier moves stay lit — the build accumulates).
+  var LIT = {
+    declare:    ['g-declare'],
+    hit:        ['g-declare', 'g-caller', 'g-hit'],
+    herd:       ['g-declare', 'g-caller', 'g-hit', 'g-herd', 'g-store'],
+    invalidate: ['g-declare', 'g-caller', 'g-hit', 'g-herd', 'g-store', 'g-inval']
+  };
+  var ALLG = ['g-declare', 'g-caller', 'g-hit', 'g-herd', 'g-store', 'g-inval'];
+  function renderMove(key) {
+    var v = MOVES[key], out = document.getElementById('pipeOut');
+    if (!v || !out) return;
+    var on = LIT[key] || [];
+    ALLG.forEach(function (gid) {
+      var g = document.getElementById(gid);
+      if (g) g.setAttribute('opacity', on.indexOf(gid) >= 0 ? '1' : '.18');
+    });
+    out.innerHTML = '<b>' + v.title + '</b> <span class="dim">— ' + v.says + '</span><br>' +
+      'surface: <b>' + v.call + '</b><br>' +
+      'wire: <span class="dim">' + v.wire + '</span><br>' +
+      'law: <b>' + v.law + '</b><br>' +
+      '<span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#stepRail button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#stepRail button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderMove(b.getAttribute('data-step'));
+    });
+  });
+  renderMove('declare'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder (shared: stamp + the builder's GAM ids) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function b62encode(n, width) { var s = ''; if (n === 0n) s = '0'; while (n > 0n) { s = B62.charAt(Number(n % 62n)) + s; n = n / 62n; } while (s.length < width) s = '0' + s; return s; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+
+  /* ---------- worked interactive: the read sequence against a :cm_games cache ---------- */
+  /* A real read path's outcomes as a sequence. The GAM ids are constructed the same
+     way EchoStore frames a value's version: a base snowflake + a strictly-increasing
+     tail, so each game's id sorts as a mint instant (the order theorem). Two games
+     (Ada's and Bo's) are read; the first read of each MISSES + fills, a burst on Ada
+     COALESCES, later reads are HITS. The kind gate refuses a PLR id; an expiry sweep
+     then a newer-wins coherence drop both clear a row. */
+  var BASE_TS = 15249600000n;   // ms since the branded epoch (2024-06-25 12:00 UTC) — the game's mint era
+  var TAIL0 = 1620567n;         // a starting node|seq tail
+  function mintId(kind, i) {
+    var snow = (BASE_TS << 22n) | ((TAIL0 + BigInt(i)) & 0x3FFFFFn);
+    return kind + b62encode(snow, 11);
+  }
+  var GAM_A = mintId('GAM', 0);   // Ada's game id (its own version)
+  var GAM_B = mintId('GAM', 7);   // Bo's game id
+  var BAD   = mintId('PLR', 3);   // a player id — wrong kind for :cm_games
+
+  // the read script: each row is {id, source, what}. source ∈ hit | fill | l2 | coalesced | gated | dropped.
+  var SCRIPT = [
+    { id: GAM_A, src: 'fill',      what: 'Ada’s game — miss in both layers, loader fills from Postgres, both layers SET' },
+    { id: GAM_A, src: 'hit',       what: 'Ada’s game again — caller-side :ets.lookup, never touches the owner' },
+    { id: GAM_A, src: 'coalesced', what: 'a burst of guesses on Ada’s game the instant after a fill — all join ONE flight' },
+    { id: GAM_B, src: 'fill',      what: 'Bo’s game — first read, miss + loader fill' },
+    { id: GAM_B, src: 'l2',        what: 'Bo’s game on another node — L1 miss, found in shared Valkey (L2), refills L1' },
+    { id: GAM_A, src: 'hit',       what: 'Ada’s game — still hot, hit' }
+  ];
+  var n = 0;             // how many scripted reads have run
+  var gated = false;     // a wrong-kind read was attempted
+  var dropped = false;   // a coherence invalidation dropped Ada's row
+
+  var feedLog = document.getElementById('feedLog');
+  var bldOut = document.getElementById('bldOut');
+
+  function srcColor(src) {
+    if (src === 'hit') return 'color:#6fdccf';
+    if (src === 'l2' || src === 'fill') return 'color:#9fc0ea';
+    return 'color:#d4a85a'; // coalesced / gated / dropped
+  }
+  function srcLabel(src) {
+    if (src === 'hit') return ':hit';
+    if (src === 'l2') return ':l2';
+    if (src === 'fill') return ':fill';
+    if (src === 'coalesced') return ':coalesced';
+    if (src === 'gated') return '{:error,:kind}';
+    return 'dropped';
+  }
+
+  function render() {
+    var html = '<div class="row hd"><span>GAM id</span><span>source</span><span>what happened</span></div>';
+    for (var i = 0; i < n; i++) {
+      var rec = SCRIPT[i];
+      // Ada's later hits read 'dropped' once a coherence message has cleared her row,
+      // and the next read of Ada after a drop is a fill again (the row is gone).
+      var isAda = rec.id === GAM_A;
+      var label = srcLabel(rec.src), color = srcColor(rec.src), what = rec.what;
+      if (dropped && isAda && rec.src === 'hit') {
+        label = ':fill'; color = 'color:#9fc0ea';
+        what = 'Ada’s game — her L1 row was dropped newer-wins, so this read misses + refills';
+      }
+      html += '<div class="row">' +
+        '<span class="evt" style="' + color + '">' + rec.id + '</span>' +
+        '<span class="ev" style="' + color + '">' + label + '</span>' +
+        '<span class="pl">' + what + '</span>' +
+        '</div>';
+    }
+    if (gated) {
+      html += '<div class="row">' +
+        '<span class="evt" style="color:#d4a85a">' + BAD + '</span>' +
+        '<span class="ev" style="color:#d4a85a">{:error,:kind}</span>' +
+        '<span class="pl">a PLR id handed to the GAM cache — the kind gate refuses it before any key is composed</span>' +
+        '</div>';
+    }
+    feedLog.innerHTML = html;
+
+    if (n === 0 && !gated) {
+      bldOut.innerHTML = '<span class="dim">Cold cache. <b>Advance the read</b> to run the first fetch_game/1.</span>';
+      return;
+    }
+    var msg = '<b>' + n + '</b> read' + (n === 1 ? '' : 's') + ' run against <b>:cm_games</b> (kind <b>GAM</b>). Each GAM id is the game’s own branded id — the value’s version, decoded like the footer stamp.';
+    if (gated) {
+      msg += ' <span class="bad">The kind gate refused a PLR id</span> — a wrong-namespace name never reaches the wire.';
+    }
+    if (dropped) {
+      msg += ' <span class="dim">A coherence message dropped Ada’s row newer-wins; her next read misses and refills.</span>';
+    }
+    if (n === SCRIPT.length && !dropped) {
+      msg += ' <span class="dim">The cache is warm — hits in the caller’s process, a coalesced burst, an L2 cross-node hit. Now invalidate, or read a wrong-kind id.</span>';
+    }
+    bldOut.innerHTML = msg;
+  }
+
+  document.querySelectorAll('#bldStep button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var act = b.getAttribute('data-act');
+      document.querySelectorAll('#bldStep button').forEach(function (o) { o.classList.remove('active'); o.setAttribute('aria-pressed', 'false'); });
+      b.classList.add('active'); b.setAttribute('aria-pressed', 'true');
+      if (act === 'next') { if (n < SCRIPT.length) n++; }
+      else if (act === 'wrong') { gated = !gated; }
+      else if (act === 'invalidate') { dropped = !dropped; }
+      else if (act === 'reset') { n = 0; gated = false; dropped = false; }
+      render();
+    });
+  });
+  render();
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

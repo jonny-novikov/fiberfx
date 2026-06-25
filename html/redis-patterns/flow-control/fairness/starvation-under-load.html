@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.02.1 — Starvation under load · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.02.1 dive: a single FIFO line is fair to jobs and unfair to producers — when one floods the queue, the rest wait behind the whole flood. EchoMQ splits the line into lanes (emq:{q}:g:&lt;group&gt;:pending), one per producer, and drains them with a ring rotated one step per claim by LMOVE: EchoMQ.Lanes.claim/3 serves the head of the rotated lane, so every lane is served in turn whatever its backlog. The order within a lane is FIFO; the share between lanes is the rota. Grounded in echo/apps/echo_mq — the @gclaim Lua.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+.dtable{width:100%;border-collapse:collapse;margin:4px 0 18px;font-size:.9rem}
+.dtable th,.dtable td{border:1px solid var(--b-line);padding:8px 12px;text-align:left;vertical-align:top}
+.dtable th{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--b-dim);background:var(--b-card)}
+.dtable td code{font-size:.86em}
+.dtable .ch-s{font-family:var(--mono);font-weight:700;color:var(--r-red)}
+.dtable .ch-e{font-family:var(--mono);font-weight:700;color:var(--b-ts)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the line-vs-lanes figure (hover-select) ---------- */
+.sflow{width:100%;height:auto;display:block;margin-top:4px}
+.sflow .mode rect.bg{fill:none;stroke:var(--b-line);stroke-width:1.2;stroke-dasharray:3 3}
+.sflow .mode text.cap{font:10px var(--mono);fill:var(--b-dim);text-anchor:start}
+.sflow .job{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1}
+.sflow .job.bb{fill:#f0e3c4;stroke:#a98b3a}
+.sflow .jl{font:9px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.sflow .axl{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.sflow .mode{cursor:pointer;transition:opacity .18s ease}
+.sflow.focus .mode{opacity:.22}
+.sflow.focus .mode.on{opacity:1}
+.sflow.focus .mode.on rect.bg{stroke:var(--r-red);stroke-width:2}
+/* ---------- the rota figure (hover-select) ---------- */
+.rflow{width:100%;height:auto;display:block;margin-top:4px}
+.rflow .lane circle{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.rflow .lane .ll{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle;font-weight:700}
+.rflow .lane .ld{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.rflow .ring{fill:none;stroke:var(--b-line);stroke-width:1.4;stroke-dasharray:4 4}
+.rflow .axl{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.rflow .lane{cursor:pointer;transition:opacity .18s ease}
+.rflow.focus .lane{opacity:.24}
+.rflow.focus .lane.on{opacity:1}
+.rflow.focus .lane.on circle{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.4}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><a href="/redis-patterns/flow-control/fairness">fairness</a><span class="rsep">/</span><span class="rcur">starvation-under-load</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#starve">One line starves</a>
+      <a href="#lane">The lane</a>
+      <a href="#rota">The rota guarantee</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control/fairness">Fairness under load</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Starvation under load</span>
+      </nav>
+      <p class="kicker">R6.02.1 &#183; Fairness under load &#8212; dive</p>
+      <h1>Starvation under load <span class="hns">&#8212; one line is not enough</span>.</h1>
+      <p class="lede">A single first-in, first-out line is fair to jobs and unfair to producers: when one floods the
+      queue, the rest wait behind the whole flood. EchoMQ splits the line into <b>lanes</b>, one per producer, and
+      drains them with a ring rotated one step per claim &#8212; so every lane is served in turn, whatever its
+      backlog.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq &#183; EchoMQ.Lanes.claim/3 and the inline @gclaim Lua (the
+      LMOVE rotate-then-serve) &#183; the keys emq:{q}:ring and emq:{q}:g:&lt;group&gt;:pending.</p>
+
+      <figure class="anatomy" aria-labelledby="sCap">
+        <figcaption id="sCap"><b>One line, or one lane each.</b> Select an arrangement to read what happens to the
+        small producer. Producer A sends a flood; producer B sends a few &#8212; watch where B's work ends up.</figcaption>
+        <div class="segbar" id="sSel" role="group" aria-label="Select an arrangement">
+          <button type="button" data-m="line" aria-pressed="false">one FIFO line</button>
+          <button type="button" data-m="lanes" aria-pressed="false">a lane each</button>
+        </div>
+        <svg class="sflow" id="sflow" viewBox="0 0 460 168" role="img" aria-label="Two arrangements of the same work. In one FIFO line, producer A's flood of jobs sits at the head and producer B's few jobs wait behind all of them — B is starved. In a lane each, A's flood fills A's lane and B's few fill B's lane, and a rotation serves one head from each lane per turn, so B is served promptly. Select an arrangement to read it.">
+          <g class="mode" data-m="line">
+            <rect class="bg" x="14" y="28" width="204" height="116" rx="6"></rect>
+            <text class="cap" x="20" y="24">one FIFO line</text>
+            <rect class="job" x="26" y="60" width="22" height="22" rx="3"></rect><text class="jl" x="37" y="75">A</text>
+            <rect class="job" x="52" y="60" width="22" height="22" rx="3"></rect><text class="jl" x="63" y="75">A</text>
+            <rect class="job" x="78" y="60" width="22" height="22" rx="3"></rect><text class="jl" x="89" y="75">A</text>
+            <rect class="job" x="104" y="60" width="22" height="22" rx="3"></rect><text class="jl" x="115" y="75">A</text>
+            <rect class="job" x="130" y="60" width="22" height="22" rx="3"></rect><text class="jl" x="141" y="75">A</text>
+            <rect class="job bb" x="170" y="60" width="22" height="22" rx="3"></rect><text class="jl" x="181" y="75">B</text>
+            <text class="axl" x="116" y="104">B waits behind the whole flood</text>
+            <text class="axl" x="116" y="128" style="fill:var(--b-ns)">starved</text>
+          </g>
+          <g class="mode" data-m="lanes">
+            <rect class="bg" x="242" y="28" width="204" height="116" rx="6"></rect>
+            <text class="cap" x="248" y="24">a lane each</text>
+            <rect class="job" x="254" y="48" width="20" height="20" rx="3"></rect><text class="jl" x="264" y="62">A</text>
+            <rect class="job" x="278" y="48" width="20" height="20" rx="3"></rect><text class="jl" x="288" y="62">A</text>
+            <rect class="job" x="302" y="48" width="20" height="20" rx="3"></rect><text class="jl" x="312" y="62">A</text>
+            <rect class="job" x="326" y="48" width="20" height="20" rx="3"></rect><text class="jl" x="336" y="62">A</text>
+            <text class="axl" x="395" y="62" style="text-anchor:start">lane A</text>
+            <rect class="job bb" x="254" y="92" width="20" height="20" rx="3"></rect><text class="jl" x="264" y="106">B</text>
+            <text class="axl" x="320" y="106" style="text-anchor:start">lane B</text>
+            <text class="axl" x="344" y="132">the rota serves one head per lane, per turn</text>
+          </g>
+        </svg>
+        <div class="readout" id="sOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an
+        arrangement. In <b>one FIFO line</b>, B's job sits behind A's entire flood and is served arbitrarily late
+        &#8212; starvation. With <b>a lane each</b>, A's flood fills A's lane and B keeps its own, and the rota
+        serves one head from each lane per turn, so B is served promptly whatever A sent.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="starve">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Why one line starves</h2>
+        <span class="ssrc">FIFO couples order and share</span>
+      </div>
+      <div class="prose">
+        <p>Take a queue drained strictly first-come-first-served and two producers. Producer A submits a thousand
+        jobs in a burst; producer B submits ten a moment later. In one line, B's ten sit behind A's thousand. B is
+        not served until A is drained &#8212; its work is correct in its place and arbitrarily late. The line
+        honoured arrival order perfectly, and it starved the small producer.</p>
+        <p>The cause is that a single line couples two things that should be separate: the <em>order within a
+        producer</em> and the <em>share between producers</em>. First-in, first-out is the right rule for the first
+        &#8212; a producer's own jobs should run in the order it sent them. It is the wrong rule for the second
+        &#8212; a producer's share of the machine should not be proportional to how much it dumped on the queue.
+        Couple them and the heaviest producer wins the machine.</p>
+        <p>Adding workers does not fix it. Ten workers drain A's thousand ten times faster, and B still waits for
+        all thousand to clear the head of the line before its first job is even visible. The starvation is in the
+        <em>ordering</em>, not the throughput &#8212; more workers drain the same unfair order faster.</p>
+      </div>
+      <p class="take">A single line is fair to jobs and unfair to producers, because it couples order with share. The
+      remedy is not more workers &#8212; it is to stop sharing the line.</p>
+    </section>
+
+    <section id="lane">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The lane is the unit</h2>
+        <span class="ssrc">enqueue/5 &#183; one set per producer</span>
+      </div>
+      <div class="prose">
+        <p>The fix is to split the line by producer. A queue is a set of <strong>lanes</strong>, each a per-group
+        pending set named by a branded id (<code>emq:{q}:g:&lt;group&gt;:pending</code>). A's thousand jobs land in
+        A's lane; B's ten land in B's. Within a lane, order is still first-in, first-out &#8212; a lane is a sorted
+        set keyed by mint order, and the head is the oldest job. Across lanes, the line is no longer shared, so the
+        question is no longer &#8220;who is first&#8221; but &#8220;whose turn is it&#8221;.</p>
+        <p>A lane is created by admission. <code>EchoMQ.Lanes.enqueue/5</code> writes the job row with its group,
+        adds the job to the group's lane, and &#8212; if the lane is serviceable and not already present &#8212;
+        appends the group to the ring. Work that should ride a lane but is enqueued with no group is never claimed:
+        the lane is the unit of fairness <em>and</em> of control, and ungrouped work has no lane to be served
+        from.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A lane is a sorted set; the head is read with
+      <code>ZPOPMIN</code> (the lowest score). EchoMQ scores a job by its mint order, so the oldest job in a lane is
+      always its head &#8212; first-in, first-out holds <em>within</em> a lane while the rotation orders service
+      <em>across</em> lanes &#8212; <a href="https://valkey.io/commands/zpopmin/" rel="noopener">valkey.io/commands/zpopmin</a>.</p>
+      <p class="take">The unit of fairness is the lane: one pending set per producer, named by a branded id, FIFO
+      inside. The machine is shared across lanes, not the line.</p>
+    </section>
+
+    <section id="rota">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The rota guarantee</h2>
+        <span class="ssrc">the @gclaim LMOVE</span>
+      </div>
+      <div class="prose">
+        <p>The ring is the rota. <code>emq:{q}:ring</code> is a list holding exactly the serviceable lanes &#8212;
+        nonempty, unpaused, below their concurrency ceiling. A claim rotates the ring one step, then serves the head
+        of the lane it landed on. The rotation is one atomic Valkey move:</p>
+      </div>
+      <pre class="code">LMOVE emq:{cm}:ring emq:{cm}:ring LEFT RIGHT   <span class="cmt"># the head moves to the tail; the claim serves it</span></pre>
+      <div class="prose">
+        <p>The next claim rotates again and serves the next lane. Over one full turn of the ring, every serviceable
+        lane is served exactly once &#8212; A's lane and B's lane each get one head per turn, whether A holds a
+        thousand jobs or ten. A deep backlog fills its lane deeper; it never wins a larger share of the rota.</p>
+        <p><code>EchoMQ.Lanes.claim/3</code> is that operation, and its inline <code>@gclaim</code> Lua is the
+        rotate-then-serve in full:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Lanes &#183; echo/apps/echo_mq &#8212; the @gclaim script: rotate the ring, serve the rotated lane's head<span class="tag">verbatim</span></figcaption>
+        <pre>local g = redis.call(<b>'LMOVE'</b>, KEYS[1], KEYS[1], <b>'LEFT'</b>, <b>'RIGHT'</b>)   <span class="fd">&#8592; rotate one step</span>
+if not g then return {} end
+local lane = ARGV[1] .. <b>'g:'</b> .. g .. <b>':pending'</b>          <span class="fd">&#8592; the lane the rota landed on</span>
+local popped = redis.call(<b>'ZPOPMIN'</b>, lane)                  <span class="fd">&#8592; its head = the oldest job</span>
+if #popped == 0 then
+  redis.call(<b>'LREM'</b>, KEYS[1], 0, g)                          <span class="fd">&#8592; empty lane: leaves the ring</span>
+  return {}
+end
+local id = popped[1]
+local jk = ARGV[1] .. <b>'job:'</b> .. id
+local att = redis.call(<b>'HINCRBY'</b>, jk, <b>'attempts'</b>, 1)         <span class="fd">&#8592; attempts = the fencing token</span>
+redis.call(<b>'HSET'</b>, jk, <b>'state'</b>, <b>'active'</b>)
+local t = redis.call(<b>'TIME'</b>)                                <span class="fd">&#8592; the server clock leases the job</span>
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call(<b>'ZADD'</b>, KEYS[2], now + tonumber(ARGV[2]), id)</pre>
+      </figure>
+
+      <figure class="anatomy" aria-labelledby="rCap">
+        <figcaption id="rCap"><b>The rota over three claims.</b> Select a claim to read which lane it lands on after
+        the rotation. The ring is [A, B, C]; each claim rotates one step then serves the head &#8212; the lanes are
+        served in turn whatever their depth.</figcaption>
+        <div class="segbar" id="rSel" role="group" aria-label="Select a claim in the rota">
+          <button type="button" data-c="c1" aria-pressed="false">claim 1</button>
+          <button type="button" data-c="c2" aria-pressed="false">claim 2</button>
+          <button type="button" data-c="c3" aria-pressed="false">claim 3</button>
+        </div>
+        <svg class="rflow" id="rflow" viewBox="0 0 460 188" role="img" aria-label="Three lanes A (1000 pending), B (10) and C (200) on a ring. Claim 1 serves A, claim 2 serves B, claim 3 serves C — one head from each lane in turn, regardless of backlog depth. Select a claim to highlight the lane it serves.">
+          <circle class="ring" cx="230" cy="96" r="62"></circle>
+          <text class="axl" x="230" y="16">ring = [A, B, C] &#8212; LMOVE rotates one step per claim</text>
+          <g class="lane" data-c="c1">
+            <circle cx="230" cy="40" r="22"></circle><text class="ll" x="230" y="40">A</text><text class="ld" x="230" y="52">1000</text>
+          </g>
+          <g class="lane" data-c="c2">
+            <circle cx="300" cy="130" r="22"></circle><text class="ll" x="300" y="130">B</text><text class="ld" x="300" y="142">10</text>
+          </g>
+          <g class="lane" data-c="c3">
+            <circle cx="160" cy="130" r="22"></circle><text class="ll" x="160" y="130">C</text><text class="ld" x="160" y="142">200</text>
+          </g>
+          <text class="axl" x="230" y="182">one head from each lane, per turn &#8212; no lane starves the rest</text>
+        </svg>
+        <div class="readout" id="rOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a claim.
+        The ring is [A, B, C]. Claim 1 rotates and serves <b>A</b>; claim 2 serves <b>B</b>; claim 3 serves
+        <b>C</b>. Each lane is served one head per turn &#8212; A's thousand and B's ten get the same single turn,
+        so depth never buys a larger share.</div>
+      </figure>
+
+      <div class="prose">
+        <p>The guarantee is structural: fairness is <em>constructed</em> by the rotation, not bought with a priority
+        number, not approximated by a hash. EchoMQ has no numeric per-job priority &#8212; the rota plus mint order
+        already give a fair line, and a lane that should be served more carries a <em>weight</em>, the subject of
+        the next dive.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A single FIFO line lets one flood starve the rest. Split the line into one set per producer and serve
+          the sets in turn &#8212; order within a producer preserved, share between producers equalised.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>The <code>emq:{q}:ring</code> rotated one step per claim by <code>LMOVE</code>, with
+          <code>EchoMQ.Lanes.claim/3</code> serving the head of the rotated lane &#8212; every lane served in turn,
+          FIFO within, and no lane able to buy a bigger share by being deeper.</p>
+        </div>
+      </div>
+      <div class="prose">
+        <p>A consumer makes the guarantee concrete. In codemojex (<code>echo/apps/codemojex</code>),
+        <code>Codemojex.Guesses.submit/3</code> enqueues each guess on the player's lane &#8212; named by the
+        player's <code>PLR</code> id &#8212; and <code>Codemojex.ScoreWorker</code> drains through
+        <code>Lanes.claim</code> with the player id arriving as the lane group, so a player who mashes the keyboard
+        fills only their own lane and the rota keeps serving every other player in turn.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The rota at the claim point</h3>
+          <p>The Queue pillar drives the ring from a consumer loop and wires the lease, the per-group ceiling, and
+          the weighted share &#8212; the scaling layer above this primitive.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>The fair-lanes architecture</h3>
+          <p>Part B3 builds the Valkey-native bus: a queue is a set of lanes, each named by a branded id, drained
+          fairly &#8212; the <code>emq:{q}:</code> keyspace and the system that gates ingress on one namespace.</p>
+        </a>
+        <a class="door" href="/redis-patterns/flow-control/fairness/the-weighted-share">
+          <span class="dr">R6.02.2</span>
+          <h3>Tilting the share</h3>
+          <p>When a lane should be served more than its peers, a weight raises its heads-per-turn &#8212; a
+          throughput share, never a per-job priority, and never the whole machine.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/lmove/" rel="noopener">Valkey &mdash; <em>LMOVE</em></a> &mdash; the atomic pop-and-push that rotates the ring one step.</li>
+            <li><a href="https://valkey.io/commands/zpopmin/" rel="noopener">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; pop the lowest-scored member &#8212; the oldest job in a lane.</li>
+            <li><a href="https://valkey.io/commands/lrem/" rel="noopener">Valkey &mdash; <em>LREM</em></a> &mdash; remove a lane from the ring when it empties.</li>
+            <li><a href="https://valkey.io/topics/data-types/" rel="noopener">Valkey &mdash; <em>Data types</em></a> &mdash; the ring is a list and a lane a sorted set; the rota is list rotation.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control/fairness">R6.02 &#183; Fairness under load</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/flow-control/fairness/the-weighted-share">R6.02.2 &#183; The weighted share</a><span class="rs">weights, the multi-pop, priority retired</span></li>
+            <li><a href="/redis-patterns/flow-control/fairness/lanes-vs-separate-queues">R6.02.3 &#183; Lanes vs separate queues</a><span class="rs">one queue with lanes against N queues</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the rota wired at the claim point</span></li>
+            <li><a href="/bcs/bus">/bcs/bus</a><span class="rs">Part B3, the fair-lanes architecture</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/flow-control/fairness"><span class="pk">prev</span>&#8592; R6.02 &#183; Fairness under load</a>
+      <a class="pgx" href="/redis-patterns/flow-control/fairness/the-weighted-share"><span class="pk">next</span>R6.02.2 &#183; The weighted share &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/flow-control/fairness/starvation-under-load">R6.02.1 &#183; Starvation under load</a>
+        <a href="/redis-patterns/flow-control/fairness/the-weighted-share">R6.02.2 &#183; The weighted share</a>
+        <a href="/redis-patterns/flow-control/fairness/lanes-vs-separate-queues">R6.02.3 &#183; Lanes vs separate queues</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: line vs lanes (pure lookup over a fixed dataset) ---------- */
+  var ST = {
+    line:  { who: 'one FIFO line', b: 'B waits behind A’s entire flood', note: 'order is honoured and the small producer is starved' },
+    lanes: { who: 'a lane each', b: 'B keeps its own lane, served promptly', note: 'the rota serves one head from each lane per turn, whatever A sent' }
+  };
+  function describeSt(m) {
+    var s = ST[m];
+    if (!s) return '';
+    return '<span class="rk">arrangement &#183;</span> ' + s.who + ' &#8212; <b>' + s.b + '</b><br>' +
+      '<span class="rk">why &#183;</span> ' + s.note;
+  }
+  wireHoverSelect('sflow', '#sSel button', 'sOut', 'data-m', '.mode', describeSt,
+    '<span class="rk">readout &#183;</span> Select an arrangement. In <b>one FIFO line</b>, B&#8217;s job sits behind A&#8217;s entire flood and is served arbitrarily late &#8212; starvation. With <b>a lane each</b>, A&#8217;s flood fills A&#8217;s lane and B keeps its own, and the rota serves one head from each lane per turn, so B is served promptly whatever A sent.');
+
+  /* ---------- Interactive 2: the rota over three claims (pure lookup over a fixed dataset) ---------- */
+  var RO = {
+    c1: { serves: 'lane A (1000 pending)', after: 'ring rotates: [B, C, A]', note: 'A is served one head — its huge backlog buys no extra turn' },
+    c2: { serves: 'lane B (10 pending)', after: 'ring rotates: [C, A, B]', note: 'B is served the very next claim — equal to A, not behind its flood' },
+    c3: { serves: 'lane C (200 pending)', after: 'ring rotates: [A, B, C]', note: 'one full turn done — every lane served exactly once' }
+  };
+  function describeRo(c) {
+    var s = RO[c];
+    if (!s) return '';
+    return '<span class="rk">serves &#183;</span> <b>' + s.serves + '</b><br>' +
+      '<span class="rk">then &#183;</span> ' + s.after + ' &#8212; ' + s.note;
+  }
+  wireHoverSelect('rflow', '#rSel button', 'rOut', 'data-c', '.lane', describeRo,
+    '<span class="rk">readout &#183;</span> Select a claim. The ring is [A, B, C]. Claim 1 rotates and serves <b>A</b>; claim 2 serves <b>B</b>; claim 3 serves <b>C</b>. Each lane is served one head per turn &#8212; A&#8217;s thousand and B&#8217;s ten get the same single turn, so depth never buys a larger share.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

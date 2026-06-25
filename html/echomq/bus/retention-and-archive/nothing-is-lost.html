@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nothing is lost · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="What a stream trims is not lost: EchoStore.StreamArchive.fold/3 folds the trimmed mint-ordered {branded, fields} slice into the native EchoStore.Graft engine's CubDB — one page per record at a reserved high range (@archive_base = 2^49, disjoint from business pages by construction) — through the public EchoStore.Graft.VolumeServer.commit/3, advancing the watermark W (the branded EVT id of the highest-folded record, never the integer head_lsn). The page axis is branded-id-monotone — the order theorem reaching disk — so a forward scan reads oldest-first with no second index. merge_read/5 serves archived ∪ live split on W: id ≤ W from the archive, id > W from the live Stream.read/6 tail. Fold-before-trim is the no-loss ordering; no-gap/no-overlap is a consequence of it, never a per-read check. Real echo_store code, no Lua.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="red"]{background:var(--redis-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+
+/* ---- merge svg ---- */
+.mg-mv rect{transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><a href="/echomq/bus/retention-and-archive">retention-and-archive</a><span class="rsep">/</span><span class="rcur">nothing-is-lost</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus">The Bus</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a>
+        <span class="sep">/</span>
+        <span class="here">Nothing is lost</span>
+      </nav>
+      <p class="eyebrow">Retention &amp; the archive &middot; dive 02</p>
+      <h1>Nothing is <span class="ex">lost</span></h1>
+      <p class="lede">Fold what you trim to the durable floor first &mdash; so a bounded log keeps a deep, queryable past.</p>
+      <p class="kicker"><code class="inl">XTRIM</code> returns only a removed <strong>count</strong> &mdash; never the
+        deleted entries. So there is no recovery after a trim: once a record is gone from the live stream, the stream
+        cannot hand it back. That single fact makes the no-loss guarantee rest on <strong>ordering</strong>: a record
+        leaves the live stream <strong>only after</strong> it is committed to the durable floor and the watermark has
+        advanced past it. <code class="inl">EchoStore.StreamArchive.fold/3</code> writes the about-to-trim slice into the
+        native <code class="inl">EchoStore.Graft</code> engine, one page per record, at a reserved page range
+        <strong>ordered by the branded id</strong>; <code class="inl">merge_read/5</code> reads it back beside the live
+        tail as one mint-ordered stream. Drag the watermark on the right to see the seam. It is <strong>all real code</strong>.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#fold">The fold</a>
+        <a href="#watermark">The watermark &amp; the merge-read</a>
+        <a href="#order">Fold-before-trim</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="mergeTitle">
+      <h4 id="mergeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The merge-read &middot; drag the watermark W</h4>
+      <figcaption class="controls" style="margin-top:.2rem">
+        <div class="ctl">
+          <label for="wm">watermark &mdash; W</label>
+          <input type="range" id="wm" min="0" max="7" step="1" value="3" aria-label="the watermark W, an index splitting the archive from the live tail">
+        </div>
+      </figcaption>
+      <svg viewBox="0 0 460 174" role="img" aria-label="Eight mint-ordered EVT records on one timeline. A watermark W splits them: records with a branded id at or below W are in the durable archive on the floor; records with a branded id above W are on the live stream. The merge-read concatenates the archive half and the live half into one mint-ordered stream. Dragging W moves the split point.">
+        <text x="230" y="16" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#6fdccf" font-weight="600">one stream, two sources &middot; split on W</text>
+        <g class="mg-mv" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#ece4d0">
+          <rect id="m0" x="40" y="38" width="44" height="28" rx="5"></rect><text x="62" y="55" text-anchor="middle">EVT0</text>
+          <rect id="m1" x="88" y="38" width="44" height="28" rx="5"></rect><text x="110" y="55" text-anchor="middle">EVT1</text>
+          <rect id="m2" x="136" y="38" width="44" height="28" rx="5"></rect><text x="158" y="55" text-anchor="middle">EVT2</text>
+          <rect id="m3" x="184" y="38" width="44" height="28" rx="5"></rect><text x="206" y="55" text-anchor="middle">EVT3</text>
+          <rect id="m4" x="232" y="38" width="44" height="28" rx="5"></rect><text x="254" y="55" text-anchor="middle">EVT4</text>
+          <rect id="m5" x="280" y="38" width="44" height="28" rx="5"></rect><text x="302" y="55" text-anchor="middle">EVT5</text>
+          <rect id="m6" x="328" y="38" width="44" height="28" rx="5"></rect><text x="350" y="55" text-anchor="middle">EVT6</text>
+          <rect id="m7" x="376" y="38" width="44" height="28" rx="5"></rect><text x="398" y="55" text-anchor="middle">EVT7</text>
+        </g>
+        <!-- the W marker line -->
+        <line id="wm-line" x1="228" y1="30" x2="228" y2="74" stroke="#f0cd7f" stroke-width="2"></line>
+        <text id="wm-lbl" x="228" y="28" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#f0cd7f">W</text>
+        <!-- the two source brackets -->
+        <path id="arc-bracket" d="M40 84 L228 84" stroke="#2aa198" fill="none" stroke-width="1.4" stroke-dasharray="3 2"></path>
+        <text id="arc-lbl" x="134" y="98" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#6fdccf">archive &mdash; id &le; W (the Graft floor)</text>
+        <path id="live-bracket" d="M228 84 L420 84" stroke="#5a87c4" fill="none" stroke-width="1.4" stroke-dasharray="3 2"></path>
+        <text id="live-lbl" x="324" y="98" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#9fc0ea">live tail &mdash; id &gt; W (XRANGE)</text>
+        <line x1="40" y1="130" x2="420" y2="130" stroke="#2a3252" stroke-dasharray="4 3"></line>
+        <text x="230" y="150" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#6fdccf">archived &cup; live &mdash; one mint-ordered stream, no second index</text>
+      </svg>
+      <div class="geo-readout" id="mergeOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <section id="fold">
+    <h2>The fold &mdash; one page per record, at a reserved range</h2>
+    <div class="prose">
+      <p><code class="inl">EchoStore.StreamArchive.fold(volume_id, slice, db)</code> folds a mint-ordered
+        <code class="inl">{branded, fields}</code> slice into the native <code class="inl">EchoStore.Graft</code> engine's
+        CubDB &mdash; <strong>one page per record</strong> &mdash; through the <strong>public</strong>
+        <code class="inl">EchoStore.Graft.VolumeServer.commit/3</code>. The engine internals stay untouched: the archive is a
+        new consumer of the public commit surface, not an edit to it. It returns <code class="inl">{:ok, W}</code> (the new
+        frontier), <code class="inl">:noop</code> for an empty slice, or the engine's <code class="inl">{:error, term}</code>
+        verbatim &mdash; and on any fold error the caller does <strong>not</strong> trim, the safe direction.</p>
+      <p>The Graft engine multiplexes one page axis: a business write commits its pages at <strong>low</strong> indices, a
+        page per table row counting up from 0. The archive must never overwrite one of those, so each folded record lands
+        in a reserved <strong>high</strong> range &mdash; <code class="inl">@archive_base = 2^49</code>. That sits ~563
+        trillion indices above the business-page floor, so a forward <code class="inl">:arc_seq</code> allocator counting
+        up from 0 can never reach a business page: the archive range <span class="math">[2^49, &infin;)</span> is
+        <strong>disjoint from where real commits land by construction</strong>. The disjointness is proven by the
+        arithmetic, not enforced by a runtime check.</p>
+      <p>And because records fold in <strong>mint order</strong> &mdash; the writer mints monotone <code class="inl">EVT</code>
+        ids, and <code class="inl">EchoMQ.Stream.read/6</code> returns the slice in mint order (the order theorem) &mdash;
+        the page axis <code class="inl">@archive_base + 0, +1, …</code> is <strong>branded-id-monotone</strong>. A forward
+        scan reads the archive oldest-first, a reverse scan newest-first, with <strong>no second index</strong>. The order
+        theorem that held in memory now holds on disk: the page index <em>is</em> the sort.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_store — EchoStore.StreamArchive</span>
+<span class="cmt"># Fold a mint-ordered {branded, fields} slice into the Graft engine at the</span>
+<span class="cmt"># @archive_base range — one CubDB page per record at @archive_base + n — through</span>
+<span class="cmt"># the PUBLIC VolumeServer.commit/3, and advance the watermark W to the highest id.</span>
+<span class="op">def</span> <span class="fn">fold</span>(volume_id, [_ | _] = slice, db) <span class="op">when</span> is_binary(volume_id) <span class="op">do</span>
+  db = db || <span class="fn">store_for</span>(volume_id)
+  <span class="str">:ok</span> = <span class="fn">assert_evt_slice!</span>(slice)   <span class="cmt"># every id must be a well-formed EVT (one namespace)</span>
+
+  <span class="cmt"># PEEK the page-index base (read, do NOT advance) — the advance is</span>
+  <span class="cmt"># conditional-on-commit below, so a commit error leaves :arc_seq untouched.</span>
+  base_n = <span class="fn">peek_seq</span>(db)
+  n = length(slice)
+
+  {staged, last_branded} =
+    slice
+    |&gt; Enum.<span class="fn">with_index</span>(base_n)
+    |&gt; Enum.<span class="fn">reduce</span>({%{}, nil}, <span class="op">fn</span> {{branded, fields}, idx}, {pages, _prev} -&gt;
+      page = <span class="str">:erlang</span>.<span class="fn">term_to_binary</span>({branded, fields})
+      {Map.<span class="fn">put</span>(pages, <span class="rdx">@archive_base + idx</span>, page), branded}
+    <span class="op">end</span>)
+
+  {<span class="str">:ok</span>, base} = VolumeServer.<span class="fn">begin</span>(volume_id)
+
+  <span class="op">case</span> VolumeServer.<span class="fn">commit</span>(volume_id, base, staged) <span class="op">do</span>
+    {<span class="str">:ok</span>, _lsn} -&gt;
+      <span class="cmt"># the pages are durable: NOW advance :arc_seq and the frontier W together</span>
+      <span class="fn">commit_seq</span>(db, base_n, n)
+      <span class="fn">advance_frontier</span>(db, last_branded)
+      {<span class="str">:ok</span>, last_branded}
+
+    {<span class="str">:error</span>, _} = err -&gt;
+      err   <span class="cmt"># on a fold error the caller does NOT trim — the safe direction</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="take">One page per record, at a range disjoint from business pages by construction and ordered by the branded
+      id &mdash; the order theorem reaching disk, so the archive needs no second index to read its history in order.</p>
+  </section>
+
+  <section id="watermark">
+    <h2>The watermark <span class="math">W</span> &mdash; a branded id, never <code class="inl">head_lsn</code></h2>
+    <div class="prose">
+      <p><code class="inl">W</code> is the branded <code class="inl">EVT</code> id of the <strong>highest-folded
+        record</strong>, persisted under <code class="inl">:arc_frontier</code> and read by
+        <code class="inl">archive_frontier/1</code>. It is <strong>not</strong> the engine's integer
+        <code class="inl">head_lsn</code> &mdash; that is the engine's page cursor (it addresses pages), the wrong type to
+        compare against a live-tail <code class="inl">EVT</code> id. <code class="inl">W</code> is the seam: everything with
+        a branded id <span class="math">&le; W</span> is in the archive; everything with a branded id <span class="math">&gt; W</span>
+        is still on the live stream.</p>
+      <p><code class="inl">merge_read/5</code> reads <strong>archived &cup; live-tail</strong>, split on
+        <code class="inl">W</code>: records with branded id <span class="math">&le; W</span> come from the engine's
+        <code class="inl">@archive_base</code> range; records with branded id <span class="math">&gt; W</span> come from the
+        live stream via <code class="inl">EchoMQ.Stream.read/6</code> (the <code class="inl">XRANGE</code> lower bound is
+        <code class="inl">W</code>'s xadd id, exclusive). The union is in mint order &mdash; the archive is oldest-first,
+        the live tail follows. When <code class="inl">W</code> is <code class="inl">:empty</code> (nothing folded), the whole
+        stream is read live; there is no archive seam.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_store — EchoStore.StreamArchive</span>
+<span class="cmt"># THE MERGE-READ: archived ∪ live-tail for a stream, split on W. id ≤ W from the</span>
+<span class="cmt"># @archive_base range; id > W from the live stream. No-gap/no-overlap is a</span>
+<span class="cmt"># CONSEQUENCE of fold-before-trim + the order theorem, never a per-read check.</span>
+<span class="op">def</span> <span class="fn">merge_read</span>(conn, queue, name, volume_id, db) <span class="op">do</span>
+  <span class="op">case</span> <span class="fn">archive_frontier</span>(db) <span class="op">do</span>
+    <span class="str">:empty</span> -&gt;
+      <span class="cmt"># nothing folded: the whole stream is the live tail</span>
+      MqStream.<span class="fn">read</span>(conn, queue, name)
+
+    {<span class="str">:ok</span>, w} -&gt;
+      {<span class="str">:ok</span>, archived} = <span class="fn">read_archive</span>(volume_id, db)
+      from = <span class="str">"("</span> &lt;&gt; <span class="fn">w_bound</span>(w)   <span class="cmt"># strictly above W (the `(` exclusive XRANGE prefix)</span>
+
+      <span class="op">case</span> MqStream.<span class="fn">read</span>(conn, queue, name, from, <span class="str">"+"</span>) <span class="op">do</span>
+        {<span class="str">:ok</span>, live} -&gt; {<span class="str">:ok</span>, archived ++ live}   <span class="cmt"># archive oldest-first, live tail follows</span>
+        {<span class="str">:error</span>, _} = err -&gt; err
+      <span class="op">end</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="note">The watermark is also cached on the wire by <code class="inl">EchoMQ.Stream.put_archived/4</code> /
+      <code class="inl">get_archived/3</code> under <code class="inl">emq:{q}:stream:&lt;name&gt;:archived</code> &mdash; so a
+      non-BEAM reader finds where the archive ends and the live tail begins <strong>without a store call</strong>. But it is
+      a polyglot <strong>cache</strong> of the seam, never the source of truth: <code class="inl">archive_frontier/1</code> is
+      the truth, and the wire seam is overwritten on each fold.</p>
+  </section>
+
+  <section id="order">
+    <h2>Fold-before-trim &mdash; the no-loss ordering</h2>
+    <div class="prose">
+      <p>The whole guarantee is an <strong>order of two calls</strong>. Because <code class="inl">XTRIM</code> returns only a
+        count, the no-loss invariant has exactly one defense: a record leaves the live stream <strong>only after</strong> it
+        is committed to the engine and <code class="inl">W</code> has advanced past it. The cycle that bounds an
+        <strong>archived</strong> stream lives in one process, <code class="inl">EchoStore.StreamArchive.Driver</code>, which
+        owns <strong>both</strong> calls so the ordering cannot be violated. On each beat, per archived stream:</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="fbtTitle">
+      <h4 id="fbtTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The fold-then-trim cycle &middot; step it, then force a fault</h4>
+      <div class="controls">
+        <div class="solid-select" id="fbtSel" role="group" aria-label="Step the fold-then-trim cycle">
+          <button type="button" data-s="0" data-c="echo" class="active" aria-pressed="true">1 · read the slice</button>
+          <button type="button" data-s="1" data-c="echo" aria-pressed="false">2 · fold + advance W</button>
+          <button type="button" data-s="2" data-c="echo" aria-pressed="false">3 · cache W</button>
+          <button type="button" data-s="3" data-c="echo" aria-pressed="false">4 · then trim</button>
+          <button type="button" data-s="4" data-c="red" aria-pressed="false">✗ fold fails</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 460 168" role="img" aria-label="The fold-then-trim cycle in four steps: read the about-to-trim slice from the live stream, fold it into the Graft engine and advance the watermark W, cache W to the bus seam, and only then trim the now-archived span. If the fold fails, the cycle aborts before the trim — the slice stays on the live stream, over-retention but never loss.">
+        <g class="mg-mv">
+          <rect id="s-read" x="20" y="30" width="100" height="48" rx="8" fill="rgba(42,161,152,.13)" stroke="#2aa198"></rect>
+          <text x="70" y="50" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#ece4d0">1 · read (W, floor]</text>
+          <text x="70" y="64" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">Stream.read/6</text>
+
+          <rect id="s-fold" x="134" y="30" width="100" height="48" rx="8" fill="rgba(212,168,90,.14)" stroke="#d4a85a"></rect>
+          <text x="184" y="50" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#ece4d0">2 · fold + W</text>
+          <text x="184" y="64" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">fold/3 → commit/3</text>
+
+          <rect id="s-cache" x="248" y="30" width="100" height="48" rx="8" fill="rgba(90,135,196,.14)" stroke="#5a87c4"></rect>
+          <text x="298" y="50" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#ece4d0">3 · cache W</text>
+          <text x="298" y="64" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">put_archived/4</text>
+
+          <rect id="s-trim" x="362" y="30" width="92" height="48" rx="8" fill="rgba(196,80,76,.13)" stroke="#c4504c"></rect>
+          <text x="408" y="50" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#ece4d0">4 · trim</text>
+          <text x="408" y="64" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">trim/4</text>
+        </g>
+        <g stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ahf)">
+          <path d="M120 54 L132 54"></path>
+          <path d="M234 54 L246 54"></path>
+          <path d="M348 54 L360 54"></path>
+        </g>
+        <defs>
+          <marker id="ahf" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- abort path -->
+        <g id="s-abort">
+          <path d="M184 78 L184 110" stroke="#c4504c" fill="none" stroke-width="1.3" stroke-dasharray="3 2" marker-end="url(#ahf)"></path>
+          <rect x="96" y="110" width="176" height="34" rx="8" fill="rgba(196,80,76,.13)" stroke="#c4504c"></rect>
+          <text x="184" y="125" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9" fill="#f2948c">abort BEFORE the trim</text>
+          <text x="184" y="137" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">slice stays live · over-retention, never loss</text>
+        </g>
+      </svg>
+      <div class="geo-readout" id="fbtOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">Fold first, trim second &mdash; in one process that owns both calls. If the fold fails, the cycle aborts
+      before the trim: the slice stays on the live stream, over-retention but never loss.</p>
+
+    <div class="prose">
+      <p>This is why an archived stream is not also driven by the bare <code class="inl">EchoMQ.StreamRetention</code>
+        trim-only driver: that one would trim <strong>before</strong> a fold and lose the slice. For an archived stream this
+        driver <strong>is</strong> the retention path, trimming to the same declared windows after folding &mdash; so bounded
+        memory and deep history coexist with no loss. And <strong>no-gap/no-overlap</strong> is a <strong>consequence</strong>
+        of fold-before-trim plus the order theorem, never a per-read boundary check: the fold captures the slice in order
+        before the trim removes it, so the archive ends exactly where the live tail begins.</p>
+    </div>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A retained log needs deep history that outlives the resident window; archive the trimmed segments to durable
+          storage and read them beside the live tail. <a href="/redis-patterns/streams-events">Streams &amp; Events</a>
+          teaches event sourcing over a retained log.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_store)</span>
+        <p><code class="inl">EchoStore.StreamArchive.fold/3</code> folds the trimmed slice into the Graft engine at a
+          reserved <code class="inl">2^49</code> range, branded-id-monotone, via the public
+          <code class="inl">VolumeServer.commit/3</code>; the watermark <code class="inl">W</code> (a branded id, never
+          <code class="inl">head_lsn</code>) splits the <code class="inl">merge_read/5</code>; and fold-before-trim is the
+          no-loss ordering.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: archive what you trim. The implementation makes the archive an <strong>ordered
+      extension of the log itself</strong> &mdash; the same branded id, the same mint order, on the durable floor.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; trimmed, but kept</h2>
+    <div class="prose">
+      <p>What is trimmed is folded first. The fold lands one page per record at a reserved <code class="inl">2^49</code>
+        range &mdash; disjoint from business pages by construction, and branded-id-monotone, the order theorem on disk. The
+        watermark <code class="inl">W</code> (a branded <code class="inl">EVT</code> id, never the engine's
+        <code class="inl">head_lsn</code>) splits the merge-read: archive below, live tail above, one mint-ordered stream.
+        Fold-before-trim is the no-loss ordering, and no-gap/no-overlap follows from it. The deep history is on the floor;
+        the next dive is the floor itself, and the dial that turns it.</p>
+    </div>
+    <p class="note">Next in the module: <strong>The door to persistence</strong> &mdash; the durability dial in depth, and
+      the door to <a href="/echo-persistence">Echo Persistence</a>.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the fold, the watermark, and the merge-read are grounded, and the durable engine they write into.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://github.com/orbitinghail/graft">orbitinghail &mdash; <em>Graft</em></a> &mdash; the lazy, partial, page-replication engine <code>echo_store</code> builds natively on the BEAM, that the archive folds into.</li>
+          <li><a href="https://hexdocs.pm/cubdb/CubDB.html">Ong &mdash; <em>CubDB</em></a> &mdash; the append-only immutable B-tree the fold commits the archive pages onto.</li>
+          <li><a href="https://valkey.io/commands/xtrim/">Valkey &mdash; <em>XTRIM</em></a> &mdash; the count-only trim that makes fold-before-trim the sole defense against loss.</li>
+          <li><a href="https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying">Kreps &mdash; <em>The Log</em></a> &mdash; the log whose offset/cursor the watermark <code>W</code> plays for the archive seam.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/bus/retention-and-archive/retention-is-a-policy">Retention is a policy</a> &mdash; the trim the fold runs before.</li>
+          <li><a href="/echomq/bus/retention-and-archive/the-door-to-persistence">The door to persistence</a> &mdash; the durable floor in depth.</li>
+          <li><a href="/echomq/bus/the-stream-log/the-order-theorem">The order theorem</a> &mdash; the mint order this fold carries to disk.</li>
+          <li><a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor the fold writes into.</li>
+          <li><a href="/bcs/persistence">The Branded Component System &middot; the persistence floor</a> &mdash; the manuscript chapter this fold realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/bus/retention-and-archive/retention-is-a-policy"><span aria-hidden="true">&larr;</span>&nbsp; Retention is a policy</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus/retention-and-archive/the-door-to-persistence">The door to persistence <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a>
+        <a href="/echomq/bus/retention-and-archive/retention-is-a-policy">Retention is a policy</a>
+        <a href="/echomq/bus/retention-and-archive/nothing-is-lost">Nothing is lost</a>
+        <a href="/echomq/bus/retention-and-archive/the-door-to-persistence">The door to persistence</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/echo-persistence">Echo Persistence</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- content interactive 1: the merge-read split on W (real merge_read/5 semantics) ---------- */
+  var WMARK = document.getElementById('wm');
+  function renderMerge() {
+    var w = WMARK ? parseInt(WMARK.value, 10) : 3;
+    var out = document.getElementById('mergeOut');
+    // cell x-centers: 62, 110, 158, 206, 254, 302, 350, 398 (step 48 from 62)
+    var xCenters = [62, 110, 158, 206, 254, 302, 350, 398];
+    // the split line sits just AFTER cell w (between w and w+1)
+    var splitX = (w < 7) ? (xCenters[w] + 24) : (xCenters[7] + 24);
+    var line = document.getElementById('wm-line');
+    if (line) { line.setAttribute('x1', splitX); line.setAttribute('x2', splitX); }
+    var lbl = document.getElementById('wm-lbl');
+    if (lbl) lbl.setAttribute('x', splitX);
+    // colour the cells: id <= W => archive (echo), id > W => live (blue)
+    for (var i = 0; i < 8; i++) {
+      var c = document.getElementById('m' + i);
+      if (!c) continue;
+      if (i <= w) { c.setAttribute('fill', 'rgba(42,161,152,.16)'); c.setAttribute('stroke', '#2aa198'); }
+      else { c.setAttribute('fill', 'rgba(90,135,196,.16)'); c.setAttribute('stroke', '#5a87c4'); }
+    }
+    // move the brackets
+    var arcB = document.getElementById('arc-bracket'), arcL = document.getElementById('arc-lbl');
+    var liveB = document.getElementById('live-bracket'), liveL = document.getElementById('live-lbl');
+    if (arcB) arcB.setAttribute('d', 'M40 84 L' + splitX + ' 84');
+    if (liveB) liveB.setAttribute('d', 'M' + splitX + ' 84 L420 84');
+    if (arcL) arcL.setAttribute('x', Math.max(70, (40 + splitX) / 2));
+    if (liveL) liveL.setAttribute('x', Math.min(412, (splitX + 420) / 2));
+    var nArc = w + 1, nLive = 7 - w;
+    if (out) out.innerHTML =
+      'W = <b>EVT' + w + '</b><br>' +
+      'archive (id &le; W): <span class="ok">' + nArc + ' record' + (nArc === 1 ? '' : 's') + '</span> from the @archive_base range<br>' +
+      'live tail (id &gt; W): <span class="dim">' + nLive + ' record' + (nLive === 1 ? '' : 's') + '</span> via Stream.read/6 (XRANGE, exclusive of W)<br>' +
+      '<span class="dim">merge_read/5 concatenates the two — one mint-ordered stream; no-gap/no-overlap is a consequence of fold-before-trim, never a per-read check</span>';
+  }
+  if (WMARK) WMARK.addEventListener('input', renderMerge);
+  renderMerge(); // initial render — correct without interaction
+
+  /* ---------- content interactive 2: the fold-then-trim cycle, stepped + the abort ---------- */
+  var STEPS = [
+    { lit: ['s-read'], abort: false, title: '1 — read the about-to-trim slice (W, floor]',
+      note: 'EchoMQ.Stream.read/6 reads the records the upcoming trim WOULD remove, above the current frontier W — in mint order, the branded id recovered from the stored id field' },
+    { lit: ['s-read', 's-fold'], abort: false, title: '2 — fold into the engine, advance W',
+      note: 'EchoStore.StreamArchive.fold/3 commits the slice to the Graft engine at @archive_base via VolumeServer.commit/3, and advances W to the highest-folded id — the records are now durable' },
+    { lit: ['s-read', 's-fold', 's-cache'], abort: false, title: '3 — cache W to the bus seam',
+      note: 'EchoMQ.Stream.put_archived/4 caches W to emq:{q}:stream:<name>:archived — a polyglot reader finds the seam without a store call (a cache, never the source of truth)' },
+    { lit: ['s-read', 's-fold', 's-cache', 's-trim'], abort: false, title: '4 — ONLY THEN trim the archived span',
+      note: 'EchoMQ.Stream.trim/4 removes the now-archived records from the live stream — fold-before-trim, so the trim never removes a record the fold did not capture' },
+    { lit: ['s-read', 's-fold'], abort: true, title: '✗ the fold fails — abort before the trim',
+      note: 'a wire fault on the read or an engine conflict aborts the cycle BEFORE the trim: the slice stays on the live stream (over-retention, never loss), and the next beat retries — the safe direction' }
+  ];
+  var ALLS = ['s-read', 's-fold', 's-cache', 's-trim'];
+  function setStep(i) {
+    var step = STEPS[i];
+    ALLS.forEach(function (sid) {
+      var g = document.getElementById(sid);
+      if (g) g.setAttribute('opacity', step.lit.indexOf(sid) >= 0 ? '1' : '.2');
+    });
+    var ab = document.getElementById('s-abort');
+    if (ab) ab.setAttribute('opacity', step.abort ? '1' : '0');
+    var out = document.getElementById('fbtOut');
+    if (out) out.innerHTML = '<b>' + step.title + '</b><br><span class="dim">' + step.note + '</span>';
+  }
+  document.querySelectorAll('#fbtSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var i = parseInt(b.getAttribute('data-s'), 10);
+      document.querySelectorAll('#fbtSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      setStep(i);
+    });
+  });
+  setStep(0); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The full cache degrades &middot; Single-flight &amp; jittered TTL &middot; EchoMQ, In Depth</title>
+<meta name="description" content="insert/4 tries to reclaim expired rows before skipping a fill. A full cache becomes a pass-through — it serves from L2 and the loader, never refusing a read. stats/1 makes the :full_skips rate observable. Grounded in EchoStore.Table from echo/apps/echo_store.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:rgba(42,161,152,.08);border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.24em;color:var(--gold);display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+/* ---- header ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+/* ---- figures / code ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+pre.code{font-family:var(--mono);font-size:.9rem;line-height:1.6;color:var(--cream);background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .cmt{color:var(--cream-dim)}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .kw{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+/* ---- interactive ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.geo-readout{font-family:var(--mono);font-size:.93rem;color:var(--gold-bright);background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .warn{color:var(--gold-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---- stats table ---- */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin:1.4rem 0 0}
+.stat-card{border:1px solid var(--line);border-radius:10px;padding:.7rem .8rem;background:var(--ink-2)}
+.stat-card .k{font-family:var(--mono);font-size:.72rem;color:var(--cream-dim);margin:0 0 .3rem}
+.stat-card .v{font-family:var(--mono);font-size:1.2rem;color:var(--echo-bright);font-weight:700}
+@media(max-width:640px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media(max-width:760px){.bridge{grid-template-columns:1fr;gap:.7rem}.bridge .arrow{justify-self:center;transform:rotate(90deg)}}
+/* ---- door ---- */
+.door{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+/* ---- refs ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+/* ---- stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media(max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+@media(max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><a href="/echomq/cache/single-flight-and-jittered-ttl">single-flight-and-jittered-ttl</a><span class="rsep">/</span><span class="rcur">the-full-cache-degrades</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache">The Cache</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+      <span class="sep">/</span>
+      <span class="here">The full cache degrades</span>
+    </nav>
+    <p class="eyebrow">Single-flight &amp; jittered TTL &middot; dive 03</p>
+    <h1>The full cache<br><span class="ex">degrades</span></h1>
+    <p class="lede">A full table becomes a pass-through. It never refuses a read.</p>
+    <p class="kicker">When <code class="inl">insert/4</code> finds the ETS table at
+      <code class="inl">max_size</code>, it tries to make room first: <code class="inl">reclaim/1</code>
+      runs the same <code class="inl">:ets.select_delete</code> the sweeper uses, but right now.
+      If that frees at least one slot, the insert proceeds. If the table is genuinely full of live rows,
+      <code class="inl">insert/4</code> <strong>counts <code class="inl">:full_skips</code> and returns
+      <code class="inl">:skip</code></strong>. The caller still has its value &mdash; from the loader or
+      from L2 &mdash; and returns it. A full cache is a <strong>pass-through, not a failure</strong>. The
+      <code class="inl">stats/1</code> surface exposes the live counters so the degrade rate is
+      observable without a trace. And every row already carries the <strong>mint-time version</strong> that
+      module 03 (Coherence) will ride &mdash; a one-line door, not a lesson.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#insert">insert/4 and reclaim/1</a>
+      <a href="#stats">stats/1</a>
+      <a href="#worked">Reclaim vs skip</a>
+      <a href="#bridge">Pattern &amp; implementation</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- SECTION: insert/4 and reclaim/1 -->
+  <section id="insert">
+    <h2><code class="inl" style="font-size:inherit">insert/4</code> and <code class="inl" style="font-size:inherit">reclaim/1</code></h2>
+    <div class="prose">
+      <p>Every time a flight completes or <code class="inl">put/3-4</code> writes through, the result
+        passes to <code class="inl">insert/4</code>. The function checks the current ETS table size and
+        makes one of three choices in order:</p>
+      <ol style="margin:0 0 1.05rem;padding-left:1.5rem;color:var(--cream-soft)">
+        <li style="margin-bottom:.5rem"><strong>Fast path:</strong> <code class="inl">size &lt; max_size</code> &mdash; insert directly.</li>
+        <li style="margin-bottom:.5rem"><strong>Reclaim path:</strong> the table is full, but <code class="inl">reclaim/1</code> finds and deletes expired rows. If it freed at least one slot, insert.</li>
+        <li><strong>Skip path:</strong> the table is full of live rows. Count <code class="inl">:full_skips</code>, return <code class="inl">:skip</code>.</li>
+      </ol>
+      <p>A skip is not an error. The caller already received the value (from the loader or from L2). The
+        next read will miss L1 (because the insert was skipped), fall through to L2, and get the value
+        there. Under sustained pressure the table operates as a straight-through L2 proxy.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Table — insert/4</span>
+<span class="cmt"># Three-branch decision: insert, reclaim-then-insert, or skip.</span>
+<span class="cmt"># The ETS row shape is {id, value, expires_at, version}.</span>
+<span class="op">defp</span> <span class="fn">insert</span>(state, id, value, version) <span class="op">do</span>
+  size = :ets.<span class="fn">info</span>(state.name, <span class="str">:size</span>)
+
+  <span class="kw">cond</span> <span class="kw">do</span>
+    <span class="cmt"># Fast path: room available — insert directly under the jittered expiry.</span>
+    size &lt; state.spec.max_size -&gt;
+      :ets.<span class="fn">insert</span>(state.name, {id, value, <span class="fn">expires_at</span>(state.spec), version})
+
+    <span class="cmt"># Reclaim path: full, but expired rows may have accumulated since the</span>
+    <span class="cmt"># last sweep. Run select_delete right now; if it freed room, insert.</span>
+    <span class="fn">reclaim</span>(state) &gt; 0 -&gt;
+      :ets.<span class="fn">insert</span>(state.name, {id, value, <span class="fn">expires_at</span>(state.spec), version})
+
+    <span class="cmt"># Skip path: genuinely full of live rows. Count the skip; the caller</span>
+    <span class="cmt"># still has the value — this is a pass-through, not a failure.</span>
+    <span class="kw">true</span> -&gt;
+      :counters.<span class="fn">add</span>(state.spec.counters, <span class="fn">counter</span>(<span class="str">:full_skips</span>), 1)
+      <span class="str">:skip</span>
+  <span class="kw">end</span>
+<span class="op">end</span>
+
+<span class="cmt"># reclaim/1 — on-demand sweep: the same select_delete the sweeper runs,</span>
+<span class="cmt"># called inline when the table is at max_size. Returns row count deleted.</span>
+<span class="op">defp</span> <span class="fn">reclaim</span>(state) <span class="op">do</span>
+  now = System.<span class="fn">monotonic_time</span>(<span class="str">:millisecond</span>)
+  :ets.<span class="fn">select_delete</span>(state.name, [{{<span class="str">:_</span>, <span class="str">:_</span>, <span class="str">:"$1"</span>, <span class="str">:_</span>}, [{<span class="str">:&lt;</span>, <span class="str">:"$1"</span>, now}], [<span class="kw">true</span>]}])
+<span class="op">end</span></pre>
+
+    <p class="note"><code class="inl">reclaim/1</code> is the same match specification as the scheduled
+      sweeper. It runs in the caller's process via the GenServer call, so it does not race with the
+      sweeper &mdash; the owner serializes both. Together they ensure dead rows are removed both on the
+      fixed tick and on-demand when the table is under pressure.</p>
+  </section>
+
+  <!-- SECTION: stats/1 -->
+  <section id="stats">
+    <h2><code class="inl" style="font-size:inherit">stats/1</code></h2>
+    <div class="prose">
+      <p><code class="inl">stats/1</code> returns the live counter snapshot and the current ETS table size.
+        The counters are updated atomically throughout the GenServer by
+        <code class="inl">:counters.add</code>; <code class="inl">stats/1</code> reads them all in one
+        pass. The returned map covers the eight counters taught in this module plus the live
+        <code class="inl">:size</code>:</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># EchoStore.Table — stats/1</span>
+<span class="cmt"># Returns a map of all counter values plus the live ETS table size.</span>
+<span class="cmt"># Counters are defined as [{name, index}, …] in @counters at module top.</span>
+<span class="op">def</span> <span class="fn">stats</span>(name) <span class="op">do</span>
+  {<span class="str">:ok</span>, spec} = EchoStore.<span class="fn">spec</span>(name)
+
+  <span class="at">@counters</span>
+  |&gt; Map.<span class="fn">new</span>(<span class="kw">fn</span> {k, i} -&gt; {k, :counters.<span class="fn">get</span>(spec.counters, i)} <span class="kw">end</span>)
+  |&gt; Map.<span class="fn">put</span>(<span class="str">:size</span>, :ets.<span class="fn">info</span>(name, <span class="str">:size</span>))
+<span class="op">end</span>
+
+<span class="cmt"># The @counters definition at module top (indices for :counters.add/get):</span>
+<span class="cmt"># hits:1  misses:2  fills:3  l2_hits:4  coalesced:5</span>
+<span class="cmt"># swept:6  full_skips:7  sweeps:8  coh_applied:9  coh_stale:10</span>
+<span class="cmt"># stats/1 returns indices 1–10 plus :size from :ets.info.</span>
+<span class="cmt"># coh_applied and coh_stale belong to the coherence law (module 03).</span></pre>
+
+    <div class="stats-grid">
+      <div class="stat-card"><div class="k">hits</div><div class="v">L1 answers</div></div>
+      <div class="stat-card"><div class="k">misses</div><div class="v">fell through</div></div>
+      <div class="stat-card"><div class="k">fills</div><div class="v">loader ran</div></div>
+      <div class="stat-card"><div class="k">l2_hits</div><div class="v">found in L2</div></div>
+      <div class="stat-card"><div class="k">coalesced</div><div class="v">saves on fill</div></div>
+      <div class="stat-card"><div class="k">swept</div><div class="v">rows reclaimed</div></div>
+      <div class="stat-card"><div class="k">full_skips</div><div class="v">pass-throughs</div></div>
+      <div class="stat-card"><div class="k">sweeps</div><div class="v">tick passes</div></div>
+    </div>
+
+    <p class="note">The <code class="inl">full_skips / (fills + full_skips)</code> ratio is the fraction of
+      fills that did not land in L1 &mdash; the cache's degrade rate. A sustained non-zero rate signals
+      that <code class="inl">max_size</code> is too small or the TTL too long relative to the working set.</p>
+  </section>
+
+  <!-- SECTION: worked interactive -->
+  <section id="worked">
+    <h2>Reclaim vs skip: the three-branch decision</h2>
+    <div class="prose">
+      <p>Pick a scenario to step through <code class="inl">insert/4</code>. The model runs the exact
+        three-branch decision over a fixed table of <code class="inl">max_size = 10</code> with a range
+        of current sizes and expired-row counts. Read the branch taken and the counter update.</p>
+    </div>
+    <figure class="fig" aria-labelledby="wrkTitle">
+      <h4 id="wrkTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">insert/4 &middot; three branches, max_size = 10</h4>
+      <div class="controls">
+        <div class="solid-select" id="scenSel" role="group" aria-label="Table state scenario">
+          <button type="button" data-sc="room" data-c="echo" class="active" aria-pressed="true">size=6 (room)</button>
+          <button type="button" data-sc="reclaim" data-c="gold" aria-pressed="false">size=10, 3 expired</button>
+          <button type="button" data-sc="skip" data-c="blue" aria-pressed="false">size=10, 0 expired</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 180" role="img" aria-label="Three branches of insert/4. The fast path (size less than max_size) inserts directly. The reclaim path finds expired rows, deletes them, and inserts. The skip path finds a genuinely full table and counts :full_skips, returning :skip.">
+        <defs>
+          <marker id="ah3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- insert/4 entry -->
+        <rect x="190" y="14" width="100" height="36" rx="8" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+        <text x="240" y="30" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9" fill="#ece4d0">insert/4</text>
+        <text x="240" y="43" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">size = ets.info(:size)</text>
+
+        <!-- branch arrows from decision point -->
+        <circle id="dec" cx="240" cy="78" r="10" fill="rgba(42,161,152,.2)" stroke="#2aa198"></circle>
+        <path d="M240 50 L240 68" stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ah3)"></path>
+
+        <!-- fast path -->
+        <path d="M230 78 L80 78 L80 118" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ah3)" id="arFast"></path>
+        <text x="155" y="72" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#6fdccf" id="lblFast">size &lt; max</text>
+        <rect id="boxFast" x="30" y="118" width="100" height="44" rx="8" fill="rgba(42,161,152,.12)" stroke="#2a3252"></rect>
+        <text x="80" y="136" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#6fdccf">ets.insert</text>
+        <text x="80" y="150" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">:ok</text>
+
+        <!-- reclaim path -->
+        <path d="M240 88 L240 118" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ah3)" id="arReclaim"></path>
+        <text x="256" y="108" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#f0cd7f" id="lblReclaim">reclaim &gt; 0</text>
+        <rect id="boxReclaim" x="190" y="118" width="100" height="44" rx="8" fill="rgba(212,168,90,.1)" stroke="#2a3252"></rect>
+        <text x="240" y="136" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#f0cd7f">reclaim → insert</text>
+        <text x="240" y="150" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">:ok</text>
+
+        <!-- skip path -->
+        <path d="M250 78 L400 78 L400 118" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ah3)" id="arSkip"></path>
+        <text x="328" y="72" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#f2948c" id="lblSkip">full &amp; no expired</text>
+        <rect id="boxSkip" x="350" y="118" width="100" height="44" rx="8" fill="rgba(196,80,76,.1)" stroke="#2a3252"></rect>
+        <text x="400" y="136" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#f2948c">:full_skips++</text>
+        <text x="400" y="150" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">:skip (pass-through)</text>
+      </svg>
+      <div class="geo-readout" id="scenOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The skip path is not an error path. The caller has the value; the table is not
+      storing it in L1 right now. The <code class="inl">:full_skips</code> counter is the signal &mdash;
+      not an exception, not a circuit-break.</p>
+  </section>
+
+  <!-- BRIDGE -->
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (graceful degradation)</span>
+        <p>A bounded cache that cannot accept a new entry should degrade gracefully &mdash; serve the read
+          from the backing store, not refuse it &mdash; so the service stays available under memory
+          pressure. The cache is an optimization; it must never be the critical path.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (EchoStore.Table)</span>
+        <p><code class="inl">insert/4</code> tries three paths in order: insert, reclaim-then-insert, skip
+          and count. A skip means the caller proceeds with the value it already has from the loader or from
+          L2. <code class="inl">stats/1</code> makes the degrade rate visible as
+          <code class="inl">:full_skips</code>.</p>
+      </div>
+    </div>
+    <p class="take">Degrade, not fail. The cache's contract is to accelerate reads, not to gate them
+      &mdash; so a full table hands off gracefully to the layer beneath it.</p>
+
+    <div class="door">
+      <p class="dl">Coherence &mdash; the version on every row</p>
+      <p>Each row in the ETS table is <code class="inl">{id, value, expires_at, version}</code>. The
+        14-byte <code class="inl">version</code> is the mint-time branded id stored alongside the value.
+        Module 03 (Coherence &mdash; newer wins on the Bus) rides that field: when a coherence message
+        arrives with a newer version for an id, the row is evicted with a single comparison, no coordinator.
+        The version is already there; the third module teaches what to do with it.</p>
+    </div>
+  </section>
+
+  <!-- REFS -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html">Erlang/OTP &mdash; <em>the ets module</em></a> &mdash; <code class="inl">:ets.info(:size)</code> and <code class="inl">:ets.select_delete</code> underpin <code class="inl">insert/4</code> and <code class="inl">reclaim/1</code>.</li>
+          <li><a href="https://valkey.io/commands/get/">Valkey &mdash; <em>GET</em></a> &mdash; the L2 read a pass-through falls back to.</li>
+          <li><a href="https://valkey.io/blog/new-hash-table/">S&ouml;derqvist &mdash; <em>A new hash table</em></a> &mdash; the L2 the pass-through falls to, costed at rest.</li>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the version field every row stores alongside its value.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a> &mdash; this module's hub.</li>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">Jittered expiry</a> &mdash; the sweeper <code class="inl">reclaim/1</code> mirrors on-demand.</li>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd">One fill per herd</a> &mdash; the coalescing law that calls <code class="inl">insert/4</code>.</li>
+          <li><a href="/echomq/cache">The Cache</a> &mdash; the chapter landing.</li>
+          <li><a href="/echomq/bus">The Bus</a> &mdash; the wire a coherence message (module 03) broadcasts over.</li>
+          <li><a href="/bcs/store">The Branded Component System &middot; the Store</a> &mdash; the manuscript chapter this pillar realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAGER -->
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry"><span aria-hidden="true">&larr;</span> Jittered expiry</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache/single-flight-and-jittered-ttl">Module hub <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd">One fill per herd</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">Jittered expiry</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">The full cache degrades</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- reclaim vs skip scenario stepper ---------- */
+  /* Models the exact insert/4 three-branch decision over a fixed table
+     of max_size=10. Three scenarios: room, reclaim frees space, genuine skip. */
+  var SCENARIOS = {
+    room: {
+      size: 6, expired: 0, max: 10,
+      branch: 'fast',
+      title: 'Fast path: room available',
+      says: 'size (6) &lt; max_size (10) &rarr; insert directly',
+      counter: 'no counter updated',
+      result: ':ok — row inserted into L1',
+      css_branch: 'fast'
+    },
+    reclaim: {
+      size: 10, expired: 3, max: 10,
+      branch: 'reclaim',
+      title: 'Reclaim path: expired rows freed space',
+      says: 'size (10) == max_size &rarr; reclaim() deletes 3 expired rows &rarr; insert',
+      counter: 'no :full_skips — reclaim made room',
+      result: ':ok — row inserted into L1 after reclaim',
+      css_branch: 'reclaim'
+    },
+    skip: {
+      size: 10, expired: 0, max: 10,
+      branch: 'skip',
+      title: 'Skip path: genuinely full',
+      says: 'size (10) == max_size &rarr; reclaim() = 0 (all rows live) &rarr; :full_skips++',
+      counter: ':full_skips incremented by 1',
+      result: ':skip — caller still has the value; cache is a pass-through',
+      css_branch: 'skip'
+    }
+  };
+
+  function highlightBranch(branch) {
+    var boxes  = ['boxFast', 'boxReclaim', 'boxSkip'];
+    var arrows = ['arFast',  'arReclaim',  'arSkip'];
+    var active = { fast: 'boxFast', reclaim: 'boxReclaim', skip: 'boxSkip' };
+    var actArr = { fast: 'arFast',  reclaim: 'arReclaim',  skip: 'arSkip'  };
+    var strokes = { fast: '#2aa198', reclaim: '#d4a85a', skip: '#c4504c' };
+
+    boxes.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.setAttribute('stroke', id === active[branch] ? strokes[branch] : '#2a3252');
+    });
+    arrows.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.setAttribute('stroke', id === actArr[branch] ? strokes[branch] : '#46507a');
+    });
+  }
+
+  function renderScenario(key) {
+    var sc = SCENARIOS[key];
+    if (!sc) return;
+    var out = document.getElementById('scenOut');
+    highlightBranch(sc.css_branch);
+    if (out) {
+      var resultCls = sc.css_branch === 'skip' ? 'warn' : 'ok';
+      out.innerHTML = '<b>' + sc.title + '</b><br>' +
+        sc.says + '<br>' +
+        'counter: <span class="dim">' + sc.counter + '</span><br>' +
+        '<span class="' + resultCls + '">' + sc.result + '</span>';
+    }
+  }
+
+  document.querySelectorAll('#scenSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#scenSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderScenario(b.getAttribute('data-sc'));
+    });
+  });
+  renderScenario('room');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sid, t) { var el = document.getElementById(sid); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

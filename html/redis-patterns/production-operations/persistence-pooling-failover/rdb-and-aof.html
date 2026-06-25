@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.02.1 · RDB and AOF · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.02.1 — RDB and AOF, the durability dial for a job store, grounded verbatim in the real infra/valkey/conf/valkey.conf that fronts the codemojex queue. AOF is the single source of durability: appendonly yes plus appendfsync everysec bounds crash loss to about one second on a background thread, save '' turns RDB off so one fork serves, aof-use-rdb-preamble yes keeps the rewrite fast, and propagation-error-behavior panic refuses to acknowledge un-survivable data. Backed by Valkey 9.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.frozen pre .fc{color:#e0a36b}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the durability-dial figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.dmap{width:100%;height:auto;display:block;margin-top:4px}
+.dmap .dir rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.4}
+.dmap .grant rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.4}
+.dmap .dlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.dmap .dsub{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.dmap .pair{cursor:pointer;transition:opacity .18s ease}
+.dmap .pair .link{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.dmap.focus .pair{opacity:.2}
+.dmap.focus .pair.on{opacity:1}
+.dmap.focus .pair.on .link{stroke:var(--r-red);stroke-width:2.6}
+.dmap.focus .pair.on .dir rect{stroke-width:2.6}
+.dmap.focus .pair.on .grant rect{stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/persistence-pooling-failover">persistence-pooling-failover</a><span class="rsep">/</span><span class="rcur">rdb-and-aof</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#two">RDB vs AOF</a>
+      <a href="#block">The block</a>
+      <a href="#thread">One thread</a>
+      <a href="#evict">Reject</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.02.1 &#183; Persistence, pooling &amp; failover &#8212; dive 1</p>
+      <h1>RDB and AOF, <span class="hns">the durability dial</span>.</h1>
+      <p class="lede">A job store that loses acknowledged work on a restart is not a record of truth. Valkey offers two
+      persistence mechanisms &#8212; a point-in-time snapshot and an append-only log &#8212; and the real
+      <b>valkey.conf chooses one on purpose</b>.</p>
+      <p class="heronote">Grounding: infra/valkey/conf/valkey.conf (the persistence block, verbatim) &#183; the engine
+      is Valkey 9. This is the server-level durability policy &#8212; distinct from R8.01&#8217;s kernel-level
+      persistence-safe-settings (the save fork&#8217;s vm.overcommit_memory sysctl).</p>
+
+      <figure class="anatomy" aria-labelledby="dialCap">
+        <figcaption id="dialCap"><b>Pick a persistence directive &#8212; read what it guarantees.</b> Select a line
+        from the real valkey.conf to light the guarantee it buys; the readout names the trade.</figcaption>
+        <div class="segbar" id="dirSel" role="group" aria-label="Select a persistence directive">
+          <button type="button" data-dir="appendonly" aria-pressed="false">appendonly yes</button>
+          <button type="button" data-dir="everysec" aria-pressed="false">appendfsync everysec</button>
+          <button type="button" data-dir="save" aria-pressed="false">save ""</button>
+          <button type="button" data-dir="preamble" aria-pressed="false">rdb-preamble</button>
+          <button type="button" data-dir="panic" aria-pressed="false">panic</button>
+        </div>
+        <svg class="dmap" id="dmap" viewBox="0 0 480 250" role="img" aria-label="Five persistence directives from the real valkey.conf on the left map to the durability guarantee each buys on the right: appendonly yes maps to a write-by-write log on disk; appendfsync everysec maps to an approximately one-second crash-loss bound; save '' maps to one fork source, with RDB off; aof-use-rdb-preamble yes maps to a fast compact rewrite; and propagation-error-behavior panic maps to no false acknowledgement. Select a directive to light its guarantee.">
+          <g class="pair" data-dir="appendonly">
+            <path class="link" d="M170 41 L300 41"></path>
+            <g class="dir"><rect x="20" y="24" width="150" height="34" rx="7"></rect><text class="dlbl" x="95" y="45">appendonly yes</text></g>
+            <g class="grant"><rect x="300" y="24" width="160" height="34" rx="7"></rect><text class="dlbl" x="380" y="45">a log on disk, write by write</text></g>
+          </g>
+          <g class="pair" data-dir="everysec">
+            <path class="link" d="M170 87 L300 87"></path>
+            <g class="dir"><rect x="20" y="70" width="150" height="34" rx="7"></rect><text class="dlbl" x="95" y="91">appendfsync everysec</text></g>
+            <g class="grant"><rect x="300" y="70" width="160" height="34" rx="7"></rect><text class="dlbl" x="380" y="87">~1 s crash-loss bound</text><text class="dsub" x="380" y="99">fsync off the main thread</text></g>
+          </g>
+          <g class="pair" data-dir="save">
+            <path class="link" d="M170 133 L300 133"></path>
+            <g class="dir"><rect x="20" y="116" width="150" height="34" rx="7"></rect><text class="dlbl" x="95" y="137">save ""</text></g>
+            <g class="grant"><rect x="300" y="116" width="160" height="34" rx="7"></rect><text class="dlbl" x="380" y="137">one fork source (RDB off)</text></g>
+          </g>
+          <g class="pair" data-dir="preamble">
+            <path class="link" d="M170 179 L300 179"></path>
+            <g class="dir"><rect x="20" y="162" width="150" height="34" rx="7"></rect><text class="dlbl" x="95" y="183">rdb-preamble yes</text></g>
+            <g class="grant"><rect x="300" y="162" width="160" height="34" rx="7"></rect><text class="dlbl" x="380" y="183">a fast, compact rewrite</text></g>
+          </g>
+          <g class="pair" data-dir="panic">
+            <path class="link" d="M170 225 L300 225"></path>
+            <g class="dir"><rect x="20" y="208" width="150" height="34" rx="7"></rect><text class="dlbl" x="95" y="229">panic</text></g>
+            <g class="grant"><rect x="300" y="208" width="160" height="34" rx="7"></rect><text class="dlbl" x="380" y="229">no false acknowledgement</text></g>
+          </g>
+        </svg>
+        <div class="readout" id="dirOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a directive.
+        Together they set the durability dial for a volatile work tier: an append-only log, a one-second loss bound,
+        one fork source, a fast rewrite, and no acknowledgement of data that may not survive.</div>
+        <p class="ethic">Static map &#8212; <code>appendonly yes</code> &#8594; a log on disk &#183;
+        <code>everysec</code> &#8594; loss &#8776; 1 s &#183; <code>save ""</code> &#8594; one fork &#183;
+        <code>rdb-preamble</code> &#8594; fast rewrite &#183; <code>panic</code> &#8594; no false OK.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="two">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The two mechanisms, and the choice</h2>
+        <span class="ssrc">RDB vs AOF</span>
+      </div>
+      <div class="prose">
+        <p>RDB writes a compact point-in-time snapshot of the whole dataset by forking a child that serializes memory to
+        disk. It is fast to load and small on disk, but a crash loses everything written since the last snapshot
+        &#8212; minutes of work, not seconds. AOF appends every keyspace-changing write to a log; on restart the log
+        replays to rebuild the dataset. With a once-a-second fsync, a crash loses at most about a second.</p>
+        <p>For a cache, RDB&#8217;s snapshot-interval loss is fine. For a job store it is silent data loss: a job that
+        was enqueued and acknowledged, then lost in the gap before the next snapshot. So <code>valkey.conf</code> makes
+        AOF the single source of durability and turns RDB off.</p>
+        <dl class="deflist">
+          <dt>RDB</dt><dd>a fork-and-serialize snapshot &#8212; fast load, small file, but loses a whole interval on a crash.</dd>
+          <dt>AOF</dt><dd>a write-by-write log replayed at startup &#8212; with <code>everysec</code>, a crash loses about one second.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section id="block">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The persistence block, verbatim</h2>
+        <span class="ssrc">valkey.conf &#183; persistence</span>
+      </div>
+      <div class="prose">
+        <p>The real config, from <code>infra/valkey/conf/valkey.conf</code> &#8212; the block that fronts the codemojex
+        queue:</p>
+      </div>
+
+      <figure class="frozen">
+        <figcaption>infra/valkey/conf/valkey.conf &#183; AOF is the single source of durability<span class="tag">frozen</span></figcaption>
+        <pre><span class="fc"># ---- Persistence: AOF is the single source of durability ----</span>
+appendonly <b>yes</b>
+appendfsync <b>everysec</b>
+no-appendfsync-on-rewrite no
+auto-aof-rewrite-percentage 100
+auto-aof-rewrite-min-size 64mb
+aof-use-rdb-preamble <b>yes</b>
+save <b>""</b>
+dir /data
+propagation-error-behavior <b>panic</b></pre>
+      </figure>
+
+      <div class="prose">
+        <p>Line by line:</p>
+        <ul>
+          <li><code>appendonly yes</code> turns the append-only file on &#8212; every write that changes the keyspace is
+          appended to a log on disk.</li>
+          <li><code>appendfsync everysec</code> flushes that log to disk once a second on a <strong>background
+          thread</strong>. The worst-case loss bound after a crash is about one second of writes &#8212; not a whole
+          snapshot interval, and the fsync stays off the command thread.</li>
+          <li><code>save ""</code> disables RDB snapshotting. With AOF as the single durability mechanism there is no
+          reason to keep a second snapshot fork competing for the machine. One fork source, not two.</li>
+          <li><code>aof-use-rdb-preamble yes</code> lets the periodic rewrite start from a compact RDB-format preamble
+          rather than replaying every command, so the rewrite is fast and the file stays small &#8212; RDB&#8217;s fast
+          load with AOF&#8217;s low loss.</li>
+          <li><code>auto-aof-rewrite-percentage 100</code> / <code>auto-aof-rewrite-min-size 64mb</code> trigger that
+          rewrite when the log has doubled and is at least 64&nbsp;MB, keeping the file from growing without bound.</li>
+          <li><code>propagation-error-behavior panic</code> fails a write rather than acknowledge data that may not
+          survive. A false acknowledgement is worse than a visible error: the caller that hears OK stops worrying about
+          the job.</li>
+        </ul>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The append-only file is replayed at startup to rebuild
+      the in-memory dataset; <code>appendfsync everysec</code> is the balance Valkey recommends &#8212; durability
+      close to <code>always</code> at a fraction of its fsync cost &#8212;
+      <a href="https://valkey.io/topics/persistence/" rel="noopener">valkey.io/topics/persistence</a>.</p>
+    </section>
+
+    <section id="thread">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The single-threaded premise</h2>
+        <span class="ssrc">valkey.conf &#183; the sizing comment</span>
+      </div>
+      <div class="prose">
+        <p>The config&#8217;s own load-bearing comment names why the persistence work has to stay off the command
+        thread: <em>&#8220;command execution is single-threaded, so the second shared vCPU is reserved for background
+        work &#8212; AOF fsync, fork copy-on-write.&#8221;</em> The once-a-second <code>appendfsync</code> and the
+        rewrite fork both run on that second vCPU; the one command thread keeps serving. This is why <code>save ""</code>
+        matters beyond avoiding duplicate work: a second snapshot fork would contend for the same background budget the
+        AOF fsync needs.</p>
+      </div>
+
+      <pre class="code"><span class="cmt"># valkey.conf — the sizing premise, verbatim</span>
+<span class="cmt"># command execution is single-threaded, so the second shared vCPU is</span>
+<span class="cmt"># reserved for background work (AOF fsync, fork copy-on-write).</span>
+io-threads <b>1</b></pre>
+
+      <p class="take">One command thread, one durability mechanism, one fork source. The <code>everysec</code> fsync and
+      the rewrite run on the second vCPU, so the thread that answers callers never stops to flush.</p>
+    </section>
+
+    <section id="evict">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Reject, do not evict &#8212; the R7.01 tie</h2>
+        <span class="ssrc">valkey.conf &#183; the memory guardrail</span>
+      </div>
+      <div class="prose">
+        <p>Durability has a second failure mode besides a crash: memory pressure. <code>maxmemory-policy noeviction</code>
+        makes a write that would exceed <code>maxmemory</code> return an error to the caller instead of evicting a key.
+        For a queue, an evicted key is silently lost work &#8212; a job something already enqueued, gone.
+        <code>noeviction</code> turns memory pressure into a rejected write and an alert, the loud failure R7.01 requires
+        of a record of truth. (R8.01&#8217;s dive 3 takes <code>noeviction</code> apart at length; here it is the tie
+        that makes the persistence policy a record-of-truth policy.)</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Choose the append-only log as the single source of durability; bound crash loss with <code>everysec</code>;
+          turn snapshotting off so one fork serves; fail loudly on un-survivable data and on memory pressure.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>The committed <code>valkey.conf</code> fronts the codemojex queue&#8217;s <code>emq:{q}:</code> keyspace
+          with <code>appendonly yes</code> + <code>appendfsync everysec</code> + <code>save ""</code> +
+          <code>propagation-error-behavior panic</code>, so in-flight <code>JOB</code> state survives a restart.</p>
+        </div>
+      </div>
+
+      <div class="door">
+        <span class="dr">the door &#183; the durability dial, one tier down</span>
+        <h3>Beneath the volatile tier</h3>
+        <p>The AOF bounds the queue&#8217;s crash loss to about a second &#8212; the right floor for a volatile work
+        tier, but not the whole durability story. Deep history and off-box durability live one tier down on the
+        persistence floor (ETS &#8594; Valkey &#8594; CubDB &#8594; Tigris). The
+        <a href="/echo-persistence">/echo-persistence</a> course carries that dial; this dive stays on the volatile
+        tier&#8217;s valkey.conf. The protocol depth &#8212; the lanes, the leases, the Lua &#8212; is the dedicated
+        <a href="/echomq/proof">/echomq</a> course.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The eviction policies (the <code>allkeys-lru</code>
+      family and the rest) decide what to drop when a write would exceed <code>maxmemory</code>; <code>noeviction</code>
+      is the one policy that drops nothing and returns an error instead &#8212;
+      <a href="https://valkey.io/topics/lru-cache/" rel="noopener">valkey.io/topics/lru-cache</a>.</p>
+
+      <p class="take">Durability is a dial, and this config sets it for a volatile work tier: keep the last second,
+      loudly, with one fork. The append-only log bounds the crash; <code>panic</code> and <code>noeviction</code>
+      refuse to lose or fake work.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recap &#8212; one fork, one second</h2>
+        <span class="ssrc">next &#8594; R8.02.2 &#183; pool-sizing</span>
+      </div>
+      <div class="prose">
+        <p>The real <code>valkey.conf</code> makes AOF the single source of durability: <code>appendonly yes</code> logs
+        every write, <code>appendfsync everysec</code> bounds crash loss to about a second on a background thread,
+        <code>save ""</code> retires RDB so one fork serves, <code>aof-use-rdb-preamble yes</code> keeps the rewrite
+        fast, and <code>propagation-error-behavior panic</code> refuses a false acknowledgement. That is the engine-level
+        half of operating the bus as a record of truth &#8212; distinct from R8.01&#8217;s kernel half. Next, the same
+        record under load: how the connector pool is sized for a single-threaded server.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/persistence/" rel="noopener">Valkey &mdash; <em>Persistence</em></a> &mdash; RDB and AOF, the fsync policies, and the durability trade the append-only file makes.</li>
+            <li><a href="https://valkey.io/commands/bgrewriteaof/" rel="noopener">Valkey &mdash; <em>BGREWRITEAOF</em></a> &mdash; the rewrite the <code>auto-aof-rewrite-*</code> thresholds trigger, compacted via the RDB preamble.</li>
+            <li><a href="https://valkey.io/topics/lru-cache/" rel="noopener">Valkey &mdash; <em>Eviction</em></a> &mdash; the policies, and why <code>noeviction</code> returns an error rather than dropping a key.</li>
+            <li><a href="https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/" rel="noopener">Redis &mdash; <em>Persistence</em></a> &mdash; the canonical RDB-vs-AOF comparison and the <code>everysec</code> recommendation.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/persistence-pooling-failover">R8.02 &#183; Persistence, pooling &amp; failover</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing">R8.02.2 &#183; Pool sizing</a><span class="rs">the next dive — load over a single thread</span></li>
+            <li><a href="/redis-patterns/production-operations/kernel-tuning/persistence-safe-settings">R8.01.3 &#183; Persistence-safe settings</a><span class="rs">the kernel half of this posture</span></li>
+            <li><a href="/redis-patterns/data-modeling/primary-database">R7.01 &#183; Redis as a primary database</a><span class="rs">the pattern this durability serves</span></li>
+            <li><a href="/echomq/proof">/echomq &#183; the Proof pillar</a><span class="rs">the production evidence the bus carries</span></li>
+            <li><a href="/bcs/fly">/bcs &#183; Production on Fly</a><span class="rs">where this valkey.conf runs</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/persistence-pooling-failover"><span class="pk">up</span>&#8592; R8.02 &#183; Persistence, pooling &amp; failover</a>
+      <a class="pgx" href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing"><span class="pk">next</span>R8.02.2 &#183; Pool sizing &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/rdb-and-aof">R8.02.1 &#183; RDB and AOF</a>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing">R8.02.2 &#183; Pool sizing</a>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/readonly-reconnect-failover">R8.02.3 &#183; READONLY-reconnect failover</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echo-persistence">The persistence floor</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: persistence directive -> its guarantee (pure over a fixed dataset) ---------- */
+  var DIRS = {
+    'appendonly': { line: 'appendonly yes', grant: 'a write-by-write log on disk', detail: 'every keyspace-changing write is appended to an append-only file; on restart the file replays to rebuild the in-memory dataset' },
+    'everysec':   { line: 'appendfsync everysec', grant: 'an ~1-second crash-loss bound', detail: 'the log is fsynced once a second on a background thread, so a crash loses at most about one second of writes, and the flush never blocks the command thread' },
+    'save':       { line: 'save ""', grant: 'one fork source (RDB off)', detail: 'snapshotting is disabled; with the append-only file as the single durability mechanism there is no second snapshot fork competing for the machine' },
+    'preamble':   { line: 'aof-use-rdb-preamble yes', grant: 'a fast, compact rewrite', detail: 'the periodic AOF rewrite starts from a compact RDB-format preamble rather than replaying every command, so it is fast and the file stays small' },
+    'panic':      { line: 'propagation-error-behavior panic', grant: 'no false acknowledgement', detail: 'a write that cannot be propagated fails rather than returning a success the data does not back — a visible error the caller can retry on, not a silent loss' }
+  };
+  // pure: directive key -> readout HTML
+  function describeDir(dir) {
+    var d = DIRS[dir];
+    return '<span class="rk">line &#183;</span> <code>' + d.line + '</code><br>' +
+      '<span class="rk">guarantees &#183;</span> <b>' + d.grant + '</b><br>' +
+      '<span class="rk">how &#183;</span> ' + d.detail;
+  }
+  var dmap = document.getElementById('dmap');
+  var dirButtons = document.querySelectorAll('#dirSel button');
+  var dirOut = document.getElementById('dirOut');
+  // pure: highlight the directive's pair, sync the buttons, fill the readout — hover or click.
+  function selectDir(dir) {
+    dirButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-dir') === dir ? 'true' : 'false');
+    });
+    if (dmap) {
+      dmap.classList.toggle('focus', !!dir);
+      dmap.querySelectorAll('.pair').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-dir') === dir);
+      });
+    }
+    if (dirOut) {
+      dirOut.innerHTML = dir
+        ? describeDir(dir)
+        : '<span class="rk">readout &#183;</span> Select a directive. Together they set the durability dial for a volatile work tier: an append-only log, a one-second loss bound, one fork source, a fast rewrite, and no acknowledgement of data that may not survive.';
+    }
+  }
+  dirButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var dir = b.getAttribute('data-dir');
+      selectDir(b.getAttribute('aria-pressed') === 'true' ? null : dir);
+    });
+  });
+  if (dmap) {
+    dmap.querySelectorAll('.pair').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectDir(g.getAttribute('data-dir')); });
+      g.addEventListener('mouseleave', function () { selectDir(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

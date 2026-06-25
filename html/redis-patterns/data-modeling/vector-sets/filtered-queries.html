@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7.05.3 — Filtered queries · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R7.05.3 · Hybrid search with Vector Sets: attach JSON metadata via SETATTR on VADD, then restrict VSIM with FILTER expressions — comparisons, logic, arithmetic, containment, and .field selectors. Elements with missing fields are silently excluded. FILTER-EF tunes recall for selective predicates. Valkey reaches this via FT.SEARCH KNN with numeric and tag filters in the valkey-search module. Standalone Redis 8 example.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.tbl{width:100%;border-collapse:collapse;margin:0 0 18px;font-family:var(--mono);font-size:12.5px}
+.tbl th,.tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--b-dim)}
+.tbl td{color:var(--b-ink)}
+.tbl td.hi{color:var(--r-red);font-weight:700}
+.tbl td code{font-size:.92em}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- filter operator figure ---------- */
+.ffig{width:100%;height:auto;display:block;margin-top:4px}
+.ffig .fgrp rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;cursor:pointer;transition:fill .18s ease,stroke .18s ease}
+.ffig .fgrp.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.ffig .ft{font:10px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.ffig .fe{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.ffig.focus .fgrp{opacity:.3;transition:opacity .18s ease}
+.ffig.focus .fgrp.on{opacity:1}
+
+/* ---------- hybrid query builder figure ---------- */
+.hfig{width:100%;height:auto;display:block;margin-top:4px}
+.hfig .mitem rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;cursor:pointer;transition:fill .18s ease,stroke .18s ease}
+.hfig .mitem.pass rect{fill:#e4f1e9;stroke:var(--b-node);stroke-width:2}
+.hfig .mitem.fail rect{fill:var(--b-paper);stroke:var(--b-line);opacity:.5}
+.hfig .mit{font:10px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.hfig .mis{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.hfig .badge{font:9px var(--mono);font-weight:700;text-anchor:middle}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling">data-modeling</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling/vector-sets">vector-sets</a><span class="rsep">/</span><span class="rcur">filtered-queries</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#metadata">Metadata</a>
+      <a href="#filter">Filter syntax</a>
+      <a href="#filteref">Filter-EF</a>
+      <a href="#hybrid">Hybrid search</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling/vector-sets">Vectors</a>
+          <span class="sep">/</span>
+          <span class="here">Filtered queries</span>
+        </nav>
+        <p class="kicker">R7.05.3 &middot; dive 3</p>
+        <h1>Filtered <span class="hns">queries</span>.</h1>
+        <p class="lede">Attach JSON metadata to vector elements and query by both vector similarity and structured
+          predicates in one step &mdash; <b>hybrid search</b>.</p>
+        <p class="heronote">A <code>VSIM FILTER</code> call finds the nearest neighbours <em>that also match a
+          predicate</em>. No post-processing, no two-stage pipeline. Select an operator family below; the readout
+          shows an example expression of that type.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#metadata">Metadata</a>
+          <a href="#filter">Filter syntax</a>
+          <a href="#filteref">Filter-EF</a>
+          <a href="#hybrid">Hybrid search</a>
+        </div>
+      </section>
+
+      <figure class="anatomy" aria-labelledby="fopCap">
+        <figcaption id="fopCap"><b>FILTER operator families.</b> Select a family; the readout shows an example
+          expression and what it matches.</figcaption>
+        <div class="segbar" id="fopSel" role="group" aria-label="A FILTER operator family to inspect">
+          <button type="button" data-f="cmp" aria-pressed="false">Comparisons</button>
+          <button type="button" data-f="logic" aria-pressed="false">Logic</button>
+          <button type="button" data-f="arith" aria-pressed="false">Arithmetic</button>
+          <button type="button" data-f="contain" aria-pressed="false">Containment</button>
+          <button type="button" data-f="sel" aria-pressed="false">Selectors</button>
+        </div>
+        <svg class="ffig" id="ffig" viewBox="0 0 440 130" role="img" aria-label="Five FILTER operator families drawn as labelled boxes: Comparisons (greater than, less than, equals, not-equals), Logic (and, or, not), Arithmetic (division, multiplication, addition), Containment (in operator), and Selectors (.field dot notation). Selecting a family highlights it and the readout shows an example expression.">
+          <g class="fgrp" data-f="cmp">
+            <rect x="6" y="16" width="76" height="50" rx="6"></rect>
+            <text class="ft" x="44" y="34">Compare</text>
+            <text class="fe" x="44" y="48">&gt; &gt;= &lt; &lt;=</text>
+            <text class="fe" x="44" y="60">== !=</text>
+          </g>
+          <g class="fgrp" data-f="logic">
+            <rect x="92" y="16" width="76" height="50" rx="6"></rect>
+            <text class="ft" x="130" y="34">Logic</text>
+            <text class="fe" x="130" y="48">and / or</text>
+            <text class="fe" x="130" y="60">not</text>
+          </g>
+          <g class="fgrp" data-f="arith">
+            <rect x="178" y="16" width="76" height="50" rx="6"></rect>
+            <text class="ft" x="216" y="34">Arithmetic</text>
+            <text class="fe" x="216" y="48">/ * + -</text>
+            <text class="fe" x="216" y="60">on values</text>
+          </g>
+          <g class="fgrp" data-f="contain">
+            <rect x="264" y="16" width="76" height="50" rx="6"></rect>
+            <text class="ft" x="302" y="34">Containment</text>
+            <text class="fe" x="302" y="48">value</text>
+            <text class="fe" x="302" y="60">in [..]</text>
+          </g>
+          <g class="fgrp" data-f="sel">
+            <rect x="350" y="16" width="82" height="50" rx="6"></rect>
+            <text class="ft" x="391" y="34">Selectors</text>
+            <text class="fe" x="391" y="48">.field</text>
+            <text class="fe" x="391" y="60">dot access</text>
+          </g>
+          <text class="fe" x="6" y="118" text-anchor="start" style="font:10px var(--mono);fill:var(--b-dim)">all families combine freely in one FILTER &#39;&lt;expr&gt;&#39; string</text>
+        </svg>
+        <div class="readout" id="fopOut" aria-live="polite"><span class="rk">readout &middot;</span> Select an operator
+          family. All five families combine freely: <code>VSIM key ... FILTER &#39;.year &gt;= 2000 and .genre == &#34;scifi&#34;&#39;</code>
+          uses comparisons and logic together.</div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="metadata">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Attaching metadata</h2>
+        <span class="ssrc">filtered-queries.md.txt &middot; Attaching Metadata</span>
+      </div>
+      <div class="prose">
+        <p>Use the <code>SETATTR</code> option on <code>VADD</code> to attach a JSON object to each element at
+          insert time. The object can hold any JSON-serialisable values &mdash; numbers, strings, booleans, nested
+          objects:</p>
+      </div>
+      <pre class="code"><span class="cmt"># Insert three movies with metadata</span>
+<b>VADD</b> movies VALUES 128 &lt;embedding&gt; "inception"  SETATTR &#39;{"year": 2010, "genre": "scifi",  "rating": 8.8}&#39;
+<b>VADD</b> movies VALUES 128 &lt;embedding&gt; "arrival"    SETATTR &#39;{"year": 2016, "genre": "scifi",  "rating": 7.9}&#39;
+<b>VADD</b> movies VALUES 128 &lt;embedding&gt; "parasite"   SETATTR &#39;{"year": 2019, "genre": "drama",  "rating": 8.5}&#39;</pre>
+      <div class="prose">
+        <p>Attributes on an element already in the set can be updated at any time with <code>VSETATTR</code> &mdash;
+          the HNSW graph entry stays in place, only the metadata changes. This makes it practical to refresh values
+          such as <code>in_stock</code> or <code>price</code> without touching the vector.</p>
+        <p>Elements with missing fields or malformed JSON are <strong>silently excluded</strong> from any
+          <code>FILTER</code> result that references those fields. No error surfaces; the element does not
+          appear in the result set. This means a schema migration &mdash; adding a new field to some elements but
+          not yet others &mdash; does not break running queries; elements without the field are invisible to any
+          predicate that mentions it.</p>
+      </div>
+      <p class="take"><code>SETATTR</code> binds a JSON metadata object to the vector at insert time; <code>VSETATTR</code>
+        refreshes it later without touching the HNSW graph. Elements missing a referenced field are silently
+        excluded from filtered results.</p>
+    </section>
+
+    <section id="filter">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The FILTER expression</h2>
+        <span class="ssrc">filtered-queries.md.txt &middot; The FILTER Expression</span>
+      </div>
+      <div class="prose">
+        <p>Pass <code>FILTER &#39;&lt;expr&gt;&#39;</code> to <code>VSIM</code> to restrict results to elements whose
+          metadata matches the predicate. The expression is evaluated per-candidate during graph traversal &mdash;
+          it does not execute as a separate post-filter pass:</p>
+      </div>
+      <pre class="code"><span class="cmt"># Find the 10 science-fiction films from 2000 or later most similar to the query</span>
+<b>VSIM</b> movies VALUES 128 &lt;embedding&gt; FILTER &#39;.year &gt;= 2000 and .genre == "scifi"&#39; COUNT 10</pre>
+
+      <table class="tbl">
+        <thead>
+          <tr><th>Operator type</th><th>Examples</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="hi">Comparisons</td>
+            <td><code>.year &gt;= 1980</code>, <code>.rating &lt; 9.0</code>, <code>.year == 2010</code>, <code>.genre != "horror"</code></td>
+          </tr>
+          <tr>
+            <td class="hi">Logic</td>
+            <td><code>and</code> / <code>or</code> / <code>not</code> (also <code>&amp;&amp;</code> / <code>||</code> / <code>!</code>)</td>
+          </tr>
+          <tr>
+            <td class="hi">Arithmetic</td>
+            <td><code>.budget / 1000000 &gt; 100</code></td>
+          </tr>
+          <tr>
+            <td class="hi">Containment</td>
+            <td><code>.director in ["Spielberg", "Nolan"]</code></td>
+          </tr>
+          <tr>
+            <td class="hi">Selectors</td>
+            <td><code>.field</code> accesses any JSON attribute</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="prose">
+        <p>Examples combining families:</p>
+      </div>
+      <pre class="code">.year &gt;= 1980 and .year &lt; 1990
+.genre == "action" and .rating &gt; 8.0
+.director in ["Spielberg", "Nolan"]
+(.budget / 1000000) &gt; 100 and .rating &gt; 7</pre>
+
+      <p class="take">The <code>FILTER</code> grammar evaluates a predicate over each candidate&#8217;s JSON attributes
+        during traversal. Combine all five operator families freely in one expression string.</p>
+    </section>
+
+    <section id="filteref">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Filter effort (FILTER-EF)</h2>
+        <span class="ssrc">filtered-queries.md.txt &middot; Filter Effort</span>
+      </div>
+      <div class="prose">
+        <p>By default, a filtered <code>VSIM</code> explores <code>COUNT &times; 100</code> candidates before
+          returning results. For highly selective predicates &mdash; where only a small fraction of elements pass
+          &mdash; this budget may not yield enough passing candidates to fill the requested <code>COUNT</code>. In
+          that case, increase the effort:</p>
+      </div>
+      <pre class="code"><span class="cmt"># A rare predicate: increase exploration to 5 000 candidates</span>
+<b>VSIM</b> key VALUES 128 &lt;embedding&gt; FILTER &#39;.rare_field == 1&#39; FILTER-EF 5000</pre>
+      <div class="prose">
+        <p>Setting <code>FILTER-EF 0</code> removes the candidate ceiling: the search continues until
+          <code>COUNT</code> passing elements are found, potentially scanning the entire index. The trade-off is
+          linear: higher <code>FILTER-EF</code> improves recall for selective predicates at the cost of increased
+          latency. The default (<code>COUNT * 100</code>) is adequate when a reasonable fraction of elements pass
+          the filter.</p>
+        <p>A practical heuristic: measure the selectivity of the predicate (what fraction of elements pass) and
+          set <code>FILTER-EF</code> so the expected number of passing candidates is at least <code>COUNT * 2</code>.
+          For a predicate that passes 1% of elements with <code>COUNT 10</code>, a <code>FILTER-EF</code> of 2000
+          gives a reasonable margin.</p>
+      </div>
+      <p class="take"><code>FILTER-EF</code> controls the candidate budget. Raise it when the predicate is highly
+        selective and results come back short. <code>FILTER-EF 0</code> scans until satisfied.</p>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>The BCS stack runs <strong>Valkey 9</strong>, which
+        does not have <code>VADD</code>, <code>VSIM</code>, or <code>FILTER</code> as native commands. The
+        <strong><code>valkey-search</code> module</strong> reaches the same hybrid-search idea via
+        <code>FT.SEARCH</code> with numeric and tag filter expressions &mdash; for example,
+        <code>FT.SEARCH idx &#34;@genre:{scifi} @year:[2000 +inf]=&gt;[KNN 10 @embedding $vec]&#34;</code>. The
+        filter grammar and the <code>FILTER-EF</code> tuning knob are specific to Redis 8 Vector Sets; the
+        <code>valkey-search</code> path uses its own syntax and index schema instead. Same hybrid-search idea;
+        different API surface. Cite:
+        <a href="https://valkey.io/topics/search/" rel="noopener">valkey.io/topics/search</a> &middot;
+        <a href="https://valkey.io/commands/ft.create/" rel="noopener">valkey.io/commands/ft.create</a>.</p>
+    </section>
+
+    <section id="hybrid">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Hybrid search</h2>
+        <span class="ssrc">filtered-queries.md.txt &middot; Hybrid Search</span>
+      </div>
+      <div class="prose">
+        <p>A filtered vector query is <strong>hybrid search</strong>: a vector neighbourhood AND a structured
+          predicate in a single operation. No post-processing join, no two-stage pipeline:</p>
+      </div>
+      <pre class="code"><span class="cmt"># 10 science-fiction films from 2000 or later, most similar to the query vector</span>
+<b>VSIM</b> movies VALUES 128 &lt;embedding&gt; FILTER &#39;.year &gt;= 2000 and .genre == "scifi"&#39; COUNT 10 WITHSCORES</pre>
+      <div class="prose">
+        <p>This finds the 10 movies most similar to the query vector <em>that are also science fiction released
+          after 2000</em>. Traditional keyword search handles the predicate; vector search handles the similarity;
+          hybrid search handles both at once. The HNSW graph traversal and the metadata predicate evaluate
+          together during graph exploration &mdash; candidates that fail the predicate are bypassed rather than
+          retrieved and then discarded.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="hybCap">
+        <figcaption id="hybCap"><b>Hybrid query builder.</b> The predicate is <code>.genre == &#34;scifi&#34; and
+          .year &gt;= 2000</code>. Select a movie to see whether it passes or is excluded, and why.</figcaption>
+        <div class="segbar" id="hybSel" role="group" aria-label="A movie entry to inspect">
+          <button type="button" data-m="inception" aria-pressed="false">Inception</button>
+          <button type="button" data-m="arrival" aria-pressed="false">Arrival</button>
+          <button type="button" data-m="parasite" aria-pressed="false">Parasite</button>
+          <button type="button" data-m="gladiator" aria-pressed="false">Gladiator</button>
+          <button type="button" data-m="metropolis" aria-pressed="false">Metropolis</button>
+        </div>
+        <svg class="hfig" id="hfig" viewBox="0 0 440 170" role="img" aria-label="Five movie entries shown as boxes. Inception (2010, scifi, score 0.92) passes the predicate and is highlighted in green. Arrival (2016, scifi, score 0.88) also passes. Parasite (2019, drama, score 0.81) fails: genre is drama. Gladiator (2000, action, score 0.74) fails: genre is action. Metropolis (1927, scifi, score 0.68) fails: year is before 2000. Selecting a movie highlights it and the readout explains the pass or fail.">
+          <!-- column labels -->
+          <text style="font:9px var(--mono);fill:var(--b-dim)" x="6" y="14">title</text>
+          <text style="font:9px var(--mono);fill:var(--b-dim)" x="180" y="14">genre</text>
+          <text style="font:9px var(--mono);fill:var(--b-dim)" x="252" y="14">year</text>
+          <text style="font:9px var(--mono);fill:var(--b-dim)" x="316" y="14">sim score</text>
+          <text style="font:9px var(--mono);fill:var(--b-dim)" x="388" y="14">result</text>
+
+          <!-- row: inception -->
+          <g class="mitem" data-m="inception" id="mrow-inception">
+            <rect x="4" y="20" width="430" height="26" rx="4"></rect>
+            <text class="mit" x="90" y="37">Inception</text>
+            <text class="mis" x="205" y="37">scifi</text>
+            <text class="mis" x="270" y="37">2010</text>
+            <text class="mis" x="340" y="37">0.92</text>
+            <text class="badge" id="badge-inception" x="404" y="37" fill="var(--b-node)">PASS</text>
+          </g>
+          <!-- row: arrival -->
+          <g class="mitem" data-m="arrival" id="mrow-arrival">
+            <rect x="4" y="52" width="430" height="26" rx="4"></rect>
+            <text class="mit" x="90" y="69">Arrival</text>
+            <text class="mis" x="205" y="69">scifi</text>
+            <text class="mis" x="270" y="69">2016</text>
+            <text class="mis" x="340" y="69">0.88</text>
+            <text class="badge" id="badge-arrival" x="404" y="69" fill="var(--b-node)">PASS</text>
+          </g>
+          <!-- row: parasite -->
+          <g class="mitem" data-m="parasite" id="mrow-parasite">
+            <rect x="4" y="84" width="430" height="26" rx="4"></rect>
+            <text class="mit" x="90" y="101">Parasite</text>
+            <text class="mis" x="205" y="101">drama</text>
+            <text class="mis" x="270" y="101">2019</text>
+            <text class="mis" x="340" y="101">0.81</text>
+            <text class="badge" id="badge-parasite" x="404" y="101" fill="var(--b-dim)">SKIP</text>
+          </g>
+          <!-- row: gladiator -->
+          <g class="mitem" data-m="gladiator" id="mrow-gladiator">
+            <rect x="4" y="116" width="430" height="26" rx="4"></rect>
+            <text class="mit" x="90" y="133">Gladiator</text>
+            <text class="mis" x="205" y="133">action</text>
+            <text class="mis" x="270" y="133">2000</text>
+            <text class="mis" x="340" y="133">0.74</text>
+            <text class="badge" id="badge-gladiator" x="404" y="133" fill="var(--b-dim)">SKIP</text>
+          </g>
+          <!-- row: metropolis -->
+          <g class="mitem" data-m="metropolis" id="mrow-metropolis">
+            <rect x="4" y="148" width="430" height="26" rx="4"></rect>
+            <text class="mit" x="90" y="165">Metropolis</text>
+            <text class="mis" x="205" y="165">scifi</text>
+            <text class="mis" x="270" y="165">1927</text>
+            <text class="mis" x="340" y="165">0.68</text>
+            <text class="badge" id="badge-metropolis" x="404" y="165" fill="var(--b-dim)">SKIP</text>
+          </g>
+        </svg>
+        <div class="readout" id="hybOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a movie.
+          Predicate: <code>.genre == &#34;scifi&#34; and .year &gt;= 2000</code>. Inception and Arrival pass; Parasite,
+          Gladiator, and Metropolis are excluded. The two passing entries appear in the result ranked by similarity
+          score (0.92 then 0.88).</div>
+      </figure>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Hybrid search: <code>VSIM FILTER</code> combines vector similarity and a structured predicate in one
+            traversal. No separate post-filter pass; HNSW candidates that fail the predicate are bypassed during
+            graph exploration.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">on Valkey via valkey-search</span>
+          <p>The BCS stack uses <strong>Valkey 9</strong>. The <code>valkey-search</code> module reaches hybrid
+            search via <code>FT.SEARCH</code> with numeric and tag filter clauses combined with a
+            <code>KNN</code> vector query in the same command. Define the schema with <code>FT.CREATE</code>;
+            query with the combined syntax. No <code>FILTER</code> keyword; different but equivalent.</p>
+        </div>
+      </div>
+
+      <p class="take">Hybrid search unifies vector similarity and predicate filtering in a single
+        <code>VSIM FILTER</code> call. The predicate is applied during HNSW traversal; only passing candidates
+        count toward the <code>COUNT</code> result. For selective predicates, tune <code>FILTER-EF</code> so the
+        search explores enough candidates to satisfy the count.</p>
+
+      <div class="doors">
+        <div class="door">
+          <span class="dr">R7.05.1 &middot; in this course</span>
+          <h3>The HNSW graph</h3>
+          <p>The graph structure, core commands, quantization trade-offs, and the engine note (Redis 8 native
+            vs <code>valkey-search</code> module).
+            <a href="/redis-patterns/data-modeling/vector-sets/the-hnsw-graph">the-hnsw-graph</a>.</p>
+        </div>
+        <div class="door">
+          <span class="dr">R7.05.2 &middot; in this course</span>
+          <h3>RAG and recommendations</h3>
+          <p>The five-step RAG pipeline, semantic caching for 40&ndash;60% LLM cost reduction, and
+            recommendations via <code>VSIM ELE</code>.
+            <a href="/redis-patterns/data-modeling/vector-sets/rag-and-recommendations">rag-and-recommendations</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://redis.io/docs/latest/develop/data-types/vector-sets/" rel="noopener">Redis &mdash; <em>Vector sets</em></a> &mdash; the FILTER section and SETATTR reference.</li>
+            <li><a href="https://redis.io/docs/latest/commands/vadd/" rel="noopener">Redis &mdash; <em>VADD</em></a> &mdash; SETATTR option at insert time; VSETATTR for later updates.</li>
+            <li><a href="https://valkey.io/topics/search/" rel="noopener">Valkey &mdash; <em>Search</em></a> &mdash; the Valkey path to hybrid search via <code>FT.SEARCH</code> and filter expressions.</li>
+            <li><a href="https://valkey.io/commands/ft.create/" rel="noopener">Valkey &mdash; <em>FT.CREATE</em></a> &mdash; defining VECTOR schema fields on Valkey-search.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/vector-sets">R7.05 &middot; Vectors hub</a><span class="rs">the module overview</span></li>
+            <li><a href="/redis-patterns/data-modeling/vector-sets/the-hnsw-graph">R7.05.1 &middot; The HNSW graph</a><span class="rs">commands, graph structure, quantization, engine note</span></li>
+            <li><a href="/redis-patterns/data-modeling/vector-sets/rag-and-recommendations">R7.05.2 &middot; RAG and recommendations</a><span class="rs">RAG pipeline, semantic cache, recommendations</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/data-modeling/vector-sets/rag-and-recommendations"><span class="pk">prev</span>&#8592; R7.05.2 &middot; RAG and recommendations</a>
+      <a class="pgx" href="/redis-patterns/data-modeling/vector-sets"><span class="pk">next</span>R7.05 &middot; Vectors hub &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied &mdash; the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/data-modeling/vector-sets">R7.05 &middot; Vectors hub</a>
+        <a href="/redis-patterns/data-modeling/vector-sets/the-hnsw-graph">R7.05.1 &middot; The HNSW graph</a>
+        <a href="/redis-patterns/data-modeling/vector-sets/rag-and-recommendations">R7.05.2 &middot; RAG and recommendations</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns &mdash; this course</a>
+        <a href="/bcs/overview">The Branded Component System &mdash; overview</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp &mdash; activate to decode">
+        build <span class="id" id="stampId">TSK0OHBDFyEWcT</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- hero: FILTER operator family selector (hover-select, pure map from family to example) ---------- */
+  // Five FILTER operator families. Selecting one is a pure lookup from family key to example expression + description.
+  var FOP = {
+    cmp:     { text: '<b>Comparisons</b>: test numeric or string values. Examples: <code>.year &gt;= 1980</code> (year 1980 or later), <code>.rating &lt; 9.0</code> (rating below 9), <code>.year == 2010</code> (exact year), <code>.genre != "horror"</code> (not horror). Operators: <code>&gt;</code> <code>&gt;=</code> <code>&lt;</code> <code>&lt;=</code> <code>==</code> <code>!=</code>. A missing field silently excludes the element.' },
+    logic:   { text: '<b>Logic operators</b>: combine predicates. <code>and</code> (both must hold), <code>or</code> (either), <code>not</code> (negation). Symbol aliases: <code>&amp;&amp;</code> / <code>||</code> / <code>!</code>. Example: <code>.genre == "action" and .rating &gt; 8.0</code> &mdash; action films rated above 8.' },
+    arith:   { text: '<b>Arithmetic</b>: compute on field values before comparing. Example: <code>.budget / 1000000 &gt; 100</code> matches films with a budget above 100 million (stored in raw units). Operators: <code>/</code> <code>*</code> <code>+</code> <code>-</code>. Useful when values are stored in natural units and the threshold is in a derived unit.' },
+    contain: { text: '<b>Containment</b>: test set membership. <code>.director in ["Spielberg", "Nolan"]</code> matches any element whose <code>director</code> field equals one of the listed strings. The list can hold strings or numbers. Only the <code>in</code> form is supported (not <code>not in</code> directly &mdash; use <code>not (.field in [...])</code>).' },
+    sel:     { text: '<b>Selectors</b>: <code>.field</code> dot notation accesses any attribute in the JSON object attached with <code>SETATTR</code>. Examples: <code>.year</code>, <code>.genre</code>, <code>.rating</code>, <code>.in_stock</code>. Nested paths are not supported in the filter grammar &mdash; flatten nested data at insert time if needed.' }
+  };
+  var ffig = document.getElementById('ffig');
+  var fopButtons = document.querySelectorAll('#fopSel button');
+  var fopOut = document.getElementById('fopOut');
+  function selectFop(f) {
+    fopButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-f') === f ? 'true' : 'false');
+    });
+    if (ffig) {
+      ffig.classList.toggle('focus', !!f);
+      ffig.querySelectorAll('.fgrp').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-f') === f);
+      });
+    }
+    if (f && FOP[f]) {
+      fopOut.innerHTML = '<span class="rk">readout &middot;</span> ' + FOP[f].text;
+    } else {
+      fopOut.innerHTML = '<span class="rk">readout &middot;</span> Select an operator family. All five families combine freely: <code>VSIM key ... FILTER \'.year &gt;= 2000 and .genre == "scifi"\'</code> uses comparisons and logic together.';
+    }
+  }
+  fopButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var f = b.getAttribute('data-f');
+      selectFop(b.getAttribute('aria-pressed') === 'true' ? null : f);
+    });
+    b.addEventListener('mouseenter', function () { selectFop(b.getAttribute('data-f')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#fopSel button[aria-pressed="true"]');
+      selectFop(pressed ? pressed.getAttribute('data-f') : null);
+    });
+  });
+
+  /* ---------- hybrid query builder (hover-select, pure map from movie to pass/fail description) ---------- */
+  // Fixed dataset: 5 movies. Predicate: .genre == "scifi" and .year >= 2000.
+  // Selecting a movie is a pure lookup to its pass/fail verdict and reason.
+  var MOVIES = {
+    inception:   { pass: true,  text: '<b>Inception (2010, scifi, score 0.92)</b>: <b>PASS</b>. Genre is "scifi" &#10003; and year 2010 &ge; 2000 &#10003;. Both conditions hold; this entry appears in the result at rank 1 (highest similarity score 0.92 among passing candidates).' },
+    arrival:     { pass: true,  text: '<b>Arrival (2016, scifi, score 0.88)</b>: <b>PASS</b>. Genre is "scifi" &#10003; and year 2016 &ge; 2000 &#10003;. Appears in the result at rank 2 (score 0.88).' },
+    parasite:    { pass: false, text: '<b>Parasite (2019, drama, score 0.81)</b>: <b>SKIP</b>. Genre is "drama" &mdash; the predicate requires "scifi". Although year 2019 &ge; 2000, the genre check fails. Silently excluded from results despite being the third-nearest vector.' },
+    gladiator:   { pass: false, text: '<b>Gladiator (2000, action, score 0.74)</b>: <b>SKIP</b>. Genre is "action" &mdash; the predicate requires "scifi". Year 2000 satisfies &ge; 2000, but both conditions must hold (<code>and</code>). Excluded.' },
+    metropolis:  { pass: false, text: '<b>Metropolis (1927, scifi, score 0.68)</b>: <b>SKIP</b>. Genre is "scifi" &#10003; but year 1927 &lt; 2000 &mdash; the year condition fails. Excluded despite matching the genre.' }
+  };
+  var hybButtons = document.querySelectorAll('#hybSel button');
+  var hybOut = document.getElementById('hybOut');
+  function selectHyb(m) {
+    hybButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-m') === m ? 'true' : 'false');
+    });
+    Object.keys(MOVIES).forEach(function (k) {
+      var row = document.getElementById('mrow-' + k);
+      if (!row) return;
+      if (m) {
+        row.classList.toggle('pass', k === m && MOVIES[k].pass);
+        row.classList.toggle('fail', k === m && !MOVIES[k].pass);
+      } else {
+        row.classList.remove('pass', 'fail');
+      }
+    });
+    if (m && MOVIES[m]) {
+      hybOut.innerHTML = '<span class="rk">readout &middot;</span> ' + MOVIES[m].text;
+    } else {
+      hybOut.innerHTML = '<span class="rk">readout &middot;</span> Select a movie. Predicate: <code>.genre == "scifi" and .year &gt;= 2000</code>. Inception and Arrival pass; Parasite, Gladiator, and Metropolis are excluded. The two passing entries appear in the result ranked by similarity score (0.92 then 0.88).';
+    }
+  }
+  hybButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var m = b.getAttribute('data-m');
+      selectHyb(b.getAttribute('aria-pressed') === 'true' ? null : m);
+    });
+    b.addEventListener('mouseenter', function () { selectHyb(b.getAttribute('data-m')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#hybSel button[aria-pressed="true"]');
+      selectHyb(pressed ? pressed.getAttribute('data-m') : null);
+    });
+  });
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

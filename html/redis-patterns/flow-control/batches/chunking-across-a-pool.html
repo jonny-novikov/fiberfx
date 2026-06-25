@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.04.2 — Chunking across a pool · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.04.2 dive: a pool of pipelined connectors flushes a batch round-robin across several sockets. EchoMQ.Pool dispatches each call to the next member by a lock-free atomic counter (:atomics.add_get), default size 4. enqueue_many/4 with via: EchoMQ.Pool routes the SCRIPT LOAD and the EVALSHA flush through the pool; because Valkey's script cache is server-global, one SCRIPT LOAD on any member makes the SHA resolvable on every member, so the round-robin EVALSHA never NOSCRIPT-faults. Chunk a huge batch so no member's FIFO grows unbounded. Grounded in echo/apps/echo_mq — pool.ex, jobs.ex enqueue_many/4.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the pool dispatch figure (hover-select) ---------- */
+.dflow{width:100%;height:auto;display:block;margin-top:4px}
+.dflow .member{cursor:pointer;transition:opacity .18s ease}
+.dflow .member rect{fill:var(--b-pay-tint);stroke:var(--b-line);stroke-width:1.3}
+.dflow .member text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.dflow .member .mb{font-weight:700}
+.dflow .disp rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.3}
+.dflow .disp text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.dflow .arr{stroke:var(--b-dim);stroke-width:1.4;fill:none}
+.dflow.focus .member{opacity:.24}
+.dflow.focus .member.on{opacity:1}
+.dflow.focus .member.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+/* ---------- the cache figure (hover-select) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .case{cursor:pointer;transition:opacity .18s ease}
+.cflow .case .cb{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.3}
+.cflow .case text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .case .ct{font-weight:700}
+.cflow .case .ok{fill:var(--b-node)}
+.cflow .case .bad{fill:var(--b-ns)}
+.cflow.focus .case{opacity:.24}
+.cflow.focus .case.on{opacity:1}
+.cflow.focus .case.on .cb{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><a href="/redis-patterns/flow-control/batches">batches</a><span class="rsep">/</span><span class="rcur">chunking-across-a-pool</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#pool">A pool of pipelines</a>
+      <a href="#front">Fronting the flush</a>
+      <a href="#cache">The fault that does not happen</a>
+      <a href="#applied">Applied</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control/batches">Batches</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Chunking across a pool</span>
+      </nav>
+      <p class="kicker">R6.04.2 &#183; Batches &#8212; dive</p>
+      <h1>Chunking across <span class="hns">a pool</span>.</h1>
+      <p class="lede">One pipelined connection is already fast; a pool of them is faster, because the flush
+      round-robins across several sockets. The trick that makes it safe is that the <b>script cache is
+      server-global</b> &#8212; load the body once on any member and every member can run it by SHA. This dive is
+      about flushing a batch through <code>EchoMQ.Pool</code>, and the one property that keeps a round-robin
+      <code>EVALSHA</code> from faulting.</p>
+      <p class="heronote">Grounding: echo/apps/echo_mq/lib/echo_mq/pool.ex (a fixed pool of pipelined connectors,
+      lock-free round-robin via :atomics.add_get, default size 4) &#183; jobs.ex enqueue_many/4 with via: EchoMQ.Pool
+      routes both wire steps through the pool.</p>
+
+      <figure class="anatomy" aria-labelledby="dCap">
+        <figcaption id="dCap"><b>One dispatcher, four pipelined members.</b> Select a member to read it. A caller hits
+        the next member by an atomic counter; each member is already a pipeline, so the pool multiplies throughput
+        without a checkout step.</figcaption>
+        <div class="segbar" id="dSel" role="group" aria-label="Select a pool member">
+          <button type="button" data-m="m1" aria-pressed="false">member 1</button>
+          <button type="button" data-m="m2" aria-pressed="false">member 2</button>
+          <button type="button" data-m="m3" aria-pressed="false">member 3</button>
+          <button type="button" data-m="m4" aria-pressed="false">member 4</button>
+        </div>
+        <svg class="dflow" id="dflow" viewBox="0 0 460 160" role="img" aria-label="A dispatcher on the left feeds four pipelined connector members, each a socket to the one server. The dispatcher picks the next member by an atomic counter, so consecutive calls spread across members one, two, three, four and wrap. Select a member to highlight it.">
+          <g class="disp"><rect x="14" y="58" width="92" height="44" rx="6"></rect><text x="60" y="76">next/1</text><text x="60" y="90">atomic counter</text></g>
+          <path class="arr" d="M106 68 L150 42" marker-end="url(#dar)"></path>
+          <path class="arr" d="M106 76 L150 70" marker-end="url(#dar)"></path>
+          <path class="arr" d="M106 84 L150 100" marker-end="url(#dar)"></path>
+          <path class="arr" d="M106 92 L150 128" marker-end="url(#dar)"></path>
+          <g class="member" data-m="m1"><rect x="152" y="26" width="150" height="30" rx="5"></rect><text class="mb" x="227" y="45">member 1 &#183; pipeline</text></g>
+          <g class="member" data-m="m2"><rect x="152" y="60" width="150" height="30" rx="5"></rect><text class="mb" x="227" y="79">member 2 &#183; pipeline</text></g>
+          <g class="member" data-m="m3"><rect x="152" y="94" width="150" height="30" rx="5"></rect><text class="mb" x="227" y="113">member 3 &#183; pipeline</text></g>
+          <g class="member" data-m="m4"><rect x="152" y="128" width="150" height="30" rx="5"></rect><text class="mb" x="227" y="147">member 4 &#183; pipeline</text></g>
+          <path class="arr" d="M302 41 L340 78" marker-end="url(#dar)"></path>
+          <path class="arr" d="M302 75 L340 80" marker-end="url(#dar)"></path>
+          <path class="arr" d="M302 109 L340 84" marker-end="url(#dar)"></path>
+          <path class="arr" d="M302 143 L340 88" marker-end="url(#dar)"></path>
+          <g class="disp"><rect x="342" y="66" width="104" height="30" rx="5"></rect><text x="394" y="85">one server :6390</text></g>
+          <defs><marker id="dar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#68705f"></path></marker></defs>
+        </svg>
+        <div class="readout" id="dOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a member. The
+        dispatcher <code>next/1</code> picks the next member with a lock-free atomic add-and-get, so consecutive calls
+        spread across the four members and wrap. Each member is its own pipelined socket to the one server &#8212; the
+        pool widens the wire without checkout ceremony.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="pool">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>A pool of pipelines</h2>
+        <span class="ssrc">pool.ex &#183; next/1</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoMQ.Pool</code> is a fixed pool of pipelined connectors with lock-free round-robin dispatch. Each
+        member is already a pipeline, so a small pool multiplies throughput without checkout ceremony: a caller hits
+        the next member by an atomic counter, and that member's own FIFO does the rest. One supervisor, N connectors,
+        one dispatcher.</p>
+        <p>The default size is four. <code>next/1</code> picks the next member with an atomic add-and-get &#8212; no
+        lock, no contention:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Pool &#183; echo/apps/echo_mq &#8212; next/1: lock-free round-robin by an atomic counter<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd">defp</span> next(name) <span class="fd">do</span>
+  {size, at} = :persistent_term.get({__MODULE__, name})
+  member(name, rem(<b>:atomics.add_get</b>(at, 1, 1), size) + 1)
+<span class="fd">end</span></pre>
+      </figure>
+      <div class="prose">
+        <p><code>:atomics.add_get</code> bumps a shared counter and returns the new value in one hardware-atomic step;
+        the remainder maps it onto a member index. Two callers racing to dispatch get two different members, with no
+        coordination between them. <code>command/3</code>, <code>pipeline/3</code>, and <code>eval/5</code> all route
+        through this <code>next/1</code>, so every call spreads across the pool.</p>
+      </div>
+      <p class="take">A pool is N pipelined connectors and one dispatcher. <code>next/1</code> hands out the next
+      member by a lock-free atomic counter, so dispatch costs no lock and no checkout &#8212; the member's own FIFO
+      carries the pipeline.</p>
+    </section>
+
+    <section id="front">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Fronting the flush with the pool</h2>
+        <span class="ssrc">jobs.ex &#183; opts[:via]</span>
+      </div>
+      <div class="prose">
+        <p><code>enqueue_many/4</code> takes the pool through <code>opts[:via]</code>. The default <code>via</code> is
+        the single connector &#8212; so the single-argument form is unchanged &#8212; and passing
+        <code>via: EchoMQ.Pool</code> routes both wire steps through the pool instead: the <code>SCRIPT LOAD</code>,
+        and the <code>EchoWire.Pipe</code> flush.</p>
+      </div>
+      <pre class="code"><b>EchoMQ.Jobs.enqueue_many</b>(conn, "cm", pairs, <b>via: EchoMQ.Pool</b>)
+<span class="cmt"># &#8594; SCRIPT LOAD on one member; the EVALSHA batch flushed round-robin via Pool.pipeline/3</span></pre>
+      <div class="prose">
+        <p>The pipe carries the <code>via</code> reference and flushes through <code>Pool.pipeline/3</code> when a
+        pool is supplied. The reference is carried, never inspected &#8212; the batch does not look inside the pool, it
+        only dispatches through it.</p>
+      </div>
+      <p class="take">One option moves both wire steps onto the pool. The default keeps the single connector; passing
+      the pool as <code>via</code> round-robins the load, and the pool reference is carried through and never
+      inspected.</p>
+    </section>
+
+    <section id="cache">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The fault that does not happen</h2>
+        <span class="ssrc">jobs.ex &#183; server-global SCRIPT LOAD</span>
+      </div>
+      <div class="prose">
+        <p>Here is the hazard the design has to answer. <code>enqueue_many/4</code> loads the script with
+        <code>SCRIPT LOAD</code> once, on whichever member the call lands on. Then it sends the batch as
+        <code>EVALSHA</code> &#8212; run-by-SHA &#8212; round-robin across members. If the cache were per connection,
+        every member except the one that loaded the body would answer the <code>EVALSHA</code> with
+        <code>NOSCRIPT</code>, because they had never seen the script.</p>
+        <p>That fault does not happen, because Valkey's script cache is <strong>server-global</strong>. There is one
+        server, and one cache in it; the SHA the first member loaded is resolvable for every connection to that
+        server, pooled or not. So a single <code>SCRIPT LOAD</code> on any member makes the subsequent round-robin
+        <code>EVALSHA</code> resolve on all of them.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Jobs &#183; echo/apps/echo_mq &#8212; enqueue_many/4: the two wire steps through `via`<span class="tag">verbatim</span></figcaption>
+        <pre>via = Keyword.get(opts, :via, Connector)
+{:ok, _} = via.command(conn, [<b>"SCRIPT"</b>, <b>"LOAD"</b>, @enqueue.source])   <span class="fd">&#8592; cache once — server-global</span>
+
+<span class="fd"># ... then the EVALSHA batch, assembled into a Pipe and flushed</span>
+<span class="fd"># round-robin through Pool.pipeline/3 — every member resolves the SHA</span></pre>
+      </figure>
+      <div class="prose">
+        <p>The <code>SCRIPT LOAD</code> caches the script on whichever member it lands on; because the cache is
+        server-global, that one load makes the SHA resolvable on every member, which is why the round-robin
+        <code>EVALSHA</code> never faults across members. The pool spreads the flush; the shared cache keeps it
+        correct.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Multiply a pipelined flush across several connections without coordination &#8212; and keep a cached
+          script resolvable on all of them.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Pool</code> dispatches each call to the next member by a lock-free atomic counter;
+          <code>enqueue_many/4</code> with <code>via: EchoMQ.Pool</code> flushes the <code>EVALSHA</code> batch
+          round-robin, and the server-global script cache keeps every member's <code>EVALSHA</code> resolvable from
+          one <code>SCRIPT LOAD</code>.</p>
+        </div>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="cCap">
+        <figcaption id="cCap"><b>Per-connection cache against server-global cache.</b> Select a case to read what a
+        round-robin <code>EVALSHA</code> does under each. Only the second case is how Valkey actually behaves.</figcaption>
+        <div class="segbar" id="cSel" role="group" aria-label="Select a cache model">
+          <button type="button" data-c="perconn" aria-pressed="false">if cache were per-connection</button>
+          <button type="button" data-c="global" aria-pressed="false">server-global (real)</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 150" role="img" aria-label="Two cache models. If the cache were per connection, only the member that ran SCRIPT LOAD resolves the SHA and the other members answer NOSCRIPT. With the real server-global cache, one SCRIPT LOAD makes the SHA resolvable on every member and the round-robin EVALSHA always resolves. Select a case to read it.">
+          <g class="case" data-c="perconn">
+            <rect class="cb" x="20" y="30" width="200" height="92" rx="6"></rect>
+            <text class="ct" x="120" y="52">per-connection cache</text>
+            <text x="120" y="72">load on member 1</text>
+            <text class="ok" x="120" y="90">member 1: EVALSHA ok</text>
+            <text class="bad" x="120" y="108">members 2&#8211;4: NOSCRIPT</text>
+          </g>
+          <g class="case" data-c="global">
+            <rect class="cb" x="240" y="30" width="200" height="92" rx="6"></rect>
+            <text class="ct" x="340" y="52">server-global cache</text>
+            <text x="340" y="72">load on any member</text>
+            <text class="ok" x="340" y="90">all members: EVALSHA ok</text>
+            <text x="340" y="108">one cache, one server</text>
+          </g>
+          <text x="230" y="140" style="font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle">Valkey is the right column &#183; one SCRIPT LOAD covers every connection to the server</text>
+        </svg>
+        <div class="readout" id="cOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a case. If the
+        cache were per connection, only the loading member could run the <code>EVALSHA</code> and the rest would
+        <code>NOSCRIPT</code>-fault. Valkey's cache is server-global, so one <code>SCRIPT LOAD</code> on any member
+        makes the SHA resolvable on every member &#8212; the round-robin <code>EVALSHA</code> always resolves.</div>
+      </figure>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>SCRIPT LOAD</code> caches a script body in the
+      server's script cache and returns its SHA1; the cache is per server, not per connection, so a body loaded on one
+      connection is runnable by <code>EVALSHA</code> on every connection to that server. A SHA the server has not
+      cached answers <code>NOSCRIPT</code> &#8212;
+      <a href="https://valkey.io/commands/script-load/" rel="noopener">valkey.io/commands/script-load</a>.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Chunking, and a consumer</h2>
+        <span class="ssrc">echo/apps/codemojex</span>
+      </div>
+      <div class="prose">
+        <p>Round-robin spreads a batch across members, but each member's flush still queues on that member's FIFO. A
+        single enormous batch flushed through one member would grow that member's FIFO unbounded; chunking is the
+        answer. Split a huge batch into chunks and flush each chunk, so no single member holds an overlong pipeline at
+        once and the work spreads across the pool. The chunk size is a throughput-versus-memory knob: larger chunks
+        amortise more round-trip per flush, smaller chunks bound the in-flight queue depth.</p>
+        <p>In codemojex &#8212; a Telegram emoji-guessing game on the same stack &#8212; many bot workers admit guesses
+        concurrently. A burst that arrives all at once is the case where the pool earns its width: the flat-queue
+        batch over <code>emq:{cm}:pending</code> flushes round-robin across the pool's members, each guess a
+        <code>JOB</code>-keyed idempotent enqueue, and the one <code>SCRIPT LOAD</code> keeps every member's
+        <code>EVALSHA</code> resolvable.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>Pool width at the dequeue point</h3>
+          <p>The Queue pillar tunes the pool on both sides: the producer flush that admits a burst and the consumer
+          claim that drains it, the member count that sets concurrent in-flight.</p>
+        </a>
+        <a class="door" href="/bcs/bus/jobs-and-lanes">
+          <span class="dr">/bcs/bus/jobs-and-lanes</span>
+          <h3>The bus the pool talks to</h3>
+          <p>Part B3.2 builds the Valkey-native bus &#8212; the one server every pool member connects to, and whose
+          server-global script cache the round-robin <code>EVALSHA</code> relies on.</p>
+        </a>
+        <a class="door" href="/redis-patterns/flow-control/batches/round-trip-elimination">
+          <span class="dr">R6.04.1</span>
+          <h3>The single flush this multiplies</h3>
+          <p>One pipelined flush turns N round-trips into one; the pool flushes that across N members, so a burst
+          spreads instead of queueing on one socket.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/script-load/" rel="noopener">Valkey &mdash; <em>SCRIPT LOAD</em></a> &mdash; cache a script body and return its SHA; the cache is server-global, which is the property the pool relies on.</li>
+            <li><a href="https://valkey.io/commands/evalsha/" rel="noopener">Valkey &mdash; <em>EVALSHA</em></a> &mdash; run a cached script by SHA, with <code>NOSCRIPT</code> when the body is not cached; the fault the server-global cache avoids across pool members.</li>
+            <li><a href="https://valkey.io/topics/pipelining/" rel="noopener">Valkey &mdash; <em>Pipelining</em></a> &mdash; why each member being a pipeline already multiplies throughput before the pool widens it.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control/batches">R6.04 &#183; Batches &amp; pipelining</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/flow-control/batches/round-trip-elimination">R6.04.1 &#183; Round-trip elimination</a><span class="rs">the single-flush win the pool multiplies</span></li>
+            <li><a href="/redis-patterns/flow-control/batches/partial-failure-handling">R6.04.3 &#183; Partial-failure handling</a><span class="rs">the per-item verdicts a pooled flush returns, in order</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">pool width tuned at the dequeue point</span></li>
+            <li><a href="/bcs/bus">/bcs/bus</a><span class="rs">Part B3, the Valkey-native bus the figures draw from</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/flow-control/batches/round-trip-elimination"><span class="pk">prev</span>&#8592; R6.04.1 &#183; Round-trip elimination</a>
+      <a class="pgx" href="/redis-patterns/flow-control/batches/partial-failure-handling"><span class="pk">next</span>R6.04.3 &#183; Partial-failure handling &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/flow-control/batches/round-trip-elimination">R6.04.1 &#183; Round-trip elimination</a>
+        <a href="/redis-patterns/flow-control/batches/chunking-across-a-pool">R6.04.2 &#183; Chunking across a pool</a>
+        <a href="/redis-patterns/flow-control/batches/partial-failure-handling">R6.04.3 &#183; Partial-failure handling</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: the pool dispatch (pure lookup over a fixed dataset) ---------- */
+  var POOL = {
+    m1: { who: 'member 1', note: 'a pipelined connector — its own socket and FIFO; next/1 hands it the 1st, 5th, 9th call as the counter wraps' },
+    m2: { who: 'member 2', note: 'a pipelined connector; receives the 2nd, 6th, 10th call — racing callers get distinct members, no lock' },
+    m3: { who: 'member 3', note: 'a pipelined connector; receives the 3rd, 7th, 11th call by the atomic add-and-get' },
+    m4: { who: 'member 4', note: 'a pipelined connector; receives the 4th, 8th, 12th call, then the counter wraps to member 1' }
+  };
+  function describePool(m) {
+    var d = POOL[m];
+    if (!d) return '';
+    return '<span class="rk">member &#183;</span> <b>' + d.who + '</b><br>' +
+      '<span class="rk">role &#183;</span> ' + d.note;
+  }
+  wireHoverSelect('dflow', '#dSel button', 'dOut', 'data-m', '.member', describePool,
+    '<span class="rk">readout &#183;</span> Select a member. The dispatcher <code>next/1</code> picks the next member with a lock-free atomic add-and-get, so consecutive calls spread across the four members and wrap. Each member is its own pipelined socket to the one server &#8212; the pool widens the wire without checkout ceremony.');
+
+  /* ---------- Interactive 2: the cache model (pure lookup over a fixed dataset) ---------- */
+  var CACHE = {
+    perconn: { what: 'a per-connection cache (hypothetical)', does: 'only the member that ran SCRIPT LOAD resolves the SHA; members 2–4 answer NOSCRIPT — a round-robin EVALSHA would fault' },
+    global:  { what: 'the server-global cache (Valkey, real)', does: 'one SCRIPT LOAD on any member caches the body in the one server, so every member resolves the SHA — the round-robin EVALSHA always succeeds' }
+  };
+  function describeCache(c) {
+    var d = CACHE[c];
+    if (!d) return '';
+    return '<span class="rk">model &#183;</span> <b>' + d.what + '</b><br>' +
+      '<span class="rk">EVALSHA &#183;</span> ' + d.does;
+  }
+  wireHoverSelect('cflow', '#cSel button', 'cOut', 'data-c', '.case', describeCache,
+    '<span class="rk">readout &#183;</span> Select a case. If the cache were per connection, only the loading member could run the <code>EVALSHA</code> and the rest would <code>NOSCRIPT</code>-fault. Valkey&#8217;s cache is server-global, so one <code>SCRIPT LOAD</code> on any member makes the SHA resolvable on every member &#8212; the round-robin <code>EVALSHA</code> always resolves.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

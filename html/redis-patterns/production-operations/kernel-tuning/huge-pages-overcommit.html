@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.01.1 · Huge pages &amp; overcommit · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.01.1 — the fork's two kernel settings: Valkey forks a child for an AOF rewrite and relies on copy-on-write. Transparent huge pages off keeps a single-byte write to a 4KB page copy, not a 2MB one; memory overcommit on lets the fork proceed when copy-on-write means little real memory is needed. Grounded in the production case study, the real infra/valkey/conf/valkey.conf fork budget, and BCS B8.2.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.fold{display:flex;align-items:center;gap:14px;margin:6px 0 12px;font-family:var(--mono);font-size:13px;color:var(--b-dim)}
+.fold label{min-width:8rem;color:var(--b-ink)}
+.fold input[type=range]{flex:1;accent-color:var(--r-red);height:2px}
+.fold .val{color:var(--r-red);font-weight:700;min-width:3rem;text-align:right}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);margin-top:10px;max-width:78ch}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the fork-trace figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .node rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.cflow .node.cow rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.cflow .nlbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .nsub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .pg{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1}
+.cflow .pglbl{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .step{cursor:pointer;transition:opacity .18s ease}
+.cflow .step .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.cflow .step .elbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .step.share .edge{stroke:var(--b-node);stroke-dasharray:4 3}
+.cflow .step.share .elbl{fill:var(--b-node)}
+.cflow .step.copy .edge{stroke:var(--r-red)}
+.cflow .step.copy .elbl{fill:var(--r-red)}
+.cflow .step.copy .cprect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.5}
+.cflow.focus .step{opacity:.22}
+.cflow.focus .step.on{opacity:1}
+.cflow.focus .step.on .edge{stroke-width:2.8}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/kernel-tuning">kernel-tuning</a><span class="rsep">/</span><span class="rcur">huge-pages-overcommit</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#fork">The fork &amp; COW</a>
+      <a href="#thp">Huge pages off</a>
+      <a href="#overcommit">Overcommit on</a>
+      <a href="#valkeyconf">On valkey.conf</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.01.1 &#183; Kernel tuning &#8212; dive 1</p>
+      <h1>The fork&#8217;s two settings: <span class="hns">huge pages &amp; overcommit</span>.</h1>
+      <p class="lede">Valkey forks a child for an AOF rewrite and relies on copy-on-write. Two kernel settings
+      determine whether that fork stays cheap and whether the kernel allows it at all.</p>
+      <p class="heronote">Grounding: production case study (kernel-tuning.md.txt, the 500&#215; THP amplification)
+      &#183; infra/valkey/conf/valkey.conf (the fork budget, verbatim) &#183; BCS B8.2 (the two settings, from the
+      inside).</p>
+
+      <figure class="anatomy" aria-labelledby="traceCap">
+        <figcaption id="traceCap"><b>Trace a fork &#8212; THP on vs off.</b> The child shares the parent&#8217;s
+        pages until a write touches one; select a setting to see the size of the page that copy duplicates.</figcaption>
+        <div class="segbar" id="thpSel" role="group" aria-label="Which huge-page setting to trace">
+          <button type="button" data-thp="on" aria-pressed="false">THP on (2 MB pages)</button>
+          <button type="button" data-thp="off" aria-pressed="false">THP off (4 KB pages)</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 220" role="img" aria-label="A parent process and a forked child both point at the same shared physical pages through copy-on-write. When a live command writes a single byte during the rewrite, the kernel copies one page for the parent. With transparent huge pages on that page is 2 megabytes; with it off the page is 4 kilobytes. Select a setting; the readout names the copied size and the latency outcome.">
+          <g class="node"><rect x="18" y="26" width="120" height="44" rx="8"></rect><text class="nlbl" x="78" y="46">parent</text><text class="nsub" x="78" y="61">serving commands</text></g>
+          <g class="node cow"><rect x="18" y="150" width="120" height="44" rx="8"></rect><text class="nlbl" x="78" y="170">child (fork)</text><text class="nsub" x="78" y="185">AOF rewrite</text></g>
+          <rect class="pg" x="200" y="92" width="60" height="36" rx="4"></rect>
+          <rect class="pg" x="268" y="92" width="60" height="36" rx="4"></rect>
+          <rect class="pg" x="336" y="92" width="60" height="36" rx="4"></rect>
+          <text class="pglbl" x="298" y="82">shared physical pages (copy-on-write)</text>
+
+          <g class="step share" data-thp="share"><path class="edge" d="M138 56 L200 100"></path><text class="elbl" x="160" y="70">read-only</text></g>
+          <g class="step share" data-thp="share"><path class="edge" d="M138 170 L200 120"></path><text class="elbl" x="160" y="156">read-only</text></g>
+
+          <g class="step copy" data-thp="on">
+            <path class="edge" d="M138 50 L200 96"></path>
+            <rect class="cprect" x="200" y="92" width="60" height="36" rx="4"></rect>
+            <text class="elbl" x="230" y="148">copy 2 MB</text>
+          </g>
+          <g class="step copy" data-thp="off">
+            <path class="edge" d="M138 50 L344 100"></path>
+            <rect class="cprect" x="354" y="98" width="24" height="24" rx="3"></rect>
+            <text class="elbl" x="366" y="148">copy 4 KB</text>
+          </g>
+        </svg>
+        <div class="readout" id="readOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a setting.
+        The child shares the parent&#8217;s pages read-only until a live write forces a copy; THP sets how big
+        that copy is.</div>
+        <p class="booknote">Static verdicts (from the source) &#8212; THP on &#8594; a single-byte write copies a
+        2 MB page, a <b>500&#215; amplification</b>, with latency spikes of 10&#8211;100&#215; during a rewrite
+        &#183; THP off &#8594; the same write copies a 4 KB page, the spike avoided.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="fork">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The fork and copy-on-write</h2>
+        <span class="ssrc">kernel-tuning.md.txt &#183; Transparent Huge Pages</span>
+      </div>
+      <div class="prose">
+        <p>Valkey runs command execution on a single thread, so it cannot pause the world to write a snapshot.
+        Instead it <strong>forks</strong> a child process and lets the child do the slow work. For an
+        append-only-file rewrite, the child reads a consistent point-in-time view of the keyspace and writes the
+        compacted log while the parent keeps serving commands.</p>
+        <p>The fork would be ruinous if it copied the whole heap. It does not. Linux gives parent and child the
+        <strong>same</strong> physical pages and marks them read-only; the pages stay shared until one side writes.
+        That is <strong>copy-on-write</strong> (COW): a page is duplicated only at the moment a write touches it,
+        and only that one page. A child that reads without writing &#8212; the rewrite child &#8212; copies almost
+        nothing. The parent copies a page only when a live command modifies it during the rewrite window.</p>
+        <p>So the cost of a fork is not the size of the dataset. It is the rate of writes during the rewrite times
+        the size of the unit the kernel copies per write. That unit is what the first setting controls; whether the
+        fork is allowed to start at all is the second.</p>
+      </div>
+      <dl class="deflist">
+        <dt>fork()</dt><dd>Spawns the child that writes the rewrite. The parent keeps answering commands.</dd>
+        <dt>copy-on-write</dt><dd>Parent and child share pages read-only; a page is copied only when one side writes it.</dd>
+        <dt>the copied unit</dt><dd>A page. THP sets it to 2 MB; with THP off it is 4 KB.</dd>
+        <dt>the rewrite window</dt><dd>While the child writes the AOF, every parent write may trigger one page copy.</dd>
+      </dl>
+      <p class="take">A fork is cheap because of copy-on-write. This dive is the two settings that keep it that
+      way: how small the copied page is, and whether the kernel lets the fork start.</p>
+    </section>
+
+    <section id="thp">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Transparent huge pages, off</h2>
+        <span class="ssrc">kernel-tuning.md.txt &#183; THP &#8212; Fix (required)</span>
+      </div>
+      <div class="prose">
+        <p>A normal memory page is 4 KB. Transparent huge pages (THP) is a kernel feature that hands out 2 MB pages
+        instead, to cut page-table pressure on large-heap workloads. For an in-memory store under copy-on-write it
+        is the wrong trade.</p>
+        <p>The source states the mechanism plainly: with THP enabled the kernel uses 2 MB pages instead of 4 KB, so
+        when the parent modifies a single byte during a rewrite the kernel must copy the entire 2 MB page &#8212; a
+        <strong>500&#215; amplification</strong> of the work a 4 KB copy would have done. The visible symptoms in the
+        source are latency spikes of <strong>10&#8211;100&#215; during BGSAVE or BGREWRITEAOF</strong>, memory usage
+        doubling temporarily during persistence, and client timeouts during background saves.</p>
+        <p>The fix is to disable it. Write <code>never</code> to the kernel&#8217;s THP knob:</p>
+      </div>
+      <pre class="code"><span class="cmt"># the source's required form — disable transparent huge pages</span>
+echo never &gt; /sys/kernel/mm/transparent_hugepage/enabled</pre>
+      <div class="prose">
+        <p>Make it permanent under systemd so it survives a reboot, as a pre-start step on the service:</p>
+      </div>
+      <pre class="code"><span class="cmt"># run it before the server starts</span>
+[Service]
+ExecStartPre=/bin/sh -c 'echo never &gt; /sys/kernel/mm/transparent_hugepage/enabled'</pre>
+      <div class="prose">
+        <p>Valkey logs a warning at startup if THP is still enabled. That warning is not noise &#8212; it is the
+        engine reporting that a single-byte write during a fork will cost a 2 MB page copy. Address it, never ignore
+        it.</p>
+        <p>THP is a <strong>kernel</strong> setting, written under <code>/sys</code>. It is not a
+        <code>valkey.conf</code> directive: the config file tunes the server, the kernel knob tunes the host the
+        server forks on.</p>
+      </div>
+      <p class="take">THP off keeps the copied unit at 4 KB. A single-byte write during a rewrite then copies one
+      small page, not a 2 MB one &#8212; the 500&#215; amplification removed at its root.</p>
+    </section>
+
+    <section id="overcommit">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Memory overcommit, on</h2>
+        <span class="ssrc">kernel-tuning.md.txt &#183; Memory Overcommit</span>
+      </div>
+      <div class="prose">
+        <p>The second setting is about whether the fork is <strong>allowed</strong>, not how cheap it is. The
+        <code>fork()</code> call can fail when the kernel sizes the child as if it needs as much memory as the
+        parent.</p>
+        <p>The source describes the trap: when Valkey forks, the kernel pessimistically reserves enough memory for
+        the child to hold a full copy of the parent. On a box with most of its RAM already used, the fork can fail
+        even though copy-on-write means almost no real memory is needed &#8212; the child shares the parent&#8217;s
+        pages, it does not duplicate them. A pessimistic reservation refuses a fork that would have been free.</p>
+        <p>The fix tells the kernel to trust copy-on-write:</p>
+      </div>
+      <pre class="code"><span class="cmt"># let the kernel grant the allocation; COW means the claim is never realized</span>
+sysctl vm.overcommit_memory=1</pre>
+      <div class="prose">
+        <p>Persist it in <code>/etc/sysctl.conf</code>:</p>
+      </div>
+      <pre class="code">vm.overcommit_memory=1</pre>
+      <div class="prose">
+        <p>Setting <code>vm.overcommit_memory=1</code> makes the kernel always grant the allocation, trusting that
+        copy-on-write means the child&#8217;s nominal claim is never realized. Like THP, this is a
+        <strong>kernel</strong> setting applied with <code>sysctl</code>, not a line in <code>valkey.conf</code>.</p>
+      </div>
+      <p class="take">Overcommit on makes the fork legal. THP off made the copy small; this keeps the kernel from
+      refusing a fork that copy-on-write would have made nearly free.</p>
+    </section>
+
+    <section id="valkeyconf">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>On EchoMQ&#8217;s valkey.conf</h2>
+        <span class="ssrc">infra/valkey/conf/valkey.conf &#183; the fork budget</span>
+      </div>
+      <div class="prose">
+        <p>The course&#8217;s worked engine is the Valkey that backs EchoMQ &#8212; the owned bus over the braced
+        <code>emq:{q}:</code> keyspace, the store the codemojex game&#8217;s queue runs on. Its real config sits at
+        <code>infra/valkey/conf/valkey.conf</code>, and two of its lines exist to keep the fork cheap and rare.</p>
+        <p><code>maxmemory 512mb</code> is a loud guardrail, not a working ceiling: the live dataset is single-digit
+        megabytes (round leaderboards, presence, in-flight stream entries), so 512 MB sits far above it, leaving
+        &#8212; in the file&#8217;s own words &#8212; <strong>~half the box for fork copy-on-write during an AOF
+        rewrite</strong>. The headroom THP and overcommit make usable is the headroom this line budgets.</p>
+        <p><code>save ""</code> disables RDB snapshotting, which leaves the AOF rewrite as the <strong>one</strong>
+        fork source. The file&#8217;s comment is explicit &#8212; <em>one fork source</em> &#8212; so RDB does not
+        compete for a second fork. With <code>appendonly yes</code> and a single fork source, the copy-on-write
+        spike is paid once per rewrite, not split across two competing children.</p>
+        <p>The valkey.conf file carries <strong>no</strong> THP or overcommit line, and it must not. THP and
+        overcommit are host kernel settings (<code>/sys</code> and <code>sysctl</code>); the config file tunes the
+        server process. The two layers cooperate: the kernel makes the fork cheap and allowed; the config budgets
+        the headroom and keeps a single fork source.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; the fork budget the config leaves</span>
+        <h3>The lines that reserve the room</h3>
+        <p>The kernel settings make a fork cheap and legal; these committed lines set how much room it has and
+        how often it happens &#8212; verbatim from the real config:</p>
+        <figure class="frozen">
+          <figcaption>infra/valkey/conf/valkey.conf &#183; the fork budget<span class="tag">frozen</span></figcaption>
+          <pre><span class="fd"># Memory: ~half the box left for fork copy-on-write during an AOF rewrite</span>
+maxmemory 512mb
+maxmemory-policy noeviction
+
+<span class="fd"># Persistence: AOF is the single source of durability. One fork source.</span>
+appendonly yes
+save ""                       <span class="fd">&#8592; RDB off &#8212; no second fork to compete</span></pre>
+        </figure>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A fork for an AOF rewrite, the fsync, and huge-page
+      behaviour are the documented causes of latency between commands &#8212; the engine&#8217;s own guide to
+      diagnosing them is <a href="https://valkey.io/topics/latency/" rel="noopener">valkey.io/topics/latency</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A forking in-memory store needs THP off so a single-byte write copies a 4 KB page not a 2 MB one, and
+          overcommit on so copy-on-write may forgo memory it never uses. The kernel makes the fork cheap and
+          allowed.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>valkey.conf</code> budgets the headroom: <code>maxmemory 512mb</code> leaves ~half the box for
+          COW during an AOF rewrite, and <code>save ""</code> keeps <strong>one</strong> fork source so the spike
+          is paid once.</p>
+        </div>
+      </div>
+      <p class="take">Two kernel settings, one config posture. THP off makes a copy-on-write page small; overcommit
+      on makes the fork legal; and EchoMQ&#8217;s valkey.conf leaves the room for it and limits it to a single AOF
+      rewrite.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recap &#8212; cheap, allowed, and rare</h2>
+        <span class="ssrc">next &#8594; R8.01.2</span>
+      </div>
+      <div class="prose">
+        <p>A fork is cheap because of copy-on-write, and copy-on-write is cheap because the copied unit is small and
+        the fork is allowed. THP off keeps the unit at 4 KB; <code>vm.overcommit_memory=1</code> keeps the fork from
+        being refused; EchoMQ&#8217;s <code>maxmemory 512mb</code> and <code>save ""</code> reserve the headroom and
+        hold to one fork source. The next dive keeps the <strong>other</strong> thread fast &#8212; the single
+        command thread the fork must never stall: swappiness, defragmentation, and the I/O-thread budget that
+        protect tail latency between rewrites.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/latency/" rel="noopener">Valkey &mdash; <em>Diagnosing latency issues</em></a> &mdash; the fork, fsync, and huge-page behaviour the kernel tuning is for.</li>
+            <li><a href="https://redis.io/docs/management/persistence/" rel="noopener">Redis &mdash; <em>Persistence (RDB and AOF)</em></a> &mdash; why a rewrite forks a child and relies on copy-on-write.</li>
+            <li><a href="https://redis.io/docs/management/admin/" rel="noopener">Redis &mdash; <em>Administration</em></a> &mdash; the documented THP and overcommit guidance the source applies, plus the startup warning.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the persistence and kernel-tuning context. The source is a Shopify RedisDays talk, the Redis docs, and production post-mortems.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/kernel-tuning">R8.01 &#183; Kernel tuning</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/kernel-tuning/latency-spikes">R8.01.2 &#183; Latency spikes</a><span class="rs">the next dive &#8212; swappiness, defrag, the command thread</span></li>
+            <li><a href="/redis-patterns/production-operations">R8 &#183; Production &amp; Operations</a><span class="rs">the chapter</span></li>
+            <li><a href="/bcs/fly">/bcs/fly</a><span class="rs">the same Valkey machine, set up from inside the BCS stack</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/kernel-tuning"><span class="pk">previous</span>&#8592; R8.01 &#183; Kernel tuning</a>
+      <a class="pgx" href="/redis-patterns/production-operations/kernel-tuning/latency-spikes"><span class="pk">next</span>R8.01.2 &#183; Latency spikes &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/kernel-tuning/huge-pages-overcommit">R8.01.1 &#183; Huge pages &amp; overcommit</a>
+        <a href="/redis-patterns/production-operations/kernel-tuning/latency-spikes">R8.01.2 &#183; Latency spikes</a>
+        <a href="/redis-patterns/production-operations/kernel-tuning/persistence-safe-settings">R8.01.3 &#183; Persistence-safe settings</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: trace a fork, THP on vs off (pure over a fixed dataset) ---------- */
+  // pure: thp setting -> readout text
+  function traceFork(thp) {
+    if (thp === 'on') {
+      return 'THP on: pages are 2 MB. Child shares the parent\'s pages read-only via copy-on-write. A single-byte write by a live command during the AOF rewrite forces the kernel to copy the whole 2 MB page — a 500x amplification, with rewrite-time latency spikes of 10-100x. Setting: leave the default and you pay this.';
+    }
+    return 'THP off: pages are 4 KB. Child shares the parent\'s pages read-only via copy-on-write. The same single-byte write copies one 4 KB page — the amplification removed. Fix: echo never > /sys/kernel/mm/transparent_hugepage/enabled.';
+  }
+  var cflow = document.getElementById('cflow');
+  var thpButtons = document.querySelectorAll('#thpSel button');
+  var readOut = document.getElementById('readOut');
+  // pure: highlight the setting's steps, sync the buttons, fill the readout — hover or click.
+  function selectThp(thp) {
+    thpButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-thp') === thp ? 'true' : 'false');
+    });
+    if (cflow) {
+      cflow.classList.toggle('focus', !!thp);
+      cflow.querySelectorAll('.step').forEach(function (g) {
+        var d = g.getAttribute('data-thp');
+        // the two read-only share edges stay lit alongside whichever copy is selected
+        g.classList.toggle('on', !!thp && (d === thp || d === 'share'));
+      });
+    }
+    if (readOut) {
+      readOut.innerHTML = thp
+        ? '<span class="rk">trace &#183;</span> ' + traceFork(thp)
+        : '<span class="rk">readout &#183;</span> Select a setting. The child shares the parent\'s pages read-only until a live write forces a copy; THP sets how big that copy is.';
+    }
+  }
+  thpButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var thp = b.getAttribute('data-thp');
+      selectThp(b.getAttribute('aria-pressed') === 'true' ? null : thp);
+    });
+  });
+  if (cflow) {
+    cflow.querySelectorAll('.step.copy').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectThp(g.getAttribute('data-thp')); });
+      g.addEventListener('mouseleave', function () { selectThp(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

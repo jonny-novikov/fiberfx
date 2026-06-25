@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telemetry &amp; the read plane — EchoMQ, In Depth</title>
+<meta name="description" content="Module 02 of the Proof pillar of EchoMQ, In Depth: the two ways a running bus reports on itself. Push — the lifecycle emits [:emq, …] events the standard Elixir :telemetry way (EchoMQ.Meter), at zero cost when telemetry is absent. Pull — a pure-read plane answers counts, state, throughput, and the rate-gate off the as-built structures (EchoMQ.Metrics), every verb observing and none mutating. Real Elixir, grounded in echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem,0.97rem + 0.28vw,1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);background:rgba(42,161,152,.08);
+  border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem,1.9rem + 4.2vw,5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem,1.3rem + 1.9vw,2.7rem)}
+h3{font-size:clamp(1.3rem,1.1rem + .6vw,1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem,1rem + 1vw,1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.8rem;padding-bottom:2rem;display:block}
+.foot-nav{display:grid;grid-template-columns:1.6fr 1fr 1fr;gap:1.8rem 2.4rem}
+.foot-logo{font-family:var(--serif-display);font-size:1.3rem;font-weight:600;color:var(--cream);display:inline-flex;align-items:baseline;gap:.45rem}
+.foot-logo .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.foot-tag{margin:.7rem 0 0;max-width:34ch;color:var(--cream-dim);font-size:.85rem;line-height:1.55}
+.foot-h{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .8rem}
+.foot-links{display:flex;flex-direction:column;gap:.45rem}
+.foot-links a{color:var(--cream-soft);font-size:.88rem;width:fit-content}
+.foot-links a:hover{color:var(--gold-bright)}
+.foot-bar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:1rem;margin-top:2.4rem;padding-top:1.4rem;border-top:1px solid var(--line)}
+.foot-cc{margin:0;color:var(--cream-dim);font-size:.84rem}
+@media(max-width:760px){.foot-nav{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.foot-nav{grid-template-columns:1fr}}
+
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.rev{font-family:var(--sans);font-size:.78rem;color:var(--echo-bright);border:1px solid var(--echo);
+  border-radius:999px;padding:.22rem .7rem;display:inline-flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
+.rev a{color:var(--echo-bright);text-decoration:none}
+.rev a:hover{color:var(--cream);text-decoration:underline}
+
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.applied{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.applied .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.applied p{margin:0;color:var(--cream-soft);font-size:.96rem}
+.door{margin:1rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- contents cards ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.soon{color:var(--echo-bright);border-color:var(--echo)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.2rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);line-height:1.45}
+
+/* ---- up next ---- */
+.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem;margin-top:1.2rem}
+.upnext .mod .t{font-size:1.04rem}
+@media(max-width:860px){.upnext{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.upnext{grid-template-columns:1fr}}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/proof">proof</a><span class="rsep">/</span><span class="rcur">telemetry-and-the-read-plane</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/proof">The Proof</a>
+      <span class="sep">/</span>
+      <span class="here">Telemetry &amp; the read plane</span>
+    </nav>
+    <p class="rev">&larr; the depth behind <strong>redis-patterns R8 &middot; Production Operations</strong></p>
+    <p class="eyebrow">The Proof &middot; module 02</p>
+    <h1>How it reports<br>on <span class="ex">itself</span></h1>
+    <p class="lede">Push the events as work happens; pull the state whenever you ask &mdash; and never change the work either way.</p>
+    <p class="kicker">A proven system still owes you one answer: <strong>how is it doing right now</strong> &mdash; and it
+      has to answer without being asked to change. The bus answers two ways, mirror images of each other.
+      <strong>Push</strong> (<code class="inl">EchoMQ.Meter</code>): as work happens the lifecycle <strong>emits</strong>
+      <code class="inl">[:emq, …]</code> events the standard Elixir <code class="inl">:telemetry</code> way &mdash; attach
+      a handler and throughput, latency, and failures flow to it, at <strong>zero cost</strong> when telemetry is absent.
+      <strong>Pull</strong> (<code class="inl">EchoMQ.Metrics</code>): a <strong>pure-read</strong> plane answers counts,
+      a job's state, throughput, and the rate-gate off the as-built structures &mdash; <strong>every verb observes, none
+      mutates</strong>. One side observes by emitting; the other answers by reading. It is <strong>all real code</strong>.</p>
+    <div class="toc-mini">
+      <a href="#two">Push &amp; pull</a>
+      <a href="#mods">The dives</a>
+      <a href="#upnext">The rest of the pillar</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- ===================== PUSH & PULL (framing interactive) ===================== -->
+  <section id="two">
+    <h2>Push and pull, one lifecycle</h2>
+    <div class="prose">
+      <p>Both reports watch the same thing &mdash; a job moving through its lifecycle &mdash; from opposite sides. The
+        <strong>meter</strong> sits on the work and <strong>emits</strong> an event at each transition. The
+        <strong>read plane</strong> sits to one side and, when asked, <strong>counts</strong> how many ids are in each
+        state right now. Neither moves a job. Step a job through its life to see both reports update.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="lcTitle">
+      <h4 id="lcTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">One lifecycle, two reports &middot; step the job</h4>
+      <div class="controls">
+        <div class="solid-select" id="lcSel" role="group" aria-label="Step the job through its lifecycle">
+          <button type="button" data-s="0" data-c="echo" class="active" aria-pressed="true">1 · admitted</button>
+          <button type="button" data-s="1" data-c="gold" aria-pressed="false">2 · started</button>
+          <button type="button" data-s="2" data-c="blue" aria-pressed="false">3 · completed</button>
+          <button type="button" data-s="3" data-c="echo" aria-pressed="false">∴ both agree</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 260" role="img" aria-label="One job lifecycle reported two ways. Top — the push side: EchoMQ.Meter emits an [:emq, :job, …] event at each transition (add, start, complete) to an attached handler. Bottom — the pull side: EchoMQ.Metrics.get_counts reads ZCARD of the pending, active, scheduled, and dead state sets, answering a map of state to count without moving any member. As the job is stepped, the meter receives the matching event and the read-plane counts shift to match.">
+        <!-- the job spine -->
+        <line x1="40" y1="130" x2="440" y2="130" stroke="#2a3252" stroke-width="2"></line>
+        <text x="240" y="124" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488">JOB &mdash; one branded id through its life</text>
+
+        <!-- ===== PUSH (top): the meter emits ===== -->
+        <text x="240" y="22" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#6fdccf" font-weight="600">push &middot; EchoMQ.Meter emits [:emq, :job, …]</text>
+        <g id="ev-add">
+          <rect x="48" y="36" width="104" height="34" rx="7" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="100" y="50" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">[:emq, :job, :add]</text>
+          <text x="100" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">queue_time</text>
+          <path d="M100 70 L100 122" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahh)" opacity=".85"></path>
+        </g>
+        <g id="ev-start">
+          <rect x="190" y="36" width="104" height="34" rx="7" fill="rgba(212,168,90,.16)" stroke="#d4a85a"></rect>
+          <text x="242" y="50" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">[:emq, :job, :start]</text>
+          <text x="242" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">system_time, worker</text>
+          <path d="M242 70 L242 122" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahh)" opacity=".85"></path>
+        </g>
+        <g id="ev-complete">
+          <rect x="332" y="36" width="108" height="34" rx="7" fill="rgba(90,135,196,.16)" stroke="#5a87c4"></rect>
+          <text x="386" y="50" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">[:emq, :job, :complete]</text>
+          <text x="386" y="62" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">duration</text>
+          <path d="M386 70 L386 122" stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ahh)" opacity=".85"></path>
+        </g>
+        <defs>
+          <marker id="ahh" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- ===== PULL (bottom): the read plane counts ===== -->
+        <text x="240" y="166" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#9fc0ea" font-weight="600">pull &middot; EchoMQ.Metrics.get_counts/3 reads ZCARD</text>
+        <g font-family="JetBrains Mono,monospace" font-size="8" fill="#ece4d0">
+          <rect x="48" y="178" width="92" height="54" rx="7" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+          <text x="94" y="196" text-anchor="middle" fill="#a39c89">pending</text>
+          <text id="c-pending" x="94" y="218" text-anchor="middle" font-size="15" fill="#6fdccf">0</text>
+          <rect x="150" y="178" width="92" height="54" rx="7" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+          <text x="196" y="196" text-anchor="middle" fill="#a39c89">active</text>
+          <text id="c-active" x="196" y="218" text-anchor="middle" font-size="15" fill="#6fdccf">0</text>
+          <rect x="252" y="178" width="92" height="54" rx="7" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+          <text x="298" y="196" text-anchor="middle" fill="#a39c89">scheduled</text>
+          <text id="c-scheduled" x="298" y="218" text-anchor="middle" font-size="15" fill="#6fdccf">0</text>
+          <rect x="354" y="178" width="92" height="54" rx="7" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+          <text x="400" y="196" text-anchor="middle" fill="#a39c89">completed</text>
+          <text id="c-completed" x="400" y="218" text-anchor="middle" font-size="15" fill="#6fdccf">0</text>
+        </g>
+      </svg>
+      <div class="geo-readout" id="lcOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">Two reports of one life: the <em>meter</em> says it as it happens, the <em>read plane</em> answers
+      it when asked &mdash; and the work is untouched by either.</p>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="mods">
+    <h2>The dives</h2>
+    <div class="prose">
+      <p>Three dives, the push side then the pull side then the property that ties them. Each grounds in the real
+        <code class="inl">echo/apps/echo_mq</code> code &mdash; the <code class="inl">EchoMQ.Meter</code> event surface,
+        its zero-cost-when-absent guard, and the <code class="inl">EchoMQ.Metrics</code> read plane.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill built">built</span> page ready to read</span>
+    </div>
+    <div class="mods">
+      <a class="mod" href="/echomq/proof/telemetry-and-the-read-plane/the-telemetry-surface"><div class="top"><span class="num">01</span><span class="pill built">built</span></div><p class="t">The telemetry surface</p><p class="o">The push side: <code class="inl">EchoMQ.Meter</code> &mdash; <code class="inl">attach</code> / <code class="inl">emit</code> / <code class="inl">span</code> and the lifecycle emitters, re-rooted under <code class="inl">[:emq, …]</code>, one tree.</p></a>
+      <a class="mod" href="/echomq/proof/telemetry-and-the-read-plane/zero-cost-when-absent"><div class="top"><span class="num">02</span><span class="pill built">built</span></div><p class="t">Zero cost when absent</p><p class="o">The opt-in property: every emission guards <code class="inl">function_exported(:telemetry, :execute, 3)</code> &mdash; no dependency edge, no cost unless a host opts in.</p></a>
+      <a class="mod" href="/echomq/proof/telemetry-and-the-read-plane/the-read-plane"><div class="top"><span class="num">03</span><span class="pill built">built</span></div><p class="t">The read plane</p><p class="o">The pull side: <code class="inl">EchoMQ.Metrics</code> &mdash; counts, a job's state, throughput, the read-and-refuse gate. Every verb observes; none mutates.</p></a>
+    </div>
+
+    <div class="applied">
+      <p class="dl">Redis Patterns Applied</p>
+      <p>This is the depth behind the <a href="/redis-patterns">Redis Patterns Applied</a> chapter that doors here:
+        <a href="/redis-patterns/production-operations">R8 &middot; Production Operations</a> &mdash; the metering and
+        read-side introspection an operator runs a tier with, made concrete here as the <code class="inl">EchoMQ.Meter</code>
+        event tree and the <code class="inl">EchoMQ.Metrics</code> read plane. There the pattern is the door; here is the
+        surface.</p>
+    </div>
+  </section>
+
+  <!-- ===================== THE REST OF THE PILLAR ===================== -->
+  <section id="upnext">
+    <h2>The rest of the pillar</h2>
+    <div class="prose">
+      <p>This module is how the proven system reports on itself. <strong>The conformance suite</strong> proves the
+        contract holds; <strong>the benchmark gate</strong> is the named frontier. The pillar shows one thing three ways:
+        the system holds, meters itself, and reads honestly.</p>
+    </div>
+    <div class="upnext">
+      <a class="mod" href="/echomq/proof"><div class="top"><span class="num">&uarr;</span><span class="pill built">built</span></div><p class="t">The Proof</p><p class="o">The pillar landing: the system holds, and it can show you.</p></a>
+      <a class="mod" href="/echomq/queue"><div class="top"><span class="num">I</span><span class="pill built">built</span></div><p class="t">The Queue</p><p class="o">The lifecycle the meter and the read plane observe.</p></a>
+      <a class="mod" href="/echomq/bus"><div class="top"><span class="num">II</span><span class="pill built">built</span></div><p class="t">The Bus</p><p class="o">Broadcast signals over the same wire; the connector meters on the same tree.</p></a>
+      <a class="mod" href="/echomq/cache"><div class="top"><span class="num">III</span><span class="pill built">built</span></div><p class="t">The Cache</p><p class="o">Serve reads in front of the bus; coherence by branded id.</p></a>
+    </div>
+    <p class="note">The conformance suite and the read plane are ready to read; the benchmark gate is the named frontier,
+      added when its surface lands.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://hexdocs.pm/telemetry/readme.html">Elixir &mdash; <em>the :telemetry library</em></a> &mdash; the standard metering surface the Meter re-roots under <code class="inl">[:emq, …]</code>.</li>
+          <li><a href="https://hexdocs.pm/telemetry/telemetry.html">Erlang/OTP &mdash; <em>:telemetry.execute/3</em></a> &mdash; the execute the guarded emit calls when the dependency is loaded.</li>
+          <li><a href="https://valkey.io/commands/zcard/">Valkey &mdash; <em>ZCARD</em></a> &mdash; the cardinality the read plane counts each state set by.</li>
+          <li><a href="https://valkey.io/commands/zscore/">Valkey &mdash; <em>ZSCORE</em></a> &mdash; the membership test the state lookup resolves an id by.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/proof">The Proof</a> &mdash; the pillar this module belongs to.</li>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the lifecycle the meter and the read plane observe.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the declared-keys law every read script obeys.</li>
+          <li><a href="/echomq/overview">Overview</a> &mdash; the chapter that frames the three pillars.</li>
+          <li><a href="/bcs/together">The Branded Component System &middot; together</a> &mdash; the manuscript chapter where the four libraries are one umbrella.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/echomq/proof"><span aria-hidden="true">←</span> The Proof</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/proof/telemetry-and-the-read-plane/the-telemetry-surface">The telemetry surface <span aria-hidden="true">→</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="EchoMQ — course navigation">
+      <div class="foot-brand">
+        <a class="foot-logo" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="foot-tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/echomq/proof/telemetry-and-the-read-plane">Telemetry &amp; the read plane</a>
+        <a href="/echomq/proof/telemetry-and-the-read-plane/the-telemetry-surface">The telemetry surface</a>
+        <a href="/echomq/proof/telemetry-and-the-read-plane/zero-cost-when-absent">Zero cost when absent</a>
+        <a href="/echomq/proof/telemetry-and-the-read-plane/the-read-plane">The read plane</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The course</p>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/proof">The Proof</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: push & pull over one lifecycle (fixed dataset, pure lookup) ---------- */
+  /* The job advances: at each step the meter has emitted the matching [:emq, :job, …] event,
+     and the read plane's get_counts answers the new per-state shape. A fixed four-step narrative
+     of one job: pending → active → completed. Numbers are illustrative counts, not measurements. */
+  var STEPS = [
+    { ev: 'ev-add',      counts: { pending: 1, active: 0, scheduled: 0, completed: 0 },
+      title: '1 — admitted',
+      note: 'Meter.job_added/4 fires [:emq, :job, :add] (queue_time) to an attached handler. The read plane reads ZCARD: one id pending, nothing else moved.' },
+    { ev: 'ev-start',    counts: { pending: 0, active: 1, scheduled: 0, completed: 0 },
+      title: '2 — started',
+      note: 'a worker claims it: Meter.job_started/4 fires [:emq, :job, :start] (system_time, worker). The same id is now in the active set — counts shift, no member duplicated.' },
+    { ev: 'ev-complete', counts: { pending: 0, active: 0, scheduled: 0, completed: 1 },
+      title: '3 — completed',
+      note: 'Meter.job_completed/5 fires [:emq, :job, :complete] (duration). Completion deletes the job, so completed is read from the terminal-outcome counter, not a set.' },
+    { ev: null,          counts: { pending: 0, active: 0, scheduled: 0, completed: 1 },
+      title: '∴ both reports agree',
+      note: 'the push side emitted three events; the pull side counted the same life — pending→active→completed. Neither moved the work: the meter only emitted, the read plane only read.' }
+  ];
+  var ALLEV = ['ev-add', 'ev-start', 'ev-complete'];
+  function setStep(i) {
+    var s = STEPS[i];
+    ALLEV.forEach(function (id) {
+      var g = document.getElementById(id);
+      if (g) g.setAttribute('opacity', id === s.ev ? '1' : '.2');
+    });
+    ['pending', 'active', 'scheduled', 'completed'].forEach(function (k) {
+      var el = document.getElementById('c-' + k);
+      if (el) el.textContent = String(s.counts[k]);
+    });
+    var out = document.getElementById('lcOut');
+    if (out) out.innerHTML = '<b>' + s.title + '</b><br><span class="dim">' + s.note + '</span>';
+  }
+  document.querySelectorAll('#lcSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var i = parseInt(b.getAttribute('data-s'), 10);
+      document.querySelectorAll('#lcSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      setStep(i);
+    });
+  });
+  setStep(0); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

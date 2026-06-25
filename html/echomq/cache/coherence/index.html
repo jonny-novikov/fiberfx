@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coherence &mdash; newer wins on the Bus &middot; The Cache &middot; EchoMQ, In Depth</title>
+<meta name="description" content="The third law of the near-cache: a write on one node must not leave a stale read on another. Coherence is a message about a name — two identities, twenty-nine bytes — and newer wins by comparing the eleven-byte snowflake payloads, across kinds, with no coordinator and no clock but the one inside every id. Two lanes carry it, broadcast and job; one inline Lua applies it. Grounded in EchoStore.Coherence from echo/apps/echo_store.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);background:rgba(42,161,152,.08);
+  border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.rev{font-family:var(--sans);font-size:.78rem;color:var(--echo-bright);border:1px solid var(--echo);
+  border-radius:999px;padding:.22rem .7rem;display:inline-flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
+.rev a{color:var(--echo-bright);text-decoration:none}
+.rev a:hover{color:var(--cream);text-decoration:underline}
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.applied{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.applied .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.applied p{margin:0;color:var(--cream-soft);font-size:.96rem}
+.door{margin:1rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+/* ---- contents cards ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.soon{color:var(--echo-bright);border-color:var(--echo)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.2rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);line-height:1.45}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+/* ---- footer ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><span class="rcur">coherence</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache">The Cache</a>
+      <span class="sep">/</span>
+      <span class="here">Coherence</span>
+    </nav>
+    <p class="rev">&larr; the depth behind <strong>redis-patterns R5 &middot; Streams &amp; Events</strong></p>
+    <p class="eyebrow">Module 03 &middot; The Cache</p>
+    <h1>Coherence &mdash;<br>newer <span class="ex">wins</span></h1>
+    <p class="lede">A write on one node must not leave a stale read on another &mdash; settled by the clock already inside every id.</p>
+    <p class="kicker">A cache that serves reads from local ETS is fast precisely because it does not consult the store
+      on every hit &mdash; which means the moment another node writes a new value, this node&rsquo;s L1 row is wrong and
+      nothing on the hot path will notice. Coherence is the third law: <strong>a write on one node must not leave a
+      stale read on another</strong>. It is carried as <strong>a message about a name</strong> &mdash; an invalidation
+      holds exactly two identities, the cached <code class="inl">id</code> and the writer&rsquo;s mint-time
+      <code class="inl">version</code>, twenty-nine bytes, nothing else. <strong>Newer wins</strong> by comparing the
+      eleven-byte snowflake payloads, <em>across kinds</em>, so coherence needs <strong>no coordinator, no lock, and no
+      clock but the one inside every id</strong>. Two lanes carry the same payload; one inline Lua applies it. All real
+      code, grounded in <code class="inl">echo/apps/echo_store</code>.</p>
+    <div class="toc-mini" aria-label="On this page">
+      <a href="#frame">The message in flight</a>
+      <a href="#dives">The three dives</a>
+      <a href="#applied">Redis Patterns Applied</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- ===================== FRAMING INTERACTIVE ===================== -->
+  <section id="frame">
+    <h2>The message in flight</h2>
+    <div class="prose">
+      <p>Walk the message from a write on one node to a dropped row on another. Node A mints a new version and writes;
+        the 29-byte invalidation travels a lane to node B; node B&rsquo;s conditional drop compares the incoming version
+        against the one framed into its stored row and deletes <strong>only if the incoming is newer</strong>. Pick a
+        stage to read what crosses the wire and the rule that decides.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="flowTitle">
+      <h4 id="flowTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Coherence &middot; a message about a name</h4>
+      <div class="controls">
+        <div class="solid-select" id="flSel" role="group" aria-label="The stages of a coherence message">
+          <button type="button" data-fl="mint" data-c="gold" class="active" aria-pressed="true">A writes</button>
+          <button type="button" data-fl="msg" data-c="echo" aria-pressed="false">the message</button>
+          <button type="button" data-fl="lane" data-c="blue" aria-pressed="false">a lane</button>
+          <button type="button" data-fl="newer" data-c="echo" aria-pressed="false">B drops (newer)</button>
+          <button type="button" data-fl="stale" data-c="blue" aria-pressed="false">B keeps (stale)</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 500 220" role="img" aria-label="A coherence message in flight. Node A writes a new version. The invalidation message — id colon version, twenty-nine bytes — travels a lane (broadcast or job) to node B. Node B compares the incoming version against the one framed into its stored row and drops the L2 row only when the incoming version is newer; a stale message leaves the row untouched.">
+        <defs>
+          <marker id="ahc" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- node A -->
+        <g id="g-a">
+          <rect x="14" y="86" width="96" height="48" rx="9" fill="rgba(212,168,90,.14)" stroke="#d4a85a"></rect>
+          <text x="62" y="106" text-anchor="middle" font-family="Manrope,sans-serif" font-size="11" fill="#ece4d0">node A</text>
+          <text x="62" y="119" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">put/3 mints</text>
+          <text x="62" y="129" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#f0cd7f">version</text>
+        </g>
+
+        <!-- the message -->
+        <g id="g-msg">
+          <rect x="160" y="40" width="180" height="34" rx="8" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="250" y="56" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#6fdccf">id : version</text>
+          <text x="250" y="68" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">29 bytes &middot; two names, nothing else</text>
+        </g>
+        <path d="M110 100 L160 70" stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ahc)"></path>
+
+        <!-- the lanes -->
+        <g id="g-lane">
+          <rect x="180" y="92" width="140" height="20" rx="5" fill="rgba(90,135,196,.12)" stroke="#5a87c4"></rect>
+          <text x="250" y="105" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#9fc0ea">broadcast &middot; PUBLISH ecc:{t}:coh</text>
+          <rect x="180" y="116" width="140" height="20" rx="5" fill="rgba(90,135,196,.1)" stroke="#46507a"></rect>
+          <text x="250" y="129" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#9fc0ea">job &middot; Lanes.enqueue ecc.coh.t</text>
+        </g>
+        <path d="M250 74 L250 90" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahc)"></path>
+
+        <!-- node B -->
+        <g id="g-b">
+          <rect x="390" y="86" width="100" height="48" rx="9" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="440" y="106" text-anchor="middle" font-family="Manrope,sans-serif" font-size="11" fill="#ece4d0">node B</text>
+          <text x="440" y="119" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">drop_l2/4</text>
+          <text x="440" y="129" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#6fdccf">newer? → DEL</text>
+        </g>
+        <path d="M320 114 L390 110" stroke="#46507a" fill="none" stroke-width="1.3" marker-end="url(#ahc)"></path>
+
+        <!-- B's stored row + verdict -->
+        <g id="g-row">
+          <rect x="360" y="156" width="130" height="40" rx="8" fill="rgba(16,22,43,.7)" stroke="#2a3252"></rect>
+          <text x="425" y="172" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">ecc:{t}:id stored</text>
+          <text x="425" y="184" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#d7cfb9" id="rowVerdict">version &lt;&gt; value</text>
+        </g>
+        <path d="M440 134 L430 154" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ahc)"></path>
+
+        <text x="250" y="210" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488">drop_l2/4 → {:ok, 1} dropped · {:ok, 0} kept</text>
+      </svg>
+      <div class="geo-readout" id="flOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">One write becomes one small message about a name; every other node decides <em>newer or not</em> by
+      reading the clock minted into that name &mdash; no coordinator listening, no lock held, no second clock to keep.</p>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="dives">
+    <h2>The three dives</h2>
+    <div class="prose">
+      <p>Coherence is small enough to read end to end. First the vocabulary &mdash; the 29-byte message and the
+        cross-kind comparison that needs no clock. Then the two lanes that carry it and the substrates that apply each.
+        Then the one inline Lua that makes either lane safe to deliver twice or out of order, and the journal that keeps
+        its verdict durable past a crash.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill built">built</span> page ready to read</span>
+    </div>
+    <div class="mods">
+      <a class="mod" href="/echomq/cache/coherence/a-message-about-a-name"><div class="top"><span class="num">01</span><span class="pill built">built</span></div><p class="t">A message about a name</p><p class="o"><code class="inl">payload/2</code>, <code class="inl">parse/1</code>, <code class="inl">newer?/2</code> &mdash; two names, twenty-nine bytes, and the eleven-byte comparison that holds across kinds with no clock.</p></a>
+      <a class="mod" href="/echomq/cache/coherence/the-two-lanes"><div class="top"><span class="num">02</span><span class="pill built">built</span></div><p class="t">The two lanes</p><p class="o">Broadcast vs job, chosen by the cost of staleness: <code class="inl">EchoStore.Ring</code> at-most-once, <code class="inl">EchoStore.Journal</code> at-least-once.</p></a>
+      <a class="mod" href="/echomq/cache/coherence/newer-wins-the-conditional-drop"><div class="top"><span class="num">03</span><span class="pill built">built</span></div><p class="t">Newer wins: the conditional drop</p><p class="o">The pillar&rsquo;s one Lua, in two beats: <code class="inl">drop_l2/4</code>, then the <code class="inl">:coherence_drop</code> body &mdash; one transition, so a late stale message can never erase a newer row.</p></a>
+    </div>
+
+    <div class="applied" id="applied">
+      <p class="dl">Redis Patterns Applied</p>
+      <p>This is the depth behind the <a href="/redis-patterns">Redis Patterns Applied</a> chapters that door here:
+        <a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a> &mdash; the bus-coherent
+        invalidation that keeps a versioned fill current, and <a href="/redis-patterns/caching">R1 &middot; Caching</a>
+        &mdash; the cache-aside, stampede-prevention, and session patterns this pillar applies in real code. There the
+        pattern is the door; here is the rule that keeps a fleet of those caches honest.</p>
+    </div>
+
+    <div class="door">
+      <p class="dl">The lane that remembers</p>
+      <p>The job lane&rsquo;s worker writes to <a href="/echo-persistence">Echo Persistence</a> &mdash; a transactional
+        outbox standing beside the bus whose <code class="inl">applied</code> table is the lane&rsquo;s memory of the
+        last version per name. It survives the node, the cache, and the bus, so a replayed old intent answers
+        <em>stale from the journal</em> even after L1 has forgotten the row. That is the durable floor a
+        crash-surviving coherence message folds into; the third dive opens the door.</p>
+    </div>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the time-ordered id whose byte order <em>is</em> the coherence comparison.</li>
+          <li><a href="https://valkey.io/commands/publish/">Valkey &mdash; <em>PUBLISH</em></a> &mdash; the one wire hop of the broadcast lane, <code class="inl">ecc:{table}:coh</code>.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code class="inl">{table}</code> hashtag co-locating the coherence channel with the cache&rsquo;s keys.</li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf">Helland &mdash; <em>Life Beyond Distributed Transactions</em></a> &mdash; the entity addressed by a name; coherence as a message about a name.</li>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html">Erlang/OTP &mdash; <em>the ets module</em></a> &mdash; the L1 row a newer version evicts.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a> &mdash; the module before, where every row first gets its version.</li>
+          <li><a href="/echomq/cache/cache-aside-two-layers">Cache-aside, two layers</a> &mdash; the unconditional <code class="inl">invalidate/3</code> admin drop this module guards against.</li>
+          <li><a href="/echomq/bus">The Bus</a> &mdash; the wire the broadcast lane and the job lane both ride.</li>
+          <li><a href="/bcs/store">The Branded Component System &middot; the Store</a> &mdash; the manuscript chapter this pillar realizes.</li>
+          <li><a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor beneath the volatile tiers.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Chapter navigation">
+      <a class="btn ghost" href="/echomq/cache/single-flight-and-jittered-ttl"><span aria-hidden="true">&larr;</span> Single-flight &amp; jittered TTL</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache/coherence/a-message-about-a-name">A message about a name <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/cache/coherence">Coherence on the Bus</a>
+        <a href="/echomq/cache/coherence/a-message-about-a-name">A message about a name</a>
+        <a href="/echomq/cache/coherence/the-two-lanes">The two lanes</a>
+        <a href="/echomq/cache/coherence/newer-wins-the-conditional-drop">Newer wins: the conditional drop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: a coherence message in flight (pure state machine over a fixed example) ---------- */
+  var FLOW = {
+    mint: { title: 'node A writes', lit: ['g-a'], row: 'version <> value',
+      says: 'a write on node A mints a new mint-time version and SETs both layers',
+      note: 'put/3 mints a version of the table’s kind; the value is stored as version <> value, so the row carries its own clock' },
+    msg: { title: 'the message', lit: ['g-a', 'g-msg'], row: 'version <> value',
+      says: 'the invalidation is two identities — the id and the new version — and a colon',
+      note: 'payload(id, version) is 29 bytes: no value, no timestamp, no node identity, no clock vector — the version IS the time' },
+    lane: { title: 'a lane', lit: ['g-a', 'g-msg', 'g-lane'], row: 'version <> value',
+      says: 'the same payload rides broadcast (at-most-once) or job (at-least-once)',
+      note: 'the choice is the cost of staleness: a lost broadcast costs one TTL; a job survives a crash. Both carry the identical message' },
+    newer: { title: 'node B drops (newer)', lit: ['g-a', 'g-msg', 'g-lane', 'g-b', 'g-row'], row: 'DELETED',
+      says: 'B’s drop_l2/4 finds the incoming version newer than the stored one → DEL',
+      note: 'newer? compares the 11-byte payloads; the conditional drop deletes the L2 row and returns {:ok, 1}. L1 evicts the same way and ticks :coh_applied' },
+    stale: { title: 'node B keeps (stale)', lit: ['g-a', 'g-msg', 'g-lane', 'g-b', 'g-row'], row: 'version <> value (kept)',
+      says: 'a late message carries an OLDER version than the stored one → the row stays',
+      note: 'the comparison answers not-newer, so the script returns {:ok, 0} and the row is untouched — a late stale invalidation can never erase a newer row. :coh_stale ticks' }
+  };
+  var ALLG = ['g-a', 'g-msg', 'g-lane', 'g-b', 'g-row'];
+  function renderFlow(key) {
+    var v = FLOW[key];
+    var out = document.getElementById('flOut');
+    if (!v || !out) return;
+    var on = v.lit || [];
+    ALLG.forEach(function (gid) {
+      var g = document.getElementById(gid);
+      if (g) g.setAttribute('opacity', on.indexOf(gid) >= 0 ? '1' : '.2');
+    });
+    var rv = document.getElementById('rowVerdict');
+    if (rv) rv.textContent = v.row;
+    var verdictCls = key === 'newer' ? 'ok' : (key === 'stale' ? 'bad' : 'dim');
+    out.innerHTML = '<b>' + v.title + '</b> <span class="dim">— ' + v.says + '</span><br>' +
+      'B&rsquo;s row: <span class="' + verdictCls + '">' + v.row + '</span><br>' +
+      '<span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#flSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#flSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderFlow(b.getAttribute('data-fl'));
+    });
+  });
+  renderFlow('mint');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sid, t) { var el = document.getElementById(sid); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

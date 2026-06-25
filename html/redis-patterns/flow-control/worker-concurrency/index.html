@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.05 — Worker concurrency · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.05 module hub: worker concurrency — running many workers against one store without the wire becoming the bottleneck. The BEAM gives concurrency cheaply, but a claim is a round-trip, so throughput is pool width and batch size, not the count of processes. Built from EchoMQ.Consumer (the claim loop that parks on BLPOP, not polling), EchoMQ.Pool (a fixed pool of pipelined connectors, round-robin by an atomic counter), and the per-claim ZPOPMIN inside claim/3, amortized by EchoMQ.Lanes.bclaim/3. Grounded in echo/apps/echo_mq. Consumer: codemojex, the scoring worker draining the cm queue.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- the course map ---------- */
+.legend{display:flex;flex-wrap:wrap;gap:10px 18px;font-family:var(--mono);font-size:12px;color:var(--b-dim);margin:0 0 20px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.pill{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:1px 7px;border-radius:3px;border:1px solid var(--b-line)}
+.pill.live{color:var(--b-node);border-color:var(--b-node)}
+.pill.built{background:var(--r-red);color:var(--b-card);border-color:var(--r-red)}
+.pill.planned{color:var(--b-ts);border-color:var(--b-ts)}
+.pill.soon{color:var(--b-dim);background:var(--b-paper)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.mod{display:block;background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 15px;color:var(--b-ink)}
+a.mod{border-color:var(--r-red)}
+a.mod:hover{border-bottom-color:var(--r-red);box-shadow:0 1px 0 var(--r-red)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.mod .num{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--r-red);letter-spacing:.06em}
+.mod .t{font-family:var(--mono);font-size:.95rem;line-height:1.35;margin:0 0 4px}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--b-dim);line-height:1.45}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:82ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.bq{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ns);border-radius:var(--rad);padding:14px 16px;margin:18px 0 6px;max-width:82ch}
+.bq .src{display:block;margin-top:8px;font-size:11.5px;color:var(--b-dim);letter-spacing:.04em}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .mods,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .mods,.doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the throughput figure (hover-select) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .step rect{fill:var(--b-pay-tint);stroke:var(--b-line);stroke-width:1.3}
+.cflow .step text{font:10.5px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .step .cmd{font-weight:700}
+.cflow .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.cflow .step{cursor:pointer;transition:opacity .18s ease}
+.cflow.focus .step{opacity:.24}
+.cflow.focus .step.on{opacity:1}
+.cflow.focus .step.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+/* ---------- the lever figure (hover-select) ---------- */
+.pflow{width:100%;height:auto;display:block;margin-top:4px}
+.pflow .row{cursor:pointer;transition:opacity .18s ease}
+.pflow .row .prob rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.3}
+.pflow .row .tech rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.pflow .row text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.pflow .row .lt{fill:var(--b-dim);font-size:9px}
+.pflow .arr{stroke:var(--b-dim);stroke-width:1.4;fill:none}
+.pflow.focus .row{opacity:.22}
+.pflow.focus .row.on{opacity:1}
+.pflow.focus .row.on .prob rect{stroke:var(--r-red);stroke-width:2.2}
+.pflow.focus .row.on .tech rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><span class="rcur">worker-concurrency</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#wire">The shared resource</a>
+      <a href="#park">Park, don&#8217;t poll</a>
+      <a href="#pool">The pool</a>
+      <a href="#fetch">The fetch ceiling</a>
+      <a href="#applied">Applied</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Worker concurrency</span>
+      </nav>
+      <p class="kicker">R6.05 &#183; Flow Control &amp; Scale &#8212; module hub</p>
+      <h1>Worker <span class="hns">&#8212; concurrency is not throughput</span>.</h1>
+      <p class="lede">Running many workers against one store without the wire becoming the bottleneck: the BEAM gives
+      <b>concurrency</b> cheaply, but a claim is a round-trip, so throughput is set by how many round-trips are in
+      flight &#8212; <b>pool width and batch size</b> &#8212; not by how many processes are running. A consumer that
+      parks instead of polling costs the wire nothing while idle; a pool of pipelined connectors raises the
+      round-trips outstanding at once.</p>
+      <p class="heronote">Technique, not a fresh catalog pattern: the per-claim fetch ceiling and how to plan capacity
+      around it. Grounding: echo/apps/echo_mq &#183; EchoMQ.Consumer (the claim loop, BLPOP park), EchoMQ.Pool
+      (round-robin connectors), the per-claim ZPOPMIN in claim/3, amortized by EchoMQ.Lanes.bclaim/3. Consumer:
+      codemojex &#8212; the scoring worker drains the cm queue.</p>
+
+      <figure class="anatomy" aria-labelledby="cCap">
+        <figcaption id="cCap"><b>The consumer loop, beat by beat.</b> Select a step to read what the loop does. It
+        reaps expired leases, promotes due schedules, drains the ring one rotating claim at a time, then parks on the
+        wake key &#8212; park, don&#8217;t poll, so an idle worker costs the wire nothing.</figcaption>
+        <div class="segbar" id="cSel" role="group" aria-label="Select a step in the consumer loop">
+          <button type="button" data-st="reap" aria-pressed="false">reap</button>
+          <button type="button" data-st="promote" aria-pressed="false">promote</button>
+          <button type="button" data-st="drain" aria-pressed="false">drain</button>
+          <button type="button" data-st="park" aria-pressed="false">park</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 150" role="img" aria-label="Four steps left to right in the consumer beat: reap expired leases back to pending, promote due scheduled work into pending, drain the ring with rotating claims one job per claim, then park on the wake key with BLPOP until a wake or the beat elapses. Select a step to highlight it.">
+          <path class="edge" d="M104 56 L128 56" marker-end="url(#car)"></path>
+          <path class="edge" d="M232 56 L256 56" marker-end="url(#car)"></path>
+          <path class="edge" d="M360 56 L384 56" marker-end="url(#car)"></path>
+          <text class="axl" x="230" y="138" style="font-family:var(--mono);fill:var(--b-dim);text-anchor:middle">a parked consumer spends no round-trips until a wake or the beat elapses, then loops</text>
+          <g class="step" data-st="reap"><rect x="12" y="36" width="92" height="40" rx="5"></rect><text class="cmd" x="58" y="54">reap</text><text x="58" y="68">expired leases</text></g>
+          <g class="step" data-st="promote"><rect x="136" y="36" width="96" height="40" rx="5"></rect><text class="cmd" x="184" y="54">promote</text><text x="184" y="68">due schedules</text></g>
+          <g class="step" data-st="drain"><rect x="264" y="36" width="96" height="40" rx="5"></rect><text class="cmd" x="312" y="54">claim/3</text><text x="312" y="68">rotate &amp; serve</text></g>
+          <g class="step" data-st="park"><rect x="392" y="36" width="60" height="40" rx="5"></rect><text class="cmd" x="422" y="54">BLPOP</text><text x="422" y="68">park</text></g>
+          <defs><marker id="car" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#68705f"></path></marker></defs>
+        </svg>
+        <div class="readout" id="cOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a step. The
+        consumer beats on a cadence: it reaps expired leases, promotes due scheduled work, drains the ring one
+        rotating claim at a time, then parks on the wake key with <code>BLPOP</code> &#8212; spending no round-trips
+        while idle, woken by an enqueue or the beat.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="wire">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The wire is the shared resource</h2>
+        <span class="ssrc">consumer.ex &#183; the dedicated connector</span>
+      </div>
+      <div class="prose">
+        <p>The BEAM makes processes cheap. A deployment can run thousands of consumer processes for a few megabytes,
+        and OTP supervises them for free, so the instinct is to add workers when a queue falls behind. But adding BEAM
+        processes does not, on its own, raise throughput against Valkey.</p>
+        <p>The reason is the connector. A single owned socket carries one command at a time: requests go out and
+        replies come back in order, on the wire. Ten processes sharing one connector do not get ten times the work
+        done &#8212; they queue at the socket, and the wire serves them one round-trip at a time.
+        <strong>Concurrency on the BEAM is not parallelism on the wire.</strong> The shared resource is the
+        connection, and the unit of cost is the round-trip.</p>
+        <p>The claim loop is <code>EchoMQ.Consumer</code>. It holds a <strong>dedicated connector</strong> &#8212; a
+        private lane, so a blocking verb cannot stall a shared one &#8212; and beats on a cadence: reap expired
+        leases, promote due schedules, drain the ring with rotating claims, then park.</p>
+      </div>
+      <pre class="code"><b>EchoMQ.Consumer.start_link</b>(queue: "orders", handler: &amp;handle/1, connector: conn_opts)
+<span class="cmt"># &#8594; a supervised loop with its own connector lane; beats reap &#8594; promote &#8594; drain &#8594; park</span></pre>
+      <div class="prose">
+        <p>The handler is a function taking <code>%{id:, payload:, attempts:, group:}</code> and answering
+        <code>:ok</code> or <code>{:error, reason}</code>. A returned error becomes a typed retry; a raising handler
+        is caught and retried too, and the loop survives.</p>
+      </div>
+      <p class="take">A queue does not drain faster for more BEAM processes if they share a connector &#8212; they
+      serialize at the socket. The shared resource is the connection; the unit of cost is the round-trip. The
+      consumer holds its own connector so a blocking verb never stalls a shared one.</p>
+    </section>
+
+    <section id="park">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Park, don&#8217;t poll</h2>
+        <span class="ssrc">consumer.ex &#183; BLPOP on the wake key</span>
+      </div>
+      <div class="prose">
+        <p>A naive worker loop polls: claim, and if the queue is empty, sleep a little and claim again. Polling spends
+        round-trips on an idle queue and adds latency on a busy one. The consumer does neither. When the ring is
+        drained it <strong>parks on the wake key with <code>BLPOP</code></strong> until readiness arrives as a wake or
+        the beat elapses:</p>
+      </div>
+      <pre class="code"><span class="cmt"># inside the consumer's park step:</span>
+<b>BLPOP</b> emq:{q}:wake &lt;beat seconds&gt;</pre>
+      <div class="prose">
+        <p><code>BLPOP</code> blocks the connection until something is pushed to the wake key or the timeout expires.
+        An enqueue pushes a wake token, which unparks exactly the consumers waiting on it. <strong>A parked consumer
+        costs the wire nothing</strong> &#8212; no round-trips spent waiting, and no polling delay when work arrives.
+        The beat doubles as the cadence for the reap and promote sweeps, so an idle consumer still wakes periodically
+        to do its housekeeping.</p>
+        <p>Because <code>BLPOP</code> holds the connection for the duration of the block, a blocking consumer needs
+        its own connector lane &#8212; which is exactly why the consumer holds a dedicated connector and never shares
+        one. A shared connector would have every other command on it wait behind the block.</p>
+      </div>
+      <p class="take">The consumer parks on <code>BLPOP emq:{q}:wake</code> rather than polling: idle, it spends no
+      round-trips; on an enqueue, a wake token unparks it at once. Park, don&#8217;t poll &#8212; and a blocking park
+      is why the loop owns its connector.</p>
+    </section>
+
+    <section id="pool">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The pool is the concurrency primitive</h2>
+        <span class="ssrc">pool.ex &#183; round-robin connectors</span>
+      </div>
+      <div class="prose">
+        <p>Real parallelism against Valkey means more sockets. <code>EchoMQ.Pool</code> is a fixed pool of pipelined
+        connectors with lock-free round-robin dispatch:</p>
+      </div>
+      <pre class="code"><b>EchoMQ.Pool.start_link</b>(name: :work_pool, size: 4)
+<span class="cmt"># &#8594; 4 supervised connectors, each a pipeline; next/1 picks the next by an atomic counter</span></pre>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Pool &#183; echo/apps/echo_mq &#8212; the moduledoc and the lock-free round-robin dispatch<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd">@moduledoc """</span>
+<span class="fd">A fixed pool of pipelined connectors with lock-free round-robin dispatch.</span>
+<span class="fd">Each member is already a pipeline, so a small pool multiplies throughput</span>
+<span class="fd">without checkout ceremony: callers hit the next member by an atomic</span>
+<span class="fd">counter and the member's own FIFO does the rest. One supervisor, N</span>
+<span class="fd">connectors, one dispatcher -- the appendix connector, multiplied.</span>
+<span class="fd">"""</span>
+
+<span class="fd">defp</span> <b>next</b>(name) <span class="fd">do</span>
+  {size, at} = :persistent_term.get({__MODULE__, name})
+  member(name, <b>rem</b>(:atomics.add_get(at, 1, 1), size) + 1)
+<span class="fd">end</span></pre>
+      </figure>
+      <div class="prose">
+        <p>There is no checkout, no lock, no waiting for a free connection. A caller hits the <strong>next</strong>
+        member by an atomic counter (<code>:atomics.add_get</code>) and the member&#8217;s own FIFO does the rest. One
+        supervisor, N connectors, one dispatcher &#8212; the single connector, multiplied. Pool width is the number of
+        round-trips that can be outstanding at once: it is the real parallelism, where the count of BEAM processes is
+        only concurrency.</p>
+        <p>The consumer&#8217;s opt-in <code>:metronome</code> mode fans a pool&#8217;s readiness from one blocker:
+        each consumer registers idle with the queue&#8217;s metronome, awaits a <code>:claim_once</code> poke, claims
+        once, settles, and re-registers &#8212; one block per queue, the herd gone, readiness handed out fairly across
+        the pool.</p>
+      </div>
+      <p class="take">More sockets, not more processes, is the lever: <code>EchoMQ.Pool</code> is N pipelined
+      connectors dispatched round-robin by an atomic counter, with no checkout. Pool width is the round-trips
+      outstanding at once &#8212; the real parallelism.</p>
+    </section>
+
+    <section id="fetch">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The per-claim fetch is the ceiling</h2>
+        <span class="ssrc">jobs.ex &#183; the @claim ZPOPMIN</span>
+      </div>
+      <div class="prose">
+        <p>Every claim pops one job. <code>claim/3</code> runs one <code>ZPOPMIN</code> against the pending set, mints
+        a lease on the server clock, and returns one job &#8212; one job per claim, one round-trip per claim. The
+        fetch is the throughput ceiling: a worker cannot go faster than its round-trips, and each round-trip carries
+        one job.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>EchoMQ.Jobs &#183; echo/apps/echo_mq &#8212; the @claim spine: one ZPOPMIN, one job, one round-trip<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd">local</span> popped = redis.call(<b>'ZPOPMIN'</b>, KEYS[1])
+<span class="fd">if</span> #popped == 0 <span class="fd">then return</span> {} <span class="fd">end</span>
+<span class="fd">local</span> id = popped[1]
+<span class="fd">local</span> jk = ARGV[1] .. id
+<span class="fd">local</span> att = redis.call(<b>'HINCRBY'</b>, jk, <b>'attempts'</b>, 1)
+redis.call(<b>'HSET'</b>, jk, <b>'state'</b>, <b>'active'</b>)
+<span class="fd">local</span> t = redis.call(<b>'TIME'</b>)
+<span class="fd">local</span> now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call(<b>'ZADD'</b>, KEYS[2], now + tonumber(ARGV[2]), id)
+<span class="fd">return</span> {id, redis.call(<b>'HGET'</b>, jk, <b>'payload'</b>), att}</pre>
+      </figure>
+      <div class="prose">
+        <p>The amortization is the batch claim. <code>EchoMQ.Lanes.bclaim/3</code> is the count-variant of the same
+        spine: it reads the pending depth, clamps <code>k = min(requested, depth)</code> so it never over-pops, reads
+        <strong>one</strong> <code>TIME</code> for the whole batch so every served job is leased on the same deadline,
+        then loops the per-job transitions and returns up to <code>k</code> jobs in one round-trip. The same fetch,
+        amortized over <code>k</code> jobs.</p>
+        <p>So three knobs raise throughput, and they are independent. Pool width sets how many fetches are outstanding
+        at once. Batch size sets how many jobs each fetch carries. The claim cadence (<code>:beat_ms</code>) sets how
+        often a consumer reaches for work. None of them is the count of BEAM processes.</p>
+      </div>
+
+      <div class="legend">
+        <span><span class="pill built">built</span> ready to read</span>
+      </div>
+      <div class="mods" style="margin-top:6px">
+        <a class="mod" href="/redis-patterns/flow-control/worker-concurrency/parallel-vs-concurrent">
+          <div class="top"><span class="num">R6.05.1</span><span class="pill built">built</span></div>
+          <p class="t">Parallel vs concurrent</p>
+          <p class="o">The BEAM gives cheap concurrency, but the wire is the shared resource: real parallelism is N
+          <code>EchoMQ.Pool</code> members (N sockets), not N processes on one connector.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/flow-control/worker-concurrency/the-per-claim-fetch-bottleneck">
+          <div class="top"><span class="num">R6.05.2</span><span class="pill built">built</span></div>
+          <p class="t">The per-claim fetch bottleneck</p>
+          <p class="o">Each <code>claim/3</code> is one <code>ZPOPMIN</code> round-trip; at high worker count the
+          round-trip dominates, not server CPU. <code>bclaim/3</code> amortizes it &#8212; k jobs per trip.</p>
+        </a>
+        <a class="mod" href="/redis-patterns/flow-control/worker-concurrency/capacity-planning">
+          <div class="top"><span class="num">R6.05.3</span><span class="pill built">built</span></div>
+          <p class="t">Capacity planning</p>
+          <p class="o">The structural knobs &#8212; pool width, <code>:beat_ms</code>/<code>:lease_ms</code>,
+          <code>:pump_batch</code> &#8212; reasoned in round-trips. The limiter is the ceiling, the pool the floor.</p>
+        </a>
+      </div>
+      <p class="take">The per-claim <code>ZPOPMIN</code> is the unit of throughput: one job per claim, one round-trip
+      per claim. Three independent knobs raise it &#8212; pool width (fetches outstanding), batch size
+      (<code>bclaim/3</code>, jobs per fetch), and the claim cadence &#8212; never the count of processes.</p>
+    </section>
+
+    <section id="applied">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Applied in EchoMQ</h2>
+        <span class="ssrc">echo/apps/echo_mq</span>
+      </div>
+      <div class="prose">
+        <p>The technique is the consumer loop plus the pool plus the fetch. <code>EchoMQ.Consumer</code> owns the
+        rhythm and parks on <code>BLPOP</code> so an idle worker is free; <code>EchoMQ.Pool</code> multiplies the
+        sockets so many round-trips run at once; and the per-claim <code>ZPOPMIN</code> is the unit of throughput,
+        amortized by <code>EchoMQ.Lanes.bclaim/3</code> when one job per trip is the ceiling. The count of workers is
+        concurrency; the pool width and the batch size are throughput.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Worker concurrency: run many workers without the wire becoming the bottleneck. Concurrency is having work
+          in progress; throughput is how much completes, set by the round-trips in flight.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Pool</code> (N pipelined connectors, round-robin by an atomic counter) feeds
+          <code>EchoMQ.Consumer</code> loops that park on <code>BLPOP</code> (no poll), each claim one
+          <code>ZPOPMIN</code> round-trip &#8212; amortized by the batch claim <code>EchoMQ.Lanes.bclaim/3</code>.</p>
+        </div>
+      </div>
+      <div class="bq">&#8220;A fixed pool of pipelined connectors with lock-free round-robin dispatch. Each member is
+      already a pipeline, so a small pool multiplies throughput without checkout ceremony.&#8221; Pool width is the
+      real parallelism; the count of processes is only concurrency.
+      <span class="src">&#8212; EchoMQ.Pool &#183; echo/apps/echo_mq</span></div>
+
+      <figure class="anatomy" aria-labelledby="pCap">
+        <figcaption id="pCap"><b>The bottleneck &#8594; the lever.</b> Select a throughput problem to read the lever
+        that answers it and the real EchoMQ surface that carries it.</figcaption>
+        <div class="segbar" id="pSel" role="group" aria-label="Select a throughput problem">
+          <button type="button" data-p="serial" aria-pressed="false">claims serialize</button>
+          <button type="button" data-p="fetch" aria-pressed="false">the fetch dominates</button>
+          <button type="button" data-p="poll" aria-pressed="false">polling wastes trips</button>
+          <button type="button" data-p="herd" aria-pressed="false">a wake herd</button>
+        </div>
+        <svg class="pflow" id="pflow" viewBox="0 0 460 198" role="img" aria-label="Four rows mapping a throughput problem to a lever and an EchoMQ surface: claims serialize at one connector maps to widen the pool via EchoMQ.Pool, the per-claim fetch dominates maps to batch the claim via bclaim/3, polling wastes round-trips maps to park on BLPOP via the consumer, and a wake herd maps to one blocker via the metronome pool path. Select a problem to highlight its row.">
+          <text class="lt" x="92" y="20" style="font-family:var(--mono);fill:var(--b-dim);text-anchor:middle">the problem</text>
+          <text class="lt" x="356" y="20" style="font-family:var(--mono);fill:var(--b-dim);text-anchor:middle">the lever &amp; surface</text>
+          <g class="row" data-p="serial">
+            <g class="prob"><rect x="14" y="30" width="156" height="32" rx="5"></rect><text x="92" y="50">claims serialize</text></g>
+            <path class="arr" d="M174 46 L256 46" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="30" width="186" height="32" rx="5"></rect><text x="353" y="46">widen the pool &#183; EchoMQ.Pool</text></g>
+          </g>
+          <g class="row" data-p="fetch">
+            <g class="prob"><rect x="14" y="70" width="156" height="32" rx="5"></rect><text x="92" y="90">the fetch dominates</text></g>
+            <path class="arr" d="M174 86 L256 86" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="70" width="186" height="32" rx="5"></rect><text x="353" y="86">batch the claim &#183; bclaim/3</text></g>
+          </g>
+          <g class="row" data-p="poll">
+            <g class="prob"><rect x="14" y="110" width="156" height="32" rx="5"></rect><text x="92" y="130">polling wastes trips</text></g>
+            <path class="arr" d="M174 126 L256 126" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="110" width="186" height="32" rx="5"></rect><text x="353" y="126">park &#183; BLPOP in the consumer</text></g>
+          </g>
+          <g class="row" data-p="herd">
+            <g class="prob"><rect x="14" y="150" width="156" height="32" rx="5"></rect><text x="92" y="170">a wake herd</text></g>
+            <path class="arr" d="M174 166 L256 166" marker-end="url(#par)"></path>
+            <g class="tech"><rect x="260" y="150" width="186" height="32" rx="5"></rect><text x="353" y="166">one blocker &#183; the metronome</text></g>
+          </g>
+          <defs><marker id="par" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#68705f"></path></marker></defs>
+        </svg>
+        <div class="readout" id="pOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a problem.
+        Each throughput problem maps to one lever: serialized claims are answered by a wider pool, a dominating fetch
+        by a batch claim, wasted polling trips by a <code>BLPOP</code> park, and a wake herd by the metronome&#8217;s
+        single blocker &#8212; never by adding more processes alone.</div>
+      </figure>
+
+      <div class="prose">
+        <p>A consumer makes the technique concrete. In codemojex &#8212; a Telegram emoji-guessing game on the same
+        stack &#8212; <code>Codemojex.Guesses.submit/3</code> enqueues each guess as a branded <code>JOB</code> on the
+        player&#8217;s lane (<code>emq:{cm}:&hellip;</code>), and <code>Codemojex.ScoreWorker</code> is the scoring
+        consumer: <code>EchoMQ.Consumer</code> drains the guess queue through <code>Lanes.claim</code>, the player id
+        arriving as the lane group. During a busy event &#8212; many rooms guessing at once &#8212; the per-claim
+        <code>ZPOPMIN</code> is the ceiling, and pool width plus the batch claim are what keep the scoring engine
+        ahead of the field.</p>
+        <p>Wiring the claim loop into a production deployment &#8212; the pool sizing, the lease recovery, the metrics
+        per queue &#8212; is the queue&#8217;s scaling layer, taught in the EchoMQ course rather than here.</p>
+      </div>
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>Concurrency at the claim point</h3>
+          <p>The Queue pillar wires the consumer and pool into a production deployment: the claim loop, the pool
+          sizing, the lease recovery for a stalled worker, and the metrics per queue.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>The Valkey-native bus</h3>
+          <p>Part B3 builds the bus the consumer drains: a queue is a set of lanes named by branded ids, claimed off
+          the ring on a server-clock lease.</p>
+        </a>
+        <a class="door" href="/redis-patterns/flow-control/rate-limiting">
+          <span class="dr">R6.01</span>
+          <h3>The ceiling above the floor</h3>
+          <p>Pool width is the throughput floor; the rate limiter is the ceiling &#8212; a per-window counter that
+          caps how much work is admitted, however wide the pool.</p>
+        </a>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>BLPOP</code> blocks the connection it is issued on
+      until an element is pushed to the key or the timeout elapses &#8212; so a parking consumer must hold a dedicated
+      connector, and a pool of consumers needs a coordinator (the metronome) so one enqueue does not unblock every
+      member at once &#8212;
+      <a href="https://valkey.io/commands/blpop/" rel="noopener">valkey.io/commands/blpop</a>.</p>
+    </section>
+
+    <section id="when">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>When to use / when to avoid</h2>
+        <span class="ssrc">the decision</span>
+      </div>
+      <div class="prose">
+        <p><strong>Widen the pool and batch the claim when:</strong></p>
+        <ul>
+          <li>A queue falls behind and adding consumer processes does not help &#8212; the bottleneck is the wire, not
+          the BEAM, so the lever is more sockets (pool width), not more processes.</li>
+          <li>The per-job work is small relative to the round-trip, so the fetch dominates and a batch claim
+          (<code>bclaim/3</code>) amortizes it over several jobs.</li>
+          <li>Many consumers compete on one queue and the thundering herd of wakes is a cost &#8212; the
+          <code>:metronome</code> pool path fans readiness from one blocker.</li>
+        </ul>
+        <p><strong>Leave the defaults when:</strong></p>
+        <ul>
+          <li>The queue keeps up at one connector and a modest beat &#8212; concurrency is not the constraint, and a
+          wider pool buys nothing.</li>
+          <li>The per-job handler work dwarfs the round-trip; then the fetch is not the ceiling, the handler is, and
+          batching the claim changes little.</li>
+          <li>A hard ceiling on the <em>rate</em> of work is the goal rather than throughput &#8212; that is the rate
+          limiter, a per-window counter, not pool width.</li>
+        </ul>
+      </div>
+      <p class="take">Reach for pool width and a batch claim when the wire is the bottleneck and the fetch dominates;
+      leave the defaults when one connector keeps up or the handler is the cost. Throughput is a structural choice,
+      reasoned in round-trips &#8212; not a count of processes.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/blpop/" rel="noopener">Valkey &mdash; <em>BLPOP</em></a> &mdash; block the connection until an element is pushed or the timeout expires; the park that lets an idle consumer cost the wire nothing.</li>
+            <li><a href="https://valkey.io/commands/zpopmin/" rel="noopener">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; pop the lowest-scored member of a sorted set; one pop per claim is the per-claim fetch, the throughput ceiling.</li>
+            <li><a href="https://valkey.io/topics/pipelining/" rel="noopener">Valkey &mdash; <em>Pipelining</em></a> &mdash; send many commands without waiting for each reply, so a pipelined connector keeps several round-trips outstanding.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{q}</code> hash tag pins a queue&#8217;s keys to one of 16384 slots, so a multi-key claim script is slot-legal.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a><span class="rs">the chapter</span></li>
+            <li><a href="/redis-patterns/flow-control/worker-concurrency/parallel-vs-concurrent">R6.05.1 &#183; Parallel vs concurrent</a><span class="rs">why the wire, not the BEAM, is the shared resource</span></li>
+            <li><a href="/redis-patterns/flow-control/worker-concurrency/the-per-claim-fetch-bottleneck">R6.05.2 &#183; The per-claim fetch bottleneck</a><span class="rs">one ZPOPMIN per claim, and how bclaim/3 amortizes it</span></li>
+            <li><a href="/redis-patterns/flow-control/worker-concurrency/capacity-planning">R6.05.3 &#183; Capacity planning</a><span class="rs">the structural knobs, reasoned in round-trips</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the consumer and pool wired into a production deployment</span></li>
+            <li><a href="/bcs/bus">/bcs/bus</a><span class="rs">Part B3, the Valkey-native bus the figures draw from</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/flow-control"><span class="pk">prev</span>&#8592; R6 &#183; Flow Control &amp; Scale</a>
+      <a class="pgx" href="/redis-patterns/flow-control/worker-concurrency/parallel-vs-concurrent"><span class="pk">begin</span>R6.05.1 &#183; Parallel vs concurrent &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/flow-control/worker-concurrency/parallel-vs-concurrent">R6.05.1 &#183; Parallel vs concurrent</a>
+        <a href="/redis-patterns/flow-control/worker-concurrency/the-per-claim-fetch-bottleneck">R6.05.2 &#183; The per-claim fetch bottleneck</a>
+        <a href="/redis-patterns/flow-control/worker-concurrency/capacity-planning">R6.05.3 &#183; Capacity planning</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: the consumer loop (pure lookup over a fixed dataset) ---------- */
+  var LOOP = {
+    reap:    { cmd: 'reap expired leases', why: 'a stalled worker’s leased jobs whose deadline has passed are moved back to pending, so no job is lost to a crash' },
+    promote: { cmd: 'promote due schedules', why: 'scheduled work whose time has come is moved into the pending set so it becomes claimable' },
+    drain:   { cmd: 'EchoMQ.Lanes.claim/3', why: 'rotate the ring and serve the head of the rotated lane, one ZPOPMIN round-trip per claim, until the ring is drained' },
+    park:    { cmd: 'BLPOP emq:{q}:wake', why: 'block on the wake key until an enqueue pushes a wake token or the beat elapses — spending no round-trips while idle' }
+  };
+  function describeLoop(st) {
+    var s = LOOP[st];
+    if (!s) return '';
+    return '<span class="rk">step &#183;</span> <b>' + s.cmd + '</b><br>' +
+      '<span class="rk">does &#183;</span> ' + s.why;
+  }
+  wireHoverSelect('cflow', '#cSel button', 'cOut', 'data-st', '.step', describeLoop,
+    '<span class="rk">readout &#183;</span> Select a step. The consumer beats on a cadence: it reaps expired leases, promotes due scheduled work, drains the ring one rotating claim at a time, then parks on the wake key with <code>BLPOP</code> &#8212; spending no round-trips while idle, woken by an enqueue or the beat.');
+
+  /* ---------- Interactive 2: the bottleneck → the lever (pure lookup) ---------- */
+  var LEVER = {
+    serial: { tech: 'widen the pool', surf: 'EchoMQ.Pool — N pipelined connectors dispatched round-robin by an atomic counter; pool width is the round-trips outstanding at once, the real parallelism' },
+    fetch:  { tech: 'batch the claim', surf: 'EchoMQ.Lanes.bclaim/3 — the count-variant ZPOPMIN serves up to k jobs on one shared TIME lease, dividing the fetch cost over the batch' },
+    poll:   { tech: 'park on BLPOP', surf: 'EchoMQ.Consumer — parks on emq:{q}:wake instead of polling; idle it spends no round-trips, an enqueue unparks it with a wake token' },
+    herd:   { tech: 'one blocker for the pool', surf: 'the consumer’s :metronome mode — one block per queue fans readiness across idle consumers, one claim each per wake, the herd gone' }
+  };
+  function describeLever(p) {
+    var s = LEVER[p];
+    if (!s) return '';
+    return '<span class="rk">lever &#183;</span> <b>' + s.tech + '</b><br>' +
+      '<span class="rk">surface &#183;</span> ' + s.surf;
+  }
+  wireHoverSelect('pflow', '#pSel button', 'pOut', 'data-p', '.row', describeLever,
+    '<span class="rk">readout &#183;</span> Select a problem. Each throughput problem maps to one lever: serialized claims are answered by a wider pool, a dominating fetch by a batch claim, wasted polling trips by a <code>BLPOP</code> park, and a wake herd by the metronome&#8217;s single blocker &#8212; never by adding more processes alone.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

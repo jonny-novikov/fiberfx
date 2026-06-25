@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.02.3 · READONLY, reconnect & failover · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.02.3 — failover recovery for a single-owner Valkey client, grounded in the real EchoMQ.Connector (echo/apps/echo_wire/lib/echo_mq/connector.ex). The Valkey -READONLY reply is the signal that a primary failed over; the connector's grounding is the reconnect discipline: supervised reconnect with capped jittered backoff and re-fence on every reconnect, in-flight callers failed :disconnected and never replayed (at-most-once on the wire), and an idle heartbeat that PINGs a quiet wire. Honest retarget: the connector handles failover by socket-drop-and-reconnect, not by parsing -READONLY. Backed by Valkey 9.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.frozen pre .fc{color:#e0a36b}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the failover figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.fmap{width:100%;height:auto;display:block;margin-top:4px}
+.fmap .ev rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.5}
+.fmap .step rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.4}
+.fmap .nlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.fmap .nsub{font:9.5px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.fmap .phase{cursor:pointer;transition:opacity .18s ease}
+.fmap .phase .arrowln{stroke:var(--b-dim);stroke-width:1.6;fill:none;marker-end:url(#fhead)}
+.fmap.focus .phase{opacity:.2}
+.fmap.focus .phase.on{opacity:1}
+.fmap.focus .phase.on .arrowln{stroke:var(--r-red);stroke-width:2.6}
+.fmap.focus .phase.on .step rect{stroke-width:2.6}
+.fmap .fhead{fill:var(--b-dim)}
+.fmap.focus .phase.on .fhead{fill:var(--r-red)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/persistence-pooling-failover">persistence-pooling-failover</a><span class="rsep">/</span><span class="rcur">readonly-reconnect-failover</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#signal">The signal</a>
+      <a href="#honest">The retarget</a>
+      <a href="#props">Three properties</a>
+      <a href="#posture">The posture</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.02.3 &#183; Persistence, pooling &amp; failover &#8212; dive 3</p>
+      <h1>READONLY, reconnect <span class="hns">&amp; failover</span>.</h1>
+      <p class="lede">A record of truth has to stay reachable across a disruption. When the node a client is writing to
+      fails over, the old connection points at the wrong server. This dive separates the <b>signal</b> that a failover
+      happened from the <b>discipline</b> that recovers from it.</p>
+      <p class="heronote">Grounding: EchoMQ.Connector (echo/apps/echo_wire/lib/echo_mq/connector.ex) for the reconnect
+      discipline &#183; the Valkey -READONLY reply for the signal (the pattern) &#183; the engine is Valkey 9. Honest
+      retarget: the connector handles failover by socket-drop-and-reconnect, not by parsing -READONLY.</p>
+
+      <figure class="anatomy" aria-labelledby="failCap">
+        <figcaption id="failCap"><b>From the signal to the recovered connection.</b> Step the failover sequence to
+        light each phase; the readout names what is real in the connector and what is the pattern.</figcaption>
+        <div class="segbar" id="phaseSel" role="group" aria-label="Step the failover sequence">
+          <button type="button" data-phase="signal" aria-pressed="false">-READONLY / drop</button>
+          <button type="button" data-phase="fail" aria-pressed="false">fail in-flight</button>
+          <button type="button" data-phase="backoff" aria-pressed="false">backoff + re-fence</button>
+          <button type="button" data-phase="resume" aria-pressed="false">reconnected</button>
+        </div>
+        <svg class="fmap" id="fmap" viewBox="0 0 480 250" role="img" aria-label="A failover recovery sequence in four phases, left to right: a -READONLY reply or a dropped socket signals the failover; in-flight callers are failed :disconnected and never replayed; a capped jittered backoff waits, then the wire-version fence is re-checked on the new connection; and the connector is reconnected, status connected. Step through to see what the connector really does versus what is the Valkey pattern.">
+          <defs><marker id="fhead" class="fhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z"></path></marker></defs>
+          <g class="phase" data-phase="signal">
+            <g class="ev"><rect x="14" y="96" width="100" height="56" rx="8"></rect><text class="nlbl" x="64" y="120">-READONLY</text><text class="nsub" x="64" y="134">or socket drop</text></g>
+            <path class="arrowln" d="M116 124 L132 124"></path>
+          </g>
+          <g class="phase" data-phase="fail">
+            <g class="step"><rect x="134" y="96" width="100" height="56" rx="8"></rect><text class="nlbl" x="184" y="116">fail in-flight</text><text class="nsub" x="184" y="130">:disconnected</text><text class="nsub" x="184" y="143">never replayed</text></g>
+            <path class="arrowln" d="M236 124 L252 124"></path>
+          </g>
+          <g class="phase" data-phase="backoff">
+            <g class="step"><rect x="254" y="96" width="100" height="56" rx="8"></rect><text class="nlbl" x="304" y="116">backoff</text><text class="nsub" x="304" y="130">capped + jitter</text><text class="nsub" x="304" y="143">re-fence</text></g>
+            <path class="arrowln" d="M356 124 L372 124"></path>
+          </g>
+          <g class="phase" data-phase="resume">
+            <g class="step"><rect x="374" y="96" width="100" height="56" rx="8"></rect><text class="nlbl" x="424" y="120">reconnected</text><text class="nsub" x="424" y="134">status: connected</text></g>
+          </g>
+        </svg>
+        <div class="readout" id="phaseOut" aria-live="polite"><span class="rk">readout &#183;</span> Step the sequence.
+        The <code>-READONLY</code> reply is the Valkey signal (the pattern); failing in-flight callers without replay,
+        the jittered backoff with re-fence, and the recovered connection are the real EchoMQ.Connector.</div>
+        <p class="ethic">Static sequence &#8212; signal &#8594; the failover is visible &#183; fail in-flight &#8594;
+        at-most-once on the wire &#183; backoff + re-fence &#8594; safe retry of the connection &#183; reconnected
+        &#8594; <code>reconnects</code> counter +1.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="signal">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The -READONLY signal &#8212; the pattern</h2>
+        <span class="ssrc">Valkey replication</span>
+      </div>
+      <div class="prose">
+        <p>In a replicated Valkey deployment, writes go to the primary; replicas serve reads and refuse writes. If a
+        client keeps issuing writes to a node that has become a replica &#8212; which is exactly what happens for a
+        moment after a failover, before the client has detected the change &#8212; the server answers with a
+        <code>-READONLY</code> error: <em>&#8220;You can&#8217;t write against a read only replica.&#8221;</em></p>
+        <p>That reply is a <strong>signal</strong>: the topology changed under the client. A resilient client treats it
+        as the cue to stop writing to this node and reconnect to the new primary. How it finds the new primary depends
+        on the deployment &#8212; a Sentinel client asks the sentinels, a Cluster client re-resolves the slot&#8217;s
+        owner. The signal is the pattern; the rediscovery mechanism is deployment-specific.</p>
+      </div>
+
+      <pre class="code"><span class="cmt"># after a failover, a write to the demoted node is refused:</span>
+&gt; SET emq:{orders}:pending 1
+<b>(error) READONLY</b> You can't write against a read only replica.
+<span class="cmt"># the signal: reconnect to the promoted primary.</span></pre>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A replica refuses writes and answers
+      <code>-READONLY</code>; a client that receives it has been talking to a node that is no longer the primary, and a
+      Sentinel- or Cluster-aware client re-resolves the promoted primary to reconnect to &#8212;
+      <a href="https://valkey.io/topics/replication/" rel="noopener">valkey.io/topics/replication</a>.</p>
+    </section>
+
+    <section id="honest">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>What the connector actually does</h2>
+        <span class="ssrc">connector.ex &#183; the honest retarget</span>
+      </div>
+      <div class="prose">
+        <p><code>EchoMQ.Connector</code> does <strong>not</strong> parse <code>-READONLY</code>, and it does not do
+        Sentinel discovery. Being honest about that is the whole point of this dive: the module name
+        &#8220;READONLY-reconnect&#8221; overstates what is in the code. The connector handles failover the way a
+        single-owner socket client should &#8212; by <strong>socket-drop and supervised reconnect</strong>. When the
+        wire to the old node drops (a failover tears the connection down, or the node restarts), the connector notices,
+        fails its in-flight callers, and reconnects on a backoff.</p>
+        <p>The shipped deploy is a standalone Fly node, so a failover here is a restart and the reconnect goes back to
+        the same server &#8212; but the discipline is exactly the one a Sentinel- or Cluster-aware client layers its
+        rediscovery on top of. So the grounding here is not a <code>-READONLY</code> handler; it is the
+        <strong>reconnect discipline</strong> the connector ships &#8212; three real properties that make reconnection
+        safe.</p>
+        <dl class="deflist">
+          <dt>the pattern</dt><dd>the <code>-READONLY</code> reply signals a failover; reconnect to the new primary (Sentinel/Cluster re-resolves it).</dd>
+          <dt>the grounding</dt><dd>the connector reconnects on a dropped socket &#8212; capped jittered backoff, re-fence, in-flight fail-not-replay.</dd>
+        </dl>
+      </div>
+    </section>
+
+    <section id="props">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The three production properties</h2>
+        <span class="ssrc">connector.ex &#183; moduledoc + schedule/1</span>
+      </div>
+      <div class="prose">
+        <p>The connector&#8217;s moduledoc names them. The reconnect itself: <em>&#8220;supervised reconnect with
+        capped jittered backoff, re-fencing on every reconnect.&#8221;</em> That is real in <code>schedule/1</code> &#8212;
+        each attempt waits the current backoff plus a random jitter, and the backoff doubles up to a ceiling. The
+        jitter keeps a fleet of reconnecting clients from synchronizing into a thundering herd; the cap keeps the wait
+        bounded. Re-fencing means the wire-version fence is re-checked before the first command on the new connection,
+        so a reconnect can never resume against a server speaking a different protocol.</p>
+      </div>
+
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_wire/lib/echo_mq/connector.ex &#183; the reconnect schedule<span class="tag">frozen</span></figcaption>
+        <pre><span class="fc"># capped jittered backoff: wait backoff + jitter, then double up to a cap.</span>
+defp schedule(%{sock: nil} = s) do
+  jitter = :rand.uniform(div(s.backoff, 2) + 1)
+  Process.send_after(self(), :reconnect, <b>s.backoff + jitter</b>)
+  %{s | backoff: <b>min(s.backoff * 2, s.backoff_max)</b>}
+end</pre>
+      </figure>
+
+      <div class="prose">
+        <p>The in-flight policy is the load-bearing safety property: <em>&#8220;in-flight callers failed with
+        <code>:disconnected</code> on socket loss &#8212; never replayed, because the connector cannot know what is
+        idempotent.&#8221;</em> When the socket drops, every caller waiting on a reply gets a clean
+        <code>{:error, :disconnected}</code> &#8212; and the command is <strong>not</strong> re-sent on the new
+        connection. The connector refuses to replay because it cannot know whether the command was idempotent: a write
+        that already landed before the drop would be applied twice if replayed. So the wire is <strong>at-most-once</strong>,
+        and idempotency is pushed up to the caller, which is the only place with the information a safe retry needs. A
+        <code>complete</code> that already ran must not run again; the retry decision belongs to the caller.</p>
+        <p>The early-warning property: <em>&#8220;an idle heartbeat that PINGs a quiet wire so dead peers are noticed
+        before the next caller pays for the discovery.&#8221;</em> A connection that has been idle might already be dead
+        &#8212; the peer gone, the path broken &#8212; and nobody knows until the next caller tries to use it and waits
+        for a timeout. The connector arms an idle heartbeat that PINGs a quiet wire, so a dead peer surfaces as a failed
+        PING and triggers the reconnect <em>before</em> a real caller is made to pay the discovery cost.</p>
+        <p>The connector also exposes the failover state to observers: a <code>reconnects</code> counter (slot 4 of its
+        counters) increments on each successful reconnect, and <code>stats/1</code> reports
+        <code>status: :reconnecting</code> while the socket is down and <code>:connected</code> once it is back.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Treat <code>-READONLY</code> (or a dropped socket) as the cue that the topology changed; reconnect with
+          backoff; never replay an in-flight write whose idempotency is unknown.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p><code>EchoMQ.Connector</code> ships capped jittered backoff with re-fence on reconnect, fails in-flight
+          callers <code>:disconnected</code> (at-most-once on the wire), and PINGs an idle wire so dead peers surface
+          early; the standalone Fly deploy reconnects to the restarted node.</p>
+        </div>
+      </div>
+
+      <p class="take">Failover recovery is a discipline, not a single error code. The connector does not parse
+      <code>-READONLY</code> &#8212; it drops, fails in-flight callers loudly, re-fences, and reconnects on a jittered
+      backoff, and it pushes idempotency to the caller because that is the only place with the information a safe retry
+      needs.</p>
+    </section>
+
+    <section id="posture">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Where this completes the posture</h2>
+        <span class="ssrc">restart &#183; load &#183; failover</span>
+      </div>
+      <div class="prose">
+        <p>This is the third guarantee of operating the bus as a record of truth. The persistence policy (dive 1) keeps
+        the data across a restart; the pool (dive 2) serves it under load; this reconnect discipline keeps each
+        connection reachable across a failover. Because a pool member <em>is</em> an <code>EchoMQ.Connector</code>, the
+        pool inherits this discipline for free: one member&#8217;s socket dropping fails only that member&#8217;s
+        in-flight callers and reconnects on its own, while the rest of the pool keeps serving.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the door &#183; the production evidence</span>
+        <h3>The reconnect, observed</h3>
+        <p>The connector exposes its failover behaviour as telemetry &#8212; the <code>reconnects</code> counter, the
+        <code>status</code> field, the pipeline-stop events. The conformance, telemetry, and benchmark that turn these
+        signals into evidence are the <a href="/echomq/proof">EchoMQ Proof pillar</a>. The standalone Fly node this
+        reconnects to is where <a href="/bcs/fly">Codemojex runs on Fly</a>; the durability dial one tier below the
+        volatile bus is <a href="/echo-persistence">/echo-persistence</a>. This dive stays on the reconnect discipline.</p>
+        <figure class="frozen">
+          <figcaption>EchoMQ.Connector.stats/1 &#183; the failover-visible fields<span class="tag">frozen</span></figcaption>
+          <pre>status:    <b>:reconnecting</b>  <span class="fd">&#8592; while the socket is down (else :connected)</span>
+reconnects: 3            <span class="fd">&#8592; counter slot 4, +1 per successful reconnect</span>
+wire_errors: 0          <span class="fd">&#8592; the re-fence keeps a stale protocol out</span></pre>
+        </figure>
+      </div>
+
+      <p class="take">Three guarantees, one record of truth: durability keeps it across a restart, the pool serves it
+      under load, and the reconnect discipline reaches it across a failover &#8212; and the pool inherits this third one
+      because a member is a connector.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Recap &#8212; the module whole</h2>
+        <span class="ssrc">return &#8594; R8.02 hub</span>
+      </div>
+      <div class="prose">
+        <p>The Valkey <code>-READONLY</code> reply is the signal that a failover happened (the pattern);
+        <code>EchoMQ.Connector</code> grounds the reconnect discipline (the real surface): capped jittered backoff with
+        re-fence, in-flight callers failed <code>:disconnected</code> and never replayed, and an idle heartbeat that
+        surfaces dead peers early. The connector does not parse <code>-READONLY</code> &#8212; it drops and reconnects.
+        With this dive the module is whole: the bus survives a restart (dive 1), serves under load (dive 2), and rides a
+        failover (here) &#8212; the three guarantees that keep a record of truth one. Return to the
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover">module hub</a> or the
+        <a href="/redis-patterns/production-operations">chapter</a>.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/replication/" rel="noopener">Valkey &mdash; <em>Replication</em></a> &mdash; primary/replica roles and the <code>-READONLY</code> reply a client gets writing to a replica after a failover.</li>
+            <li><a href="https://valkey.io/topics/sentinel/" rel="noopener">Valkey &mdash; <em>Sentinel</em></a> &mdash; automatic failover and how a Sentinel-aware client re-resolves the new primary the reconnect targets.</li>
+            <li><a href="https://antirez.com/news/79" rel="noopener">antirez &mdash; <em>Redis Sentinel design</em></a> &mdash; the Redis creator&#8217;s notes on failover signalling and client rediscovery.</li>
+            <li><a href="https://redis.io/docs/" rel="noopener">Redis &mdash; <em>Documentation</em></a> &mdash; the high-availability and client-reconnection topics this discipline draws on.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/persistence-pooling-failover">R8.02 &#183; Persistence, pooling &amp; failover</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing">R8.02.2 &#183; Pool sizing</a><span class="rs">the pool whose members inherit this discipline</span></li>
+            <li><a href="/redis-patterns/data-modeling/primary-database">R7.01 &#183; Redis as a primary database</a><span class="rs">the record of truth this keeps reachable</span></li>
+            <li><a href="/echomq/proof">/echomq &#183; the Proof pillar</a><span class="rs">conformance, telemetry, the reconnects counter</span></li>
+            <li><a href="/bcs/fly">/bcs &#183; Production on Fly</a><span class="rs">the standalone Fly node this reconnects to</span></li>
+            <li><a href="/echo-persistence">/echo-persistence</a><span class="rs">the durability floor beneath the volatile tier</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing"><span class="pk">previous</span>&#8592; R8.02.2 &#183; Pool sizing</a>
+      <a class="pgx" href="/redis-patterns/production-operations/persistence-pooling-failover"><span class="pk">next</span>R8.02 &#183; Persistence, pooling &amp; failover &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/rdb-and-aof">R8.02.1 &#183; RDB and AOF</a>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/pool-sizing">R8.02.2 &#183; Pool sizing</a>
+        <a href="/redis-patterns/production-operations/persistence-pooling-failover/readonly-reconnect-failover">R8.02.3 &#183; READONLY-reconnect failover</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/echo-persistence">The persistence floor</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: failover sequence -> what is real vs pattern (pure over a fixed dataset) ---------- */
+  var PHASES = {
+    'signal':  { label: '-READONLY / socket drop', real: 'the Valkey pattern', detail: 'a -READONLY reply (or a dropped socket on a single node) signals that the primary is gone; this is the pattern — the connector reacts to the socket drop, not to a parsed -READONLY' },
+    'fail':    { label: 'fail in-flight callers', real: 'EchoMQ.Connector', detail: 'every caller waiting on a reply gets {:error, :disconnected}; the command is never re-sent — at-most-once on the wire, because the connector cannot know what is idempotent' },
+    'backoff': { label: 'backoff + re-fence', real: 'EchoMQ.Connector (schedule/1)', detail: 'the reconnect waits backoff + jitter and doubles up to a cap (schedule/1); on the new socket the wire-version fence is re-checked, so a reconnect never resumes against a stale protocol' },
+    'resume':  { label: 'reconnected', real: 'EchoMQ.Connector (stats/1)', detail: 'the reconnects counter (slot 4) increments and status returns to :connected; subscriptions are re-issued, but in-flight writes are not — the caller retries what it knows is safe' }
+  };
+  // pure: phase key -> readout HTML
+  function describePhase(phase) {
+    var p = PHASES[phase];
+    return '<span class="rk">phase &#183;</span> ' + p.label + '<br>' +
+      '<span class="rk">real in &#183;</span> <b>' + p.real + '</b><br>' +
+      '<span class="rk">what &#183;</span> ' + p.detail;
+  }
+  var fmap = document.getElementById('fmap');
+  var phaseButtons = document.querySelectorAll('#phaseSel button');
+  var phaseOut = document.getElementById('phaseOut');
+  // pure: highlight the phase, sync the buttons, fill the readout — hover or click.
+  function selectPhase(phase) {
+    phaseButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-phase') === phase ? 'true' : 'false');
+    });
+    if (fmap) {
+      fmap.classList.toggle('focus', !!phase);
+      fmap.querySelectorAll('.phase').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-phase') === phase);
+      });
+    }
+    if (phaseOut) {
+      phaseOut.innerHTML = phase
+        ? describePhase(phase)
+        : '<span class="rk">readout &#183;</span> Step the sequence. The <code>-READONLY</code> reply is the Valkey signal (the pattern); failing in-flight callers without replay, the jittered backoff with re-fence, and the recovered connection are the real EchoMQ.Connector.';
+    }
+  }
+  phaseButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var phase = b.getAttribute('data-phase');
+      selectPhase(b.getAttribute('aria-pressed') === 'true' ? null : phase);
+    });
+  });
+  if (fmap) {
+    fmap.querySelectorAll('.phase').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectPhase(g.getAttribute('data-phase')); });
+      g.addEventListener('mouseleave', function () { selectPhase(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

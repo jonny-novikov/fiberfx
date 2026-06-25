@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Single-flight &amp; jittered TTL — EchoMQ, In Depth</title>
+<meta name="description" content="Module 02 of the Cache pillar: one fill per a thundering herd, cohorts that never expire in step, and a full cache that degrades to pass-through rather than fail. Grounded in EchoStore.Table from echo/apps/echo_store.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);background:rgba(42,161,152,.08);
+  border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- dive cards ---- */
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.2rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);line-height:1.45}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn:hover{opacity:.9}
+
+/* ---- stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media(max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+
+@media(max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/cache">cache</a><span class="rsep">/</span><span class="rcur">single-flight-and-jittered-ttl</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- HERO -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/cache">The Cache</a>
+      <span class="sep">/</span>
+      <span class="here">Single-flight &amp; jittered TTL</span>
+    </nav>
+    <p class="eyebrow">The Cache &middot; module 02</p>
+    <h1>One fill<br>per <span class="ex">herd</span></h1>
+    <p class="lede">A cache that does not stampede and does not grow without bound.</p>
+    <p class="kicker">Module 01 built the declared near-cache and showed how a read resolves across the two
+      layers. Module 02 is the second half: the discipline that keeps it <strong>cheap under a herd</strong>
+      and <strong>bounded under pressure</strong>. Concurrent misses on the same key coalesce onto a single
+      in-flight load &mdash; one fill, not a thousand. Expiry is <strong>jittered</strong> so a cohort never
+      dies in step, and a sweeper reclaims dead rows on a fixed tick. And when the table is full and no
+      expired rows exist, a fill still serves its caller from L2 and the loader: the cache
+      <strong>degrades to pass-through, it never fails</strong>. All three laws are in
+      <code class="inl">EchoStore.Table</code>, real shipped code.</p>
+    <div class="toc-mini">
+      <a href="#herd">One fill per herd</a>
+      <a href="#dives">The dives</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- FRAMING INTERACTIVE: N callers collapsing to one flight -->
+  <section id="herd">
+    <h2>A herd, one flight</h2>
+    <div class="prose">
+      <p>Pick how many callers miss simultaneously on the same key and watch the owner's mailbox
+        coalesce them into a single loader call. The <code class="inl">:coalesced</code> counter
+        records each waiter that did not start its own flight. Pick a path to see the call sequence
+        and the counter update.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="herdTitle">
+      <h4 id="herdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Herd coalescing &middot; pick a caller count</h4>
+      <div class="controls">
+        <div class="solid-select" id="herdSel" role="group" aria-label="Number of concurrent callers missing on the same key">
+          <button type="button" data-n="1" data-c="echo" class="active" aria-pressed="true">1 caller</button>
+          <button type="button" data-n="3" data-c="echo" aria-pressed="false">3 callers</button>
+          <button type="button" data-n="8" data-c="gold" aria-pressed="false">8 callers</button>
+          <button type="button" data-n="50" data-c="gold" aria-pressed="false">50 callers</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 220" role="img" aria-label="N concurrent callers each miss L1 and send {:fill, id} to the owner. The first caller's message starts a flight via spawn_monitor. Each subsequent caller's message finds the flight exists and appends to its waiters list, incrementing :coalesced. When the flight sends back {:flight, id, result}, the owner replies the one answer to every waiter.">
+        <defs>
+          <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- callers group -->
+        <g id="g-callers">
+          <rect x="12" y="60" width="90" height="100" rx="9" fill="rgba(42,161,152,.1)" stroke="#2aa198" stroke-dasharray="4 3"></rect>
+          <text x="57" y="82" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">callers</text>
+          <text id="callerCount" x="57" y="120" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="22" fill="#6fdccf">1</text>
+          <text x="57" y="148" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#a39c89">miss on same id</text>
+        </g>
+
+        <!-- owner -->
+        <g id="g-owner">
+          <rect x="188" y="60" width="104" height="100" rx="9" fill="rgba(90,135,196,.14)" stroke="#5a87c4"></rect>
+          <text x="240" y="86" text-anchor="middle" font-family="Manrope,sans-serif" font-size="11" fill="#ece4d0">owner</text>
+          <text x="240" y="100" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">handle_call</text>
+          <text x="240" y="113" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">{:fill, id}</text>
+          <text x="240" y="138" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">flights map</text>
+          <text id="ownerFlights" x="240" y="152" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#9fc0ea">—</text>
+        </g>
+        <!-- callers -> owner -->
+        <path d="M102 110 L186 110" stroke="#2aa198" fill="none" stroke-width="1.3" marker-end="url(#ah2)"></path>
+        <text x="144" y="104" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">{:fill, id}</text>
+
+        <!-- flight process -->
+        <g id="g-flight2">
+          <rect x="352" y="34" width="112" height="62" rx="9" fill="rgba(212,168,90,.12)" stroke="#d4a85a"></rect>
+          <text x="408" y="56" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">flight</text>
+          <text x="408" y="70" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#f0cd7f">spawn_monitor'd</text>
+          <text x="408" y="82" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">GET → loader → SET</text>
+        </g>
+        <!-- owner -> flight -->
+        <path d="M292 88 L350 66" stroke="#5a87c4" fill="none" stroke-width="1.2" marker-end="url(#ah2)"></path>
+        <text x="325" y="75" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#5a6488">first caller</text>
+
+        <!-- coalesced waiters -->
+        <g id="g-waiters">
+          <rect x="352" y="124" width="112" height="52" rx="9" fill="rgba(42,161,152,.08)" stroke="#2a3252" stroke-dasharray="4 3"></rect>
+          <text x="408" y="146" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">waiters</text>
+          <text id="waiterCount" x="408" y="165" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="16" fill="#6fdccf">0</text>
+        </g>
+        <!-- owner -> waiters -->
+        <path d="M292 138 L350 150" stroke="#5a87c4" fill="none" stroke-width="1.1" marker-end="url(#ah2)" stroke-dasharray="3 2"></path>
+        <text x="322" y="160" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#5a6488">+appended</text>
+
+        <!-- reply arrow -->
+        <path d="M408 98 L408 122" stroke="#d4a85a" fill="none" stroke-width="1.2" marker-end="url(#ah2)"></path>
+        <text x="420" y="112" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#f0cd7f">result</text>
+
+        <!-- fan-out back -->
+        <path d="M350 150 L105 130" stroke="#2aa198" fill="none" stroke-width="1.1" marker-end="url(#ah2)" stroke-dasharray="3 2"></path>
+        <text x="228" y="188" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488">one {:ok, value, source} to every waiter</text>
+      </svg>
+      <div class="geo-readout" id="herdOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">The owner's mailbox is the serialization point &mdash; the first <code class="inl">{:fill,
+      id}</code> starts a flight; every other appends. The loader runs once; every waiter reads that one
+      answer. The <code class="inl">:coalesced</code> counter records every saved loader call.</p>
+  </section>
+
+  <!-- THE DIVES -->
+  <section id="dives">
+    <h2>The dives</h2>
+    <div class="prose">
+      <p>Three dives, each a law from <code class="inl">EchoStore.Table</code>: the coalescing
+        flight, the jittered clock, and the graceful degrade under pressure.</p>
+    </div>
+    <div class="mods">
+      <a class="mod" href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd">
+        <div class="top"><span class="num">01</span><span class="pill built">built</span></div>
+        <p class="t">One fill per herd</p>
+        <p class="o"><code class="inl">handle_call({:fill, id})</code> coalesces concurrent misses onto one flight; the spawn_monitor'd task GETs, loads, and replies to every waiter.</p>
+      </a>
+      <a class="mod" href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">
+        <div class="top"><span class="num">02</span><span class="pill built">built</span></div>
+        <p class="t">Jittered expiry</p>
+        <p class="o"><code class="inl">expires_at/1</code> draws each row's death from <code class="inl">ttl &plusmn; spread</code>; the sweeper reclaims dead rows on a fixed <code class="inl">sweep_ms</code> tick.</p>
+      </a>
+      <a class="mod" href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">
+        <div class="top"><span class="num">03</span><span class="pill built">built</span></div>
+        <p class="t">The full cache degrades</p>
+        <p class="o"><code class="inl">insert/4</code> tries to reclaim expired rows before skipping; a skip is a pass-through, not a failure. <code class="inl">stats/1</code> makes the rate observable.</p>
+      </a>
+    </div>
+  </section>
+
+  <!-- REFERENCES -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/ets.html">Erlang/OTP &mdash; <em>the ets module</em></a> &mdash; the read-concurrent L1 table the flight fills.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code class="inl">{table}</code> hashtag and one-slot discipline.</li>
+          <li><a href="https://valkey.io/commands/get/">Valkey &mdash; <em>GET</em></a> &mdash; the L2 probe a flight issues on a miss.</li>
+          <li><a href="https://valkey.io/commands/set/">Valkey &mdash; <em>SET</em></a> &mdash; the framed <code class="inl">version &lt;&gt; value</code> write after a fill.</li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf">Helland &mdash; <em>Life Beyond Distributed Transactions</em></a> &mdash; the entity addressed by a key, cached close to its use.</li>
+          <li><a href="https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake">King &mdash; <em>Announcing Snowflake</em></a> &mdash; the mint-time id every cached value is framed with.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/cache">The Cache</a> &mdash; the chapter landing; module 01 is the entry point.</li>
+          <li><a href="/echomq/cache/cache-aside-two-layers">Cache-aside, two layers</a> &mdash; module 01: the declared tiers and the read path.</li>
+          <li><a href="/echomq/protocol">The Protocol</a> &mdash; the keyspace the <code class="inl">ecc:</code> prefix stands beside.</li>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; the other pillar over the same wire.</li>
+          <li><a href="/bcs/store">The Branded Component System &middot; the Store</a> &mdash; the manuscript chapter this pillar realizes.</li>
+          <li><a href="/redis-patterns/caching">Redis Patterns Applied &middot; R1 Caching</a> &mdash; the patterns this module applies in depth.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAGER -->
+  <section>
+    <nav class="pager" aria-label="Chapter navigation">
+      <a class="btn ghost" href="/echomq/cache/cache-aside-two-layers"><span aria-hidden="true">&larr;</span> Cache-aside, two layers</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/cache">The Cache <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot" style="border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem">
+  <div class="wrap" style="display:block;padding-top:2.8rem;padding-bottom:2rem">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl">Single-flight &amp; jittered TTL</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/one-fill-per-herd">One fill per herd</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/jittered-expiry">Jittered expiry</a>
+        <a href="/echomq/cache/single-flight-and-jittered-ttl/the-full-cache-degrades">The full cache degrades</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/cache">The Cache</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: herd coalescing ---------- */
+  var HERD = {
+    1:  { waiters: 0, flights: "1 flight started",  coalesced: 0,  loaderCalls: 1 },
+    3:  { waiters: 2, flights: "1 flight, 2 waiters appended", coalesced: 2,  loaderCalls: 1 },
+    8:  { waiters: 7, flights: "1 flight, 7 waiters appended", coalesced: 7,  loaderCalls: 1 },
+    50: { waiters: 49, flights: "1 flight, 49 waiters appended", coalesced: 49, loaderCalls: 1 }
+  };
+  function renderHerd(n) {
+    var d = HERD[n];
+    if (!d) return;
+    var countEl = document.getElementById('callerCount');
+    var ownerEl = document.getElementById('ownerFlights');
+    var waiterEl = document.getElementById('waiterCount');
+    var out = document.getElementById('herdOut');
+    if (countEl) countEl.textContent = n;
+    if (ownerEl) ownerEl.textContent = d.flights;
+    if (waiterEl) waiterEl.textContent = d.waiters;
+    if (out) {
+      out.innerHTML = '<b>' + n + ' concurrent miss' + (n > 1 ? 'es' : '') + ' on one id</b><br>' +
+        'flights started: <b>1</b> &mdash; loader calls: <b>' + d.loaderCalls + '</b><br>' +
+        ':coalesced counter: <b>' + d.coalesced + '</b><br>' +
+        '<span class="dim">owner replies {:ok, value, source} to all ' + n + ' waiter' + (n > 1 ? 's' : '') + ' when the one flight returns</span>';
+    }
+  }
+  document.querySelectorAll('#herdSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#herdSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderHerd(parseInt(b.getAttribute('data-n'), 10));
+    });
+  });
+  renderHerd(1);
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sid, t) { var el = document.getElementById(sid); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) { els.forEach(function (e) { e.classList.add('in'); }); return; }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

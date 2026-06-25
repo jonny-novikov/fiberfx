@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The events channel — EchoMQ, In Depth</title>
+<meta name="description" content="Module 01 of the Bus pillar of EchoMQ, In Depth: the events channel — fire-and-forget pub/sub on emq:{q}:events. Subscribe once on a RESP3 connector, publish host-side after a transition's verdict, react without polling. Delivery two ways — subscriber pids receive {:emq_event, name, payload} and an optional :handler module implements handle_event/3. At-most-once; the durable receipt is the stream. Real EchoMQ.Events code in echo/apps/echo_mq.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);background:rgba(42,161,152,.08);
+  border:1px solid var(--line);border-radius:5px;padding:.05rem .35rem}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+
+/* ---- hero / crumbs ---- */
+.hero{padding-top:clamp(2.4rem,6vw,4.4rem)}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.rev{font-family:var(--sans);font-size:.78rem;color:var(--echo-bright);border:1px solid var(--echo);
+  border-radius:999px;padding:.22rem .7rem;display:inline-flex;align-items:center;gap:.4rem;margin:0 0 1.1rem}
+.rev a{color:var(--echo-bright);text-decoration:none}
+.rev a:hover{color:var(--cream);text-decoration:underline}
+
+/* ---- figures ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;font-size:1.18rem;line-height:1.35;
+  color:var(--cream-soft);padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+.applied{margin:1.6rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.applied .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.applied p{margin:0;color:var(--cream-soft);font-size:.96rem}
+.door{margin:1rem 0 0;border:1px solid var(--echo);border-radius:14px;padding:1.1rem 1.2rem;
+  background:linear-gradient(180deg,rgba(42,161,152,.08),rgba(10,14,26,.2))}
+.door .dl{font-family:var(--sans);font-size:.64rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--echo-bright);margin:0 0 .5rem}
+.door p{margin:0;color:var(--cream-soft);font-size:.96rem}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;cursor:pointer;padding:.5rem .9rem;
+  border-radius:10px;color:var(--cream-soft);background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);border-color:transparent}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);background:var(--ink);
+  border:1px solid var(--line);border-radius:10px;padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:anywhere}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- contents cards ---- */
+.legend{display:flex;flex-wrap:wrap;gap:.6rem 1.1rem;font-family:var(--sans);font-size:.78rem;color:var(--cream-dim);margin:.4rem 0 1.6rem}
+.legend span{display:inline-flex;align-items:center;gap:.45rem}
+.pill{font-family:var(--sans);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;padding:.18rem .5rem;border-radius:999px;border:1px solid}
+.pill.live{color:var(--sage-bright);border-color:var(--sage)}
+.pill.built{color:var(--gold-bright);border-color:var(--gold)}
+.pill.soon{color:var(--echo-bright);border-color:var(--echo)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:.8rem}
+.mod{display:block;border:1px solid var(--line);border-radius:13px;padding:1rem 1.05rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.5),rgba(10,14,26,.3));
+  transition:transform .16s ease, border-color .16s ease, box-shadow .16s ease}
+a.mod:hover{transform:translateY(-3px);border-color:var(--gold);box-shadow:0 14px 34px -18px rgba(212,168,90,.5)}
+.mod .top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.35rem}
+.mod .num{font-family:var(--mono);font-size:.78rem;color:var(--gold)}
+.mod .t{font-family:var(--serif-display);font-size:1.2rem;font-weight:600;color:var(--cream);line-height:1.12;margin:0 0 .25rem}
+.mod .o{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim);line-height:1.45}
+
+/* ---- up next ---- */
+.upnext{display:grid;grid-template-columns:repeat(4,1fr);gap:.8rem;margin-top:1.2rem}
+.upnext .mod .t{font-size:1.04rem}
+@media(max-width:860px){.upnext{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.upnext{grid-template-columns:1fr}}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs h3{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .7rem}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.5rem}
+.refs li{font-family:var(--serif);font-size:.92rem;color:var(--cream-soft);line-height:1.4}
+.refs a{color:var(--cream)}
+.refs a:hover{color:var(--gold-bright)}
+.refs em{color:var(--cream-dim);font-style:italic}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;font-family:var(--sans)}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;display:inline-flex;align-items:center;gap:.55rem;
+  padding:.72rem 1.25rem;border-radius:12px;border:1px solid var(--gold);color:var(--ink);background:var(--gold)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+
+/* ---- footer cols ---- */
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);cursor:pointer;border:1px solid var(--line);
+  border-radius:10px;padding:.45rem .7rem;background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.mods{grid-template-columns:1fr}.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the contents</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><span class="rcur">the-events-channel</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <section class="hero">
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <a href="/echomq">EchoMQ</a>
+      <span class="sep">/</span>
+      <a href="/echomq/bus">The Bus</a>
+      <span class="sep">/</span>
+      <span class="here">The events channel</span>
+    </nav>
+    <p class="rev">&larr; the depth behind <a href="/redis-patterns/streams-events">redis-patterns R5 &middot; Streams &amp; Events</a></p>
+    <p class="eyebrow">The Bus &middot; module 01</p>
+    <h1>The events <span class="ex">channel</span></h1>
+    <p class="lede">Fan one signal out to everyone listening, now and gone &mdash; the bus's lightest surface.</p>
+    <p class="kicker">The Queue hands one job to <strong>one</strong> worker. The events channel does the opposite: a
+      publisher fans a single signal out to <strong>everyone listening</strong>, on one channel per queue,
+      <code class="inl">emq:{q}:events</code>. Its job is to let a consumer <strong>react to work as it happens</strong>
+      &mdash; <code class="inl">completed</code>, <code class="inl">failed</code>, <code class="inl">progress</code>,
+      <code class="inl">stalled</code> &mdash; without polling the sets on a timer. Three moves carry the whole surface:
+      <strong>subscribe once</strong>, <strong>publish after the verdict</strong>, and <strong>fire-and-forget</strong>.
+      It is all real <code class="inl">EchoMQ.Events</code> code.</p>
+    <div class="toc-mini">
+      <a href="#fan">The fan-out</a>
+      <a href="#deliver">The two deliveries</a>
+      <a href="#mods">The dives</a>
+      <a href="#upnext">The rest of the pillar</a>
+      <a href="#refs">References</a>
+    </div>
+  </section>
+
+  <!-- ===================== THE FAN-OUT (framing interactive) ===================== -->
+  <section id="fan">
+    <h2>One publish, N deliveries</h2>
+    <div class="prose">
+      <p>A publisher issues one <code class="inl">PUBLISH emq:{q}:events</code>; the channel fans the message out to
+        every live subscriber and the handler module. The events the bus carries are the lifecycle transitions &mdash;
+        each published host-side after its verdict (except <code class="inl">progress</code>, which the
+        <code class="inl">@update_progress</code> seam already publishes inline). Pick an event to read the cjson payload
+        it carries and where it is published from. The point the figure makes: <strong>one publish, N deliveries
+        &mdash; and zero if no one is listening.</strong></p>
+    </div>
+
+    <figure class="fig" aria-labelledby="fanTitle">
+      <h4 id="fanTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The events fan-out &middot; pick a lifecycle event</h4>
+      <div class="controls">
+        <div class="solid-select" id="evSel" role="group" aria-label="Which lifecycle event">
+          <button type="button" data-ev="completed" data-c="echo" class="active" aria-pressed="true">completed</button>
+          <button type="button" data-ev="failed" data-c="blue" aria-pressed="false">failed</button>
+          <button type="button" data-ev="progress" data-c="gold" aria-pressed="false">progress</button>
+          <button type="button" data-ev="stalled" data-c="blue" aria-pressed="false">stalled</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 230" role="img" aria-label="A publisher issues PUBLISH on emq:{q}:events; the channel fans the message out to three subscriber pids and one handler module. Each subscriber pid receives an emq_event tuple; the handler runs handle_event. The selected lifecycle event determines the cjson payload shown.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- publisher -->
+        <rect x="184" y="14" width="112" height="40" rx="9" fill="rgba(42,161,152,.16)" stroke="#2aa198"></rect>
+        <text x="240" y="31" text-anchor="middle" font-family="Manrope,sans-serif" font-size="11" fill="#ece4d0">publish/5</text>
+        <text x="240" y="46" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">PUBLISH emq:{q}:events</text>
+        <!-- the channel bar -->
+        <rect x="40" y="86" width="400" height="22" rx="6" fill="rgba(16,22,43,.7)" stroke="#2a3252"></rect>
+        <text x="240" y="101" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#6fdccf">emq:{q}:events &middot; one channel per queue</text>
+        <path d="M240 54 L240 86" stroke="#2aa198" fill="none" stroke-width="1.4" marker-end="url(#ah)"></path>
+        <!-- fan-out arrows -->
+        <g stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9">
+          <path d="M120 108 L80 150"></path>
+          <path d="M210 108 L200 150"></path>
+          <path d="M300 108 L320 150"></path>
+          <path d="M400 108 L420 150"></path>
+        </g>
+        <!-- subscriber pids -->
+        <g font-family="Manrope,sans-serif" font-size="9" fill="#9fc0ea">
+          <rect x="36" y="150" width="92" height="40" rx="8" fill="rgba(90,135,196,.12)" stroke="#46507a"></rect>
+          <text x="82" y="166" text-anchor="middle" fill="#ece4d0">sub pid</text>
+          <text x="82" y="180" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.6" fill="#9fc0ea">{:emq_event,…}</text>
+          <rect x="156" y="150" width="92" height="40" rx="8" fill="rgba(90,135,196,.12)" stroke="#46507a"></rect>
+          <text x="202" y="166" text-anchor="middle" fill="#ece4d0">sub pid</text>
+          <text x="202" y="180" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.6" fill="#9fc0ea">{:emq_event,…}</text>
+          <rect x="276" y="150" width="92" height="40" rx="8" fill="rgba(90,135,196,.12)" stroke="#46507a"></rect>
+          <text x="322" y="166" text-anchor="middle" fill="#ece4d0">sub pid</text>
+          <text x="322" y="180" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.6" fill="#9fc0ea">{:emq_event,…}</text>
+          <rect x="378" y="150" width="92" height="40" rx="8" fill="rgba(212,168,90,.14)" stroke="#d4a85a"></rect>
+          <text x="424" y="166" text-anchor="middle" fill="#ece4d0">:handler</text>
+          <text x="424" y="180" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.6" fill="#f0cd7f">handle_event/3</text>
+        </g>
+        <text x="240" y="216" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488">no live subscriber &rarr; the message is dropped (at-most-once)</text>
+      </svg>
+      <div class="geo-readout" id="fanOut" aria-live="polite"></div>
+    </figure>
+    <p class="take">One wire, one publish &mdash; the channel fans it to whoever is listening at that instant, and to no
+      one if no one is. The events say it once.</p>
+  </section>
+
+  <!-- ===================== THE TWO DELIVERIES ===================== -->
+  <section id="deliver">
+    <h2>The two deliveries</h2>
+    <div class="prose">
+      <p>A subscriber chooses how it wants the events, and both run off the same one subscription. There is no second
+        connection, no second <code class="inl">SUBSCRIBE</code>, and no extra wire cost per subscriber beyond a
+        <code class="inl">send/2</code>. Pick a delivery shape to see the call and what it receives.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="delTitle">
+      <h4 id="delTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">Two deliveries, one subscription</h4>
+      <div class="controls">
+        <div class="solid-select" id="delSel" role="group" aria-label="Which delivery shape">
+          <button type="button" data-d="pid" data-c="blue" class="active" aria-pressed="true">subscriber pid</button>
+          <button type="button" data-d="handler" data-c="gold" aria-pressed="false">handler module</button>
+        </div>
+      </div>
+      <div class="geo-readout" id="delOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">Both deliveries happen on the listener's single <code class="inl">emq:{q}:events</code> subscription.
+      The subscriber-pid shape is loose coupling &mdash; a LiveView, a metrics collector, a test process, each
+      pattern-matching what it cares about. The handler shape is a stateful reducer &mdash; fold the event stream into a
+      running state.</p>
+  </section>
+
+  <!-- ===================== THE DIVES ===================== -->
+  <section id="mods">
+    <h2>The dives</h2>
+    <div class="prose">
+      <p>Three dives, one per move, each grounded in the real <code class="inl">echo/apps/echo_mq</code> code &mdash; the
+        one-time subscribe and the two deliveries, the host-side publish after a verdict, and the at-most-once posture
+        with its cooperative-cancel sibling.</p>
+    </div>
+    <div class="legend">
+      <span><span class="pill built">built</span> page ready to read</span>
+    </div>
+    <div class="mods">
+      <a class="mod" href="/echomq/bus/the-events-channel/subscribe-and-handle"><div class="top"><span class="num">01</span><span class="pill built">built</span></div><p class="t">Subscribe and handle</p><p class="o">Subscribe once to <code class="inl">emq:{q}:events</code> on a RESP3 connector; delivery two ways &mdash; subscriber pids and the <code class="inl">handle_event/3</code> handler.</p></a>
+      <a class="mod" href="/echomq/bus/the-events-channel/publish-after-the-verdict"><div class="top"><span class="num">02</span><span class="pill built">built</span></div><p class="t">Publish after the verdict</p><p class="o"><code class="inl">publish/5</code> issues <code class="inl">PUBLISH</code> host-side after a transition decides; the gated id, the hand-built cjson, the substring-scan read.</p></a>
+      <a class="mod" href="/echomq/bus/the-events-channel/fire-and-forget"><div class="top"><span class="num">03</span><span class="pill built">built</span></div><p class="t">Fire-and-forget</p><p class="o">At-most-once: a publish with no live subscriber is lost; the resubscribe mitigation, the stream as the durable receipt, and <code class="inl">EchoMQ.Cancel</code>.</p></a>
+    </div>
+
+    <div class="applied">
+      <p class="dl">Redis Patterns Applied</p>
+      <p>This is the depth behind the <a href="/redis-patterns">Redis Patterns Applied</a> chapter that doors here:
+        <a href="/redis-patterns/streams-events">R5 &middot; Streams &amp; Events</a> &mdash; the publish/subscribe
+        events that let a consumer react without polling are exactly what this module makes concrete on the real wire.
+        There the pattern is the door; here is the implementation.</p>
+    </div>
+
+    <div class="door">
+      <p class="dl">The durable receipt</p>
+      <p>The events channel is fast and lossy by design: it broadcasts the present and keeps nothing. When an event must
+        <strong>survive</strong> &mdash; replayed by a reader that was not running yet, audited, consumed at-least-once
+        &mdash; you do not harden the channel; you write to the <a href="/echomq/bus">stream log</a>
+        (<code class="inl">EchoMQ.Stream</code>), an append-only, durable, replayable log. The event channel is the
+        reflex; the stream is the memory. The same branded id threads both &mdash; an event names a
+        <code class="inl">JOB</code>; a stream record IS an <code class="inl">EVT</code>. Where the log ultimately folds
+        to disk is <a href="/echo-persistence">Echo Persistence</a>.</p>
+    </div>
+  </section>
+
+  <!-- ===================== THE REST OF THE PILLAR ===================== -->
+  <section id="upnext">
+    <h2>The rest of the pillar</h2>
+    <div class="prose">
+      <p>The events channel is the bus's reflex. The <strong>stream log</strong> is its memory &mdash; the durable,
+        replayable receipt this module keeps pointing at. The <strong>Protocol</strong> below the pillar &mdash; the
+        keyspace these channels are born to &mdash; is ready to read now, and so is the <strong>Queue</strong>, the bus's
+        mirror over the same wire.</p>
+    </div>
+    <div class="upnext">
+      <a class="mod" href="/echomq/bus"><div class="top"><span class="num">II</span><span class="pill built">built</span></div><p class="t">The Bus</p><p class="o">The pillar this module opens: events plus the durable, replayable stream log.</p></a>
+      <a class="mod" href="/echomq/queue"><div class="top"><span class="num">I</span><span class="pill built">built</span></div><p class="t">The Queue</p><p class="o">Distribute work: one job, one worker &mdash; the mirror of the bus over the same wire.</p></a>
+      <a class="mod" href="/echomq/protocol"><div class="top"><span class="num">&darr;</span><span class="pill built">built</span></div><p class="t">The Protocol</p><p class="o">The substrate: the braced keyspace the events channel and the stream keys are born to.</p></a>
+      <a class="mod" href="/redis-patterns/streams-events"><div class="top"><span class="num">R5</span><span class="pill built">built</span></div><p class="t">Streams &amp; Events</p><p class="o">The pattern side: pub/sub and the stream patterns this pillar realizes.</p></a>
+    </div>
+    <p class="note">The Bus pillar, the Queue, and the Protocol are ready to read; the remaining Bus modules &mdash; the
+      stream log, consumer groups, time-travel, retention &amp; the archive &mdash; are on the build front, each added
+      as its pages land.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/topics/streams-intro/">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the bus surfaces this pillar builds on; the events channel is the pub/sub half.</li>
+          <li><a href="https://valkey.io/commands/publish/">Valkey &mdash; <em>PUBLISH</em></a> &mdash; the single command the events channel issues to fan a message out to every subscriber.</li>
+          <li><a href="https://valkey.io/commands/subscribe/">Valkey &mdash; <em>SUBSCRIBE</em></a> &mdash; the one-time subscription the listener holds on <code class="inl">emq:{q}:events</code>.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code class="inl">{q}</code> hashtag forces the events channel and the stream onto one of 16384 slots, co-located with the queue.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/the-events-channel/subscribe-and-handle">Subscribe and handle</a> &mdash; the one-time subscribe and the two deliveries.</li>
+          <li><a href="/echomq/bus/the-events-channel/publish-after-the-verdict">Publish after the verdict</a> &mdash; the host-side publish and the substring-scan read.</li>
+          <li><a href="/echomq/bus/the-events-channel/fire-and-forget">Fire-and-forget</a> &mdash; at-most-once, and the cancel control signal.</li>
+          <li><a href="/echomq/bus">The Bus</a> &mdash; the pillar this module opens.</li>
+          <li><a href="/echomq/queue">The Queue</a> &mdash; distribute work; the mirror of the bus over the same wire.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Module navigation">
+      <a class="btn ghost" href="/echomq/bus"><span aria-hidden="true">&larr;</span> The Bus</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus/the-events-channel/subscribe-and-handle">Subscribe and handle <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/bus/the-events-channel">The events channel</a>
+        <a href="/echomq/bus/the-events-channel/subscribe-and-handle">Subscribe and handle</a>
+        <a href="/echomq/bus/the-events-channel/publish-after-the-verdict">Publish after the verdict</a>
+        <a href="/echomq/bus/the-events-channel/fire-and-forget">Fire-and-forget</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/echomq/protocol">The Protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: the events fan-out (pure lookup over a fixed dataset) ---------- */
+  var EVENTS = {
+    completed: { from: 'host-side, after @complete’s verdict', extra: '',
+      payload: '{"event":"completed","job":"JOB0KHTOWnGLuC"}',
+      note: 'the job finished and was fenced; the host announces it after the transition decided' },
+    failed: { from: 'host-side, after @retry routed to dead', extra: '',
+      payload: '{"event":"failed","job":"JOB0KHTOWnGLuC"}',
+      note: 'the job exhausted its retries; the host publishes after the verdict, so @retry stays byte-frozen' },
+    progress: { from: 'INLINE, the @update_progress seam', extra: '"progress":"50"',
+      payload: '{"event":"progress","job":"JOB0KHTOWnGLuC","progress":"50"}',
+      note: 'the one event published inline — @update_progress established this channel and the cjson shape' },
+    stalled: { from: 'host-side, after the lapsed-lease reaper', extra: '',
+      payload: '{"event":"stalled","job":"JOB0KHTOWnGLuC"}',
+      note: 'a lease lapsed and the reaper recovered the job; the host announces the stall after the sweep' }
+  };
+  function renderEvent(key) {
+    var e = EVENTS[key];
+    var out = document.getElementById('fanOut');
+    if (!e || !out) return;
+    out.innerHTML = '<b>' + key + '</b> <span class="dim">— published ' + e.from + '</span><br>' +
+      'wire: <span class="dim">PUBLISH emq:{q}:events</span><br>' +
+      'payload: <b>' + e.payload + '</b><br>' +
+      'delivered to every subscriber pid as <span class="dim">{:emq_event, :' + key + ', payload}</span> + the handler<br>' +
+      '<span class="dim">' + e.note + '</span>';
+  }
+  document.querySelectorAll('#evSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#evSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderEvent(b.getAttribute('data-ev'));
+    });
+  });
+  renderEvent('completed');
+
+  /* ---------- the two deliveries (pure lookup) ---------- */
+  var DELIVER = {
+    pid: { call: 'subscribe(server, pid \\\\ self())',
+      gets: 'pid receives {:emq_event, event_name, raw_payload} for EVERY event',
+      shape: 'loose coupling — each subscriber pattern-matches the events it cares about',
+      note: 'idempotent (a MapSet); unsubscribe/2 is the inverse' },
+    handler: { call: ':handler implementing handle_event/3',
+      gets: 'handle_event(event, payload, state) is invoked per event, answering {:ok, new_state}',
+      shape: 'a stateful reducer — fold the event stream into a running state',
+      note: '`use EchoMQ.Events` derives a no-op default; override only the events of interest' }
+  };
+  function renderDeliver(key) {
+    var d = DELIVER[key];
+    var out = document.getElementById('delOut');
+    if (!d || !out) return;
+    out.innerHTML = 'call: <b>' + d.call + '</b><br>' +
+      'gets: <span class="dim">' + d.gets + '</span><br>' +
+      'shape: <b>' + d.shape + '</b><br>' +
+      '<span class="dim">' + d.note + '</span>';
+  }
+  document.querySelectorAll('#delSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#delSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderDeliver(b.getAttribute('data-d'));
+    });
+  });
+  renderDeliver('pid');
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

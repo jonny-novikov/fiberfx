@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workshop · the retained event log, end to end · The Bus · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The Bus pillar's closing capstone: a retained codemojex activity feed built end to end over all five surfaces. Publish the live signal (EchoMQ.Events.publish/5 → PUBLISH emq:{q}:events), append the durable record (EchoMQ.Stream.append/4 → the EVT receipt, read/6 folds it back in mint order), consume reliably (EchoMQ.StreamConsumer, resume-not-replay, idempotent on the EVT id), replay by instant (EchoMQ.Stream.read_window/6), and bound + fold to disk (EchoMQ.Stream.trim/4 under EchoMQ.StreamRetention, then EchoStore.StreamArchive.fold/3 → the Graft floor). Two real interactives: a staged-build pipeline and a worked round-to-feed builder.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{ /* faint vignette for depth */
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55);
+}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+hr.rule{border:0;height:1px;margin:2.2rem 0;
+  background:linear-gradient(90deg,transparent,var(--gold) 18%,var(--gold) 82%,transparent)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+.math{font-family:var(--serif);font-style:italic;color:var(--echo-bright);white-space:nowrap}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+.site-foot .wrap{padding-top:2.4rem;padding-bottom:3rem;display:flex;
+  flex-wrap:wrap;gap:1.4rem 2.4rem;justify-content:space-between;align-items:flex-start}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero .cta-row{display:flex;flex-wrap:wrap;gap:.8rem;margin-top:1.7rem}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+.hero-motif{margin-top:2.4rem;width:100%;height:auto;display:block;opacity:.9}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+
+/* ---- interactive shells (shared with lesson pages) ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .fn.blue{color:var(--blue-bright)}
+pre.code .fn.sage{color:var(--sage-bright)}
+pre.code .fn.gold{color:var(--gold-bright)}
+pre.code .fn.elixir{color:var(--elixir-bright)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal (JS-gated; content visible without JS) ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){
+  html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}
+}
+
+/* ---- responsive ---- */
+@media (max-width:760px){
+  .site nav{display:none}
+  .lede{max-width:none}
+  .take{font-size:1.08rem}
+}
+
+/* ---- module / lesson page additions (additive; shared head) ---- */
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:.35rem 1rem;
+  font-family:var(--sans);font-size:.86rem;margin:1.1rem 0 0}
+.deflist dt{color:var(--gold);font-family:var(--mono);font-size:.82rem}
+.deflist dd{margin:0;color:var(--cream-soft)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- workshop-specific (additive; shared head) ---- */
+.steps-rail{display:grid;grid-template-columns:repeat(5,1fr);gap:.5rem;margin-bottom:1rem}
+@media (max-width:760px){.steps-rail{grid-template-columns:repeat(2,1fr)}}
+.steps-rail button{font-family:var(--sans);font-weight:600;font-size:.78rem;cursor:pointer;
+  text-align:left;padding:.55rem .7rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease;line-height:1.25}
+.steps-rail button:hover{border-color:var(--cream-dim)}
+.steps-rail button.active{color:var(--ink);background:var(--echo-bright);border-color:transparent;font-weight:700}
+.steps-rail button .sn{display:block;font-family:var(--mono);font-size:.66rem;opacity:.8;margin-bottom:.15rem}
+.feedlog{font-family:var(--mono);font-size:.82rem;color:var(--cream-soft);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;padding:.6rem .8rem;margin-top:1rem}
+.feedlog .row{display:grid;grid-template-columns:auto auto 1fr;gap:.5rem .9rem;align-items:baseline;
+  padding:.28rem 0;border-bottom:1px solid rgba(42,50,82,.5)}
+.feedlog .row:last-child{border-bottom:0}
+.feedlog .evt{color:var(--echo-bright)}
+.feedlog .ev{color:var(--gold-bright)}
+.feedlog .pl{color:var(--cream-dim);word-break:break-word}
+.feedlog .hd{color:var(--cream-dim);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;border-bottom:1px solid var(--line)}
+.pipe-leg{display:flex;flex-wrap:wrap;gap:.4rem 1rem;font-family:var(--sans);font-size:.72rem;color:var(--cream-dim);margin-top:.6rem}
+.pipe-leg span{display:inline-flex;align-items:center;gap:.35rem}
+.pipe-leg i{width:11px;height:11px;border-radius:3px;display:inline-block}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <style>
+    .hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+    .hero-split .hero{padding-top:0}
+    @media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+    .foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+    @media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+    .foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+    .foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+    .foot-cols a:hover{color:var(--cream)}
+    .foot-cols .it{color:var(--cream-dim)}
+    .foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+    .foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+    .foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+    .foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+  </style>
+
+  <div class="hero-split">
+    <section class="hero">
+      <div class="crumbs">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus">The Bus</a>
+        <span class="sep">/</span>
+        <span class="here">Workshop</span>
+      </div>
+      <p class="eyebrow">The Bus &middot; workshop &middot; end to end</p>
+      <h1>The retained <span class="ex">event log</span>, end to end</h1>
+      <p class="lede">Five surfaces, one wire, one feed &mdash; built in front of you.</p>
+      <p class="kicker">This page closes the Bus pillar by building <strong>one thing</strong> out of all five
+        modules: a retained <strong>codemojex</strong> activity feed. A guess is <strong>published</strong> to
+        live screens (<code class="inl">EchoMQ.Events</code>), <strong>appended</strong> to a durable log
+        (<code class="inl">EchoMQ.Stream</code>), <strong>consumed</strong> reliably
+        (<code class="inl">EchoMQ.StreamConsumer</code>), <strong>replayed</strong> by instant
+        (<code class="inl">read_window/6</code>), then <strong>bounded and folded</strong> to disk
+        (<code class="inl">trim/4</code> &rarr; <code class="inl">EchoStore.StreamArchive</code>). The thread
+        through all five is one branded <code class="inl">EVT</code> id. Step through the pipeline on the right.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#publish">1 &middot; Publish</a>
+        <a href="#append">2 &middot; Append</a>
+        <a href="#consume">3 &middot; Consume</a>
+        <a href="#travel">4 &middot; Replay</a>
+        <a href="#fold">5 &middot; Fold</a>
+        <a href="#build">The feed</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="pipeTitle">
+      <h4 id="pipeTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The pipeline &middot; step through the five stages</h4>
+      <div class="steps-rail" id="stepRail" role="group" aria-label="The five pipeline stages">
+        <button type="button" data-step="publish" class="active" aria-pressed="true"><span class="sn">stage 1</span>publish</button>
+        <button type="button" data-step="append" aria-pressed="false"><span class="sn">stage 2</span>append</button>
+        <button type="button" data-step="consume" aria-pressed="false"><span class="sn">stage 3</span>consume</button>
+        <button type="button" data-step="travel" aria-pressed="false"><span class="sn">stage 4</span>replay</button>
+        <button type="button" data-step="fold" aria-pressed="false"><span class="sn">stage 5</span>fold</button>
+      </div>
+      <svg viewBox="0 0 480 264" role="img" aria-label="The retained-feed pipeline over one wire. Stage 1: EchoMQ.Events.publish fans a scored signal out to live subscribers, fire-and-forget. Stage 2: EchoMQ.Stream.append writes the same fact as an ordered EVT record on the log. Stage 3: a consumer group reads the log at-least-once and resumes after a crash. Stage 4: a time-travel read selects a mint-instant window of the log. Stage 5: retention trims the head and the archive folds the trimmed segments into the durable Graft floor. The selected stage is highlighted; earlier stages stay lit because each builds on the last.">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- the source: a scored guess -->
+        <g id="g-src">
+          <rect x="16" y="14" width="120" height="32" rx="8" fill="rgba(212,168,90,.16)" stroke="#d4a85a"></rect>
+          <text x="76" y="28" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">a guess scored</text>
+          <text x="76" y="40" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">ScoreWorker</text>
+        </g>
+
+        <!-- the wire spine -->
+        <line x1="20" y1="138" x2="460" y2="138" stroke="#2a3252" stroke-width="2"></line>
+        <text x="240" y="132" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#5a6488">emq:{cm}: &mdash; one owned wire</text>
+
+        <!-- ===== STAGE 1: PUBLISH (fan-out) ===== -->
+        <g id="g-publish">
+          <path d="M76 46 L60 70" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="16" y="70" width="92" height="30" rx="8" fill="rgba(90,135,196,.16)" stroke="#5a87c4"></rect>
+          <text x="62" y="84" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10" fill="#ece4d0">publish</text>
+          <text x="62" y="95" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">PUBLISH events</text>
+          <g stroke="#46507a" fill="none" stroke-width="1.1" marker-end="url(#ah)" opacity=".9">
+            <path d="M62 100 L34 124"></path><path d="M62 100 L62 124"></path><path d="M62 100 L92 124"></path>
+          </g>
+          <g font-family="JetBrains Mono,monospace" font-size="7" fill="#9fc0ea">
+            <rect x="18" y="124" width="30" height="16" rx="4" fill="rgba(90,135,196,.1)" stroke="#46507a"></rect><text x="33" y="135" text-anchor="middle">sub</text>
+            <rect x="48" y="124" width="30" height="16" rx="4" fill="rgba(90,135,196,.1)" stroke="#46507a"></rect><text x="63" y="135" text-anchor="middle">sub</text>
+            <rect x="78" y="124" width="30" height="16" rx="4" fill="rgba(90,135,196,.1)" stroke="#46507a"></rect><text x="93" y="135" text-anchor="middle">sub</text>
+          </g>
+          <text x="62" y="62" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#9fc0ea" font-weight="600">Events &middot; at-most-once</text>
+        </g>
+
+        <!-- ===== STAGE 2: APPEND (ordered log) ===== -->
+        <g id="g-append">
+          <path d="M136 30 L168 30" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <text x="306" y="22" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#6fdccf" font-weight="600">Stream &middot; ordered by mint (EVT)</text>
+          <g font-family="JetBrains Mono,monospace" font-size="7" fill="#ece4d0">
+            <rect x="172" y="30" width="32" height="24" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="188" y="45" text-anchor="middle">EVT</text>
+            <rect x="206" y="30" width="32" height="24" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="222" y="45" text-anchor="middle">EVT</text>
+            <rect x="240" y="30" width="32" height="24" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="256" y="45" text-anchor="middle">EVT</text>
+            <rect x="274" y="30" width="32" height="24" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="290" y="45" text-anchor="middle">EVT</text>
+            <rect x="308" y="30" width="32" height="24" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="324" y="45" text-anchor="middle">EVT</text>
+            <rect x="342" y="30" width="32" height="24" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="358" y="45" text-anchor="middle">EVT</text>
+            <rect x="376" y="30" width="32" height="24" rx="5" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect><text x="392" y="45" text-anchor="middle">EVT</text>
+            <rect x="410" y="30" width="36" height="24" rx="5" fill="rgba(42,161,152,.2)" stroke="#6fdccf"></rect><text x="428" y="45" text-anchor="middle">XADD</text>
+          </g>
+          <text x="172" y="66" text-anchor="start" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">head &mdash; oldest</text>
+          <text x="446" y="66" text-anchor="end" font-family="JetBrains Mono,monospace" font-size="7" fill="#5a6488">tail &mdash; append &rarr;</text>
+        </g>
+
+        <!-- ===== STAGE 3: CONSUME (reads the tail) ===== -->
+        <g id="g-consume">
+          <path d="M392 54 L392 160" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="338" y="160" width="112" height="32" rx="8" fill="rgba(212,168,90,.16)" stroke="#d4a85a"></rect>
+          <text x="394" y="174" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">consumer group</text>
+          <text x="394" y="186" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">XREADGROUP &middot; at-least-once</text>
+        </g>
+
+        <!-- ===== STAGE 4: TIME-TRAVEL (a mint-instant slice) ===== -->
+        <g id="g-travel">
+          <rect x="238" y="26" width="104" height="32" rx="6" fill="none" stroke="#9fc0ea" stroke-dasharray="3 2" stroke-width="1.4"></rect>
+          <path d="M290 60 L290 160" stroke="#46507a" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="226" y="160" width="120" height="32" rx="8" fill="rgba(90,135,196,.16)" stroke="#5a87c4"></rect>
+          <text x="286" y="174" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">read by instant</text>
+          <text x="286" y="186" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">XRANGE [t0, t1]</text>
+        </g>
+
+        <!-- ===== STAGE 5a: RETENTION (trims the head) ===== -->
+        <g id="g-retain">
+          <path d="M188 54 L188 160" stroke="#c4504c" fill="none" stroke-width="1.2" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="118" y="160" width="120" height="32" rx="8" fill="rgba(196,80,76,.13)" stroke="#c4504c"></rect>
+          <text x="178" y="174" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">trim the head</text>
+          <text x="178" y="186" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">XTRIM MAXLEN / MINID</text>
+        </g>
+        <!-- ===== STAGE 5b: ARCHIVE (folds trimmed segments to the floor) ===== -->
+        <g id="g-archive">
+          <path d="M178 192 L178 216" stroke="#2aa198" fill="none" stroke-width="1.3" marker-end="url(#ah)" opacity=".9"></path>
+          <rect x="88" y="216" width="200" height="34" rx="8" fill="rgba(42,161,152,.12)" stroke="#2aa198"></rect>
+          <text x="188" y="230" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">the durable Graft floor</text>
+          <text x="188" y="242" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="6.5" fill="#a39c89">StreamArchive.fold &middot; CubDB &rarr; Tigris</text>
+        </g>
+      </svg>
+      <div class="geo-readout" id="pipeOut" aria-live="polite"></div>
+    </figure>
+  </div>
+
+  <!-- ===================== STAGE 1 ===================== -->
+  <section id="publish">
+    <h2>Stage 1 &mdash; publish the live signal</h2>
+    <div class="prose">
+      <p>The screen wants to react the instant a guess is scored, with no set to poll. That is fire-and-forget
+        pub/sub: <code class="inl">EchoMQ.Events.publish/5</code> issues <code class="inl">PUBLISH emq:{q}:events</code>
+        <strong>host-side, after the scoring verdict</strong> &mdash; the byte-frozen transition scripts stay
+        byte-unchanged, so the publish is a host-side message <em>about</em> the verdict, never part of it. This is
+        exactly what <code class="inl">Codemojex.ScoreWorker</code> does the moment it finishes scoring a guess.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/codemojex — Codemojex.ScoreWorker (the scoring authority)</span>
+<span class="cmt"># After scoring, publish a `scored` event so the room channel reacts LIVE. The</span>
+<span class="cmt"># score is already written; the event is only a signal — no secret, no guess</span>
+<span class="cmt"># content crosses the wire, only game / player / pct / eff.</span>
+Events.<span class="fn">publish</span>(conn, <span class="rdx">@queue</span>, <span class="str">"scored"</span>, job_id,
+  game: game,
+  player: name,
+  pct: <span class="fn">to_string</span>(s.percentage),
+  eff: <span class="fn">to_string</span>(eff)
+)</pre>
+
+    <div class="prose">
+      <p><code class="inl">publish/5</code> gates the job id at the key builder
+        (<code class="inl">Keyspace.job_key/2</code>, INV5) before the wire, encodes the flat cjson
+        <code class="inl">{"event":"scored","job":"&lt;id&gt;",&hellip;}</code> object, and
+        <code class="inl">PUBLISH</code>es it on <code class="inl">channel(queue)</code> =
+        <code class="inl">emq:{q}:events</code>. A subscriber reads the name back by <strong>substring scan</strong>
+        (<code class="inl">event_name/1</code>) &mdash; the bus carries no JSON parser, and an unknown name answers
+        <code class="inl">:unknown</code>, never minting an atom from the wire.</p>
+      <p>The cost is named: <strong>at-most-once.</strong> A <code class="inl">PUBLISH</code> with no live subscriber
+        &mdash; or one issued in the window between a socket drop and the resubscribe &mdash; is <strong>lost</strong>.
+        The resubscribe keeps the feed live across a reconnect, but the <em>durable</em> receipt is the next stage.
+        The screen sees it now; the log remembers it forever.</p>
+    </div>
+    <p class="take">Events fan a signal out and are gone &mdash; perfect for a live screen, useless as a record. So
+      the same fact also goes onto a log.</p>
+  </section>
+
+  <!-- ===================== STAGE 2 ===================== -->
+  <section id="append">
+    <h2>Stage 2 &mdash; append + replay the durable log</h2>
+    <div class="prose">
+      <p>The same fact that fans out to live screens is <strong>appended</strong> to a retained, replayable log.
+        <code class="inl">EchoMQ.Stream.append/4</code> mints an <code class="inl">EVT</code> id host-side, derives
+        the explicit XADD id, and issues <code class="inl">XADD</code> direct &mdash; no Lua. The branded id is the
+        <strong>receipt</strong>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_mq — EchoMQ.Stream.append/4 (the writer's whole point)</span>
+<span class="cmt"># 1. mint an EVT-branded record id host-side — the writer OWNS the mint, so</span>
+<span class="cmt">#    there is nothing to spoof;</span>
+<span class="cmt"># 2. derive the explicit XADD id by field correspondence (Stream.Id.xadd_id/1);</span>
+<span class="cmt"># 3. XADD &lt;key&gt; &lt;xadd_id&gt; id &lt;branded&gt; &lt;fields…&gt; — DIRECT (no Lua); the 14-byte</span>
+<span class="cmt">#    branded string is the stream `id` FIELD (the claims-only contract: a</span>
+<span class="cmt">#    polyglot reader gets the canonical id without re-encoding);</span>
+<span class="cmt"># 4. return {:ok, branded} — the branded id IS the receipt.</span>
+<span class="op">def</span> <span class="fn">append</span>(conn, queue, name, fields)
+    <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(name) <span class="op">and</span> is_list(fields) <span class="op">do</span>
+  branded = EchoData.Snowflake.<span class="fn">next_branded</span>(Id.<span class="fn">kind</span>())
+  <span class="fn">append_id</span>(conn, queue, name, branded, fields)
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>For the feed, the worker appends a <code class="inl">scored</code> record beside the publish &mdash; the same
+        moment, made durable:</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># the same scored fact, appended to the durable feed</span>
+{<span class="str">:ok</span>, evt} =
+  EchoMQ.Stream.<span class="fn">append</span>(conn, <span class="str">"cm"</span>, <span class="str">"feed"</span>,
+    [{<span class="str">"event"</span>, <span class="str">"scored"</span>}, {<span class="str">"game"</span>, game}, {<span class="str">"player"</span>, name},
+     {<span class="str">"pct"</span>, Integer.<span class="fn">to_string</span>(s.percentage)}, {<span class="str">"guess"</span>, gid}])
+<span class="cmt"># evt :: "EVT…" — the branded receipt;  gid :: "GES…" — the written guess id</span></pre>
+
+    <div class="prose">
+      <p>The <strong>order theorem</strong> holds the log: <span class="math">stream order == id sort == mint
+        order</span>, proven by construction in <code class="inl">EchoMQ.Stream.Id</code>. The
+        <code class="inl">EVT</code> brand admits one namespace per stream (so base62 byte-order equals
+        snowflake-order), and a single writer's strictly-monotone <code class="inl">:atomics</code> cell means the
+        next id always exceeds the stream top &mdash; no <code class="inl">XADD</code> rejection is possible. A
+        multi-writer violation surfaces honestly as <code class="inl">{:error, :nonmonotonic}</code> &mdash; never
+        swallowed, never retried with <code class="inl">*</code>. <code class="inl">read/6</code>
+        (<code class="inl">XRANGE</code>) folds the whole log back in mint order, the receipt becoming the canonical
+        id and the rest the payload map.</p>
+    </div>
+    <p class="take">The stream remembers what the publish forgets &mdash; an ordered, replayable record keyed by the
+      branded id it mints.</p>
+  </section>
+
+  <!-- ===================== STAGE 3 ===================== -->
+  <section id="consume">
+    <h2>Stage 3 &mdash; consume reliably</h2>
+    <div class="prose">
+      <p>The live screen reads off the publish. But the notification worker &mdash; the one that pushes a
+        &ldquo;you were beaten&rdquo; message &mdash; must read the log <strong>reliably</strong>: each entry
+        handled once, resumable after a crash, never re-running the whole feed. That is a consumer group,
+        <code class="inl">EchoMQ.StreamConsumer</code>, whose handler is <strong>byte-identical in shape</strong> to
+        the job <code class="inl">Consumer</code>'s &mdash; one portable handler across job and stream.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_mq — the EchoMQ.StreamConsumer handler shape (the exact mirror)</span>
+<span class="cmt"># id       :: the stored branded record id (the append/4 receipt) — the dedup key</span>
+<span class="cmt"># payload  :: the entry's remaining fields as a map</span>
+<span class="cmt"># attempts :: the XPENDING per-entry DELIVERY-count (NOT a failure count), so a</span>
+<span class="cmt">#             poison threshold attempts &gt;= N calibrates correctly</span>
+<span class="cmt"># group    :: the consumer-group name</span>
+<span class="cmt"># :ok        -&gt; XACK (the entry retires from the PEL)</span>
+<span class="cmt"># {:error,_} -&gt; LEFT un-acked (survives in the PEL, re-delivered) — at-least-once</span>
+<span class="op">fn</span> %{id: evt, payload: fields, attempts: attempts, group: _g} <span class="op">-&gt;</span>
+  <span class="op">case</span> <span class="fn">notify_feed</span>(evt, fields) <span class="op">do</span>
+    <span class="str">:ok</span> <span class="op">-&gt;</span> <span class="str">:ok</span>            <span class="cmt"># XACK</span>
+    err <span class="op">-&gt;</span> err            <span class="cmt"># leave un-acked → re-delivered</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>Two mechanisms recover work. <strong>PEL-drain-on-(re)start recovers SELF:</strong>
+        <code class="inl">XREADGROUP GROUP g &lt;self&gt; &hellip; 0</code> reads the consumer's own un-acked backlog to
+        exhaustion, <em>then</em> switches to <code class="inl">&gt;</code> &mdash; a crashed consumer that restarts
+        with the same name recovers its held work the instant it restarts. <strong>The
+        <code class="inl">XAUTOCLAIM</code> beat recovers dead PEERS:</strong> entries idle past
+        <code class="inl">:min_idle_ms</code> (server-side idle &mdash; no host clock) held by consumers that died
+        and never restarted are re-assigned, one pass per beat. The blocking
+        <code class="inl">XREADGROUP &hellip; BLOCK</code> parks on the consumer's <strong>own private lane</strong>,
+        so the single-owner socket of the rest of the system is never stalled.</p>
+      <p>The cost is the <strong>order-theorem PEL exception</strong>: new entries stay id-ordered (the writer's
+        theorem is untouched), but a <strong>re-claimed</strong> entry returns <em>out</em> of real-time delivery
+        order &mdash; its branded id is <em>older</em> than entries already handled. This is the irreducible cost of
+        at-least-once (exactly-once is <strong>not</strong> claimed), so the handler <strong>must be
+        idempotent</strong> &mdash; the branded <code class="inl">EVT</code> id is the dedup key, the BCS newer-wins
+        discipline. codemojex's scoring is already pure (<code class="inl">Codemojex.Scoring.score/2</code>: the same
+        secret and guess always yield the same score), so re-handling a feed entry is safe by construction.</p>
+    </div>
+    <p class="take">The screen reacts now; the worker resumes, not replays &mdash; safe to re-handle because the
+      branded id is the dedup key.</p>
+  </section>
+
+  <!-- ===================== STAGE 4 ===================== -->
+  <section id="travel">
+    <h2>Stage 4 &mdash; replay by instant</h2>
+    <div class="prose">
+      <p>&ldquo;What did the feed look like between 14:30 and 14:32?&rdquo; &mdash; for a backtest, an audit, or a
+        debug &mdash; is a <strong>range read, not a scan</strong>, because the log is mint-ordered. A wall-clock
+        <code class="inl">%DateTime{}</code> is an exact id position, so
+        <code class="inl">EchoMQ.Stream.read_window/6</code> computes its <code class="inl">XRANGE</code> bounds
+        host-side and delegates to the byte-frozen <code class="inl">read/6</code> &mdash; <strong>zero new
+        Lua</strong>.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_mq — EchoMQ.Stream.read_window/6 (the time-travel read)</span>
+<span class="cmt"># A CLOSED mint-time window [t0, t1], both edges inclusive. from = minid_floor(t0)</span>
+<span class="cmt"># (the smallest id at/after t0), to = maxid_ceil(t1) (the largest id mintable</span>
+<span class="cmt"># at/before t1) — exact because the stream is mint-ordered. RAISES before any</span>
+<span class="cmt"># wire on an inverted window; delegates to read/6.</span>
+<span class="op">def</span> <span class="fn">read_window</span>(conn, queue, name, %DateTime{} = t0, %DateTime{} = t1, count <span class="op">\\</span> <span class="str">nil</span>)
+    <span class="op">when</span> is_binary(queue) <span class="op">and</span> is_binary(name) <span class="op">do</span>
+  <span class="op">if</span> DateTime.<span class="fn">compare</span>(t1, t0) == <span class="str">:lt</span> <span class="op">do</span>
+    <span class="op">raise</span> ArgumentError, <span class="str">"read_window requires t0 &lt;= t1; …"</span>
+  <span class="op">end</span>
+  <span class="fn">read</span>(conn, queue, name, <span class="fn">minid_floor</span>(t0), <span class="fn">maxid_ceil</span>(t1), count)
+<span class="op">end</span></pre>
+
+    <div class="prose">
+      <p>For the feed, replay one round's life over its open&rarr;settle interval &mdash; every
+        <code class="inl">GES</code> guess and <code class="inl">scored</code> / <code class="inl">settled</code>
+        entry in <code class="inl">[opened_at, settled_at]</code>, in mint order:</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># replay the round's feed over its open→settle interval</span>
+{<span class="str">:ok</span>, slice} = EchoMQ.Stream.<span class="fn">read_window</span>(conn, <span class="str">"cm"</span>, <span class="str">"feed"</span>, opened_at, settled_at)
+<span class="cmt"># [{branded, fields_map}] in mint order — no resident memory of the window needed</span></pre>
+
+    <div class="prose">
+      <p><code class="inl">read_since/5</code> is the half-open <code class="inl">[t0, &infin;)</code> analogue. Both
+        return <code class="inl">{:ok, [{branded, fields_map}]}</code> in mint order; both are pure id-math over the
+        shipped <code class="inl">read/6</code>. Never a raw snowflake integer to the wire &mdash; the wire wants
+        <code class="inl">ms-seq</code> (the <code class="inl">minid_floor/1</code> discipline).</p>
+    </div>
+    <p class="take">Because time is an id position, any past window is a bounded range read &mdash; the order theorem
+      cashed out for backtest, audit, and debug.</p>
+  </section>
+
+  <!-- ===================== STAGE 5 ===================== -->
+  <section id="fold">
+    <h2>Stage 5 &mdash; bound + fold to disk</h2>
+    <div class="prose">
+      <p>A log that only grows is a leak. Retention bounds the <strong>live</strong> log; what is trimmed is
+        <strong>not lost</strong> &mdash; it folds to the durable Graft floor.
+        <code class="inl">EchoMQ.Stream.trim/4</code> bounds the log by length
+        (<code class="inl">MAXLEN</code>) or age (<code class="inl">MINID</code>), issued direct over
+        <code class="inl">XTRIM</code> &mdash; no Lua.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_mq — EchoMQ.Stream.trim/4 (the destructive verb, no Lua)</span>
+<span class="cmt"># {:maxlen, count, approx?} -&gt; XTRIM &lt;key&gt; MAXLEN [~|=] &lt;count&gt;  (keep newest count)</span>
+<span class="cmt"># {:minid,  dt,    approx?} -&gt; XTRIM &lt;key&gt; MINID  [~|=] "&lt;ms&gt;-0" (remove &lt; instant)</span>
+<span class="cmt"># approx? true -&gt; `~` the SAFE default: trims in whole macro-nodes, may UNDER-trim</span>
+<span class="cmt"># but NEVER OVER-trim, so a trim can never delete an entry INSIDE the window (INV4).</span>
+{<span class="str">:ok</span>, removed} = EchoMQ.Stream.<span class="fn">trim</span>(conn, <span class="str">"cm"</span>, <span class="str">"feed"</span>, {<span class="str">:maxlen</span>, <span class="res">10_000</span>, <span class="str">true</span>})</pre>
+
+    <div class="prose">
+      <p>Retention is a <strong>policy</strong>, not a default &mdash; coupling a <em>safety</em> property (bounded
+        memory) to a <em>liveness</em> fact (a consumer is up) is the silent-no-op class the design refuses, so the
+        trim cadence lives on its own beat. The named opt-in driver <code class="inl">EchoMQ.StreamRetention</code>
+        &mdash; a <code class="inl">:transient</code> GenServer beating on <code class="inl">:tick_ms</code> &mdash;
+        re-applies a <strong>declared</strong> BEAM-side <code class="inl">:policy</code> of
+        <code class="inl">{queue, name, window}</code> via <code class="inl">trim/4</code>, decoupled from consumer
+        liveness (a stream nobody drains still trims). A manual <code class="inl">trim/4</code> is the
+        equally-supported cadence; the driver is sugar.</p>
+      <p>What is trimmed folds to the archive. <code class="inl">EchoStore.StreamArchive.fold/3</code> folds a
+        mint-ordered <code class="inl">{branded, fields}</code> slice into the native
+        <code class="inl">EchoStore.Graft</code> engine's CubDB &mdash; one page per record at a reserved high range
+        (<code class="inl">@archive_base = 2^49</code>, disjoint from business pages by construction) &mdash; through
+        the <strong>public</strong> <code class="inl">VolumeServer.commit/3</code>, advancing the watermark
+        <code class="inl">W</code> to the branded <code class="inl">EVT</code> id of the highest-folded record.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo/apps/echo_store — EchoStore.StreamArchive.fold/3 (the durable floor)</span>
+<span class="cmt"># Fold a mint-ordered slice into the Graft engine at @archive_base + n — one page</span>
+<span class="cmt"># per record — and advance the watermark W to the highest-folded EVT id (W is a</span>
+<span class="cmt"># branded id, NEVER the integer head_lsn). Fold-before-trim is the no-loss</span>
+<span class="cmt"># ordering: on a fold error the caller does NOT trim (the safe direction).</span>
+{<span class="str">:ok</span>, w} = EchoStore.StreamArchive.<span class="fn">fold</span>(volume_id, slice, db)</pre>
+
+    <div class="prose">
+      <p><code class="inl">W</code> splits the <strong>merge-read</strong>: id &le; <code class="inl">W</code> comes
+        from the archive, id &gt; <code class="inl">W</code> from the live <code class="inl">Stream.read/6</code>
+        tail. No-gap / no-overlap is a <em>consequence</em> of fold-before-trim + the order theorem, never a per-read
+        check. The page axis is branded-id-monotone (records fold in mint order &mdash; the order theorem reaching
+        disk), so a forward scan reads oldest-first with no second index. The deep feed survives <strong>without
+        resident memory</strong>.</p>
+      <p>This is the <strong>durability dial</strong> &mdash; a system turns it: hold nothing &middot; a bounded
+        in-heap window + a checkpoint per K &middot; commit-per-record + replicate off-box (Graft &rarr; Tigris).
+        The comparison is <strong>Oban</strong>, which keeps jobs in the same Postgres as the data (a job + a row
+        commit in one transaction); the bus <em>separates</em> the log from the store and buys an in-memory hot path
+        + the dial, <strong>giving up</strong> Oban's one-transaction coupling &mdash; the trade stated beside the
+        win. The door out is <a href="/echo-persistence">the persistence floor</a>.</p>
+    </div>
+    <p class="take">Bound the live log, fold what is trimmed &mdash; the deep feed outlives memory, served as one
+      mint-ordered stream by the merge-read.</p>
+  </section>
+
+  <!-- ===================== THE FEED (worked interactive) ===================== -->
+  <section id="build">
+    <h2>The feed, built &mdash; one round through the pipeline</h2>
+    <div class="prose">
+      <p>Run a single codemojex round through the pipeline and watch the feed assemble. Each event is
+        <strong>published</strong> live and <strong>appended</strong> as one <code class="inl">EVT</code> record in
+        mint order; a <strong>window</strong> read selects a slice; <strong>retention</strong> trims the head and the
+        archive folds it below the watermark <code class="inl">W</code>. The <code class="inl">EVT</code> ids are
+        real branded ids decoded the same way the footer stamp is &mdash; ordered by mint, so the log <em>is</em> the
+        timeline.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="bldTitle">
+      <h4 id="bldTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The round-to-feed builder &middot; advance the round</h4>
+      <div class="controls" style="margin-bottom:.6rem">
+        <div class="solid-select" id="bldStep" role="group" aria-label="Advance the round">
+          <button type="button" data-act="next" data-c="echo" class="active">advance the round &rarr;</button>
+          <button type="button" data-act="window" data-c="blue">read window [open, now]</button>
+          <button type="button" data-act="trim" data-c="gold">trim + fold (keep 4)</button>
+          <button type="button" data-act="reset" data-c="sage">reset</button>
+        </div>
+      </div>
+      <div class="pipe-leg" aria-hidden="true">
+        <span><i style="background:#6fdccf"></i> appended (live tail)</span>
+        <span><i style="background:#d4a85a"></i> folded to the archive (&le; W)</span>
+        <span><i style="background:#9fc0ea"></i> in the read window</span>
+      </div>
+      <div class="feedlog" id="feedLog" aria-live="polite">
+        <div class="row hd"><span>EVT id</span><span>event</span><span>payload</span></div>
+      </div>
+      <div class="geo-readout" id="bldOut" aria-live="polite"></div>
+    </figure>
+
+    <div class="prose">
+      <p>The builder runs the real lifecycle: <code class="inl">Codemojex.Guesses.submit/3</code> enqueues a guess,
+        <code class="inl">Codemojex.ScoreWorker</code> scores it with <code class="inl">Codemojex.Scoring.score/2</code>
+        and appends a <code class="inl">scored</code> event, and <code class="inl">Codemojex.Settle.close/1</code>
+        (running <code class="inl">Codemojex.Rooms.close_game/1</code>) appends a <code class="inl">settled</code>
+        event. Every row is one <code class="inl">append/4</code> &mdash; the <code class="inl">EVT</code> ids sort as
+        mint instants, so reading the log top-to-bottom is reading the round in order. Trim keeps the newest few on
+        the live tail; the rest fold below <code class="inl">W</code>, still readable through the merge-read.</p>
+    </div>
+    <p class="take">One round, five surfaces, one feed &mdash; published, appended, consumed, replayed, and folded,
+      with the branded id the single thread through all of it.</p>
+  </section>
+
+  <!-- ===================== BRIDGE ===================== -->
+  <section id="bridge">
+    <h2>Pattern &rarr; implementation</h2>
+    <div class="prose">
+      <p>An event log that is broadcast, replayed, consumed reliably, and tiered to durable storage is the
+        <em>pattern</em> the Redis Patterns Applied course frames &mdash; and its streams-and-events workshop builds
+        this same codemojex feed from that side. Here it is built from the implementation side.</p>
+    </div>
+
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A retained activity feed: publish a signal, append it to a replayable log, consume it reliably with a
+          consumer group, replay a window, and tier the old log to durable storage.
+          <a href="/redis-patterns/streams-events/workshop">The streams workshop</a> builds the same feed from the
+          pattern side.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p><code class="inl">EchoMQ.Events.publish/5</code>, <code class="inl">EchoMQ.Stream.append/4</code> +
+          <code class="inl">read_window/6</code>, <code class="inl">EchoMQ.StreamConsumer</code>,
+          <code class="inl">trim/4</code> under <code class="inl">EchoMQ.StreamRetention</code>, and
+          <code class="inl">EchoStore.StreamArchive.fold/3</code> &mdash; the real surfaces, one branded
+          <code class="inl">EVT</code> id the thread through all of them.</p>
+      </div>
+    </div>
+    <p class="take">The same retained-feed idea, read two ways: the pattern names the moves; the pillar shows the
+      shipped code that makes them, end to end.</p>
+  </section>
+
+  <!-- ===================== RECAP ===================== -->
+  <section id="recap">
+    <h2>Recap &mdash; the pillar, exercised</h2>
+    <div class="prose">
+      <p>The Bus pillar taught five surfaces over one wire; this workshop built one retained codemojex feed out of
+        all five. <strong>Publish</strong> for the live screen, <strong>append</strong> for the durable receipt,
+        <strong>consume</strong> to resume-not-replay, <strong>read by instant</strong> to replay any window,
+        <strong>trim + fold</strong> so the deep feed outlives memory. Events say it once; the stream remembers. The
+        thread through all five is one branded <code class="inl">EVT</code> id &mdash; the append's receipt is the
+        consumer's dedup key, the time-travel bound, and the archive watermark, minted once and carried unchanged.</p>
+    </div>
+    <p class="note">The next floor down &mdash; the durability dial in full, the page engine and the portable remote
+      &mdash; is <a href="/echo-persistence">the persistence floor</a>. And the architecture law these figures
+      realize is <a href="/bcs/bus">the BCS bus chapter</a>.</p>
+  </section>
+
+  <!-- ===================== REFERENCES ===================== -->
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the stream primitive, the cluster routing, and the log idea are grounded.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/topics/streams-intro/">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; the append-only log primitive (<code>XADD</code>/<code>XRANGE</code>/<code>XREADGROUP</code>) the stream tier issues direct.</li>
+          <li><a href="https://valkey.io/topics/cluster-spec/">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the hash-slot routing the <code>{q}</code> hashtag co-locates a queue's keys onto, so a multi-key read stays on one slot.</li>
+          <li><a href="https://valkey.io/commands/xadd/">Valkey &mdash; <em>XADD</em></a> &mdash; the append the writer issues; the explicit id is the <code>ms-seq</code> the branded receipt maps to.</li>
+          <li><a href="https://valkey.io/commands/xtrim/">Valkey &mdash; <em>XTRIM</em></a> &mdash; the <code>MAXLEN</code> / <code>MINID</code> retention <code>trim/4</code> runs; <code>~</code> the safe, never-over-trim default.</li>
+          <li><a href="https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying">Kreps &mdash; <em>The Log</em></a> &mdash; the append-only log as the system's unifying backbone.</li>
+          <li><a href="https://dl.acm.org/doi/10.1145/359545.359563">Lamport &mdash; <em>Time, Clocks, and the Ordering of Events</em></a> &mdash; why a single writer's monotone clock makes order legible.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/the-events-channel">The events channel</a> &mdash; stage 1: the fire-and-forget pub/sub surface.</li>
+          <li><a href="/echomq/bus/the-stream-log">The stream log</a> &mdash; stage 2: the append-only writer + the order theorem.</li>
+          <li><a href="/echomq/bus/the-consumer-group">The consumer group</a> &mdash; stage 3: the reliable, resumable read.</li>
+          <li><a href="/echomq/bus/time-travel">Time-travel</a> &mdash; stage 4: reading the log by a mint instant.</li>
+          <li><a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a> &mdash; stage 5: bound the log, fold what is trimmed.</li>
+          <li><a href="/echomq/bus">The Bus</a> &mdash; the pillar landing this workshop closes.</li>
+          <li><a href="/redis-patterns/streams-events/workshop">redis-patterns &middot; the streams workshop</a> &mdash; the same feed, built from the pattern side.</li>
+          <li><a href="/bcs/bus">bcs &middot; the bus</a> &mdash; the architecture law these figures realize.</li>
+          <li><a href="/echo-persistence">The persistence floor</a> &mdash; the durability dial in full.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAGER ===================== -->
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/bus/retention-and-archive"><span aria-hidden="true">&larr;</span>&nbsp; Retention &amp; the archive</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus">The Bus <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This pillar</h4>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/echomq/bus/the-events-channel">The events channel</a>
+        <a href="/echomq/bus/the-stream-log">The stream log</a>
+        <a href="/echomq/bus/the-consumer-group">The consumer group</a>
+        <a href="/echomq/bus/time-travel">Time-travel</a>
+        <a href="/echomq/bus/retention-and-archive">Retention &amp; the archive</a>
+        <a href="/echomq/bus/workshop">Workshop</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/queue">The Queue</a>
+        <a href="/redis-patterns/streams-events">Redis Patterns Applied</a>
+        <a href="/echo-persistence">The persistence floor</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- framing interactive: the five-stage pipeline (pure lookup over a fixed dataset) ---------- */
+  var STAGES = {
+    publish: { title: 'stage 1 · publish', call: 'EchoMQ.Events.publish/5', wire: 'PUBLISH emq:{cm}:events', guarantee: 'at-most-once',
+      says: 'fan the scored signal out to every live subscriber, now and gone',
+      note: 'host-side after the verdict — the transition scripts stay byte-frozen; a publish with no live subscriber is lost, so the durable receipt is the next stage' },
+    append:  { title: 'stage 2 · append', call: 'EchoMQ.Stream.append/4', wire: 'XADD emq:{cm}:stream:feed', guarantee: 'ordered by mint',
+      says: 'write the same fact as one ordered EVT record on the replayable log',
+      note: 'mints an EVT id host-side and returns {:ok, branded} — the id is the receipt; the order theorem makes stream order == id sort == mint order' },
+    consume: { title: 'stage 3 · consume', call: 'EchoMQ.StreamConsumer', wire: 'XREADGROUP … > · XACK', guarantee: 'at-least-once',
+      says: 'a consumer group reads new entries and resumes — not replays — after a crash',
+      note: 'drain-self then reclaim dead peers (XAUTOCLAIM); a re-claimed entry can return out of order, so the handler must be idempotent — the branded EVT id is the dedup key' },
+    travel:  { title: 'stage 4 · replay', call: 'EchoMQ.Stream.read_window/6', wire: 'XRANGE <t0> <t1>', guarantee: 'a mint-instant window',
+      says: 'read the feed as it stood across a closed wall-clock window',
+      note: 'a %DateTime{} becomes an id range bound — minid_floor/1 the lower floor, maxid_ceil/1 the inclusive upper inverse; zero new Lua, host-issued over read/6' },
+    fold:    { title: 'stage 5 · fold', call: 'trim/4 + StreamArchive.fold/3', wire: 'XTRIM + CubDB → Tigris', guarantee: 'durable, no loss',
+      says: 'bound the live log and fold the trimmed segments into the durable floor',
+      note: 'fold-before-trim is the no-loss order; the merge-read splits on the watermark W — archive below, live tail above. The door to /echo-persistence' }
+  };
+  // which SVG groups light up per stage (the wire spine + the source are always lit;
+  // earlier stages stay lit because the pipeline accumulates).
+  var LIT = {
+    publish: ['g-src', 'g-publish'],
+    append:  ['g-src', 'g-publish', 'g-append'],
+    consume: ['g-src', 'g-publish', 'g-append', 'g-consume'],
+    travel:  ['g-src', 'g-publish', 'g-append', 'g-consume', 'g-travel'],
+    fold:    ['g-src', 'g-publish', 'g-append', 'g-consume', 'g-travel', 'g-retain', 'g-archive']
+  };
+  var ALLG = ['g-src', 'g-publish', 'g-append', 'g-consume', 'g-travel', 'g-retain', 'g-archive'];
+  function renderStage(key) {
+    var v = STAGES[key], out = document.getElementById('pipeOut');
+    if (!v || !out) return;
+    var on = LIT[key] || [];
+    ALLG.forEach(function (gid) {
+      var g = document.getElementById(gid);
+      if (g) g.setAttribute('opacity', on.indexOf(gid) >= 0 ? '1' : '.18');
+    });
+    out.innerHTML = '<b>' + v.title + '</b> <span class="dim">— ' + v.says + '</span><br>' +
+      'verb: <b>' + v.call + '</b><br>' +
+      'wire: <span class="dim">' + v.wire + '</span><br>' +
+      'guarantee: <b>' + v.guarantee + '</b><br>' +
+      '<span class="dim">' + v.note + '</span>';
+  }
+  document.querySelectorAll('#stepRail button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#stepRail button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderStage(b.getAttribute('data-step'));
+    });
+  });
+  renderStage('publish'); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder (shared: stamp + the feed builder's EVT ids) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function b62encode(n, width) { var s = ''; if (n === 0n) s = '0'; while (n > 0n) { s = B62.charAt(Number(n % 62n)) + s; n = n / 62n; } while (s.length < width) s = '0' + s; return s; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+
+  /* ---------- worked interactive: the round-to-feed builder ---------- */
+  /* A real codemojex round's lifecycle as a feed: each step is one append/4 — an
+     EVT-branded record in MINT ORDER. The EVT ids are constructed the same way the
+     writer mints them: a base snowflake + a strictly-increasing tail (node|seq),
+     so successive ids sort as mint instants (the order theorem). The score is the
+     pure Codemojex.Scoring.score/2 engine (points = 100 - 20*d, total out of 600). */
+  // a deterministic base snowflake set in the page epoch's mid-2024 era, so
+  // the decoded timestamps read sensibly; each event bumps the 22-bit tail by 1.
+  var BASE_TS = 15249600000n;           // ms since the branded epoch (2024-06-25 12:00 UTC) — the round's mint era
+  var TAIL0 = 1620567n;                 // a starting node|seq tail (the Stream.Id doctest tail)
+  function mintEvt(i) {
+    // snowflake = ts<<22 | (TAIL0 + i), then EVT ++ base62(snowflake) padded to 11.
+    var snow = (BASE_TS << 22n) | ((TAIL0 + BigInt(i)) & 0x3FFFFFn);
+    return 'EVT' + b62encode(snow, 11);
+  }
+  // the round script — guessed/scored pairs (the real submit→ScoreWorker flow), then settled.
+  var SCRIPT = [
+    { ev: 'guessed', pl: 'player=Ada · 🔑🎲🧩🪄🎯🛰' },
+    { ev: 'scored',  pl: 'player=Ada · pct=33 · guess=GES…' },
+    { ev: 'guessed', pl: 'player=Bo · 🛰🎯🪄🧩🎲🔑' },
+    { ev: 'scored',  pl: 'player=Bo · pct=50 · guess=GES…' },
+    { ev: 'guessed', pl: 'player=Ada · 🎯🪄🧩🔑🎲🛰' },
+    { ev: 'scored',  pl: 'player=Ada · pct=83 · guess=GES…' },
+    { ev: 'settled', pl: 'winner=Ada · 100% · pool→Ada' }
+  ];
+  var n = 0;            // how many events have been appended
+  var folded = 0;       // how many (oldest) have been folded below W
+  var windowOn = false; // whether the read-window highlight is active
+
+  var feedLog = document.getElementById('feedLog');
+  var bldOut = document.getElementById('bldOut');
+
+  function evtIdFor(i) { return mintEvt(i); }   // stable per index — the same id every render
+
+  function render() {
+    // build the rows oldest-first (mint order == append order == top-to-bottom).
+    var html = '<div class="row hd"><span>EVT id</span><span>event</span><span>payload</span></div>';
+    for (var i = 0; i < n; i++) {
+      var rec = SCRIPT[i];
+      var id = evtIdFor(i);
+      var inArchive = i < folded;
+      // the read window (when on) = the whole live tail [open, now]: every NON-folded record.
+      var inWindow = windowOn && !inArchive;
+      var idColor = inArchive ? 'color:#d4a85a' : (inWindow ? 'color:#9fc0ea' : '');
+      html += '<div class="row">' +
+        '<span class="evt" style="' + idColor + '">' + id + '</span>' +
+        '<span class="ev">' + rec.ev + '</span>' +
+        '<span class="pl">' + rec.pl + (inArchive ? ' <span class="dim">(≤ W · archived)</span>' : '') + '</span>' +
+        '</div>';
+    }
+    feedLog.innerHTML = html;
+
+    if (n === 0) {
+      bldOut.innerHTML = '<span class="dim">Empty feed. <b>Advance the round</b> to append the first event.</span>';
+      return;
+    }
+    var tail = n - folded;
+    var w = folded > 0 ? evtIdFor(folded - 1) : null;
+    var msg = '<b>' + n + '</b> event' + (n === 1 ? '' : 's') + ' appended — each one <code>append/4</code>, a branded <b>EVT</b> receipt in mint order.';
+    if (folded > 0) {
+      msg += ' Watermark <b>W = ' + w + '</b>: the <b>' + folded + '</b> oldest are folded to the archive, <b>' + tail + '</b> stay on the live tail. The merge-read serves all ' + n + ' as one mint-ordered stream.';
+    }
+    if (windowOn) {
+      msg += ' <span class="dim">read_window [open, now] selects the live tail (' + tail + ' records), in mint order.</span>';
+    }
+    if (n === SCRIPT.length && folded === 0 && !windowOn) {
+      msg += ' <span class="dim">The round is complete — a guessed/scored pair per attempt, then settled. Now read a window, or trim + fold.</span>';
+    }
+    bldOut.innerHTML = msg;
+  }
+
+  document.querySelectorAll('#bldStep button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var act = b.getAttribute('data-act');
+      // visual press feedback (the advance buttons are momentary, not a single-select).
+      document.querySelectorAll('#bldStep button').forEach(function (o) { o.classList.remove('active'); o.setAttribute('aria-pressed', 'false'); });
+      b.classList.add('active'); b.setAttribute('aria-pressed', 'true');
+      if (act === 'next') { if (n < SCRIPT.length) n++; }
+      else if (act === 'window') { windowOn = !windowOn; }
+      else if (act === 'trim') {
+        // keep the newest 4 on the live tail; fold the rest below W (only what is appended).
+        var keep = 4;
+        folded = Math.max(folded, Math.max(0, n - keep));
+      }
+      else if (act === 'reset') { n = 0; folded = 0; windowOn = false; }
+      render();
+    });
+  });
+  render(); // initial render — correct without interaction (empty feed prompt)
+})();
+</script>
+
+<script>
+/* progressive enhancement: mark JS on, then reveal-on-scroll */
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

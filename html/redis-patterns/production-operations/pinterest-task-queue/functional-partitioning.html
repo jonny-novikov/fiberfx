@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.03.1 · Functional partitioning · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.03.1 — Pinterest put each kind of data on the store that fits its access pattern and built the shard into the id, so a read finds its location by arithmetic with no lookup. The BCS echo: the {q} hashtag pins a queue's keys to one CRC16 slot, and a branded id hashes to a placement. Placement is a property of identity — computed, never looked up.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.fold{display:flex;align-items:center;gap:14px;margin:6px 0 12px;font-family:var(--mono);font-size:13px;color:var(--b-dim)}
+.fold label{min-width:8rem;color:var(--b-ink)}
+.fold input[type=range]{flex:1;accent-color:var(--r-red);height:2px}
+.fold .val{color:var(--r-red);font-weight:700;min-width:3rem;text-align:right}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);margin-top:10px;max-width:78ch}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the id-layout figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .nlbl{font:12px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .nsub{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .pglbl{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .field{cursor:pointer;transition:opacity .18s ease}
+.cflow .field rect{stroke-width:1.5}
+.cflow .field .flbl{font:11px var(--mono);text-anchor:middle;fill:var(--b-ink)}
+.cflow .field .fbits{font:9px var(--mono);text-anchor:middle;fill:var(--b-dim)}
+.cflow .field.shard rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.cflow .field.type rect{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.cflow .field.local rect{fill:var(--b-card);stroke:var(--b-node)}
+.cflow .arrow{stroke:var(--b-dim);stroke-width:1.4;fill:none;marker-end:url(#fpArrow)}
+.cflow .shardbox rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.2}
+.cflow .shardbox.lit rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.cflow.focus .field{opacity:.26}
+.cflow.focus .field.on{opacity:1}
+.cflow.focus .field.on rect{stroke-width:2.8}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/pinterest-task-queue">pinterest-task-queue</a><span class="rsep">/</span><span class="rcur">functional-partitioning</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#polyglot">Polyglot</a>
+      <a href="#shard-id">Shard in the id</a>
+      <a href="#echo">The BCS echo</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.03.1 &#183; Pinterest: task queues &amp; partitioning &#8212; dive 1</p>
+      <h1>Functional partitioning: <span class="hns">let the identity decide placement</span>.</h1>
+      <p class="lede">Pinterest put each kind of data on the store that fit how it was read, and built a row&#8217;s
+      shard into its id &#8212; so a read finds its location by arithmetic, with no lookup table.</p>
+      <p class="heronote">Grounding: the Pinterest case study (Sharding Pinterest) &#183; the BCS echo &#8212; the
+      <code>{q}</code> hashtag + CRC16 slot in echo_mq/keyspace.ex &#183; the branded-id placement in
+      echo_data/branded_id.ex. Valkey is the BCS engine; Pinterest&#8217;s Redis/MySQL/memcache is the case study.</p>
+
+      <figure class="anatomy" aria-labelledby="fpCap">
+        <figcaption id="fpCap"><b>Read a 64-bit Pinterest id.</b> Three fields packed into one integer; select a
+        field to see its bit range and what it tells a reader &#8212; the shard field alone names where the row lives.</figcaption>
+        <div class="segbar" id="fieldSel" role="group" aria-label="Which id field to inspect">
+          <button type="button" data-field="shard" aria-pressed="false">shard id (16b)</button>
+          <button type="button" data-field="type" aria-pressed="false">type id (10b)</button>
+          <button type="button" data-field="local" aria-pressed="false">local id (36b)</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 210" role="img" aria-label="A 64-bit Pinterest id laid out left to right as three fields: a 16-bit shard id in the high bits, a 10-bit type id, and a 36-bit local id in the low bits. An arrow runs from the shard field to a row of shards, where the shard the id names is highlighted. Selecting a field names its bit range and what a reader learns from it; the shard field alone, by bit-shifting right 46, gives the row's shard with no lookup table.">
+          <defs>
+            <marker id="fpArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--b-dim)"></path></marker>
+          </defs>
+          <text class="pglbl" x="230" y="20">64-bit id &#8212; high bits left, low bits right</text>
+          <g class="field shard" data-field="shard">
+            <rect x="18" y="32" width="112" height="40" rx="5"></rect>
+            <text class="flbl" x="74" y="50">shard id</text>
+            <text class="fbits" x="74" y="64">bits 46&#8211;61 &#183; 16b</text>
+          </g>
+          <g class="field type" data-field="type">
+            <rect x="134" y="32" width="96" height="40" rx="5"></rect>
+            <text class="flbl" x="182" y="50">type id</text>
+            <text class="fbits" x="182" y="64">bits 36&#8211;45 &#183; 10b</text>
+          </g>
+          <g class="field local" data-field="local">
+            <rect x="234" y="32" width="208" height="40" rx="5"></rect>
+            <text class="flbl" x="338" y="50">local id</text>
+            <text class="fbits" x="338" y="64">bits 0&#8211;35 &#183; 36b</text>
+          </g>
+          <path class="arrow" d="M74 72 L74 118"></path>
+          <text class="pglbl" x="230" y="112">the shard field alone names the shard &#8212; no lookup</text>
+          <g class="shardbox" id="sb0"><rect x="40" y="128" width="56" height="34" rx="4"></rect><text class="nlbl" x="68" y="149">shard 0</text></g>
+          <g class="shardbox" id="sb1"><rect x="104" y="128" width="56" height="34" rx="4"></rect><text class="nlbl" x="132" y="149">shard 1</text></g>
+          <g class="shardbox lit" id="sb2"><rect x="168" y="128" width="56" height="34" rx="4"></rect><text class="nlbl" x="196" y="149">shard 2</text></g>
+          <g class="shardbox" id="sb3"><rect x="232" y="128" width="56" height="34" rx="4"></rect><text class="nlbl" x="260" y="149">shard 3</text></g>
+          <text class="pglbl" x="370" y="149">&#8230; up to 2&#185;&#8310; shards</text>
+        </svg>
+        <div class="readout" id="readOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a field.
+        The id packs three numbers; the shard field in the high bits tells a reader which shard holds the row,
+        found by a right shift, never by a lookup table.</div>
+        <p class="booknote">The scheme (verbatim) &#8212; <code>ID = (shard ID &lt;&lt; 46) | (type ID &lt;&lt; 36) | (local ID&lt;&lt;0)</code>.
+        A new Pin is assigned to the same shard id as the board it is inserted into, so a board and its pins
+        co-locate.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="polyglot">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Polyglot by access pattern</h2>
+        <span class="ssrc">Sharding Pinterest &#183; functional partitioning</span>
+      </div>
+      <div class="prose">
+        <p>By September 2011 every piece of Pinterest&#8217;s infrastructure was over capacity. The sharding work
+        they launched in early 2012 &#8212; <em>&#8220;still the system we use today&#8221;</em> &#8212; carried 50
+        billion Pins across one billion boards. Part of that design was refusing to force every kind of data into one
+        engine.</p>
+        <p>The split they describe is verbatim: <em>&#8220;We keep <code>pin_id &#8594; pin object</code> cache in a
+        memcache cluster, but we keep <code>board_id &#8594; pin_ids</code> in a redis cluster.&#8221;</em> Two kinds
+        of data, two stores, chosen by how each is read. A pin object is a value fetched by key &#8212; a cache read,
+        served well by memcache. A board&#8217;s list of pin ids is an ordered collection that grows and is scanned
+        &#8212; a list, served well by Redis.</p>
+        <p>This is <strong>functional partitioning</strong>: divide the system by <em>function</em> &#8212; by what a
+        piece of data is for and how it is touched &#8212; not by carving one homogeneous store into ranges. The data
+        did not pick the engine; the access pattern did. The store that fits the read is the store the data goes on.</p>
+      </div>
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">a value fetched by key</span>
+          <p><code>pin_id &#8594; pin object</code> in a memcache cluster &#8212; a cache read, no scan, no ordering.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#183;</div>
+        <div class="cell elix">
+          <span class="lbl">an ordered collection that grows</span>
+          <p><code>board_id &#8594; pin_ids</code> in a redis cluster &#8212; a list that is appended to and scanned.</p>
+        </div>
+      </div>
+      <p class="take">Two kinds of read, two engines. The split is by access pattern, not by data type forced into a
+      single store &#8212; the first half of letting the system grow on the right substrate.</p>
+    </section>
+
+    <section id="shard-id">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The shard in the id</h2>
+        <span class="ssrc">Sharding Pinterest &#183; the id scheme</span>
+      </div>
+      <div class="prose">
+        <p>The second move is sharper. Pinterest gave every id its location. The scheme is verbatim a 64-bit id:</p>
+      </div>
+      <pre class="code"><span class="cmt"># the id scheme, verbatim from Sharding Pinterest</span>
+ID = (shard ID &lt;&lt; 46) | (type ID &lt;&lt; 36) | (local ID&lt;&lt;0)</pre>
+      <div class="prose">
+        <p>The <strong>shard id</strong> is 16 bits in the high part &#8212; which shard this row lives on. The
+        <strong>type id</strong> is 10 bits &#8212; which kind of object (a pin, a board, a comment). The
+        <strong>local id</strong> is 36 bits &#8212; the row&#8217;s id within that type on that shard.</p>
+        <p>A new Pin is assigned <em>&#8220;to the same shard ID as the board it&#8217;s inserted into,&#8221;</em>
+        so a board and the pins on it land on one shard, and the id alone tells a reader where the row is. There is no
+        lookup table mapping id to location: the location is read straight out of the high bits with a shift.</p>
+        <p>That is the property that lets the fleet grow. A read goes to one shard, found by arithmetic on the id,
+        with no directory in the path. Pinterest paired it with a move-cost rule &#8212; <em>&#8220;We hated moving
+        data around, especially item by item&#8230; If we had to move data, it was better to move an entire virtual
+        node to a different physical node&#8221;</em> &#8212; so re-balancing moves a whole virtual node, never a row
+        at a time.</p>
+      </div>
+      <dl class="deflist">
+        <dt>shard id (16b)</dt><dd>The high bits. Read with <code>id &gt;&gt; 46</code> &#8212; the row&#8217;s shard, no lookup.</dd>
+        <dt>type id (10b)</dt><dd>Which kind of object. A pin and a board on one shard differ here.</dd>
+        <dt>local id (36b)</dt><dd>The id within the type on the shard.</dd>
+        <dt>co-location</dt><dd>A pin takes its board&#8217;s shard id, so the board and its pins share a shard.</dd>
+      </dl>
+      <p class="take">The shard is not stored beside the id in a directory; it <strong>is</strong> the id&#8217;s high
+      bits. A read computes its destination, so adding shards never forces a lookup table into the hot path.</p>
+    </section>
+
+    <section id="echo">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The BCS echo &#8212; placement computed from identity</h2>
+        <span class="ssrc">echo_mq/keyspace.ex &#183; echo_data/branded_id.ex</span>
+      </div>
+      <div class="prose">
+        <p>The BCS bus reaches the same property by a different mechanism, and the difference is the lesson. EchoMQ
+        does not embed a shard in the high bits of an id and read it back out. It does two computed things.</p>
+        <p><strong>A queue&#8217;s keys are co-located by a hashtag.</strong> Every key of one queue is built as
+        <code>emq:{q}:&lt;type&gt;</code> &#8212; the queue name sits inside the braces. <code>EchoMQ.Keyspace</code>
+        computes the cluster slot client-side, with no server round trip:</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_mq/lib/echo_mq/keyspace.ex</span>
+def <b>slot</b>(key) when is_binary(key), do: rem(crc16(<b>hashtag</b>(key), 0), 16384)</pre>
+      <div class="prose">
+        <p><code>hashtag/1</code> takes the substring inside the first <code>{...}</code>, <code>crc16/2</code> is
+        CRC16-XMODEM, and the result is taken modulo 16384 &#8212; the cluster specification&#8217;s algorithm. Because
+        the slot is a function of the braced substring, <strong>every key of one queue lands on the same slot</strong>
+        (the module&#8217;s own words). The known vector on disk is <code>slot("123456789") == 12739</code>. The queue
+        name decides the location; nothing is looked up.</p>
+        <p><strong>A branded id is hashed to a placement.</strong> The id itself carries placement too &#8212; not by
+        reading a field, but by hashing the whole id to a bucket:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_data/lib/echo_data/branded_id.ex &#183; the contract vector<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd">iex&gt;</span> EchoData.BrandedId.encode!(<b>"USR"</b>, 274557032793636864)
+<span class="fd">"USR0KHTOWnGLuC"</span>
+<span class="fd">iex&gt;</span> EchoData.BrandedId.hash32(274557032793636864)
+<b>234878118</b></pre>
+      </figure>
+      <div class="prose">
+        <p><code>placement("USR0KHTOWnGLuC") &#8594; 234878118</code>: decode the id to its snowflake, hash the
+        snowflake to 32 bits, and that number is the consistent-hash bucket. The placement is derived from the
+        identity, computed the same way on any node, with no registry.</p>
+        <p>The honest parallel is the <strong>principle</strong>, not the mechanism. Pinterest <em>embeds</em> the
+        shard in the id&#8217;s high bits and bit-extracts it; echo <em>hashes</em> the id to a placement and
+        co-locates a queue with the <code>{q}</code> hashtag. Both make placement a property of the identity &#8212;
+        found by computation, never by a directory lookup. The branded snowflake&#8217;s node field is the
+        <em>minting</em> node, the machine that created the id &#8212; not a storage shard; the placement comes from
+        the hash and the hashtag, not from that field.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; identity carries location</span>
+        <h3>The hashtag that co-locates a queue</h3>
+        <p>A queue&#8217;s keys all share the braced tag, so they hash to one slot &#8212; the same property
+        Pinterest got from the shard bits, here computed from the queue name, verbatim from the keyspace:</p>
+        <figure class="frozen">
+          <figcaption>echo/apps/echo_mq/lib/echo_mq/keyspace.ex &#183; co-location by hashtag<span class="tag">frozen</span></figcaption>
+          <pre><span class="fd"># every key of one queue lands on one slot</span>
+def queue_key(queue, type), do: ["emq:{", queue, "}:", type]
+
+<span class="fd"># the slot is a function of the braced substring — no registry</span>
+def slot(key), do: rem(crc16(hashtag(key), 0), 16384)</pre>
+        </figure>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>Valkey divides the keyspace into 16384 hash slots; a
+      key&#8217;s slot is <code>CRC16(key) mod 16384</code>, and a <code>{...}</code> hashtag pins every key sharing
+      the tag to the same slot &#8212; the rule the keyspace computes client-side so a queue&#8217;s keys co-locate.
+      The algorithm and the hashtag rule are the engine&#8217;s own:
+      <a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Put data on the store that fits its access pattern, and make placement a function of the id &#8212;
+          <code>ID = (shard ID &lt;&lt; 46) | &#8230;</code> &#8212; so a read finds its shard by arithmetic, no
+          lookup table.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>A queue&#8217;s keys are <code>emq:{q}:&lt;type&gt;</code>; <code>slot/1</code> sends them all to one of
+          16384 slots, and a branded id hashes to a placement (<code>placement("USR0KHTOWnGLuC") &#8594;
+          234878118</code>). Computed client-side, no registry.</p>
+        </div>
+      </div>
+      <p class="take">Pinterest put the shard in the id and the data on the store that fit it; echo computes a slot
+      from the queue&#8217;s hashtag and a placement from the branded id. Different mechanisms, one principle:
+      identity carries location, so a read never has to ask where a row lives.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; location is a function of identity</h2>
+        <span class="ssrc">next &#8594; R8.03.2</span>
+      </div>
+      <div class="prose">
+        <p>Functional partitioning is two moves with one root. Put each kind of data on the store that fits its read
+        &#8212; <code>pin_id</code> in memcache, <code>board_id &#8594; pin_ids</code> in Redis &#8212; and make a
+        row&#8217;s location a function of its id, so a read computes its shard instead of consulting a directory.
+        Pinterest does it by packing the shard into the id&#8217;s high bits; EchoMQ does it by the <code>{q}</code>
+        hashtag and a hash of the branded id. The next dive keeps the claimed job safe between receive and
+        acknowledge &#8212; the list-based reliable queue, and the server-clock lease that reaches the same
+        guarantee.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://medium.com/pinterest-engineering/sharding-pinterest-how-we-scaled-our-mysql-fleet-3f341e96ca6f" rel="noopener">Pinterest Engineering &mdash; <em>Sharding Pinterest: How we scaled our MySQL fleet</em></a> &mdash; the polyglot split, the shard-in-the-id scheme, and the virtual-node move principle.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the 16384 hash slots, <code>CRC16 mod 16384</code>, and the <code>{...}</code> hashtag the BCS keyspace computes.</li>
+            <li><a href="https://github.com/pinterest/pinlater" rel="noopener">GitHub &mdash; <em>pinterest/pinlater</em></a> &mdash; the async-job service whose queues split across shards; the shard id rides in the job descriptor.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/pinterest-task-queue">R8.03 &#183; Pinterest: task queues &amp; partitioning</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/pinterest-task-queue/list-based-reliable-queues">R8.03.2 &#183; List-based reliable queues</a><span class="rs">the next dive &#8212; never lose a job between claim and ack</span></li>
+            <li><a href="/redis-patterns/production-operations">R8 &#183; Production &amp; Operations</a><span class="rs">the chapter</span></li>
+            <li><a href="/bcs/overview">/bcs/overview</a><span class="rs">the branded id, and how placement falls out of it</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the Queue pillar &#8212; jobs, lanes, the braced keyspace behind co-location</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/pinterest-task-queue"><span class="pk">previous</span>&#8592; R8.03 &#183; Pinterest: task queues &amp; partitioning</a>
+      <a class="pgx" href="/redis-patterns/production-operations/pinterest-task-queue/list-based-reliable-queues"><span class="pk">next</span>R8.03.2 &#183; List-based reliable queues &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/pinterest-task-queue/functional-partitioning">R8.03.1 &#183; Functional partitioning</a>
+        <a href="/redis-patterns/production-operations/pinterest-task-queue/list-based-reliable-queues">R8.03.2 &#183; List-based reliable queues</a>
+        <a href="/redis-patterns/production-operations/pinterest-task-queue/scaling-1-to-1000">R8.03.3 &#183; 1 &#8594; 1000+ scaling</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive: read a 64-bit Pinterest id (pure over the fixed scheme) ---------- */
+  // pure: field -> readout text (the scheme ID = (shard ID << 46) | (type ID << 36) | (local ID))
+  function describeField(field) {
+    if (field === 'shard') {
+      return 'shard id — bits 46-61, 16 bits. The high part of the id. A reader finds the row\'s shard with id >> 46, no lookup table. A new Pin takes its board\'s shard id, so a board and its pins share a shard.';
+    }
+    if (field === 'type') {
+      return 'type id — bits 36-45, 10 bits. Which kind of object: a pin, a board, a comment. A pin and a board on the same shard differ here; the type selects which table the local id indexes.';
+    }
+    return 'local id — bits 0-35, 36 bits. The row\'s id within its type on its shard. Combined with the shard and type fields it is globally unique, but on its own it does not name a location.';
+  }
+  var cflow = document.getElementById('cflow');
+  var fieldButtons = document.querySelectorAll('#fieldSel button');
+  var readOut = document.getElementById('readOut');
+  // pure: highlight the field, sync the buttons, fill the readout — hover or click.
+  function selectField(field) {
+    fieldButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-field') === field ? 'true' : 'false');
+    });
+    if (cflow) {
+      cflow.classList.toggle('focus', !!field);
+      cflow.querySelectorAll('.field').forEach(function (g) {
+        g.classList.toggle('on', !!field && g.getAttribute('data-field') === field);
+      });
+    }
+    if (readOut) {
+      readOut.innerHTML = field
+        ? '<span class="rk">field &#183;</span> ' + describeField(field)
+        : '<span class="rk">readout &#183;</span> Select a field. The id packs three numbers; the shard field in the high bits tells a reader which shard holds the row, found by a right shift, never by a lookup table.';
+    }
+  }
+  fieldButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var field = b.getAttribute('data-field');
+      selectField(b.getAttribute('aria-pressed') === 'true' ? null : field);
+    });
+  });
+  if (cflow) {
+    cflow.querySelectorAll('.field').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectField(g.getAttribute('data-field')); });
+      g.addEventListener('mouseleave', function () { selectField(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

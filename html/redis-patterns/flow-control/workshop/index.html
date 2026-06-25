@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.06 — Flow Control &amp; Scale workshop · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.06 chapter capstone: codemojex under load, every R6 flow-control technique composed once into one consumer that stays stable when a room floods. Codemojex.NotificationWorker's own moduledoc names three layers of control — Fairness, Rate, Delivery — and the page traces a guess and a notification through every gate. R6.01 rate: Codemojex.RateLimiter is a token bucket sized for Telegram (global ~30/s, per-chat ~1/s); take/2 returns :ok or {:wait, ms}, and over budget the worker re-enqueues with EchoMQ.Jobs.enqueue_in/5 and acks, deferred not dropped. R6.02 fairness: Codemojex.Guesses.submit/3 enqueues each guess on the player's fair lane via EchoMQ.Lanes.enqueue/5 — the PLR is the lane group, so one keyboard masher cannot starve the field. R6.03 groups: the lane is the tenant; Codemojex.Guesses.pause/1, resume/1, depth/1 give per-tenant control through EchoMQ.Lanes. R6.04 batches: a burst could be admitted in one flush via EchoMQ.Jobs.enqueue_many/4 and drained via EchoMQ.Lanes.bclaim/3 — the pattern-level path. R6.05 worker concurrency: a pool of EchoMQ.Consumer loops drains the queues — Codemojex.ScoreWorker, Codemojex.NotificationWorker, Codemojex.CommandWorker — each claim one ZPOPMIN round-trip. Grounded in the real as-built echo data layer; the engine is Valkey.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.2rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.booknote{margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--b-dim);max-width:82ch;line-height:1.55}
+
+/* ---------- the pipeline figure (hover-select) ---------- */
+.pipe{width:100%;height:auto;display:block;margin-top:4px}
+.pipe .flow{stroke:var(--b-line);stroke-width:1.6;fill:none;marker-end:url(#phead)}
+.pipe .gate{cursor:pointer;transition:opacity .18s ease}
+.pipe .gate rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5;transition:fill .16s ease,stroke .16s ease}
+.pipe .gate .gt{font:11.5px var(--mono);font-weight:700;fill:var(--b-ink)}
+.pipe .gate .gm{font:9.5px var(--mono);fill:var(--b-dim)}
+.pipe .gate.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.6}
+.pipe .endcap{fill:var(--b-paper);stroke:var(--b-line);stroke-width:1.4}
+.pipe .endcap.defer{stroke:var(--b-seq);stroke-dasharray:4 3}
+.pipe .caplbl{font:10px var(--mono);fill:var(--b-dim)}
+.pipe .axis{font:9.5px var(--mono);fill:var(--b-dim)}
+.pipe.focus .gate{opacity:.34}
+.pipe.focus .gate.on{opacity:1}
+
+/* ---------- the fold-stack figure (hover-select) ---------- */
+.stagestack{width:100%;height:auto;display:block;margin-top:4px}
+.stagestack .layer{cursor:pointer;transition:opacity .18s ease}
+.stagestack .layer rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5}
+.stagestack .layer.base rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.stagestack .llbl{font:12.5px var(--mono);fill:var(--b-ink)}
+.stagestack .lsub{font:10.5px var(--mono);fill:var(--b-dim)}
+.stagestack .arr{stroke:var(--b-line);stroke-width:1.4;fill:none}
+.stagestack.focus .layer{opacity:.3}
+.stagestack.focus .layer.on{opacity:1}
+.stagestack.focus .layer.on rect{stroke-width:2.6}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- code ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+
+/* ---------- the stage table ---------- */
+.tbl{width:100%;border-collapse:collapse;margin:8px 0 14px;font-family:var(--mono);font-size:13px}
+.tbl th,.tbl td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--b-dim);font-weight:700}
+.tbl td{color:var(--b-ink)}
+.tbl td code{font-size:12px;color:var(--b-ts)}
+.tbl tr:last-child td{border-bottom:0}
+
+/* ---------- bridge ---------- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+
+/* ---------- vnote ---------- */
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+a.door{color:var(--b-ink)}
+a.door .dr{color:var(--r-red)}
+.door.full{grid-column:1/-1;border-left:3px solid var(--r-red)}
+.door.full .dr{color:var(--r-red)}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.refgrp:first-child{margin-top:0}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#scenario">Scenario</a>
+      <a href="#rate">Rate</a>
+      <a href="#fair">Fairness</a>
+      <a href="#together">Together</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R6.06 &#183; Flow Control &amp; Scale &#8212; the chapter workshop</p>
+      <h1>One bus, fair under <span class="hns">load</span>.</h1>
+      <p class="lede">The chapter capstone: <b>codemojex under load</b>. R6 taught five ways to keep a queue stable
+      when load arrives &#8212; rate, fairness, groups, batches, worker concurrency &#8212; and codemojex, the
+      Telegram code-breaking game, applies all five at once on the real EchoMQ bus.</p>
+      <p class="heronote">Grounding: echo/apps/codemojex (Codemojex.RateLimiter, Codemojex.Guesses.submit/3,
+      Codemojex.NotificationWorker, Codemojex.ScoreWorker, Codemojex.CommandWorker, Codemojex.Notifier) on
+      echo/apps/echo_mq (EchoMQ.Lanes, EchoMQ.Jobs.enqueue_in/5 &amp; enqueue_many/4, EchoMQ.Consumer,
+      EchoMQ.Metrics.get_rate_limit_ttl/3) &#8212; every surface verified on disk. The engine is Valkey.</p>
+
+      <figure class="anatomy" aria-labelledby="pipeCap">
+        <figcaption id="pipeCap"><b>The pipeline under load.</b> A guess or a notification flows in through four
+        sequential gates, each an R6 technique on a real codemojex surface; the batch path (R6.04) is the
+        cross-cutting fifth. Hover or select a gate to read what it does.</figcaption>
+        <div class="segbar" id="pipeSel" role="group" aria-label="Select a gate in the pipeline">
+          <button type="button" data-gate="rate" aria-pressed="false">rate</button>
+          <button type="button" data-gate="lane" aria-pressed="false">fair lane</button>
+          <button type="button" data-gate="ring" aria-pressed="false">ring + group</button>
+          <button type="button" data-gate="pool" aria-pressed="false">consumer pool</button>
+        </div>
+        <svg class="pipe" id="pipe" viewBox="0 0 480 230" role="img" aria-label="A left-to-right pipeline of four gates on the codemojex bus. Traffic enters at the left, labelled a guess or a notification. Gate one is the rate gate, Codemojex.RateLimiter.take slash 2, the R6.01 token bucket; on ok it continues, on wait ms it branches down to a deferred re-enqueue via EchoMQ.Jobs.enqueue in slash 5. Gate two is the fair lane, EchoMQ.Lanes.enqueue slash 5, the R6.02 per-player lane keyed by PLR. Gate three is the ring plus group ceiling, EchoMQ.Lanes.claim slash 3 rotating the ring with R6.03 pause and resume per tenant. Gate four is the consumer pool, EchoMQ.Consumer loops draining with one ZPOPMIN per claim, the R6.05 throughput floor amortized by EchoMQ.Lanes.bclaim slash 3 from R6.04. The far right is the settled work, a scored GES or a delivered notification. Selecting a gate highlights it red and names its R6 module and real surface in the readout.">
+          <defs>
+            <marker id="phead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0 0 L6 3 L0 6 z" fill="var(--b-dim)"></path>
+            </marker>
+          </defs>
+          <text class="axis" x="16" y="16">a guess or a notification &#8594; four gates &#8594; settled work &#183; one bus, every key under {cm}</text>
+          <!-- in endcap -->
+          <rect class="endcap" x="10" y="58" width="58" height="40" rx="7"></rect>
+          <text class="caplbl" x="39" y="74" text-anchor="middle">in</text>
+          <text class="caplbl" x="39" y="88" text-anchor="middle">guess /</text>
+          <text class="caplbl" x="39" y="100" text-anchor="middle" dy="-3">notify</text>
+          <path class="flow" d="M68 78 L84 78"></path>
+          <!-- gate 1: rate -->
+          <g class="gate" data-gate="rate"><rect x="84" y="56" width="80" height="44" rx="7"></rect><text class="gt" x="124" y="76" text-anchor="middle">R6.01 rate</text><text class="gm" x="124" y="90" text-anchor="middle">RateLimiter.take/2</text></g>
+          <path class="flow" d="M164 78 L180 78"></path>
+          <!-- gate 2: lane -->
+          <g class="gate" data-gate="lane"><rect x="180" y="56" width="80" height="44" rx="7"></rect><text class="gt" x="220" y="76" text-anchor="middle">R6.02 lane</text><text class="gm" x="220" y="90" text-anchor="middle">Lanes.enqueue/5</text></g>
+          <path class="flow" d="M260 78 L276 78"></path>
+          <!-- gate 3: ring -->
+          <g class="gate" data-gate="ring"><rect x="276" y="56" width="86" height="44" rx="7"></rect><text class="gt" x="319" y="76" text-anchor="middle">R6.03 ring</text><text class="gm" x="319" y="90" text-anchor="middle">claim/3 + pause</text></g>
+          <path class="flow" d="M362 78 L378 78"></path>
+          <!-- gate 4: pool -->
+          <g class="gate" data-gate="pool"><rect x="378" y="56" width="86" height="44" rx="7"></rect><text class="gt" x="421" y="76" text-anchor="middle">R6.05 pool</text><text class="gm" x="421" y="90" text-anchor="middle">Consumer ZPOPMIN</text></g>
+          <!-- out endcap -->
+          <path class="flow" d="M421 100 L421 132"></path>
+          <rect class="endcap" x="378" y="132" width="86" height="40" rx="7"></rect>
+          <text class="caplbl" x="421" y="150" text-anchor="middle">settled &#8212; scored GES</text>
+          <text class="caplbl" x="421" y="163" text-anchor="middle">/ delivered notify</text>
+          <!-- defer branch off the rate gate -->
+          <path class="flow" d="M124 100 L124 150 L150 150" stroke-dasharray="4 3"></path>
+          <rect class="endcap defer" x="150" y="132" width="150" height="40" rx="7"></rect>
+          <text class="caplbl" x="225" y="150" text-anchor="middle">{:wait, ms} &#8594; deferred</text>
+          <text class="caplbl" x="225" y="163" text-anchor="middle">enqueue_in/5, ack &#8212; not dropped</text>
+          <text class="axis" x="16" y="206">R6.04 batches: a burst could enter via enqueue_many/4 and drain via bclaim/3 &#8212; one round-trip in, one out</text>
+          <text class="axis" x="16" y="220">the branded JOB / GES / NOT / PLR id is the thread through every gate</text>
+        </svg>
+        <div class="readout" id="pipeOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a gate to
+        read its R6 technique and the real codemojex surface that applies it. Traffic enters left, settles right;
+        over-budget sends branch down to a durable deferral.</div>
+      </figure>
+      <p class="take">The five flow-control techniques are not five systems; they are gates on one pipeline &#8212;
+      four in line, the batch path across all of them. The guess that floods in is the same identity that comes out
+      scored, and every gate it passes is a real surface in the consumer.</p>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="scenario">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The scenario &#8212; a room floods, the engine stays fair</h2>
+        <span class="ssrc">codemojex/notification_worker.ex</span>
+      </div>
+      <div class="prose">
+        <p>A popular room fills with players hammering guesses; a finished game fans a burst of result notifications
+        back out to Telegram. Two pipelines, one bus. Without flow control, the loudest room starves the quiet ones,
+        the engine sends faster than Telegram allows and gets throttled, and a worker stall backs everything up. R6's
+        five techniques each address one of those failures.</p>
+        <p>The honest spine is already written into the consumer. <code>Codemojex.NotificationWorker</code>'s own
+        moduledoc names <strong>three layers of control &#8212; Fairness, Rate, Delivery</strong> &#8212; the
+        delivery side is the same shape as the guess side, so one model fits both:</p>
+      </div>
+      <pre class="code"><span class="cmt"># Codemojex.NotificationWorker moduledoc — the three layers, verbatim</span>
+<span class="cmt">#   1. Fairness — notifications are enqueued on a fair lane per chat</span>
+<span class="cmt">#      (Codemojex.Notifier), so one chat's burst cannot starve others.</span>
+<span class="cmt">#   2. Rate — before each send the handler takes a token from Codemojex.RateLimiter</span>
+<span class="cmt">#      (global ~30/s, per-chat ~1/s). Over budget ... it re-enqueues the same job</span>
+<span class="cmt">#      with EchoMQ.Jobs.enqueue_in/5 ... and acks — deferred, not dropped.</span>
+<span class="cmt">#   3. Delivery — classifies the Telegram result: success acks; a transient</span>
+<span class="cmt">#      failure re-enqueues with capped backoff; a permanent failure acks-and-drops.</span></pre>
+      <p class="prose">Each section that follows recalls one R6 module, then lands it on the real codemojex surface
+      &#8212; rate, then fairness, then groups, then the batch path, then the pool of workers.</p>
+    </section>
+
+    <section id="rate">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>R6.01 rate &#8212; a token bucket sized for Telegram</h2>
+        <span class="ssrc">codemojex/rate_limiter.ex &#183; R6.01</span>
+      </div>
+      <div class="prose">
+        <p>Rate limiting caps work to a budget per unit of time. R6.01 taught two algorithms with the same job: the
+        fixed-window counter (the real <code>emq:{cm}:limiter</code>, spent down to <code>max</code> over its own
+        <code>PTTL</code> window) and the token bucket (a refilling allowance &#8212; bursts up to the bucket,
+        sustained at the refill rate). codemojex applies the <strong>token bucket</strong> on the delivery side.
+        <code>Codemojex.RateLimiter</code> is sized for Telegram's send limits: a global bucket (about 30 messages
+        per second, burst 30) and a per-chat bucket (about one per second, burst 3), and a send is allowed only when
+        <strong>both</strong> grant a token. Those rates are the limits Telegram enforces &#8212; configuration, not
+        measured throughput.</p>
+      </div>
+      <pre class="code"><span class="cmt"># Codemojex.RateLimiter.take/2 — the delivery gate (echo/apps/codemojex/lib/codemojex/rate_limiter.ex)</span>
+<b>RateLimiter.take(chat)</b>
+<span class="cmt">#=> :ok            both buckets grant — send now</span>
+<span class="cmt">#=> {:wait, ms}    a bucket is empty — the smallest delay before a retry could succeed</span></pre>
+      <p class="prose">The buckets refill lazily from elapsed time, so the limiter holds no timers and one process
+      serves every chat. The <code>NotificationWorker</code> does not block the consumer when over budget: it
+      re-enqueues the same notification with <code>EchoMQ.Jobs.enqueue_in/5</code> after the reported wait and acks
+      &#8212; the notification stays durable on the bus, <strong>deferred, not dropped</strong>. On the work side,
+      the server-side <code>emq:{cm}:limiter</code> fixed-window counter is the same idea in Valkey, read by
+      <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code> (the remaining window in ms, the over-budget back-off)
+      &#8212; one budget shared across every bot worker because it lives in the engine, not in any process.</p>
+      <figure class="frozen">
+        <figcaption>codemojex/notification_worker.ex<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># the over-budget path — defer, don't block (verbatim shape)</span>
+case RateLimiter.take(chat) do
+  <b>:ok</b>        -&gt; deliver(job, msg, chat, text, opts, attempt)
+  <b>{:wait, ms}</b> -&gt; requeue(msg, ms); :ok       <span class="fd"># EchoMQ.Jobs.enqueue_in/5 after ms, then ack</span>
+end</pre>
+      </figure>
+      <p class="take">The rate gate is the ceiling: the token bucket admits a burst up to the bucket, then holds to
+      the refill rate, and an over-budget send is re-enqueued for later, never dropped &#8212; the budget is the
+      same whether it is the in-process bucket or the engine's <code>emq:{cm}:limiter</code> counter.</p>
+    </section>
+
+    <section id="fair">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>R6.02 fairness &#8212; each player rides their own lane</h2>
+        <span class="ssrc">codemojex/game.ex &#183; R6.02</span>
+      </div>
+      <div class="prose">
+        <p>Fairness under load is keeping every producer's work moving when one floods the queue. A single FIFO line
+        lets one heavy producer starve the rest; R6.02 taught the fix &#8212; a queue is a set of lanes, each a
+        per-group pending set, and every claim rotates the ring one step before serving, so service spreads across
+        lanes by construction. codemojex enqueues each guess on the <strong>player's</strong> lane.
+        <code>Codemojex.Guesses.submit/3</code> validates the guess, charges the room's currency, then enqueues a
+        branded <code>JOB</code> keyed by the player's <code>PLR</code>:</p>
+      </div>
+      <pre class="code"><span class="cmt"># Codemojex.Guesses.submit/3 — a guess on the player's fair lane (echo/apps/codemojex/lib/codemojex/game.ex)</span>
+job = EchoData.BrandedId.generate!("JOB")
+payload = :erlang.term_to_binary({:guess, game, player, guess})
+<b>Lanes.enqueue(Bus.conn(), "cm", player, job, payload)</b>   <span class="cmt"># the PLR is the lane group</span></pre>
+      <p class="prose">The module's own words: <em>"the lane is named by the player's <code>PLR</code>, so the bus
+      rotates service across players and one keyboard masher cannot starve the field."</em> Notifications are fair
+      the same way: <code>Codemojex.Notifier</code> enqueues each notification on a <strong>fair lane keyed by chat
+      id</strong>, so the bus spreads a chat's notifications behind the rate limit rather than firing them at once
+      &#8212; the <code>NotificationWorker</code>'s layer 1, fairness <em>per chat</em>. R6.02's retarget holds here:
+      there is no numeric per-job priority; "served more" is a property of the identity (a higher lane weight), not a
+      number stapled to the work, and mint order plus the rota already give fairness.</p>
+      <p class="take">Fairness keeps the room honest: the loud player and the quiet one each have a lane, the ring
+      serves both in turn, and the flood is bounded to its own lane &#8212; never the whole queue.</p>
+    </section>
+
+    <section id="groups">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>R6.03 groups &#8212; the lane is the tenant</h2>
+        <span class="ssrc">codemojex/game.ex &#183; R6.03</span>
+      </div>
+      <div class="prose">
+        <p>A group is a tenant given its own lane. R6.03 taught two controls over a tenant lane: round-robin across
+        tenants (the ring rotation of R6.02) and a per-group concurrency ceiling, plus parking one tenant without
+        touching the rest of the queue. In codemojex the tenant is a <strong>player</strong> (a <code>PLR</code>)
+        &#8212; its lane is the unit of control. <code>Codemojex.Guesses</code> exposes that control directly, each
+        call delegating to <code>EchoMQ.Lanes</code>:</p>
+      </div>
+      <pre class="code"><span class="cmt"># Codemojex.Guesses — per-tenant control without touching the rest of the queue (game.ex)</span>
+def pause(player),  do: <b>Lanes.pause</b>(Bus.conn(),  "cm", player)
+def resume(player), do: <b>Lanes.resume</b>(Bus.conn(), "cm", player)
+def depth(player),  do: <b>Lanes.depth</b>(Bus.conn(),  "cm", player)</pre>
+      <p class="prose"><code>pause/1</code> parks one player's lane &#8212; held while the rest of the field runs;
+      <code>resume/1</code> unparks it; <code>depth/1</code> reads how much work that one lane has pending. One
+      tenant is held while the others run, which is exactly the manuscript's <em>"group-aware pause and resume act on
+      a lane without touching the queue."</em> The concurrency ceiling and the de-ring mechanics
+      (<code>EchoMQ.Lanes.limit/4</code> &#8594; <code>glimit</code>/<code>gactive</code>) are the bus's, taught in
+      the EchoMQ Queue pillar; codemojex reaches the per-tenant control through the lane.</p>
+
+      <figure class="anatomy" aria-labelledby="stageCap">
+        <figcaption id="stageCap"><b>The five gates, one bus.</b> Select a technique to read which codemojex surface
+        applies it and which R6 module it comes from, all over the <code>cm</code> queue.</figcaption>
+        <div class="segbar" id="stageSel" role="group" aria-label="Select a technique">
+          <button type="button" data-stage="rate" aria-pressed="false">1 &#183; rate</button>
+          <button type="button" data-stage="fair" aria-pressed="false">2 &#183; fairness</button>
+          <button type="button" data-stage="group" aria-pressed="false">3 &#183; groups</button>
+          <button type="button" data-stage="batch" aria-pressed="false">4 &#183; batches</button>
+          <button type="button" data-stage="pool" aria-pressed="false">5 &#183; concurrency</button>
+        </div>
+        <svg class="stagestack" id="stagestack" viewBox="0 0 480 312" role="img" aria-label="Five flow-control techniques stacked over one bus. One, rate, is Codemojex.RateLimiter.take slash 2, the R6.01 token bucket, deferring over budget with EchoMQ.Jobs.enqueue in slash 5. Two, fairness, is Codemojex.Guesses.submit slash 3 enqueuing on the player's lane via EchoMQ.Lanes.enqueue slash 5, the R6.02 rota. Three, groups, is Codemojex.Guesses.pause and resume and depth over EchoMQ.Lanes, the R6.03 per-tenant control. Four, batches, is the pattern-level EchoMQ.Jobs.enqueue many slash 4 plus EchoMQ.Lanes.bclaim slash 3, the R6.04 burst path. Five, concurrency, is a pool of EchoMQ.Consumer loops draining through Lanes.claim, the R6.05 floor. Select a technique to highlight it; its codemojex surface appears in the readout. The cm queue on Valkey is under all five.">
+          <g class="layer base" data-stage="rate"><rect x="40" y="14" width="400" height="42" rx="6"></rect><text class="llbl" x="60" y="33">1 &#183; rate (R6.01)</text><text class="lsub" x="60" y="48">Codemojex.RateLimiter.take/2 &#8594; defer via enqueue_in/5</text></g>
+          <path class="arr" d="M240 56 L240 66"></path>
+          <g class="layer" data-stage="fair"><rect x="40" y="66" width="400" height="42" rx="6"></rect><text class="llbl" x="60" y="85">2 &#183; fairness (R6.02)</text><text class="lsub" x="60" y="100">Codemojex.Guesses.submit/3 &#8594; Lanes.enqueue/5 (PLR lane)</text></g>
+          <path class="arr" d="M240 108 L240 118"></path>
+          <g class="layer" data-stage="group"><rect x="40" y="118" width="400" height="42" rx="6"></rect><text class="llbl" x="60" y="137">3 &#183; groups (R6.03)</text><text class="lsub" x="60" y="152">Codemojex.Guesses.pause/resume/depth/1 &#8594; EchoMQ.Lanes</text></g>
+          <path class="arr" d="M240 160 L240 170"></path>
+          <g class="layer" data-stage="batch"><rect x="40" y="170" width="400" height="42" rx="6"></rect><text class="llbl" x="60" y="189">4 &#183; batches (R6.04, pattern-level)</text><text class="lsub" x="60" y="204">EchoMQ.Jobs.enqueue_many/4 &amp; Lanes.bclaim/3</text></g>
+          <path class="arr" d="M240 212 L240 222"></path>
+          <g class="layer" data-stage="pool"><rect x="40" y="222" width="400" height="42" rx="6"></rect><text class="llbl" x="60" y="241">5 &#183; concurrency (R6.05)</text><text class="lsub" x="60" y="256">EchoMQ.Consumer pool: ScoreWorker / NotificationWorker / CommandWorker</text></g>
+          <text class="lsub" x="240" y="290" text-anchor="middle">emq:{cm}:&#8230; &#183; Valkey &#8212; one queue under all five gates</text>
+        </svg>
+        <div class="readout" id="stageOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a technique.
+        Rate caps the budget, fairness spreads the rota, groups give per-tenant control, the batch path bundles a
+        burst, and the consumer pool drains the queues &#8212; one bus, five gates.</div>
+        <p class="booknote">Static verdicts &#8212; 1 rate &#8594; <code>RateLimiter.take/2</code> (defer
+        <code>enqueue_in/5</code>) &#183; 2 fairness &#8594; <code>submit/3</code> &#8594; <code>Lanes.enqueue/5</code>
+        &#183; 3 groups &#8594; <code>pause/resume/depth/1</code> &#183; 4 batches &#8594;
+        <code>enqueue_many/4</code> + <code>bclaim/3</code> (pattern-level) &#183; 5 concurrency &#8594;
+        <code>Consumer</code> pool, one <code>ZPOPMIN</code> per claim.</p>
+      </figure>
+      <p class="take">The lane is the tenant: a player's whole pipeline is one lane the system can rotate, weight,
+      pause, or read &#8212; control aimed at the identity, not stapled to each job.</p>
+    </section>
+
+    <section id="throughput">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>R6.04 + R6.05 &#8212; the burst path and the pool of workers</h2>
+        <span class="ssrc">echo_mq/jobs.ex &#183; codemojex/game.ex &#183; R6.04 + R6.05</span>
+      </div>
+      <div class="prose">
+        <p>R6.04 taught the pipelined batch: many writes in one wire round-trip, each item atomic and idempotent, the
+        batch <strong>not</strong> a transaction &#8212; partial verdicts are the honest model, by design over
+        MULTI/EXEC rollback. codemojex enqueues <strong>one guess per <code>submit/3</code></strong> today, not a
+        batch &#8212; so this technique is pattern-level here, the path the bot <em>could</em> take when a burst of
+        inbound commands arrives. A burst could be admitted in one flush via
+        <code>EchoMQ.Jobs.enqueue_many/4</code> (a per-item idempotent script <code>EVALSHA</code>'d once per item
+        through <code>EchoWire.Pipe</code>, flushed once, a verdict per item &#8212; <code>:enqueued</code> /
+        <code>:duplicate</code> / <code>{:error, :kind}</code> &#8212; in input order) and drained in one batch claim
+        via <code>EchoMQ.Lanes.bclaim/3</code> (rotate to a serviceable lane, serve up to a batch of heads on one
+        shared <code>TIME</code> lease). One round-trip in, one round-trip out.</p>
+        <p>R6.05 grounds the workers. The BEAM gives cheap concurrency &#8212; thousands of processes &#8212; but the
+        wire is the shared resource: real parallelism on Valkey is pool width (N sockets), not N processes sharing
+        one connector. The trio is <code>EchoMQ.Consumer</code> (the claim loop that parks on a wake key rather than
+        polling), <code>EchoMQ.Pool</code> (the concurrency primitive), and the per-claim <code>ZPOPMIN</code> fetch
+        (one job per claim, one round-trip), amortized by <code>EchoMQ.Lanes.bclaim/3</code>. codemojex runs a
+        <code>Consumer</code> loop per queue:</p>
+        <ul>
+          <li><code>Codemojex.ScoreWorker.handle/1</code> drains the <code>cm</code> guess queue &#8212;
+          <em>"<code>EchoMQ.Consumer</code> drains the guess queue through <code>Lanes.claim</code>, the player id
+          arriving as the lane group."</em> It scores, writes a <code>GES</code>, and for a classic game publishes a
+          <code>scored</code> event.</li>
+          <li><code>Codemojex.NotificationWorker.handle/1</code> drains the <code>cm.notify</code> queue and delivers
+          each notification under the three layers of control.</li>
+          <li><code>Codemojex.CommandWorker.handle/1</code> drains the <code>cm.bot.commands</code> lane &#8212;
+          keeping inbound command handling on the bus makes it durable, per-chat ordered, and replayable, with the
+          reply going back out through <code>Codemojex.Notifier</code> so it inherits the same rate limiting and
+          retries.</li>
+        </ul>
+        <p>Each claim is one <code>ZPOPMIN</code> round-trip &#8212; the per-claim fetch is the throughput ceiling,
+        and pool width sets the floor. A busy event (many rooms guessing at once) is the case where batch claim and
+        pool width matter.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo_mq/lanes.ex &#183; codemojex/game.ex<span class="tag">frozen</span></figcaption>
+        <pre><b>submit/3</b>   Lanes.enqueue(conn, "cm", player, JOB, payload)   <span class="fd">&#8592; one guess, the PLR lane</span>
+<b>claim/3</b>    LMOVE ring ring + ZPOPMIN lane                      <span class="fd">&#8592; one job per round-trip</span>
+<b>bclaim/3</b>   k &#215; ZPOPMIN on one shared TIME lease               <span class="fd">&#8592; amortize the fetch (R6.04)</span>
+<b>Consumer</b>   ScoreWorker / NotificationWorker / CommandWorker    <span class="fd">&#8592; a loop per queue, parked on a wake</span></pre>
+      </figure>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>Every key of the <code>cm</code> queue &#8212; the
+      lanes, the ring, the limiter counter &#8212; carries the queue's <code>{cm}</code> hash tag, so they all hash
+      (CRC16 of the brace bytes) to one of the 16384 cluster slots and co-locate. That co-location is what keeps a
+      multi-key claim or limiter script legal (no <code>CROSSSLOT</code>) and makes the limiter counter one shared
+      key every bot worker increments &#8212;
+      <a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>.</p>
+      <p class="take">The batch path is the burst option and the pool is the throughput floor: one round-trip admits
+      a burst, one shared lease drains a batch, and a pool of parked consumers turns cheap BEAM concurrency into real
+      parallelism on the wire.</p>
+    </section>
+
+    <section id="together">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>Putting it together &#8212; one pipeline, every gate</h2>
+        <span class="ssrc">the application &#183; the five gates</span>
+      </div>
+      <div class="prose">
+        <p>Trace one guess and one notification end to end:</p>
+        <ul>
+          <li>A <strong>guess</strong> enters at <code>submit/3</code>, is charged and validated, and is enqueued on
+          the player's fair <strong>lane</strong> (<code>Lanes.enqueue</code>, R6.02). The <strong>ring</strong>
+          rotates and a <code>ScoreWorker</code> <code>Consumer</code> claims one head (<code>Lanes.claim</code>,
+          R6.05), scores it, and writes a <code>GES</code>. If that player's lane is paused (R6.03), the ring skips
+          it.</li>
+          <li>A <strong>notification</strong> enters at <code>Notifier.notify</code> on a fair lane per chat (R6.02),
+          is claimed by the <code>NotificationWorker</code> <code>Consumer</code> (R6.05), and hits the
+          <strong>rate gate</strong> &#8212; <code>RateLimiter.take/2</code> (R6.01). On <code>:ok</code> it is
+          delivered; on <code>{:wait, ms}</code> it is re-enqueued with <code>EchoMQ.Jobs.enqueue_in/5</code> after
+          the wait and acked &#8212; deferred, not dropped.</li>
+        </ul>
+        <p>Five techniques, one bus: the rate gate is the ceiling, the lanes keep it fair, the groups give per-tenant
+        control, the batch path is the burst option, and the pool of consumers is the floor. The identity &#8212; the
+        branded <code>JOB</code>, <code>GES</code>, <code>NOT</code>, <code>PLR</code> ids &#8212; is the thread that
+        ties the guess to its lane, its score, and its receipt.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the chapter</span>
+          <p>Five flow-control techniques: rate-limit to a budget (R6.01), fair lanes drained by a rota (R6.02),
+          per-tenant groups (R6.03), a pipelined burst path (R6.04), and a pool of claim loops (R6.05). Each keeps
+          the queue stable against a different failure under load.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">codemojex&#8217;s pipeline under load</span>
+          <p><code>Codemojex.RateLimiter.take/2</code> defers over-budget sends with
+          <code>EchoMQ.Jobs.enqueue_in/5</code>; <code>Codemojex.Guesses.submit/3</code> enqueues each guess on the
+          player&#8217;s <code>PLR</code> lane (<code>EchoMQ.Lanes.enqueue/5</code>), <code>pause/1</code> /
+          <code>resume/1</code> / <code>depth/1</code> give per-tenant control, and a pool of
+          <code>EchoMQ.Consumer</code> loops (<code>ScoreWorker</code>, <code>NotificationWorker</code>,
+          <code>CommandWorker</code>) drains every queue &#8212; all over the <code>cm</code> queues.</p>
+        </div>
+      </div>
+      <p class="take">The five flow-control techniques are not five systems; they are five gates on one pipeline. The
+      guess that floods in is the same identity that comes out scored, and the chapter&#8217;s whole catalog is
+      working at once on one bus.</p>
+
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The Queue pillar in depth</h3>
+          <p>The scaling layer the workshop draws on: the limiter wired at the claim point, the fair-lanes rota and
+          weights, per-group concurrency, and worker concurrency, taught rung by rung.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>B3 &#183; The Bus</h3>
+          <p>The Valkey-native bus and the fair-lanes architecture these figures draw from: the keyspace as the
+          contract, jobs and lanes, and a queue drained fairly.</p>
+        </a>
+        <a class="door" href="/bcs/codemojex">
+          <span class="dr">/bcs/codemojex</span>
+          <h3>B7 &#183; codemojex</h3>
+          <p>The worked consumer as the manuscript tells it: the game on the BCS stack, its entities branded, its
+          guesses jobs on per-player lanes scored by a single authority.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;7</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the <code>{cm}</code> hash tag forces the queue&#8217;s keys onto one of the 16384 slots so a multi-key claim or limiter script stays legal.</li>
+            <li><a href="https://valkey.io/commands/incr/" rel="noopener">Valkey &mdash; <em>INCR</em></a> &mdash; the atomic counter behind a fixed-window rate limit; the spend-down the <code>emq:{cm}:limiter</code> cap is built on.</li>
+            <li><a href="https://valkey.io/commands/pttl/" rel="noopener">Valkey &mdash; <em>PTTL</em></a> &mdash; the time until the limiter window resets; the over-budget back-off <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code> returns.</li>
+            <li><a href="https://valkey.io/commands/zpopmin/" rel="noopener">Valkey &mdash; <em>ZPOPMIN</em></a> &mdash; the per-claim pop behind <code>EchoMQ.Lanes.claim/3</code>; one job per round-trip, the ceiling pool width amortizes.</li>
+            <li><a href="https://valkey.io/topics/pipelining/" rel="noopener">Valkey &mdash; <em>Pipelining</em></a> &mdash; many commands in one round-trip, the wire mechanic behind the burst path <code>EchoMQ.Jobs.enqueue_many/4</code> takes.</li>
+            <li><a href="https://stripe.com/blog/rate-limiters" rel="noopener">Stripe &mdash; <em>Scaling your API with rate limiters</em></a> &mdash; the token-bucket and fixed-window algorithms in production, the family <code>Codemojex.RateLimiter</code> applies.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control/rate-limiting">R6.01 &#183; Rate limiting</a><span class="rs">the budget-per-window pattern the delivery gate applies</span></li>
+            <li><a href="/redis-patterns/flow-control/fairness">R6.02 &#183; Fairness under load</a><span class="rs">the rota that keeps one player from starving the field</span></li>
+            <li><a href="/redis-patterns/flow-control/groups">R6.03 &#183; Groups &amp; multi-tenant fairness</a><span class="rs">the lane as the tenant; pause and resume one without the rest</span></li>
+            <li><a href="/redis-patterns/flow-control/batches">R6.04 &#183; Batches &amp; pipelining</a><span class="rs">the one-round-trip burst path the bot could take</span></li>
+            <li><a href="/redis-patterns/flow-control/worker-concurrency">R6.05 &#183; Worker concurrency</a><span class="rs">the pool of claim loops that sets the throughput floor</span></li>
+            <li><a href="/echomq/queue">EchoMQ &#183; the Queue</a><span class="rs">the scaling layer in depth</span></li>
+            <li><a href="/bcs/bus">BCS &#183; the Bus</a><span class="rs">the fair-lanes architecture the figures draw from</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/flow-control/worker-concurrency"><span class="pk">prev</span>&#8592; R6.05 &#183; Worker concurrency</a>
+      <a class="pgx" href="/redis-patterns/flow-control"><span class="pk">up</span>R6 &#183; Flow Control &amp; Scale &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/redis-patterns/flow-control/rate-limiting">R6.01 &#183; Rate limiting</a>
+        <a href="/redis-patterns/flow-control/fairness">R6.02 &#183; Fairness under load</a>
+        <a href="/redis-patterns/flow-control/groups">R6.03 &#183; Groups</a>
+        <a href="/redis-patterns/flow-control/batches">R6.04 &#183; Batches</a>
+        <a href="/redis-patterns/flow-control/worker-concurrency">R6.05 &#183; Worker concurrency</a>
+        <a href="/redis-patterns/flow-control/workshop">R6.06 &#183; Workshop</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the pipeline — four gates on the bus (pure lookup over a fixed dataset) ---------- */
+  // A guess or notification flows through four gates left to right, each an R6 technique on a real codemojex
+  // surface. Selecting a gate highlights it and names its module + the real surface. Pure over the selected key.
+  var GATES = {
+    rate: { name: 'R6.01 rate — the token bucket', surface: 'Codemojex.RateLimiter.take/2 — a token bucket sized for Telegram (global ~30/s, per-chat ~1/s); :ok sends, {:wait, ms} re-enqueues with EchoMQ.Jobs.enqueue_in/5 and acks', note: 'the ceiling: over budget is deferred, never dropped — and the server-side emq:{cm}:limiter counter is one budget across every worker' },
+    lane: { name: 'R6.02 fair lane — one lane per player', surface: 'Codemojex.Guesses.submit/3 enqueues each guess on the player’s PLR lane via EchoMQ.Lanes.enqueue/5; notifications ride a fair lane per chat (Codemojex.Notifier)', note: 'one keyboard masher cannot starve the field — service spreads across lanes by rotation, never a number stapled to the work' },
+    ring: { name: 'R6.03 ring + group ceiling — the lane is the tenant', surface: 'EchoMQ.Lanes.claim/3 rotates the ring one step then serves; Codemojex.Guesses.pause/1, resume/1, depth/1 give per-tenant control over EchoMQ.Lanes', note: 'pause one player’s lane while the rest of the field runs; the ring skips a paused lane' },
+    pool: { name: 'R6.05 consumer pool — the throughput floor', surface: 'a pool of EchoMQ.Consumer loops drains the queues — Codemojex.ScoreWorker (cm), NotificationWorker (cm.notify), CommandWorker (cm.bot.commands); each claim one ZPOPMIN', note: 'pool width is real parallelism on the wire; R6.04’s bclaim/3 amortizes the per-claim fetch by serving k heads on one lease' }
+  };
+  function describeGate(key) {
+    var G = GATES[key];
+    return G.name + ' — surface: ' + G.surface + '. ' + G.note + '.';
+  }
+  var pipe = document.getElementById('pipe');
+  var gateButtons = document.querySelectorAll('#pipeSel button');
+  var pipeOut = document.getElementById('pipeOut');
+  function selectGate(key) {
+    gateButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-gate') === key ? 'true' : 'false');
+    });
+    if (pipe) {
+      pipe.classList.toggle('focus', !!key);
+      pipe.querySelectorAll('.gate').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-gate') === key);
+      });
+    }
+    if (pipeOut) {
+      pipeOut.innerHTML = key
+        ? '<span class="rk">readout &#183;</span> ' + describeGate(key)
+        : '<span class="rk">readout &#183;</span> Select a gate to read its R6 technique and the real codemojex surface that applies it. Traffic enters left, settles right; over-budget sends branch down to a durable deferral.';
+    }
+  }
+  gateButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-gate');
+      selectGate(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (pipe) {
+    pipe.querySelectorAll('.gate').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectGate(g.getAttribute('data-gate')); });
+      g.addEventListener('mouseleave', function () { selectGate(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: the five gates stacked — running codemojex surface (pure lookup over a fixed dataset) ---------- */
+  var STAGES = {
+    rate:  { name: 'rate (R6.01)', surface: 'Codemojex.RateLimiter.take/2 — a token bucket (global ~30/s, per-chat ~1/s); over budget, re-enqueue via EchoMQ.Jobs.enqueue_in/5 and ack', note: 'the ceiling — deferred, not dropped; the engine’s emq:{cm}:limiter counter is the shared work-side cap' },
+    fair:  { name: 'fairness (R6.02)', surface: 'Codemojex.Guesses.submit/3 — Lanes.enqueue(Bus.conn(), "cm", player, job, payload); the PLR is the lane group', note: 'the ring rotates across players; one keyboard masher cannot starve the field — no numeric priority' },
+    group: { name: 'groups (R6.03)', surface: 'Codemojex.Guesses.pause/1, resume/1, depth/1 — each delegating to EchoMQ.Lanes.pause/resume/depth over the cm queue', note: 'the lane is the tenant; one player held while the others run, without touching the rest of the queue' },
+    batch: { name: 'batches (R6.04, pattern-level)', surface: 'EchoMQ.Jobs.enqueue_many/4 (per-item idempotent EVALSHA through EchoWire.Pipe, one flush, a verdict per item) + EchoMQ.Lanes.bclaim/3 (k heads, one shared TIME lease)', note: 'codemojex enqueues one guess per submit/3 today; the batch path is the burst option, not all-or-nothing' },
+    pool:  { name: 'concurrency (R6.05)', surface: 'a pool of EchoMQ.Consumer loops: Codemojex.ScoreWorker (cm), NotificationWorker (cm.notify), CommandWorker (cm.bot.commands); each claim one ZPOPMIN, parked on a wake key', note: 'pool width is real parallelism on the wire; the per-claim fetch is the ceiling, the pool is the floor' }
+  };
+  function describeStage(key) {
+    var S = STAGES[key];
+    return key + ' (' + S.name + ') — surface: ' + S.surface + '. ' + S.note + '.';
+  }
+  var stagestack = document.getElementById('stagestack');
+  var stageButtons = document.querySelectorAll('#stageSel button');
+  var stageOut = document.getElementById('stageOut');
+  function selectStage(key) {
+    stageButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-stage') === key ? 'true' : 'false');
+    });
+    if (stagestack) {
+      stagestack.classList.toggle('focus', !!key);
+      stagestack.querySelectorAll('.layer').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-stage') === key);
+      });
+    }
+    if (stageOut) {
+      stageOut.innerHTML = key
+        ? '<span class="rk">readout &#183;</span> ' + describeStage(key)
+        : '<span class="rk">readout &#183;</span> Select a technique. Rate caps the budget, fairness spreads the rota, groups give per-tenant control, the batch path bundles a burst, and the consumer pool drains the queues &#8212; one bus, five gates.';
+    }
+  }
+  stageButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-stage');
+      selectStage(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+  });
+  if (stagestack) {
+    stagestack.querySelectorAll('.layer').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectStage(g.getAttribute('data-stage')); });
+      g.addEventListener('mouseleave', function () { selectStage(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns);
+      put('st-snow', info.snow);
+      put('st-node', info.node);
+      put('st-seq', info.seq);
+      put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

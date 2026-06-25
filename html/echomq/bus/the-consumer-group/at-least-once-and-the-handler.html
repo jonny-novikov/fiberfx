@@ -1,0 +1,746 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>At-least-once and the handler · EchoMQ, In Depth · jonnify</title>
+<meta name="description" content="The at-least-once handler of EchoMQ.StreamConsumer: fun(%{id, payload, attempts, group}) :: :ok | {:error, reason} — byte-identical in shape to the job Consumer's handler, one portable handler across job and stream. id is the branded record id (the Stream.append/4 receipt); attempts is the XPENDING per-entry delivery-count, NOT a handler-failure count, so a poison threshold calibrates. On :ok the entry is XACKed; on {:error, _} or a raise it is left un-acked and survives in the PEL. The order-theorem PEL exception: a re-claimed entry returns out of real-time order, its branded id older than entries already handled — the irreducible cost of at-least-once, so the handler must be idempotent with the branded id as the dedup key. Real echo_mq code, no Lua.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0a0e1a; --ink-2:#10162b; --ink-3:#161d38;
+  --cream:#ece4d0; --cream-soft:#d7cfb9; --cream-dim:#a39c89;
+  --gold:#d4a85a; --gold-bright:#f0cd7f;
+  --blue:#5a87c4; --blue-bright:#9fc0ea;
+  --sage:#7ba387; --sage-bright:#a7c9b1;
+  --burgundy:#c4504c;
+  --elixir:#b39ddb; --elixir-bright:#cdb8f0;
+  --redis:#d6584f; --redis-bright:#f2948c;
+  --echo:#2aa198; --echo-bright:#6fdccf;
+  --line:#2a3252;
+  --serif-display:"Cormorant Garamond", Georgia, "Times New Roman", serif;
+  --serif:"PT Serif", Georgia, serif;
+  --sans:"Manrope", ui-sans-serif, system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --measure:68ch;
+}
+*{box-sizing:border-box}
+html{font-size:16px;-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; color:var(--cream); background:var(--ink);
+  font-family:var(--serif);
+  font-size:clamp(1.02rem, 0.97rem + 0.28vw, 1.18rem);
+  line-height:1.62; letter-spacing:.005em;
+  background-image:
+    radial-gradient(1100px 560px at 50% -8%, rgba(42,161,152,.13), transparent 60%),
+    radial-gradient(820px 460px at 88% 4%, rgba(212,168,90,.07), transparent 56%),
+    radial-gradient(900px 700px at 8% 22%, rgba(90,135,196,.06), transparent 60%);
+  background-attachment:fixed;
+}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  box-shadow:inset 0 0 240px 40px rgba(4,6,14,.55)}
+.skip{position:absolute;left:-9999px;top:0;background:var(--gold);color:var(--ink);
+  padding:.6rem 1rem;border-radius:0 0 10px 0;font-family:var(--sans);font-weight:600;z-index:50}
+.skip:focus{left:0}
+::selection{background:var(--gold);color:var(--ink)}
+img,svg{max-width:100%}
+a{color:var(--gold-bright);text-decoration:none}
+a:hover{color:var(--cream)}
+
+/* ---- layout ---- */
+.wrap{max-width:1080px;margin:0 auto;padding:0 clamp(1.1rem,3vw,2.4rem);position:relative;z-index:1}
+main{display:block}
+section{padding:clamp(2.6rem,6vw,4.6rem) 0}
+section + section{border-top:1px solid var(--line)}
+.prose{max-width:var(--measure)}
+.prose p{margin:0 0 1.05rem}
+
+/* ---- type ---- */
+h1,h2,h3,h4{font-family:var(--serif-display);font-weight:600;line-height:1.04;
+  letter-spacing:-.01em;color:var(--cream);margin:0 0 .5em}
+h1{font-size:clamp(2.7rem, 1.9rem + 4.2vw, 5.1rem);font-weight:600}
+h1 .ex{color:var(--echo-bright);font-style:italic;font-weight:500}
+h2{font-size:clamp(1.85rem, 1.3rem + 1.9vw, 2.7rem)}
+h3{font-size:clamp(1.3rem, 1.1rem + .6vw, 1.6rem)}
+.eyebrow{font-family:var(--sans);font-weight:600;font-size:.72rem;
+  text-transform:uppercase;letter-spacing:.24em;color:var(--gold);
+  display:inline-flex;align-items:center;gap:.6rem;margin:0 0 1rem}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gold);display:inline-block}
+.lede{font-family:var(--serif-display);font-weight:500;font-style:italic;
+  font-size:clamp(1.25rem, 1rem + 1vw, 1.7rem);line-height:1.32;color:var(--cream-soft);
+  max-width:46ch;margin:0 0 1.6rem}
+.kicker{font-family:var(--serif);color:var(--cream);max-width:var(--measure)}
+strong{color:var(--cream);font-weight:700}
+
+/* ---- site header / footer ---- */
+.site{position:sticky;top:0;z-index:30;backdrop-filter:blur(9px);
+  background:rgba(10,14,26,.74);border-bottom:1px solid var(--line)}
+.site .wrap{display:flex;align-items:center;justify-content:space-between;
+  height:58px;font-family:var(--sans)}
+.brand{display:inline-flex;align-items:baseline;gap:.5rem;font-family:var(--serif-display);
+  font-size:1.32rem;font-weight:600;color:var(--cream);letter-spacing:.01em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);
+  display:inline-block;transform:translateY(-2px)}
+.brand .sub{font-family:var(--sans);font-size:.66rem;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--cream-dim)}
+.site nav a{font-size:.82rem;color:var(--cream-soft);letter-spacing:.04em}
+.route-tag{font-family:var(--mono);font-size:.78rem;color:var(--gold);
+  border:1px solid var(--line);border-radius:999px;padding:.2rem .7rem}
+.route-tag a{color:var(--gold);text-decoration:none}
+.route-tag a:hover{color:var(--gold-bright);text-decoration:underline}
+.route-tag .rsep{color:var(--cream-dim);opacity:.6;margin:0 .1em}
+.route-tag .rcur{color:var(--gold-bright)}
+.site-foot{border-top:1px solid var(--line);background:rgba(8,11,22,.6);
+  font-family:var(--sans);color:var(--cream-dim);font-size:.86rem}
+
+/* ---- hero ---- */
+.hero{padding-top:clamp(3rem,8vw,6rem)}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:2.4rem;align-items:center;padding-top:clamp(1.5rem,5vw,3.5rem)}
+.hero-split .hero{padding-top:0}
+@media (max-width:860px){.hero-split{grid-template-columns:1fr;gap:1.8rem}}
+.crumbs{font-family:var(--sans);font-size:.8rem;color:var(--cream-dim);
+  display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:0 0 1.1rem}
+.crumbs a{color:var(--cream-soft)}
+.crumbs .sep{opacity:.45}
+.crumbs .here{color:var(--gold)}
+.toc-mini{display:flex;flex-wrap:wrap;gap:.5rem;font-family:var(--sans);font-size:.82rem;margin:1.4rem 0 0}
+.toc-mini a{border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem;color:var(--cream-soft)}
+.toc-mini a:hover{border-color:var(--gold);color:var(--cream)}
+
+/* ---- figures / takeaways ---- */
+.fig{margin:1.8rem 0 0;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(180deg,rgba(16,22,43,.6),rgba(10,14,26,.35));
+  padding:clamp(1rem,2.4vw,1.6rem)}
+.fig svg{display:block;width:100%;height:auto}
+.take{margin:1.1rem 0 0;font-family:var(--serif-display);font-style:italic;
+  font-size:1.18rem;line-height:1.35;color:var(--cream-soft);
+  padding-left:1rem;border-left:2px solid var(--gold)}
+.note{font-family:var(--sans);font-size:.88rem;color:var(--cream-dim);
+  border-left:2px solid var(--blue);padding-left:.95rem;margin:1.5rem 0 0}
+
+/* ---- interactive shells ---- */
+.solid-select{display:flex;flex-wrap:wrap;gap:.5rem}
+.solid-select button{font-family:var(--sans);font-weight:600;font-size:.84rem;
+  cursor:pointer;padding:.5rem .9rem;border-radius:10px;color:var(--cream-soft);
+  background:var(--ink-2);border:1px solid var(--line);transition:.16s ease}
+.solid-select button:hover{border-color:var(--cream-dim)}
+.solid-select button.active{color:var(--ink);background:var(--cream-soft);border-color:transparent;font-weight:700}
+.solid-select button.active[data-c="blue"]{background:var(--blue-bright)}
+.solid-select button.active[data-c="sage"]{background:var(--sage-bright)}
+.solid-select button.active[data-c="gold"]{background:var(--gold-bright)}
+.solid-select button.active[data-c="echo"]{background:var(--echo-bright)}
+.solid-select button.active[data-c="red"]{background:var(--redis-bright)}
+.geo-readout{font-family:var(--mono);font-size:.95rem;color:var(--gold-bright);
+  background:var(--ink);border:1px solid var(--line);border-radius:10px;
+  padding:.7rem .9rem;margin-top:1rem;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.geo-readout .dim{color:var(--cream-dim)}
+.geo-readout b{color:var(--echo-bright)}
+.geo-readout .bad{color:var(--redis-bright)}
+.geo-readout .ok{color:var(--sage-bright)}
+.controls{display:flex;flex-wrap:wrap;gap:1.4rem 2rem;align-items:center;margin-bottom:1rem}
+.ctl{display:flex;flex-direction:column;gap:.35rem;font-family:var(--sans)}
+.ctl label{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cream-dim)}
+
+/* ---- verdict svg ---- */
+.verd-mv rect{transition:fill .18s ease,stroke .18s ease,opacity .18s ease}
+
+/* ---- code ---- */
+pre.code{font-family:var(--mono);font-size:.92rem;line-height:1.6;color:var(--cream);
+  background:var(--ink);border:1px solid var(--line);border-radius:12px;
+  padding:1rem 1.1rem;margin:1rem 0 0;overflow-x:auto;white-space:pre}
+pre.code .op{color:var(--echo-bright)}
+pre.code .fn{color:var(--cream)}
+pre.code .rdx{color:var(--echo-bright);background:rgba(42,161,152,.18);border-radius:4px;padding:0 .2em}
+pre.code .res{color:var(--gold-bright)}
+pre.code .str{color:var(--sage-bright)}
+pre.code .cmt{color:var(--cream-dim)}
+code.inl{font-family:var(--mono);font-size:.9em;color:var(--echo-bright);
+  background:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:.05em .4em}
+
+/* ---- bridge ---- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:1rem;align-items:stretch;margin:1.7rem 0 0}
+.bridge .cell{border:1px solid var(--line);border-radius:14px;padding:1rem 1.1rem;
+  background:linear-gradient(180deg,rgba(16,22,43,.55),rgba(10,14,26,.3))}
+.bridge .cell .lbl{font-family:var(--sans);font-size:.64rem;letter-spacing:.18em;
+  text-transform:uppercase;margin:0 0 .55rem;color:var(--cream-dim)}
+.bridge .cell.idea .lbl{color:var(--gold)}
+.bridge .cell.elix .lbl{color:var(--echo-bright)}
+.bridge .cell p{margin:0;font-family:var(--serif);font-size:.98rem;color:var(--cream-soft)}
+.bridge .arrow{align-self:center;font-family:var(--serif-display);font-size:1.7rem;color:var(--cream-dim)}
+@media (max-width:760px){
+  .bridge{grid-template-columns:1fr;gap:.7rem}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+
+/* ---- references ---- */
+.refs{margin-top:1.4rem;border-top:1px solid var(--line);padding-top:1.3rem;display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+@media(max-width:680px){.refs{grid-template-columns:1fr}}
+.refs h3{font-family:var(--sans);font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.18em;color:var(--cream-dim);margin:1.3rem 0 .6rem}
+.refs h3:first-child{margin-top:0}
+.refs ul{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.refs li{font-family:var(--sans);font-size:.9rem;color:var(--cream-soft);line-height:1.45}
+.refs a{color:var(--sage-bright)}
+.refs a:hover{color:var(--cream)}
+.refs em{color:var(--cream-dim);font-style:italic}
+.refs code{font-family:var(--mono);font-size:.86em;color:var(--gold-bright)}
+
+/* ---- pager ---- */
+.pager{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;
+  align-items:center;font-family:var(--sans)}
+.pager .p-left{color:var(--cream-dim);font-size:.9rem}
+.pager .spacer{flex:1}
+.btn{font-family:var(--sans);font-weight:600;font-size:.92rem;letter-spacing:.02em;
+  display:inline-flex;align-items:center;gap:.55rem;padding:.72rem 1.25rem;border-radius:12px;
+  border:1px solid var(--gold);color:var(--ink);background:var(--gold);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease}
+.btn:hover{background:var(--gold-bright);color:var(--ink);transform:translateY(-2px);
+  box-shadow:0 10px 30px -12px rgba(212,168,90,.6)}
+.btn.ghost{background:transparent;color:var(--gold-bright);border-color:var(--line)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--cream);box-shadow:none}
+
+/* ---- branded stamp ---- */
+.stamp{font-family:var(--mono);font-size:.8rem;color:var(--cream-dim);
+  cursor:pointer;border:1px solid var(--line);border-radius:10px;padding:.45rem .7rem;
+  background:var(--ink);user-select:none}
+.stamp:hover{border-color:var(--gold)}
+.stamp .id{color:var(--gold-bright)}
+.stamp .panel{display:none;margin-top:.6rem;color:var(--cream-soft);
+  grid-template-columns:auto 1fr;gap:.25rem .9rem;font-size:.76rem}
+.stamp.open .panel{display:grid}
+.stamp .panel dt{color:var(--cream-dim)}
+.stamp .panel dd{margin:0;color:var(--cream)}
+
+/* ---- reveal ---- */
+html.js .reveal{opacity:0;transform:translateY(14px)}
+html.js .reveal.in{opacity:1;transform:none;transition:opacity .7s ease, transform .7s ease}
+@media (prefers-reduced-motion: reduce){html.js .reveal,html.js .reveal.in{opacity:1;transform:none;transition:none}}
+
+@media (max-width:760px){.site nav{display:none}.lede{max-width:none}.take{font-size:1.08rem}}
+
+/* ---- footer cols ---- */
+.foot-cols{display:grid;grid-template-columns:1.7fr 1fr 1fr;gap:1.6rem 2rem}
+@media (max-width:860px){.foot-cols{grid-template-columns:1fr;gap:1.7rem}}
+.foot-cols h4{font-family:var(--sans);font-size:.72rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);margin:0 0 .9rem}
+.foot-cols a,.foot-cols .it{display:block;font-family:var(--sans);font-size:.92rem;color:var(--cream-soft);text-decoration:none;margin:.46rem 0;line-height:1.4}
+.foot-cols a:hover{color:var(--cream)}
+.foot-cols .it{color:var(--cream-dim)}
+.foot-cols .fbrand{font-family:var(--serif-display);font-size:1.6rem;color:var(--cream);text-decoration:none}
+.foot-cols .fbrand .dot{width:7px;height:7px;border-radius:50%;background:var(--gold);display:inline-block;margin-left:.3rem}
+.foot-cols .tag{font-family:var(--serif);font-size:.96rem;color:var(--cream-dim);line-height:1.5;max-width:34ch;margin:.9rem 0 0}
+.foot-bottom{display:flex;flex-wrap:wrap;gap:1rem;justify-content:space-between;align-items:center;margin-top:2.4rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+.foot-bottom .cr{font-family:var(--sans);font-size:.82rem;color:var(--cream-dim)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the page</a>
+
+<header class="site">
+  <div class="wrap">
+    <a class="brand" href="/echomq">jonnify<span class="dot"></span><span class="sub">echomq</span></a>
+    <nav>
+      <a href="/echomq">Home</a>
+      <span class="route-tag"><span class="rsep">/</span><a href="/echomq">echomq</a><span class="rsep">/</span><a href="/echomq/bus">bus</a><span class="rsep">/</span><a href="/echomq/bus/the-consumer-group">the-consumer-group</a><span class="rsep">/</span><span class="rcur">at-least-once-and-the-handler</span></span>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <div class="hero-split">
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb">
+        <a href="/echomq">EchoMQ</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus">The Bus</a>
+        <span class="sep">/</span>
+        <a href="/echomq/bus/the-consumer-group">The consumer group</a>
+        <span class="sep">/</span>
+        <span class="here">At-least-once &amp; the handler</span>
+      </nav>
+      <p class="eyebrow">The consumer group &middot; dive 03</p>
+      <h1>At-least-once <span class="ex">&amp; the handler</span></h1>
+      <p class="lede">Ack on success, leave it on failure &mdash; and accept that some entries arrive twice, so make the handler idempotent.</p>
+      <p class="kicker">A consumer group makes one delivery guarantee and refuses to overstate it: <strong>at-least-once</strong>.
+        Every entry is delivered at least once; under crash and reclaim, some are delivered <strong>more</strong> than once.
+        Exactly-once is <strong>not</strong> claimed. That single honest choice shapes the handler, the ack, and the one
+        rule the caller must obey &mdash; <strong>be idempotent</strong>. The handler is the exact mirror of the job
+        consumer's: <code class="inl">:ok</code> acks, <code class="inl">{:error, reason}</code> or a raise leaves the entry
+        un-acked to be redelivered. Pick a verdict on the right to see what the consumer does to the entry.</p>
+      <div class="toc-mini" aria-label="On this page">
+        <a href="#handler">The exact-mirror handler</a>
+        <a href="#verdict">Ack, or leave it</a>
+        <a href="#exception">The order-theorem exception</a>
+        <a href="#bridge">Pattern &amp; implementation</a>
+        <a href="#refs">References</a>
+      </div>
+    </section>
+
+    <figure class="fig" aria-labelledby="verdTitle">
+      <h4 id="verdTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">The handler verdict &middot; ack or leave</h4>
+      <svg viewBox="0 0 460 250" role="img" aria-label="The handler verdict drives one decision. An entry is delivered to the handler as a map of id, payload, attempts, and group. On an :ok verdict the entry is XACKed and retires from the PEL. On an {:error, reason} verdict, or a raise that converts to an error, the entry is left un-acked and survives in the PEL, redelivered later by the XAUTOCLAIM beat or the next PEL-drain.">
+        <!-- the delivery -->
+        <rect x="150" y="12" width="160" height="44" rx="9" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+        <text x="230" y="30" text-anchor="middle" font-family="Manrope,sans-serif" font-size="10.5" fill="#ece4d0">handler is called</text>
+        <text x="230" y="46" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#a39c89">%{id, payload, attempts, group}</text>
+        <!-- the fork -->
+        <g stroke="#46507a" fill="none" stroke-width="1.3">
+          <path d="M200 56 L120 96" marker-end="url(#ah3)"></path>
+          <path d="M260 56 L340 96" marker-end="url(#ah3)"></path>
+        </g>
+        <defs>
+          <marker id="ah3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+
+        <!-- :ok -> XACK -->
+        <g class="verd-mv" id="v-ok">
+          <rect x="30" y="96" width="170" height="58" rx="9" fill="rgba(123,163,135,.14)" stroke="#7ba387"></rect>
+          <text x="115" y="116" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#a7c9b1">:ok</text>
+          <text x="115" y="132" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">XACK &mdash; retires from the PEL</text>
+          <text x="115" y="146" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8" fill="#a39c89">done; never seen again</text>
+        </g>
+
+        <!-- {:error,_} / raise -> leave -->
+        <g class="verd-mv" id="v-err">
+          <rect x="260" y="96" width="170" height="58" rx="9" fill="rgba(196,80,76,.13)" stroke="#c4504c"></rect>
+          <text x="345" y="116" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="11" fill="#f2948c">{:error, reason} / raise</text>
+          <text x="345" y="132" text-anchor="middle" font-family="Manrope,sans-serif" font-size="9.5" fill="#ece4d0">left un-acked &mdash; stays in PEL</text>
+          <text x="345" y="146" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8" fill="#a39c89">redelivered later</text>
+        </g>
+
+        <!-- redelivery loops back -->
+        <path d="M345 154 L345 184 L230 184" stroke="#c4504c" fill="none" stroke-width="1.2" stroke-dasharray="3 2" marker-end="url(#ah3)"></path>
+        <rect x="120" y="170" width="220" height="30" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="230" y="189" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8.5" fill="#9fc0ea">redelivered by the XAUTOCLAIM beat or the next PEL-drain</text>
+
+        <line x1="30" y1="216" x2="430" y2="216" stroke="#2a3252" stroke-dasharray="4 3"></line>
+        <text x="230" y="234" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="9.5" fill="#6fdccf">at-least-once: a raise converts to {:error, _} and the loop SURVIVES</text>
+      </svg>
+      <div class="geo-readout" id="verdOut" aria-live="polite">Pick a verdict below to see what the consumer does to the entry.</div>
+    </figure>
+  </div>
+
+  <section id="handler">
+    <h2>The handler is the exact mirror of the job consumer's</h2>
+    <div class="prose">
+      <p>A stream consumer's handler has the <strong>same shape</strong> as the job <code class="inl">Consumer</code>'s
+        handler &mdash; by design, so one portable handler works across both job and stream:
+        <code class="inl">fun(%{id, payload, attempts, group}) :: :ok | {:error, reason}</code>.</p>
+      <p>The fields carry the whole delivery: <strong><code class="inl">id</code></strong> is the <strong>branded record
+        id</strong> &mdash; the <code class="inl">EchoMQ.Stream.append/4</code> receipt from the stream-log module,
+        recovered from the entry's reserved <code class="inl">id</code> field, so the same 14-byte id the writer minted is
+        the one the handler sees; <strong><code class="inl">payload</code></strong> is the remaining fields as a map;
+        <strong><code class="inl">group</code></strong> is the consumer-group name; and
+        <strong><code class="inl">attempts</code></strong> is the <code class="inl">XPENDING</code> <strong>per-entry
+        delivery-count</strong> &mdash; how many times <strong>this entry</strong> has been delivered to a consumer. A
+        fresh <code class="inl">&gt;</code> delivery is <code class="inl">1</code>; a re-claim increments it.</p>
+      <p>The <code class="inl">attempts</code> distinction is load-bearing and <strong>specced, not assumed</strong>: it
+        counts <strong>deliveries</strong>, not handler <strong>failures</strong>. A poison entry &mdash; one that crashes
+        every handler that touches it &mdash; has its delivery-count climb each time it is re-claimed, so a poison
+        threshold <code class="inl">attempts &gt;= N</code> calibrates correctly against <em>how many times we've tried to
+        deliver this</em>, exactly the quantity you want to threshold on.</p>
+    </div>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.StreamConsumer</span>
+<span class="cmt"># Settle ONE entry: the branded id is the stored "id" field (the Stream.append/4 receipt);</span>
+<span class="cmt"># the payload is the remaining fields; `attempts` is the XPENDING per-entry delivery-count</span>
+<span class="cmt"># (NOT a handler-failure count). A raising handler converts to {:error, reason} and the</span>
+<span class="cmt"># loop SURVIVES. On :ok -> XACK; on {:error, _} -> LEAVE un-acked (it survives in the PEL).</span>
+<span class="op">defp</span> <span class="fn">settle</span>(s, [xadd_id, kv]) <span class="op">when</span> is_list(kv) <span class="op">do</span>
+  {branded, payload} = <span class="fn">parse_fields</span>(kv)
+  attempts = <span class="fn">delivery_count</span>(s, xadd_id)
+
+  verdict =
+    <span class="op">try</span> <span class="op">do</span>
+      s.handler.(%{<span class="str">id:</span> branded, <span class="str">payload:</span> payload, <span class="str">attempts:</span> attempts, <span class="str">group:</span> s.group})
+    <span class="op">rescue</span>
+      e -&gt; {<span class="str">:error</span>, Exception.<span class="fn">message</span>(e)}
+    <span class="op">catch</span>
+      <span class="str">:exit</span>, reason -&gt; {<span class="str">:error</span>, <span class="str">"exit: "</span> &lt;&gt; inspect(reason)}
+      <span class="str">:throw</span>, value -&gt; {<span class="str">:error</span>, <span class="str">"throw: "</span> &lt;&gt; inspect(value)}
+    <span class="op">end</span>
+
+  <span class="op">case</span> verdict <span class="op">do</span>
+    <span class="str">:ok</span> -&gt;
+      <span class="cmt"># the genuinely-pending entry retires from the PEL.</span>
+      _ = Connector.<span class="fn">command</span>(s.conn, [<span class="str">"XACK"</span>, s.key, s.group, xadd_id])
+      <span class="str">:ok</span>
+
+    {<span class="str">:error</span>, _reason} -&gt;
+      <span class="cmt"># left un-acked: it survives in the PEL, re-delivered by the XAUTOCLAIM</span>
+      <span class="cmt"># beat or the next PEL-drain (the at-least-once posture).</span>
+      <span class="str">:ok</span>
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+
+    <p class="take">One portable handler across job and stream: the same <code class="inl">:ok | {:error, reason}</code>
+      contract, the same branded <code class="inl">id</code>, the same delivery-count &mdash; the only difference is the
+      claim path that fed it and the settle that follows.</p>
+  </section>
+
+  <section id="verdict">
+    <h2>Ack, or leave it</h2>
+    <div class="prose">
+      <p>The verdict drives one decision: ack, or don't. On <code class="inl">:ok</code> the entry is
+        <code class="inl">XACK</code>ed, retiring it from the PEL &mdash; it is done, no consumer will see it again. On
+        <code class="inl">{:error, reason}</code> or a raise it is <strong>left un-acked</strong>, surviving in the PEL to
+        be redelivered. Pick a verdict and see what happens to the entry, and to the loop. The model is the real
+        <code class="inl">settle/2</code> case above.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="vSelTitle">
+      <h4 id="vSelTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A verdict &middot; the entry's fate</h4>
+      <div class="controls">
+        <div class="solid-select" id="vSel" role="group" aria-label="Pick a handler verdict">
+          <button type="button" data-v="ok" data-c="sage" class="active" aria-pressed="true">:ok</button>
+          <button type="button" data-v="err" data-c="red" aria-pressed="false">{:error, reason}</button>
+          <button type="button" data-v="raise" data-c="red" aria-pressed="false">a raise</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 96" role="img" aria-label="A handler verdict and the entry's fate: whether it is acked or left in the PEL, and whether the loop survives.">
+        <rect x="14" y="14" width="220" height="68" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="124" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">the entry</text>
+        <text id="v-fate" x="124" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#6fdccf">·</text>
+        <rect x="246" y="14" width="220" height="68" rx="8" fill="rgba(16,22,43,.6)" stroke="#2a3252"></rect>
+        <text x="356" y="34" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="10" fill="#a39c89">the loop</text>
+        <text id="v-loop" x="356" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" fill="#6fdccf">·</text>
+      </svg>
+      <div class="geo-readout" id="vOut" aria-live="polite"></div>
+    </figure>
+    <p class="note">A bug in one handler call costs that entry a re-delivery, not the whole consumer: the
+      <code class="inl">try/rescue/catch</code> converts any raise, exit, or throw into a typed
+      <code class="inl">{:error, reason}</code>, and the loop survives to handle the next entry. The
+      <code class="inl">delivery_count</code> read is itself defensive &mdash; if the <code class="inl">XPENDING</code> row
+      is absent (a peer already acked it), it defaults to <code class="inl">1</code> rather than minting on
+      <code class="inl">nil</code>.</p>
+
+    <pre class="code"><span class="cmt"># echo_mq — EchoMQ.StreamConsumer</span>
+<span class="cmt"># The XPENDING per-entry delivery-count: XPENDING &lt;key&gt; &lt;group&gt; &lt;id&gt; &lt;id&gt; 1 answers</span>
+<span class="cmt"># [[id, consumer, idle, delivery_count]]; the 4th field is how many times THIS entry has</span>
+<span class="cmt"># been delivered. A fresh `>` delivery is 1; a re-claim increments it. Defaults to 1 if</span>
+<span class="cmt"># the row is absent (a race — the entry already acked by a peer), never on nil.</span>
+<span class="op">defp</span> <span class="fn">delivery_count</span>(s, xadd_id) <span class="op">do</span>
+  <span class="op">case</span> Connector.<span class="fn">command</span>(s.conn, [<span class="str">"XPENDING"</span>, s.key, s.group, xadd_id, xadd_id, <span class="str">"1"</span>]) <span class="op">do</span>
+    {<span class="str">:ok</span>, [[^xadd_id, _consumer, _idle, count] | _]} -&gt; <span class="fn">to_int</span>(count)
+    _ -&gt; 1
+  <span class="op">end</span>
+<span class="op">end</span></pre>
+  </section>
+
+  <section id="exception">
+    <h2>The order-theorem PEL exception</h2>
+    <div class="prose">
+      <p>The stream-log module proved a theorem: <strong>stream order == id sort == mint order</strong>. Under a group,
+        that theorem holds for <strong>new</strong> entries &mdash; <code class="inl">XREADGROUP … &gt;</code> hands them in
+        mint order, the writer's guarantee untouched. But a <strong>re-claimed</strong> entry breaks <strong>real-time
+        delivery order</strong>: it was minted <em>before</em> entries already handled, so when
+        <code class="inl">XAUTOCLAIM</code> (or a PEL-drain) returns it, its branded id is <strong>older &mdash; lower</strong>
+        &mdash; than ids the handler has already seen. A newer entry was delivered; then an older one arrives.</p>
+      <p>This is the <strong>irreducible cost of at-least-once</strong>. There is no way to have crash-recovery <em>and</em>
+        perfect real-time ordering on a distributed read &mdash; recovering a dead peer's old work necessarily replays it
+        after newer work moved on. The writer's theorem is not violated (the <em>log</em> is still id-ordered); what a
+        re-claim gives up is the <em>delivery</em> being in that order. Step the timeline below to watch a re-claimed
+        entry arrive out of order, and read why the branded id resolves it.</p>
+    </div>
+
+    <figure class="fig" aria-labelledby="exTitle">
+      <h4 id="exTitle" style="font-family:var(--sans);font-size:.8rem;letter-spacing:.16em;text-transform:uppercase;color:var(--cream-dim);margin:0 0 1rem">A delivery timeline &middot; step the re-claim</h4>
+      <div class="controls">
+        <div class="solid-select" id="exSel" role="group" aria-label="Step the delivery timeline">
+          <button type="button" data-t="0" data-c="echo" class="active" aria-pressed="true">1 · in mint order</button>
+          <button type="button" data-t="1" data-c="echo" aria-pressed="false">2 · a consumer dies</button>
+          <button type="button" data-t="2" data-c="echo" aria-pressed="false">3 · re-claim out of order</button>
+          <button type="button" data-t="3" data-c="echo" aria-pressed="false">∴ dedup by id</button>
+        </div>
+      </div>
+      <svg viewBox="0 0 480 150" role="img" aria-label="A delivery timeline. New entries arrive in mint order: an earlier id, then a later id. A consumer dies holding the earlier id, un-acked. After it goes idle, a peer re-claims the earlier id and delivers it AFTER the later id has already been handled — out of real-time order. Its branded id is lower than the last handled id, so an idempotent handler that tracks the highest applied id recognizes and dedups the stale replay.">
+        <line x1="20" y1="60" x2="460" y2="60" stroke="#2a3252" stroke-width="2"></line>
+        <text x="20" y="50" font-family="JetBrains Mono,monospace" font-size="7.5" fill="#5a6488">delivery time &rarr;</text>
+        <!-- entry A (earlier id) -->
+        <g id="ex-a">
+          <rect x="60" y="44" width="80" height="32" rx="6" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="100" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#ece4d0">EVT …a (older)</text>
+          <text x="100" y="70" text-anchor="middle" font-family="Manrope,sans-serif" font-size="7" fill="#a39c89">delivered to B</text>
+        </g>
+        <!-- entry C (later id) -->
+        <g id="ex-c">
+          <rect x="200" y="44" width="80" height="32" rx="6" fill="rgba(42,161,152,.14)" stroke="#2aa198"></rect>
+          <text x="240" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#ece4d0">EVT …c (newer)</text>
+          <text x="240" y="70" text-anchor="middle" font-family="Manrope,sans-serif" font-size="7" fill="#a7c9b1">handled &amp; acked</text>
+        </g>
+        <!-- B dies -->
+        <g id="ex-die">
+          <path d="M100 76 L100 100" stroke="#c4504c" fill="none" stroke-width="1.2" marker-end="url(#ah4)"></path>
+          <rect x="56" y="100" width="88" height="28" rx="6" fill="rgba(196,80,76,.13)" stroke="#c4504c" stroke-dasharray="3 2"></rect>
+          <text x="100" y="113" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8" fill="#f2948c">B dies, …a un-acked</text>
+          <text x="100" y="123" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a39c89">held in B's PEL</text>
+        </g>
+        <defs>
+          <marker id="ah4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="#5a6488"></path>
+          </marker>
+        </defs>
+        <!-- re-claim of A after C -->
+        <g id="ex-reclaim">
+          <rect x="340" y="44" width="96" height="32" rx="6" fill="rgba(90,135,196,.16)" stroke="#5a87c4"></rect>
+          <text x="388" y="58" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="8" fill="#9fc0ea">EVT …a re-claimed</text>
+          <text x="388" y="70" text-anchor="middle" font-family="Manrope,sans-serif" font-size="7" fill="#f2948c">AFTER …c — out of order</text>
+        </g>
+        <!-- dedup verdict -->
+        <g id="ex-dedup">
+          <rect x="300" y="100" width="160" height="34" rx="7" fill="rgba(123,163,135,.13)" stroke="#7ba387"></rect>
+          <text x="380" y="115" text-anchor="middle" font-family="Manrope,sans-serif" font-size="8.5" fill="#ece4d0">idempotent handler dedups</text>
+          <text x="380" y="127" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="7" fill="#a7c9b1">…a &lt; last-applied &rarr; safe to re-apply / skip</text>
+        </g>
+      </svg>
+      <div class="geo-readout" id="exOut" aria-live="polite"></div>
+    </figure>
+
+    <p class="take">So the rule the handler must obey: <strong>be idempotent.</strong> Handling the same entry twice, or an
+      older entry after a newer one, must be safe &mdash; the <strong>branded id is the dedup key</strong>, the BCS
+      newer-wins discipline applied at the read side: a handler that records &ldquo;highest id I've applied&rdquo; can
+      recognize and skip a stale replay, the same way <code class="inl">EchoStore.Coherence</code> decides a cache write by
+      comparing branded ids. The id that was the writer's receipt becomes the reader's dedup key.</p>
+
+    <div class="prose">
+      <p>This module reads the live tail. Two surfaces extend it, named here and built later: <strong>time-travel</strong>
+        (<code class="inl">EchoMQ.Stream.read_window/6</code> / <code class="inl">read_since/5</code> read the log by a
+        mint instant &mdash; a <code class="inl">DateTime</code> becomes an id range bound), and
+        <strong>retention &amp; the archive</strong> (<code class="inl">EchoMQ.Stream.trim/4</code> bounds the log, and
+        <code class="inl">EchoStore.StreamArchive.fold/3</code> folds what it trims into the durable Graft floor &mdash;
+        deep history without resident memory). The archive is the door to <a href="/echo-persistence">Echo Persistence</a>.</p>
+    </div>
+  </section>
+
+  <section id="bridge">
+    <h2>Pattern &amp; implementation</h2>
+    <div class="bridge">
+      <div class="cell idea">
+        <span class="lbl">the pattern (Redis Patterns Applied)</span>
+        <p>A consumer group delivers at-least-once; <code class="inl">XACK</code> retires a handled entry; an unacked
+          entry is re-delivered; consumers must be idempotent. <a href="/redis-patterns/streams-events">Streams &amp;
+          Events</a> teaches at-least-once delivery.</p>
+      </div>
+      <div class="arrow" aria-hidden="true">&rarr;</div>
+      <div class="cell elix">
+        <span class="lbl">the implementation (echo_mq)</span>
+        <p>The exact-mirror handler returns <code class="inl">:ok</code> (ack) or <code class="inl">{:error, _}</code>
+          (leave), a raise converts to an error and the loop survives, <code class="inl">attempts</code> is the
+          delivery-count so a poison threshold calibrates, and a re-claimed entry returns out of real-time order &mdash;
+          which is why the <strong>branded id is the idempotency dedup key</strong>.</p>
+      </div>
+    </div>
+    <p class="take">The pattern says: deliver at-least-once, so be idempotent. The implementation hands you the dedup key in
+      the delivery itself &mdash; the branded id that was the writer's receipt is the reader's newer-wins key.</p>
+  </section>
+
+  <section id="recap">
+    <h2>Recap &mdash; honest delivery, idempotent handler</h2>
+    <div class="prose">
+      <p>The handler is the exact mirror of the job consumer's: <code class="inl">:ok</code> acks, an error or a raise
+        leaves the entry un-acked, and the loop survives a raise. <code class="inl">attempts</code> is the per-entry
+        delivery-count, so a poison threshold calibrates. Delivery is at-least-once, so a re-claimed entry can arrive out
+        of real-time order &mdash; the irreducible cost &mdash; which makes the handler's one obligation idempotency, with
+        the branded id the dedup key. That completes the consumer group; the rest of the Bus reads the same log by a mint
+        instant and folds what it trims to disk.</p>
+    </div>
+    <p class="note">Next in the pillar: <strong>Time-travel</strong> &mdash; reading the log by a mint instant &mdash; and
+      <strong>retention &amp; the archive</strong>, the door to <a href="/echo-persistence">Echo Persistence</a>.</p>
+  </section>
+
+  <section id="refs">
+    <h2>References</h2>
+    <div class="prose">
+      <p>Where the at-least-once handler and the order-theorem exception are grounded, and the delivery semantics they rest on.</p>
+    </div>
+    <div class="refs">
+      <div>
+        <h3>Sources</h3>
+        <ul>
+          <li><a href="https://valkey.io/commands/xack/">Valkey &mdash; <em>XACK</em></a> &mdash; the acknowledgement that retires an entry from the PEL.</li>
+          <li><a href="https://valkey.io/commands/xpending/">Valkey &mdash; <em>XPENDING</em></a> &mdash; the per-entry delivery-count <code>attempts</code> carries.</li>
+          <li><a href="https://valkey.io/topics/streams-intro/">Valkey &mdash; <em>Introduction to Streams</em></a> &mdash; at-least-once delivery and the PEL.</li>
+          <li><a href="https://dl.acm.org/doi/10.1145/359545.359563">Lamport &mdash; <em>Time, Clocks, and the Ordering of Events</em></a> &mdash; the total order a re-claim necessarily disturbs.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Related in this course</h3>
+        <ul>
+          <li><a href="/echomq/bus/the-consumer-group">The consumer group</a> &mdash; the module this dive belongs to.</li>
+          <li><a href="/echomq/bus/the-consumer-group/recover-self-then-peers">Recover self, then peers</a> &mdash; the loop that re-delivers an un-acked entry.</li>
+          <li><a href="/echomq/bus/the-stream-log/the-order-theorem">The order theorem</a> &mdash; the writer's theorem the PEL exception bends.</li>
+          <li><a href="/echo-persistence">Echo Persistence</a> &mdash; the durable floor a trimmed stream history folds into.</li>
+          <li><a href="/bcs/bus">The Branded Component System &middot; the Bus</a> &mdash; the manuscript chapter this module realizes.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <nav class="pager" aria-label="Page navigation">
+      <a class="btn ghost" href="/echomq/bus/the-consumer-group/recover-self-then-peers"><span aria-hidden="true">&larr;</span>&nbsp; Recover self, then peers</a>
+      <span class="spacer"></span>
+      <a class="btn" href="/echomq/bus/the-consumer-group">Back to the module <span aria-hidden="true">&rarr;</span></a>
+    </nav>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap" style="display:block">
+    <div class="foot-cols">
+      <div>
+        <a class="fbrand" href="/echomq">jonnify<span class="dot"></span></a>
+        <p class="tag">EchoMQ, In Depth &mdash; the internals of the Valkey-native system you own.</p>
+      </div>
+      <div>
+        <h4>This module</h4>
+        <a href="/echomq/bus/the-consumer-group">The consumer group</a>
+        <a href="/echomq/bus/the-consumer-group/the-group-door">The group door</a>
+        <a href="/echomq/bus/the-consumer-group/recover-self-then-peers">Recover self, then peers</a>
+        <a href="/echomq/bus/the-consumer-group/at-least-once-and-the-handler">At-least-once &amp; the handler</a>
+      </div>
+      <div>
+        <h4>The course</h4>
+        <a href="/echomq">Course home</a>
+        <a href="/echomq/bus">The Bus</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span class="cr">&copy; jonnify</span>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">EMQ0OGUWI87UdF</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- content interactive 1: the handler verdict (real settle/2 case) ---------- */
+  var VERD = {
+    ok:    { fate: 'XACK → retired', loop: '✔ continues', fc: '#a7c9b1', lc: '#a7c9b1',
+      desc: 'the entry is acknowledged and retires from the PEL — done, never delivered again; the loop moves to the next entry' },
+    err:   { fate: 'left un-acked', loop: '✔ survives', fc: '#f2948c', lc: '#a7c9b1',
+      desc: 'the handler returned {:error, reason}: the entry stays in the PEL, redelivered later by the XAUTOCLAIM beat or the next PEL-drain — at-least-once' },
+    raise: { fate: 'left un-acked', loop: '✔ survives', fc: '#f2948c', lc: '#a7c9b1',
+      desc: 'the handler raised: try/rescue/catch converts it to {:error, reason}, so the entry stays in the PEL AND the loop survives to handle the next entry — one bad call costs a re-delivery, not the consumer' }
+  };
+  function renderVerd(key) {
+    var v = VERD[key];
+    var out = document.getElementById('vOut');
+    if (!v || !out) return;
+    var f = document.getElementById('v-fate'); if (f) { f.textContent = v.fate; f.setAttribute('fill', v.fc); }
+    var l = document.getElementById('v-loop'); if (l) { l.textContent = v.loop; l.setAttribute('fill', v.lc); }
+    out.innerHTML = 'entry: <b>' + v.fate + '</b> &middot; loop: <b>' + v.loop + '</b><br>' +
+      '<span class="dim">' + v.desc + '</span>';
+  }
+  document.querySelectorAll('#vSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#vSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      renderVerd(b.getAttribute('data-v'));
+    });
+  });
+  renderVerd('ok'); // initial render — correct without interaction
+
+  /* ---------- content interactive 2: the order-theorem PEL exception, stepped ---------- */
+  /* A re-claimed entry returns out of real-time delivery order — its branded id is
+     older than entries already handled. The handler dedups on the branded id. The
+     model is a fixed four-step narrative of one crash + reclaim. */
+  var TL = [
+    { on: ['ex-a', 'ex-c'], off: ['ex-die', 'ex-reclaim', 'ex-dedup'],
+      title: '1 — new entries arrive in mint order',
+      note: 'XREADGROUP … > hands the older id (…a) then the newer id (…c) — the writer’s order theorem holds for new entries' },
+    { on: ['ex-a', 'ex-c', 'ex-die'], off: ['ex-reclaim', 'ex-dedup'],
+      title: '2 — a consumer dies holding …a',
+      note: 'consumer B was handed …a but crashed before acking — …a is left un-acked, held in B’s PEL; meanwhile …c was handled and acked by another consumer' },
+    { on: ['ex-a', 'ex-c', 'ex-die', 'ex-reclaim'], off: ['ex-dedup'],
+      title: '3 — …a is re-claimed AFTER …c',
+      note: 'after B goes idle, a peer’s XAUTOCLAIM re-claims …a and delivers it — but …c (newer) was already handled, so …a arrives OUT of real-time delivery order; its branded id is LOWER than the last handled id' },
+    { on: ['ex-a', 'ex-c', 'ex-die', 'ex-reclaim', 'ex-dedup'], off: [],
+      title: '∴ the handler dedups on the branded id',
+      note: 'the irreducible cost of at-least-once — so the handler must be idempotent: …a < the highest applied id, so an idempotent handler recognizes the stale replay (the BCS newer-wins discipline, the branded id the dedup key)' }
+  ];
+  var ALLEX = ['ex-a', 'ex-c', 'ex-die', 'ex-reclaim', 'ex-dedup'];
+  function setTL(i) {
+    var step = TL[i];
+    ALLEX.forEach(function (gid) {
+      var g = document.getElementById(gid);
+      if (g) g.setAttribute('opacity', step.on.indexOf(gid) >= 0 ? '1' : '.16');
+    });
+    var out = document.getElementById('exOut');
+    if (out) out.innerHTML = '<b>' + step.title + '</b><br><span class="dim">' + step.note + '</span>';
+  }
+  document.querySelectorAll('#exSel button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var i = parseInt(b.getAttribute('data-t'), 10);
+      document.querySelectorAll('#exSel button').forEach(function (o) {
+        var act = o === b; o.classList.toggle('active', act); o.setAttribute('aria-pressed', act ? 'true' : 'false');
+      });
+      setTL(i);
+    });
+  });
+  setTL(0); // initial render — correct without interaction
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length < 4) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+<script>
+document.documentElement.classList.add('js');
+document.addEventListener('DOMContentLoaded', function () {
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var els = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    els.forEach(function (e) { e.classList.add('in'); });
+    return;
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(function (e) { io.observe(e); });
+});
+</script>
+</body>
+</html>

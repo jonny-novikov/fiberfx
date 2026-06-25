@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R6.01.2 — Token &amp; leaky buckets · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R6.01.2 dive: two rate-limiting algorithms shape one budget differently. The token bucket accrues tokens at a refill rate up to a bucket size and lets a saved-up burst through, sustained at the rate; the leaky bucket drains at a constant rate and smooths every burst away. Both are catalog algorithms over a small HASH, not shipped EchoMQ surfaces — contrasted against the real fixed-window counter. The worked token bucket is real: Codemojex.RateLimiter ships one. Grounded in echo/apps/codemojex and echo/apps/echo_mq.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+.dtable{width:100%;border-collapse:collapse;margin:4px 0 18px;font-size:.9rem}
+.dtable th,.dtable td{border:1px solid var(--b-line);padding:8px 12px;text-align:left;vertical-align:top}
+.dtable th{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--b-dim);background:var(--b-card)}
+.dtable td code{font-size:.86em}
+.dtable .ch-s{font-family:var(--mono);font-weight:700;color:var(--r-red)}
+.dtable .ch-e{font-family:var(--mono);font-weight:700;color:var(--b-ts)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .cell p code{font-size:.86em}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the algorithm-shape figure (hover-select) ---------- */
+.bflow{width:100%;height:auto;display:block;margin-top:4px}
+.bflow .axis{stroke:var(--b-line);stroke-width:1.2}
+.bflow .axlbl{font:10px var(--mono);fill:var(--b-dim)}
+.bflow .arr{fill:var(--b-dim);opacity:.5}
+.bflow .arr.hot{fill:var(--r-red);opacity:.85}
+.bflow .shape{cursor:pointer;transition:opacity .18s ease}
+.bflow .shape .cap rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.3}
+.bflow .shape .cap text{font:10.5px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.bflow .shape .bar{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.1}
+.bflow.focus .shape{opacity:.2}
+.bflow.focus .shape.on{opacity:1}
+.bflow.focus .shape.on .cap rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.2}
+.bflow.focus .shape.on .bar{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.6}
+/* ---------- the refill figure (hover-select) ---------- */
+.rflow{width:100%;height:auto;display:block;margin-top:4px}
+.rflow .lane rect{fill:none;stroke:var(--b-line);stroke-width:1.2;stroke-dasharray:3 3}
+.rflow .lane text{font:10px var(--mono);fill:var(--b-dim);text-anchor:start}
+.rflow .step{cursor:pointer;transition:opacity .18s ease}
+.rflow .step rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.3}
+.rflow .step text{font:10px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.rflow .step .edge{stroke:var(--b-dim);stroke-width:1.6;fill:none}
+.rflow.focus .step{opacity:.24}
+.rflow.focus .step.on{opacity:1}
+.rflow.focus .step.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.4}
+.rflow.focus .step.on .edge{stroke:var(--r-red);stroke-width:2.6}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px">Skip to the contents</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/flow-control">flow-control</a><span class="rsep">/</span><a href="/redis-patterns/flow-control/rate-limiting">rate-limiting</a><span class="rsep">/</span><span class="rcur">token-and-leaky-buckets</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#token">Token bucket</a>
+      <a href="#leaky">Leaky bucket</a>
+      <a href="#choose">Bucket vs window</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <nav class="crumbs" aria-label="Breadcrumb" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px">
+        <a href="/redis-patterns">Redis Patterns</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control">R6 &#183; Flow Control &amp; Scale</a>
+        <span style="color:var(--b-line)">/</span>
+        <a href="/redis-patterns/flow-control/rate-limiting">Rate limiting</a>
+        <span style="color:var(--b-line)">/</span>
+        <span style="color:var(--r-red)">Token &amp; leaky buckets</span>
+      </nav>
+      <p class="kicker">R6.01.2 &#183; Rate limiting &#8212; dive</p>
+      <h1>Token &amp; leaky buckets <span class="hns">&#8212; one budget, two shapes</span>.</h1>
+      <p class="lede">Two rate-limiting algorithms shape the same budget differently. The <b>token bucket</b> lets a
+      saved-up burst through, then holds the long-run rate. The <b>leaky bucket</b> removes the burst and drains at a
+      constant rate. Both are catalog algorithms over a small piece of Valkey state &#8212; not shipped EchoMQ
+      surfaces. The worked token bucket is real: codemojex ships one.</p>
+      <p class="heronote">Grounding: echo/apps/codemojex &#183; Codemojex.RateLimiter (take/2, the refill math) &#8212;
+      a global and a per-chat token bucket sized for Telegram's send limits; the fixed-window contrast is
+      echo/apps/echo_mq &#183; EchoMQ.Metrics.</p>
+
+      <figure class="anatomy" aria-labelledby="bCap">
+        <figcaption id="bCap"><b>One bursty arrival trace, two outputs.</b> The top row is arrivals &#8212; quiet,
+        then a burst of four, then steady. Select an algorithm to read what it admits.</figcaption>
+        <div class="segbar" id="bSel" role="group" aria-label="Select an algorithm">
+          <button type="button" data-b="token" aria-pressed="false">token bucket</button>
+          <button type="button" data-b="leaky" aria-pressed="false">leaky bucket</button>
+          <button type="button" data-b="window" aria-pressed="false">fixed window</button>
+        </div>
+        <svg class="bflow" id="bflow" viewBox="0 0 460 196" role="img" aria-label="A timeline of eight ticks. The arrivals row shows a quiet start, a burst of four requests at ticks three and four, then steady arrivals. The token bucket admits the burst because it saved tokens, then throttles to the refill rate. The leaky bucket admits one per tick, smoothing the burst into a constant stream. The fixed window admits up to its cap then refuses until the window resets. Select an algorithm to see its admitted output.">
+          <text class="axlbl" x="8" y="26">arrivals</text>
+          <line class="axis" x1="60" y1="40" x2="448" y2="40"></line>
+          <g id="arrG"></g>
+
+          <text class="axlbl" x="8" y="120">admitted</text>
+          <line class="axis" x1="60" y1="170" x2="448" y2="170"></line>
+
+          <g class="shape" data-b="token">
+            <g id="tokG"></g>
+            <g class="cap"><rect x="60" y="178" width="120" height="16" rx="3"></rect><text x="120" y="190">burst passes, then rate</text></g>
+          </g>
+          <g class="shape" data-b="leaky">
+            <g id="leakG"></g>
+            <g class="cap"><rect x="186" y="178" width="120" height="16" rx="3"></rect><text x="246" y="190">smoothed, one per tick</text></g>
+          </g>
+          <g class="shape" data-b="window">
+            <g id="winG"></g>
+            <g class="cap"><rect x="312" y="178" width="124" height="16" rx="3"></rect><text x="374" y="190">cap, then refuse</text></g>
+          </g>
+        </svg>
+        <div class="readout" id="bOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an algorithm.
+        The <b>token bucket</b> lets the burst through, then admits at the refill rate. The <b>leaky bucket</b> admits
+        one per tick &#8212; the burst is smoothed away. The <b>fixed window</b> admits up to its cap, then refuses
+        until the window resets.</div>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="token">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The token bucket &#8212; a refilling allowance</h2>
+        <span class="ssrc">Codemojex.RateLimiter &#183; refill</span>
+      </div>
+      <div class="prose">
+        <p>A token bucket holds an allowance. Tokens accrue at a fixed <b>refill rate</b> up to a maximum <b>bucket
+        size</b>. Each admitted request spends one token; a request that finds the bucket empty is deferred until a
+        token has accrued. Two numbers define it &#8212; the refill rate (the sustained throughput) and the bucket
+        size (how large a burst is tolerated).</p>
+        <p>The shape this produces: a caller that has been quiet accumulates up to a full bucket of tokens, so a sudden
+        burst of up to <em>bucket size</em> requests passes immediately. Once the bucket drains, admission falls back
+        to the refill rate &#8212; one token every <code>1 / rate</code> seconds. Bursts are absorbed; the long-run
+        average is capped at the refill rate. That is the token bucket's signature: <b>burst-tolerant,
+        rate-bounded</b>.</p>
+        <p>The state is small. A bucket needs two fields &#8212; the current token count and the timestamp of its last
+        refill. There is no background timer. The bucket is recomputed <b>lazily</b> on each admit: read the two
+        fields, add <code>elapsed &#215; rate</code> tokens (clamped to the bucket size), then spend one if the count
+        reached at least one. In Valkey that is a small HASH <code>{tokens, last_refill}</code> and a single atomic
+        Lua read-modify-write. The lazy recompute is what lets one limiter serve every caller with no per-caller
+        timer.</p>
+      </div>
+
+      <div class="prose">
+        <p>codemojex &#8212; a Telegram emoji-guessing game on the echo stack (<code>echo/apps/codemojex</code>)
+        &#8212; ships a token bucket for exactly this reason. Telegram caps sends at roughly 30 messages per second in
+        aggregate and about one per second to a single chat, with short bursts tolerated.
+        <code>Codemojex.RateLimiter</code> models both: a global bucket and a per-chat bucket, and a send is allowed
+        only when both grant a token. <code>take/2</code> answers <code>:ok</code> or <code>{:wait, ms}</code> &#8212;
+        the smallest delay after which a retry could succeed, which the notification worker turns into a delayed
+        re-enqueue. The refill is the lazy recompute above, in real code.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/codemojex &#183; Codemojex.RateLimiter &#8212; the lazy token refill: accrue, clamp, touch<span class="tag">verbatim</span></figcaption>
+<pre>defp refill(%Bucket{} = b, now) do
+  elapsed = max(now - b.updated_ms, 0)
+  refilled = min(b.burst * 1.0, b.tokens + elapsed * b.rate / 1000.0)   <span class="fd">&#8592; accrue, clamped to burst</span>
+  %{b | tokens: refilled, updated_ms: now}    <span class="fd">&#8592; no timer: recomputed on each take</span>
+end
+
+<span class="fd"># the bucket carried between takes</span>
+defstruct [:tokens, :updated_ms, :rate, :burst]    <span class="fd">&#8592; {tokens, last_refill} made concrete</span></pre>
+      </figure>
+      <div class="prose">
+        <p>A <code>%Bucket{tokens, updated_ms, rate, burst}</code> is the <code>{tokens, last_refill}</code> HASH made
+        concrete. The bucket holds no timer; <code>elapsed &#215; rate / 1000</code> is the tokens that have accrued
+        since the last touch, clamped to <code>burst</code>. When the refilled count is below one, <code>take/2</code>
+        defers with <code>{:wait, ms}</code> instead of spending. The same two-field state and the same lazy refill,
+        whether it lives in an Elixir struct or a Valkey HASH.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="rCap">
+        <figcaption id="rCap"><b>One <code>take/2</code>, step by step.</b> Select a step to read what happens to the
+        bucket. Refill comes first, every time &#8212; that is what makes the timer unnecessary.</figcaption>
+        <div class="segbar" id="rSel" role="group" aria-label="Select a step in the take path">
+          <button type="button" data-st="elapsed" aria-pressed="false">elapsed</button>
+          <button type="button" data-st="refill" aria-pressed="false">refill &amp; clamp</button>
+          <button type="button" data-st="grant" aria-pressed="false">spend &#8594; :ok</button>
+          <button type="button" data-st="defer" aria-pressed="false">empty &#8594; {:wait, ms}</button>
+        </div>
+        <svg class="rflow" id="rflow" viewBox="0 0 460 150" role="img" aria-label="A single take path across four steps. First measure elapsed time since the last touch. Then refill the bucket by elapsed times rate, clamped to the burst size. If at least one token is present, spend one and reply ok. If the bucket is below one token, reply wait with the milliseconds until a token accrues. Select a step to highlight it.">
+          <g class="lane"><rect x="20" y="30" width="420" height="40" rx="6"></rect><text x="26" y="26">refill</text></g>
+          <g class="lane"><rect x="20" y="92" width="420" height="40" rx="6"></rect><text x="26" y="88">decide</text></g>
+
+          <g class="step" data-st="elapsed">
+            <rect x="32" y="38" width="92" height="24" rx="4"></rect><text x="78" y="54">now - updated</text>
+          </g>
+          <g class="step" data-st="refill">
+            <path class="edge" d="M176 62 L176 38 M124 50 L132 50" marker-end="url(#rar)"></path>
+            <rect x="132" y="38" width="100" height="24" rx="4"></rect><text x="182" y="54">+ elapsed&#215;rate</text>
+          </g>
+          <g class="step" data-st="grant">
+            <path class="edge" d="M240 62 L240 100" marker-end="url(#rar)"></path>
+            <rect x="240" y="100" width="92" height="24" rx="4"></rect><text x="286" y="116">tokens&#8805;1 &#8594; :ok</text>
+          </g>
+          <g class="step" data-st="defer">
+            <rect x="340" y="100" width="96" height="24" rx="4"></rect><text x="388" y="116">empty &#8594; wait</text>
+          </g>
+          <defs><marker id="rar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0 0 L7 3 L0 6 z" fill="#d6584f"></path></marker></defs>
+        </svg>
+        <div class="readout" id="rOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a step.
+        <code>refill</code> runs first: add <code>elapsed &#215; rate</code> tokens, clamp to <code>burst</code>. Then
+        decide &#8212; at least one token spends one and replies <code>:ok</code>; an empty bucket replies
+        <code>{:wait, ms}</code>, the time until a token accrues.</div>
+      </figure>
+      <p class="take">A token bucket is two fields and a clock: tokens accrue at the refill rate up to a bucket size,
+      each admit spends one, an empty bucket defers. Recomputed lazily on each admit, it needs no timer &#8212; and it
+      lets a saved-up burst through while holding the long-run rate.</p>
+    </section>
+
+    <section id="leaky">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The leaky bucket &#8212; a constant drain</h2>
+        <span class="ssrc">the inverse emphasis</span>
+      </div>
+      <div class="prose">
+        <p>The leaky bucket inverts the emphasis. Picture a bucket with a hole: arrivals pour in at whatever rate they
+        come, and the bucket drains at a <b>fixed rate</b> through the hole. The output is the drain rate, constant,
+        regardless of how bursty the arrivals were. If arrivals exceed the bucket's capacity, the overflow is
+        dropped.</p>
+        <p>Modelled as a queue, it is a FIFO drained at a constant rate: requests enter the tail, leave the head one
+        every <code>1 / rate</code> seconds. A burst of arrivals does not produce a burst of output &#8212; it
+        produces a longer queue and the same steady output. Where the token bucket lets a saved-up burst through, the
+        leaky bucket <b>smooths</b> the burst into an even stream.</p>
+        <p>The two are mirror images of one budget. The token bucket asks &#8220;do I have credit to go now?&#8221; and
+        rewards a caller that saved its credit with a burst. The leaky bucket asks &#8220;is it my turn yet?&#8221; and
+        serves everyone at the same even cadence no matter how they arrived. Choose the token bucket when an occasional
+        burst is acceptable and the long-run rate is what matters; choose the leaky bucket when the thing downstream
+        needs a genuinely constant rate &#8212; a steady drip to a fragile external API, a smoothed write rate to a
+        disk.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A bucket recompute is read-modify-write: read the
+      tokens, add what accrued, write the new count. Split into a client-side <code>HGET</code> then <code>HSET</code>
+      it races &#8212; two admits interleave, both read the same count, both spend it. Done as one
+      <code>EVAL</code> the whole refill-and-spend runs atomically on the server, so the count is never double-spent
+      &#8212; <a href="https://valkey.io/commands/eval/" rel="noopener">valkey.io/commands/eval</a>.</p>
+    </section>
+
+    <section id="choose">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Bucket vs window &#8212; choosing the shape</h2>
+        <span class="ssrc">EchoMQ.Metrics &#183; the rate_ttl read</span>
+      </div>
+      <div class="prose">
+        <p>The fixed-window counter from the previous dive &#8212; EchoMQ's real limiter &#8212; is the simplest of the
+        family. A counter key (<code>emq:{q}:limiter</code>) is incremented per admit and refused once it reaches
+        <code>max</code>; the window is the key's own TTL, and <code>EchoMQ.Metrics.get_rate_limit_ttl/3</code> reads
+        the remaining <code>PTTL</code> as the back-off. Its read side is one inline Lua script.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq &#183; EchoMQ.Metrics &#8212; the fixed-window read: counter spent to max over its own TTL<span class="tag">verbatim</span></figcaption>
+<pre>local max = tonumber(ARGV[1])
+if max == 0 then
+  max = tonumber(redis.call('HGET', KEYS[2], 'max') or '0')   <span class="fd">&#8592; the configured cap, from meta</span>
+end
+if max &gt; 0 and max &lt;= tonumber(redis.call('GET', KEYS[1]) or '0') then
+  local pttl = redis.call('PTTL', KEYS[1])   <span class="fd">&#8592; the window: time until the budget resets</span>
+  if pttl &gt; 0 then return pttl end
+end
+return 0    <span class="fd">&#8592; 0 = not limited</span></pre>
+      </figure>
+      <div class="prose">
+        <p>The trade is state against shape.</p>
+        <ul>
+          <li><b>Fixed window</b> &#8212; one integer plus a TTL. O(1), trivial to reason about. The flaw is the
+          boundary burst: a caller can fire <code>max</code> at the end of one window and <code>max</code> at the
+          start of the next, admitting up to 2&#215; <code>max</code> across the seam.</li>
+          <li><b>Token bucket</b> &#8212; two fields per bucket. Smooths the boundary (admission is continuous, not
+          reset on a tick) and tolerates a configured burst on purpose. More state, more arithmetic, but
+          burst-aware.</li>
+          <li><b>Leaky bucket</b> &#8212; a queue plus a drain timestamp. Produces a genuinely constant output rate,
+          at the cost of holding the queue and dropping overflow.</li>
+        </ul>
+        <p>There is no single best. The window is right when simplicity wins and an edge burst is harmless. The token
+        bucket is right when a known sustained rate matters but a saved-up burst is acceptable. The leaky bucket is
+        right when the rate must be constant downstream. EchoMQ ships the window because the queue's budget is a coarse
+        safety cap; codemojex ships a token bucket because Telegram's limits explicitly tolerate a short burst over a
+        strict per-second rate.</p>
+      </div>
+
+      <table class="dtable">
+        <thead><tr><th>Algorithm</th><th>State</th><th>Shape</th><th>Reach for it when</th></tr></thead>
+        <tbody>
+          <tr><td class="ch-e">Fixed window</td><td>one counter + TTL</td><td>bursty at the seam</td><td>simplicity wins; an edge burst is harmless</td></tr>
+          <tr><td class="ch-s">Token bucket</td><td><code>{tokens, last_refill}</code></td><td>burst-tolerant, rate-bounded</td><td>a sustained rate matters; a saved-up burst is fine</td></tr>
+          <tr><td class="ch-s">Leaky bucket</td><td>a queue + drain ts</td><td>constant, smoothed output</td><td>the downstream rate must be steady</td></tr>
+        </tbody>
+      </table>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A token bucket: tokens accrue at a refill rate up to a bucket size, each admit spends one, an empty bucket
+          defers. Bursts pass; the long-run rate is capped. Two fields, recomputed lazily &#8212; no timer.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its codemojex application</span>
+          <p><code>Codemojex.RateLimiter</code> ships exactly this &#8212; a <code>%Bucket{tokens, updated_ms, rate,
+          burst}</code> refilled by <code>elapsed &#215; rate</code>, <code>take/2</code> answering <code>:ok</code>
+          or <code>{:wait, ms}</code>; a global bucket and a per-chat bucket, a send allowed only when both grant.</p>
+        </div>
+      </div>
+      <p class="take">EchoMQ's own claim-point budget is the fixed-window counter, not a bucket &#8212; the buckets are
+      the family a consumer reaches for when it needs a different shape. The enforcement loop that increments a counter
+      on each claim and sends an over-budget job back to wait lives in EchoMQ's scaling layer.</p>
+
+      <div class="doors">
+        <a class="door" href="/echomq/queue">
+          <span class="dr">/echomq/queue</span>
+          <h3>The limiter at the claim point</h3>
+          <p>The Queue pillar wires the budget into the claim path and teaches the scaling layer &#8212; fair lanes,
+          concurrency, and the rate limit enforced where work is taken.</p>
+        </a>
+        <a class="door" href="/bcs/codemojex">
+          <span class="dr">/bcs/codemojex</span>
+          <h3>The token bucket in context</h3>
+          <p>Part B7 walks codemojex on the stack &#8212; the consumer whose <code>RateLimiter</code> is the worked
+          token bucket of this dive.</p>
+        </a>
+        <a class="door" href="/bcs/bus">
+          <span class="dr">/bcs/bus</span>
+          <h3>Where the keys live</h3>
+          <p>The Valkey-native bus the <code>emq:{q}:</code> keys sit beside &#8212; the architecture the fixed-window
+          counter is part of.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/eval/" rel="noopener">Valkey &mdash; <em>EVAL</em></a> &mdash; the atomic Lua read-modify-write a lazy-refill bucket needs: read, recompute, spend, in one server-side step.</li>
+            <li><a href="https://valkey.io/topics/programmability/eval-intro/" rel="noopener">Valkey &mdash; <em>Scripting with Lua</em></a> &mdash; why a multi-step refill belongs in one script, not a client <code>GET</code>-then-<code>SET</code>.</li>
+            <li><a href="https://valkey.io/commands/hset/" rel="noopener">Valkey &mdash; <em>HSET</em></a> &mdash; the <code>{tokens, last_refill}</code> HASH a bucket recomputes against.</li>
+            <li><a href="https://stripe.com/blog/rate-limiters" rel="noopener">Stripe &mdash; <em>Scaling your API with rate limiters</em></a> &mdash; the token-bucket and leaky-bucket policies and why bursts are tolerated.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/flow-control/rate-limiting">R6.01 &#183; Rate limiting</a><span class="rs">the module hub: the budget-per-window pattern and the four algorithms</span></li>
+            <li><a href="/redis-patterns/flow-control/rate-limiting/fixed-and-sliding-windows">R6.01.1 &#183; Fixed &amp; sliding windows</a><span class="rs">the window counter the buckets are contrasted against</span></li>
+            <li><a href="/redis-patterns/flow-control/rate-limiting/global-not-local">R6.01.3 &#183; Global, not local</a><span class="rs">why the counter lives in Valkey, shared across every worker</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the limiter wired at the claim point</span></li>
+            <li><a href="/bcs/codemojex">/bcs/codemojex</a><span class="rs">the codemojex consumer, the token bucket in context</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Dive pager">
+      <a class="pgx" href="/redis-patterns/flow-control/rate-limiting/fixed-and-sliding-windows"><span class="pk">prev</span>&#8592; R6.01.1 &#183; Fixed &amp; sliding windows</a>
+      <a class="pgx" href="/redis-patterns/flow-control/rate-limiting/global-not-local"><span class="pk">next</span>R6.01.3 &#183; Global, not local &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/flow-control/rate-limiting/fixed-and-sliding-windows">R6.01.1 &#183; Fixed &amp; sliding windows</a>
+        <a href="/redis-patterns/flow-control/rate-limiting/token-and-leaky-buckets">R6.01.2 &#183; Token &amp; leaky buckets</a>
+        <a href="/redis-patterns/flow-control/rate-limiting/global-not-local">R6.01.3 &#183; Global, not local</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0NnIjlUy4J1</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- shared hover-select wiring (à la /bcs/ideas/system-substrate) ---------- */
+  function wireHoverSelect(svgId, btnSel, outId, dataAttr, groupSel, describe, resetHtml) {
+    var svg = document.getElementById(svgId);
+    var buttons = document.querySelectorAll(btnSel);
+    var out = document.getElementById(outId);
+    function select(key) {
+      buttons.forEach(function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute(dataAttr) === key ? 'true' : 'false');
+      });
+      if (svg) {
+        svg.classList.toggle('focus', !!key);
+        svg.querySelectorAll(groupSel).forEach(function (g) {
+          g.classList.toggle('on', g.getAttribute(dataAttr) === key);
+        });
+      }
+      if (out) out.innerHTML = key ? describe(key) : resetHtml;
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () {
+        select(b.getAttribute('aria-pressed') === 'true' ? null : b.getAttribute(dataAttr));
+      });
+    });
+    if (svg) {
+      svg.querySelectorAll(groupSel).forEach(function (g) {
+        g.addEventListener('mouseenter', function () { select(g.getAttribute(dataAttr)); });
+        g.addEventListener('mouseleave', function () { select(null); });
+      });
+    }
+  }
+
+  /* ---------- Interactive 1: one arrival trace, three admitted outputs ----------
+     Fixed dataset: 8 ticks. arrivals[i] is requests arriving at tick i.
+     Each algorithm is a PURE function of that arrival trace, computed once. */
+  var TICKS = 8;
+  var X0 = 64, DX = 47, TOP = 40, BASE = 170;   // svg geometry (matches the axes)
+  var arrivals = [0, 1, 4, 4, 1, 1, 1, 1];      // quiet, a burst of four, then steady
+
+  // token bucket: size 4, refill 1 token/tick. saved tokens let the burst through.
+  function runToken(arr) {
+    var size = 4, rate = 1, tokens = 4, out = [];
+    for (var i = 0; i < arr.length; i++) {
+      tokens = Math.min(size, tokens + rate);          // refill one per tick, clamped
+      var admit = Math.min(arr[i], tokens);            // spend up to what is available
+      tokens -= admit;
+      out.push(admit);
+    }
+    return out;
+  }
+  // leaky bucket: drains 1 per tick from a FIFO queue (capacity generous here).
+  function runLeaky(arr) {
+    var rate = 1, queue = 0, out = [];
+    for (var i = 0; i < arr.length; i++) {
+      queue += arr[i];
+      var drain = Math.min(rate, queue);               // constant output
+      queue -= drain;
+      out.push(drain);
+    }
+    return out;
+  }
+  // fixed window: cap 3 per window, window = 4 ticks; refuse over the cap.
+  function runWindow(arr) {
+    var cap = 3, win = 4, count = 0, out = [];
+    for (var i = 0; i < arr.length; i++) {
+      if (i % win === 0) count = 0;                    // window rolls
+      var room = Math.max(0, cap - count);
+      var admit = Math.min(arr[i], room);
+      count += admit;
+      out.push(admit);
+    }
+    return out;
+  }
+  var OUT = { token: runToken(arrivals), leaky: runLeaky(arrivals), window: runWindow(arrivals) };
+  var LANE_NOTE = {
+    token:  'bucket size 4, refill 1/tick &#8212; the saved tokens admit the burst, then it throttles to the rate',
+    leaky:  'drains 1/tick from the queue &#8212; the burst is held and released evenly, output stays constant',
+    window: 'cap 3 per 4-tick window &#8212; admits to the cap, refuses the rest until the window rolls'
+  };
+
+  // draw arrival bars (always shown) + one admitted-bar group per algorithm
+  function bar(x, h, cls) {
+    var w = 22;
+    return '<rect class="' + cls + '" x="' + (x - w / 2) + '" y="' + (BASE - h) + '" width="' + w +
+           '" height="' + h + '" rx="2"></rect>';
+  }
+  function arrowDown(x, n) {
+    // n little down-arrows above the arrivals axis to show how many arrived
+    var s = '';
+    for (var k = 0; k < n; k++) {
+      var ax = x - (n - 1) * 4 + k * 8;
+      s += '<path class="arr" d="M' + ax + ' 26 L' + ax + ' 38 M' + (ax - 3) + ' 34 L' + ax + ' 38 L' + (ax + 3) + ' 34"></path>';
+    }
+    return s;
+  }
+  (function paint() {
+    var unit = 26;  // px per admitted/arriving request
+    var arrG = document.getElementById('arrG');
+    if (arrG) {
+      var a = '';
+      for (var i = 0; i < TICKS; i++) a += arrowDown(X0 + i * DX, arrivals[i]);
+      arrG.innerHTML = a;
+    }
+    [['token', 'tokG'], ['leaky', 'leakG'], ['window', 'winG']].forEach(function (pair) {
+      var g = document.getElementById(pair[1]);
+      if (!g) return;
+      var o = OUT[pair[0]], s = '';
+      for (var i = 0; i < TICKS; i++) if (o[i] > 0) s += bar(X0 + i * DX, o[i] * unit, 'bar');
+      g.innerHTML = s;
+    });
+  })();
+
+  function describeB(b) {
+    var o = OUT[b];
+    if (!o) return '';
+    var admitted = o.reduce(function (s, v) { return s + v; }, 0);
+    var arrived = arrivals.reduce(function (s, v) { return s + v; }, 0);
+    var name = { token: 'token bucket', leaky: 'leaky bucket', window: 'fixed window' }[b];
+    return '<span class="rk">' + name + ' &#183;</span> ' + LANE_NOTE[b] + '<br>' +
+      '<span class="rk">admitted &#183;</span> <b>' + admitted + ' of ' + arrived + '</b> &#8212; per tick [' + o.join(' ') + ']';
+  }
+  wireHoverSelect('bflow', '#bSel button', 'bOut', 'data-b', '.shape', describeB,
+    '<span class="rk">readout &#183;</span> Select an algorithm. The <b>token bucket</b> lets the burst through, then admits at the refill rate. The <b>leaky bucket</b> admits one per tick &#8212; the burst is smoothed away. The <b>fixed window</b> admits up to its cap, then refuses until the window resets.');
+
+  /* ---------- Interactive 2: the take/2 path (pure lookup over a fixed dataset) ---------- */
+  var TAKE = {
+    elapsed: { what: 'now - updated_ms: how long since the bucket was last touched', note: 'the lazy clock — no timer fires; time is read on demand' },
+    refill:  { what: 'tokens + elapsed × rate / 1000, clamped to burst', note: 'the accrual; min(burst, …) is the cap that bounds the burst' },
+    grant:   { what: 'at least one token: spend one, reply :ok', note: 'the admit — both the global and per-chat bucket must grant' },
+    defer:   { what: 'below one token: reply {:wait, ms}', note: 'ms = ceil((1 - tokens) / rate × 1000) — the time until a token accrues' }
+  };
+  function describeTake(st) {
+    var s = TAKE[st];
+    if (!s) return '';
+    return '<span class="rk">step &#183;</span> ' + s.what + '<br>' +
+      '<span class="rk">note &#183;</span> <b>' + s.note + '</b>';
+  }
+  wireHoverSelect('rflow', '#rSel button', 'rOut', 'data-st', '.step', describeTake,
+    '<span class="rk">readout &#183;</span> Select a step. <code>refill</code> runs first: add <code>elapsed &#215; rate</code> tokens, clamp to <code>burst</code>. Then decide &#8212; at least one token spends one and replies <code>:ok</code>; an empty bucket replies <code>{:wait, ms}</code>, the time until a token accrues.');
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) {
+    var n = 0n;
+    for (var i = 0; i < s.length; i++) {
+      var d = B62.indexOf(s.charAt(i));
+      if (d < 0) return null;
+      n = n * 62n + BigInt(d);
+    }
+    return n;
+  }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3);
+    var snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n;
+    var node = (snow >> 12n) & 0x3FFn;
+    var seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) +
+      ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp');
+  var idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) {
+      var put = function (sel, txt) { var el = document.getElementById(sel); if (el) el.textContent = txt; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts);
+    }
+    var toggle = function () {
+      var open = stamp.classList.toggle('open');
+      stamp.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); }
+    });
+  }
+})();
+</script>
+
+</body>
+</html>
