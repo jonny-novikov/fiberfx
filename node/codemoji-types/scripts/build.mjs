@@ -8,7 +8,7 @@ import { execSync } from 'node:child_process';
 
 const steps = ['clean', 'build:code', 'build:types'];
 
-console.log('[BUILD] Building @fireheadz/codemoji-types\n');
+console.log('[BUILD] Building @codemoji/types\n');
 
 for (const step of steps) {
   execSync(`pnpm run ${step}`, { stdio: 'inherit' });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Clean build artifacts for codemoji-types
+ * Clean build artifacts for @codemoji/types
  */
 
 import { rmSync, existsSync } from 'node:fs';

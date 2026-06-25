@@ -19,7 +19,7 @@ repo's `go.work` `use` block.
 
 **Out of scope for this file** (they live in the same umbrella but are not the BCS data stack): `exchange`
 (the trading capstone — Operator out-of-band), `investex`, `echo_bot` (the standalone YAML multibot engine),
-and `codemojex`. Do not work those from this guide.
+and `codemojex`. Do not work those from this guide. (When building the `codemojex` UI against the Figma design, the `figma-local` MCP usage guide is [`../mcp/docs/figma-local.md`](../mcp/docs/figma-local.md) — scope: codemojex / codemoji-app only; the enhancement canon is [`../docs/figma-local/`](../docs/figma-local/).)
 
 ## 1. The stack (real dependency arrows, base → top)
 
