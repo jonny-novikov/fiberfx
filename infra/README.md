@@ -31,7 +31,7 @@ The **design docs** — the *why* behind every tuning knob — live in `codemoje
 - `codemojex/codemojex.postgres.md` — the **Postgres 17 node**: money-DB durability + autovacuum tuning.
 - `codemojex/codemojex.valkey.md` — **Valkey 8.1 vs 9.1** version choice for EchoMQ.
 
-Agent playbooks live in `docs/` — currently [`docs/postgres-multi-user.md`](docs/postgres-multi-user.md).
+The Postgres node's design **and operational runbook** (create, login roles, volume resize) live in [`codemojex/codemojex.postgres.md`](codemojex/codemojex.postgres.md).
 
 ## Lifecycle: create → disk → secrets → deploy → verify
 
@@ -75,14 +75,14 @@ network storage. Size it above the working set; volumes grow, never shrink.
 # Valkey — the AOF working set  (already provisioned for echo-valkey)
 fly volumes create valkey_data --size 3  --region fra -a echo-valkey
 
-# Postgres — the WAL + the growing ledger/guesses tables
-fly volumes create pg_data     --size 10 --region fra -a echo-postgres
+# Postgres — the WAL + the growing ledger/guesses tables (start small; extend later)
+fly volumes create pg_data     --size 5  --region fra -a echo-postgres
 ```
 
-Keep the volume region **equal to the app's `primary_region` (`fra`)** so the
-machine and its disk are co-located — and co-located with the bus/DB they serve.
-(The volume-create example in `postgres/fly.toml`'s header comment shows a stale
-region; `fra` — matching its `primary_region` and `echo-valkey` — is authoritative.)
+Keep the volume region **equal to the app's `primary_region` (`fra`)** so the machine
+and its disk are co-located — and co-located with the bus/DB they serve. `pg_data`
+starts at 5 GB; volumes grow but never shrink, so see the resize procedure + cluster
+gotchas in [`codemojex/codemojex.postgres.md`](codemojex/codemojex.postgres.md).
 
 > ⚠️ **The "use two or more volumes to avoid downtime" prompt — ignore it here.**
 > A second *empty* volume is not a replica (it holds no data), and a second machine
@@ -98,9 +98,10 @@ region; `fra` — matching its `primary_region` and `echo-valkey` — is authori
 fly secrets set -a echo-valkey \
   VALKEY_EXTRA_FLAGS="--requirepass $(openssl rand -hex 32)"
 
-# Postgres: the superuser password, the initial database, and the echo_* app role
+# Postgres: the superuser password + the echo_* app role. POSTGRES_DB=codemojex is
+# non-secret and lives in postgres/fly.toml [env] (guaranteed created at first init).
 fly secrets set -a echo-postgres \
-  POSTGRES_PASSWORD="$(openssl rand -hex 32)" POSTGRES_DB=codemojex \
+  POSTGRES_PASSWORD="$(openssl rand -hex 32)" \
   POSTGRES_ECHO_USER=echo_mesh POSTGRES_ECHO_PASSWORD="$(openssl rand -hex 32)"
 ```
 
@@ -151,8 +152,8 @@ means **one Postgres login role per internal app**, created on the node at deplo
 The roles are created at **first boot** by `postgres/initdb/10-echo-role.sh` — the
 official image runs `/docker-entrypoint-initdb.d/*` once, on an empty cluster,
 reading the `POSTGRES_ECHO_*` secrets (so no password touches an image layer). To add
-another app's role, follow the same pattern; the playbook is
-**[`docs/postgres-multi-user.md`](docs/postgres-multi-user.md)**.
+another app's role, follow the same pattern — documented in full (create, roles, resize)
+in **[`codemojex/codemojex.postgres.md`](codemojex/codemojex.postgres.md)**.
 
 ## Canonical names
 

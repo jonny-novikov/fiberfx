@@ -87,8 +87,7 @@ defmodule EchoMQ.StreamConsumer do
   emq3.3 freezes the handler shape the fold rides, but folds nothing). No new
   `Script.new/2` (the group verbs `XGROUP` / `XREADGROUP` / `XACK` /
   `XAUTOCLAIM` / `XPENDING` are issued DIRECT through `EchoMQ.Connector.command/3`
-  -- a no-new-Lua rung). No `echo_wire` edit; `@wire_version` frozen
-  `echomq:2.4.2`. emq3.3.
+  -- a no-new-Lua rung).
   """
 
   alias EchoMQ.Connector

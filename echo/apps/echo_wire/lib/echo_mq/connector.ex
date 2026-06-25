@@ -32,7 +32,7 @@ defmodule EchoMQ.Connector do
 
   alias EchoMQ.{Keyspace, RESP, Script}
 
-  @wire_version "echomq:2.4.2"
+  @wire_version "echomq:3.0.0"
   @backoff_min 100
   @backoff_max 2_000
 

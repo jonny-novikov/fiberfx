@@ -13,10 +13,12 @@
 #
 # First boot reads these from Fly secrets (never baked into a layer):
 #   fly secrets set -a echo-postgres \
-#     POSTGRES_PASSWORD="$(openssl rand -hex 32)" POSTGRES_DB=codemojex \
+#     POSTGRES_PASSWORD="$(openssl rand -hex 32)" \
 #     POSTGRES_ECHO_USER=echo_mesh POSTGRES_ECHO_PASSWORD="$(openssl rand -hex 32)"
 # POSTGRES_PASSWORD is the `postgres` superuser; the POSTGRES_ECHO_* pair is the
 # everyday app role (read/write + CREATEDB, not a superuser) that initdb/ creates.
+# POSTGRES_DB=codemojex is non-secret and set in fly.toml [env], so the database is
+# created on first boot without depending on the secrets command being complete.
 
 ARG PG_VERSION=17
 FROM postgres:${PG_VERSION}

@@ -10,6 +10,19 @@ defmodule Codemojex.Tables do
     * `:cm_games` (`GAM`) — a game and its secret, read on every guess score.
     * `:cm_emojisets` (`EMS`) — an emoji set's layout, read alongside the game.
 
+  A third table holds the auth sessions and is the FIRST mutable one:
+
+    * `:cm_sessions` (`SES`) — a verified player's session (cm.4), keyed by a
+      `SES` branded id, holding a JSON `{plr, platform, …}` value. Because a
+      session is mutable and revocable, its coherence mode is `:tracking` (RESP3
+      `CLIENT TRACKING`): Valkey itself pushes an invalidation on any write or
+      `DEL` to `ecc:{sessions}:`, so a revoked session is evicted from every
+      BEAM holder's L1 immediately — the property that makes revocation a
+      security guarantee, not best-effort. (`:none` here would be a defect: a
+      revoked `SES` surviving in L1 would keep authenticating.) The value is
+      JSON, not `term_to_binary`, so a forward Go lightweight edge can read the
+      same row.
+
   A read is a caller-side `:ets.lookup` against the table's public, read-
   concurrent ETS table; a miss coalesces onto one in-flight fill that checks L2
   (the shared Valkey) and falls through to the loader (the relational system of
@@ -29,11 +42,14 @@ defmodule Codemojex.Tables do
 
   @games :cm_games
   @sets :cm_emojisets
+  @sessions :cm_sessions
 
   @doc "The games near-cache name (`GAM`)."
   def games_table, do: @games
   @doc "The emoji-sets near-cache name (`EMS`)."
   def sets_table, do: @sets
+  @doc "The auth-sessions table name (`SES`) — the first mutable one (`:tracking`)."
+  def sessions_table, do: @sessions
 
   def start_link(opts), do: Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -44,6 +60,10 @@ defmodule Codemojex.Tables do
 
     games_ttl = Application.get_env(:codemojex, :games_cache_ttl_ms, 600_000)
     sets_ttl = Application.get_env(:codemojex, :sets_cache_ttl_ms, 3_600_000)
+    # The SES lifetime (sliding): a resolve re-puts the row, re-stamping the
+    # version + PX deadline, so an active player never re-handshakes mid-play.
+    # A generous default; Operator-tunable.
+    sessions_ttl = Application.get_env(:codemojex, :sessions_ttl_ms, 86_400_000)
 
     children = [
       # The cache directory the tables register into. Started first so a restart
@@ -74,6 +94,22 @@ defmodule Codemojex.Tables do
          max_size: 10_000,
          connector: connector},
         id: :cm_emojisets_table
+      ),
+      # The auth sessions — the FIRST mutable table (cm.4). `:tracking` so a
+      # revoke (a DEL on ecc:{sessions}:<SES>) is pushed by Valkey and evicts the
+      # row from every BEAM holder's L1 immediately. The loader is a clean miss
+      # (a SES has no relational system of record — it lives only in Valkey), so
+      # an unknown/expired/revoked SES is a fetch miss → the :auth plug 401s.
+      Supervisor.child_spec(
+        {EchoStore.Table,
+         name: @sessions,
+         kind: "SES",
+         loader: &load_session/1,
+         coherence: :tracking,
+         ttl_ms: sessions_ttl,
+         max_size: 100_000,
+         connector: connector},
+        id: :cm_sessions_table
       )
     ]
 
@@ -100,4 +136,12 @@ defmodule Codemojex.Tables do
       %Codemojex.EmojiSet{} = set -> {:ok, :erlang.term_to_binary(set), set_id}
     end
   end
+
+  # A SES has no relational system of record — it lives only in Valkey (ephemeral).
+  # The loader therefore answers a CLEAN MISS for any id not already in L1/L2, so a
+  # fetch for an unknown/expired/revoked SES is a miss → `Codemojex.Session.resolve/1`
+  # maps it to `{:error, :unknown}` → the plug 401s. (Contrast the games loader, which
+  # falls through to Postgres; a session has no such floor.)
+  @doc false
+  def load_session(<<_::binary-14>> = _ses), do: {:error, :not_found}
 end

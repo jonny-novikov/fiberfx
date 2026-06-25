@@ -195,6 +195,10 @@ defmodule Codemojex do
 
   # players & wallet
   def create_player(name, opts \\ []), do: Wallet.create(name, opts)
+  # cm.4: resolve a verified Telegram user id to its single PLR (resolve-or-create,
+  # idempotent under concurrency). The auth handshake calls this once per verified
+  # request before minting a SES.
+  def resolve_player_by_tg(tg_user_id, opts \\ []), do: Wallet.resolve_by_tg(tg_user_id, opts)
   defdelegate balance(player), to: Wallet
   defdelegate purchase_keys(player, keys, ref), to: Wallet
   defdelegate convert_to_keys(player, diamonds), to: Wallet

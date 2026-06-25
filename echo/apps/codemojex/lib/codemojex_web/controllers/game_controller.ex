@@ -2,8 +2,9 @@ defmodule CodemojexWeb.GameController do
   @moduledoc """
   The Mini App's JSON endpoints. Every action calls the `Codemojex` facade and the
   privacy-preserving views — the secret and other players' guesses never cross
-  this boundary. The player identity is read from the request for now; in
-  production it comes from verified Telegram `initData` (a TODO).
+  this boundary. The player identity of a player-acting endpoint is
+  `conn.assigns.player`, assigned by the `:auth` plug after it resolves a verified
+  `SES` (cm.4) — never a caller-supplied id.
   """
   use CodemojexWeb, :controller
 
@@ -11,24 +12,10 @@ defmodule CodemojexWeb.GameController do
 
   def health(conn, _params), do: json(conn, %{status: "ok"})
 
-  def create_player(conn, params) do
-    opts = [
-      keys: int(params["keys"], 0),
-      clips: int(params["clips"], 0),
-      diamonds: int(params["diamonds"], 0),
-      tg_chat_id: int(params["tg_chat_id"], nil)
-    ]
-
-    with {:ok, uid} <- Codemojex.create_player(params["name"] || "player", opts) do
-      json(conn, %{player: uid})
-    end
-  end
-
   def rooms(conn, _params), do: json(conn, %{rooms: Codemojex.lobby()})
 
-  def join(conn, %{"id" => room} = params) do
-    with player when is_binary(player) <- require_player(params),
-         {:ok, game} <- Codemojex.join_room(room, player) do
+  def join(conn, %{"id" => room}) do
+    with {:ok, game} <- Codemojex.join_room(room, conn.assigns.player) do
       json(conn, %{game: game, view: Codemojex.game_view(game)})
     end
   end
@@ -41,16 +28,13 @@ defmodule CodemojexWeb.GameController do
   end
 
   def guess(conn, %{"id" => game} = params) do
-    with player when is_binary(player) <- require_player(params),
-         {:ok, _job} <- Codemojex.submit(game, player, params["emojis"]) do
+    with {:ok, _job} <- Codemojex.submit(game, conn.assigns.player, params["emojis"]) do
       json(conn, %{status: "accepted", view: Codemojex.game_view(game)})
     end
   end
 
-  def history(conn, %{"id" => game} = params) do
-    with player when is_binary(player) <- require_player(params) do
-      json(conn, %{history: Codemojex.my_history(game, player)})
-    end
+  def history(conn, %{"id" => game}) do
+    json(conn, %{history: Codemojex.my_history(game, conn.assigns.player)})
   end
 
   def leaderboard(conn, %{"id" => game}) do
@@ -58,25 +42,20 @@ defmodule CodemojexWeb.GameController do
   end
 
   def buy_keys(conn, params) do
-    with player when is_binary(player) <- require_player(params),
-         keys when is_integer(keys) <- int(params["keys"], {:error, :bad_amount}),
-         {:ok, balance} <- Codemojex.purchase_keys(player, keys, params["ref"] || "stars") do
+    with keys when is_integer(keys) <- int(params["keys"], {:error, :bad_amount}),
+         {:ok, balance} <- Codemojex.purchase_keys(conn.assigns.player, keys, params["ref"] || "stars") do
       json(conn, %{balance: balance})
     end
   end
 
   def convert(conn, params) do
-    with player when is_binary(player) <- require_player(params),
-         diamonds when is_integer(diamonds) <- int(params["diamonds"], {:error, :bad_amount}),
-         {:ok, balance} <- Codemojex.convert_to_keys(player, diamonds) do
+    with diamonds when is_integer(diamonds) <- int(params["diamonds"], {:error, :bad_amount}),
+         {:ok, balance} <- Codemojex.convert_to_keys(conn.assigns.player, diamonds) do
       json(conn, %{balance: balance})
     end
   end
 
   # --- helpers ---
-  defp require_player(%{"player" => p}) when is_binary(p) and p != "", do: p
-  defp require_player(_), do: {:error, :no_player}
-
   defp rows(pairs), do: Enum.map(pairs, fn {p, s} -> %{player: p, score: s} end)
 
   defp int(nil, default), do: default

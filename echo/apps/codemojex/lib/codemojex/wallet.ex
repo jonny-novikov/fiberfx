@@ -36,6 +36,64 @@ defmodule Codemojex.Wallet do
     end
   end
 
+  @doc """
+  Resolve a verified Telegram user id to the single `PLR` bound to it — the
+  existing row if one exists, else a freshly minted+inserted one (cm.4 §2).
+
+  Idempotent: two calls (or N concurrent first-touches) for the same `tg_user_id`
+  yield the SAME `PLR` and leave EXACTLY ONE row. The partial unique index is the
+  sole enforcer; the loser of a race writes nothing (`on_conflict: :nothing`) and
+  the re-fetch returns the winner (Pattern A — `on_conflict: :nothing` + re-fetch).
+
+  `opts` carries `:name` (the display name for a first-touch create — the verifier
+  passes the Telegram `first_name`/`username`, else a default) and optionally
+  `:tg_chat_id`.
+  """
+  def resolve_by_tg(tg_user_id, opts \\ []) when is_integer(tg_user_id) do
+    case Repo.get_by(Player, tg_user_id: tg_user_id) do
+      %Player{id: id} ->
+        {:ok, id}
+
+      nil ->
+        uid = EchoData.BrandedId.generate!("PLR")
+
+        attrs =
+          Map.merge(@empty, %{
+            id: uid,
+            name: name_of(opts),
+            tg_user_id: tg_user_id,
+            tg_chat_id: Keyword.get(opts, :tg_chat_id)
+          })
+
+        {:ok, %Player{}} =
+          %Player{}
+          |> Player.create_changeset(attrs)
+          |> Repo.insert(
+            on_conflict: :nothing,
+            # The conflict arbiter must match the PARTIAL index's predicate
+            # byte-for-byte (cm.4 §2.3) — a bare `:tg_user_id` would not match it.
+            # Stays in lockstep with the migration `where:`.
+            conflict_target: {:unsafe_fragment, "(tg_user_id) WHERE tg_user_id IS NOT NULL"}
+          )
+
+        # The unique index is the SOLE source of truth — re-fetch the winner by
+        # tg_user_id. A real insert wrote uid's row; a conflict (:nothing) wrote
+        # nothing and the loser's minted uid is discarded — either way the one row
+        # the index guards is THE answer, returned to every concurrent caller. (The
+        # in-memory struct cannot be trusted: on_conflict: :nothing returns a
+        # :loaded-state struct even when the write was suppressed, so a state check
+        # would hand a loser back its own discarded id.)
+        {:ok, Repo.get_by!(Player, tg_user_id: tg_user_id).id}
+    end
+  end
+
+  defp name_of(opts) do
+    case Keyword.get(opts, :name) do
+      name when is_binary(name) and name != "" -> name
+      _ -> "player"
+    end
+  end
+
   @doc "Charge a guess against the right currency for the game; refuse if short. `ref` is the game id."
   def charge_guess(player, game_map, ref) do
     {currency, cost} =

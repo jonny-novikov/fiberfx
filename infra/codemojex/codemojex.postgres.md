@@ -1,10 +1,10 @@
 # Codemojex · PostgreSQL node on Fly: the system of record for money
 
-Codemojex keeps its money in PostgreSQL — balances and a transaction ledger, mutated inside short ACID write transactions — so the database is tuned not for analytics but for a steady stream of small writes, a hot row that churns, and durability that never drops a committed payout. This article gives the approach and the configuration for a custom Postgres node on Fly: the official image stripped to a private machine, sized to the workload, with the one operational hazard this write pattern creates named and fixed. As an architecture decision of record for the project: the playable entity is a **game** (`GAM`), a state machine inside a room (`ROM`).
+Codemojex keeps its money in PostgreSQL — balances and a transaction ledger, mutated inside short ACID write transactions — so the database is tuned not for analytics but for a steady stream of small writes, a hot row that churns, and durability that never drops a committed payout. This article gives the approach and the configuration for a custom Postgres node on Fly: the official image stripped to a private machine, sized to the workload, with the one operational hazard this write pattern creates named and fixed. It also carries the **operational runbook** — creating the node, the per-app login roles, and resizing the volume. As an architecture decision of record for the project: the playable entity is a **game** (`GAM`), a state machine inside a room (`ROM`).
 
 ## Scope and method
 
-The node is PostgreSQL 17 from the official image on a Fly `shared-cpu-2x` machine with two gigabytes of memory, reached by the `codemojex` umbrella over the private 6PN. Tuning values and platform behaviour carry a numbered reference to the source that published them; statements about Codemojex are grounded in the committed `echo/apps/codemojex` source — the wallet and the migration — and cited by module and file. No benchmark was run; nothing here is a measurement of this system. The configuration files are `postgres/postgresql.conf`, `postgres/Dockerfile`, and `postgres/fly.toml`. Out of frame: the Valkey node and the queue, which other articles settle.
+The node is PostgreSQL 17 from the official image on a Fly `shared-cpu-2x` machine with two gigabytes of memory, reached by the `codemojex` umbrella over the private 6PN. Tuning values and platform behaviour carry a numbered reference to the source that published them; statements about Codemojex are grounded in the committed `echo/apps/codemojex` source — the wallet and the migration — and cited by module and file. No benchmark was run; nothing here is a measurement of this system. The configuration files are `postgres/postgresql.conf`, `postgres/Dockerfile`, `postgres/fly.toml`, and `postgres/initdb/10-echo-role.sh`. Out of frame: the Valkey node and the queue, which other articles settle.
 
 ## The workload
 
@@ -44,27 +44,87 @@ The fix is two settings, applied per table in a migration rather than globally. 
 
 The volume is NVMe, so `random_page_cost` is 1.1 rather than the default 4.0 that assumes a spinning disk; with random reads nearly as cheap as sequential, the planner picks index scans where it should [9]. `effective_io_concurrency` is raised so the storage's concurrency is used on the rare bitmap scan. JIT is off, because compiling a plan does not repay itself on the one-row lookups this workload runs, and parallel query is disabled for gathers, because a point read does not parallelize and a parallel worker would only contend for the two shared vCPUs. These are OLTP choices; an analytics node would set them the other way.
 
-## Connections and pooling
+## Connections and login roles
 
-A Postgres connection is a process and costs memory, so the node caps `max_connections` at 100 for headroom while the real control sits on the client: the Ecto pool should be bounded so the application never opens more than the node can afford, and a transaction-mode pooler in front is the scaling answer when app machines multiply. `password_encryption` is the modern SCRAM scheme, and `superuser_reserved_connections` keeps a few slots for an operator when the pool is saturated.
+A Postgres connection is a process and costs memory, so the node caps `max_connections` at 100 and `superuser_reserved_connections` keeps a few slots for an operator when the pool is saturated. The real control sits on the client, and the node runs **plain Postgres — no PgBouncer**: each app's Ecto (`DBConnection`) pool is already a bounded pool, and over the private 6PN the pools sum well under the cap, so a pooler would only add a hop. A transaction-mode pooler is the scaling answer if app machines ever multiply past the cap, not before.
 
-## The work before real money
+Identities follow one rule — **one login role per app, never the shared superuser:**
 
-Two pieces of the ownership the custom node entails are not optional for a wallet, and both should land before launch. First, point-in-time recovery: wire continuous WAL archiving to object storage — WAL-G or pgBackRest to Tigris — so a volume or host failure is a restore rather than a loss, because Fly's five-day volume snapshots are a floor, not a backup strategy [11]. This is why `archive_mode` ships off: enabling it without a working archive target fills the write-ahead-log directory and stops the database, so it is turned on only once the archive command is in place. Second, availability: a single Fly volume lives on one host in one region and is not network storage, so that host or disk failing takes the node down [15]; a streaming replica in the primary region, promotable on failure, is the step that turns an outage into a failover.
+| Role | From | Privileges | For |
+|---|---|---|---|
+| `postgres` | `POSTGRES_PASSWORD` secret (image default superuser) | superuser | migrations, ops, break-glass |
+| `echo_mesh` (and siblings) | `POSTGRES_ECHO_USER` / `POSTGRES_ECHO_PASSWORD` secrets | `LOGIN`, `CREATEDB`, read/write (SELECT/INSERT/UPDATE/DELETE) on the app database; **not** superuser, **no** `CREATEROLE` | the everyday `echo_*` app identity |
+
+`password_encryption` is the modern SCRAM scheme. The connection budget is the sum of every app's Ecto `pool_size` plus the reserved slots and a little headroom — `Σ(pool_size) + 3 + headroom ≤ 100` — so bound each app's `pool_size` (default 10) such that the total cannot exceed the cap. **External**, non-app clients — a laptop `psql`, a BI tool, the ops dashboard's read-only role — are a separate concern: `pgweb/0002-external-roles.sql` sketches scoped, connection-limited external roles, applied *after* the first migration (its `GRANT … ON ALL TABLES` only covers tables that exist when it runs), and reached over `fly proxy`, never a public IP.
 
 ## Networking
 
 The node is private by construction. The `fly.toml` declares no public service, and the conf binds the wildcard, so on Fly the machine has no public address and answers only on the organization's 6PN, on by default for apps in one organization [14]. The Phoenix app reaches it at `echo-postgres.internal:5432`, and nothing outside the organization can. The password is injected at first boot from a Fly secret, never written into an image layer.
 
+## Creating the node
+
+The lifecycle is **create → disk → secrets → deploy**, and order matters: the volume and the secrets must exist before the first deploy, because the machine mounts the volume at boot and reads its password during first-boot init. The deploy itself is the Operator's to run.
+
+```bash
+fly apps create echo-postgres                                    # private — no public IP by default
+fly volumes create pg_data --size 5 --region fra -a echo-postgres
+fly secrets set -a echo-postgres \
+  POSTGRES_PASSWORD="$(openssl rand -hex 32)" \
+  POSTGRES_ECHO_USER=echo_mesh POSTGRES_ECHO_PASSWORD="$(openssl rand -hex 32)"
+fly deploy -a echo-postgres
+```
+
+`POSTGRES_DB=codemojex` is **not** a secret — it lives in `fly.toml` `[env]`, so the `codemojex` database is guaranteed created on first init regardless of the secrets line. The roles are created at **first boot** by `postgres/initdb/10-echo-role.sh`: the official image runs `/docker-entrypoint-initdb.d/*` exactly once, on an empty data directory, as the superuser over the local socket (`COPY --chmod=0755 initdb/ /docker-entrypoint-initdb.d/` in the Dockerfile). The script reads the `POSTGRES_ECHO_*` pair, creates `echo_mesh`, and grants it read/write on the `codemojex` schema plus `ALTER DEFAULT PRIVILEGES` for tables migrated later; `CREATEDB` lets the app `mix ecto.create` and own a database, which makes it the owner with full rights and no further grants.
+
+To add another app's role, add a sibling `postgres/initdb/20-<app>-role.sh` (copy `10-echo-role.sh`, swap the `POSTGRES_ECHO_*` prefix for `POSTGRES_<APP>_*`) with its own secrets. **First-boot only:** the init scripts do not re-run on an existing volume, so a role added later must be applied by hand as the superuser:
+
+```bash
+fly proxy 15432:5432 -a echo-postgres &
+PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -p 15432 -U postgres -d codemojex <<'SQL'
+  CREATE ROLE "foo" WITH LOGIN PASSWORD 'from-the-secret' CREATEDB;
+  GRANT CONNECT ON DATABASE codemojex TO "foo";
+  GRANT USAGE, CREATE ON SCHEMA public TO "foo";
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "foo";
+  ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "foo";
+SQL
+```
+
+Verify after the deploy: `\du echo_mesh` shows `Create DB` and **not** `Superuser`; an `echo_mesh` write probe (`create table _probe(x int); drop table _probe;`) succeeds; and `fly ips list -a echo-postgres` is empty (still private).
+
+## Resizing the volume
+
+The volume starts at **5 GB** — sized for launch (the WAL envelope of ~2 GB plus the cluster base and a slowly-growing ledger/guesses set), with room to grow on demand rather than over-provisioned up front. That choice rests on one Fly fact and several cluster hazards.
+
+**Extend online; you can never shrink.** `fly volume extend` grows a volume while the machine runs; the new size must be ≥ the current one [15][17]. Get the id and grow it:
+
+```bash
+fly volumes list -a echo-postgres                         # note the volume id
+fly volume extend <vol-id> --size 10 -a echo-postgres     # grow 5 → 10 GB
+```
+
+The cluster-specific hazards to respect:
+
+- **A full volume stops Postgres, and a stopped-full cluster is hard to revive.** On a money DB with durability on, a disk that fills means Postgres cannot write WAL and refuses writes or halts; worse, a *completely* full volume can block a clean restart, because recovery itself needs room for WAL replay and temp files. So extend **proactively** — watch `df -h /var/lib/postgresql/data` and grow at ~70–80 % full, never after it's wedged. Recovering a full cluster may mean extending while the machine is **stopped**, then restarting.
+- **The filesystem must grow to match.** `extend` grows the block device; the ext4 filesystem inside has to expand onto the new space. Fly grows it for you, applied on the next machine start — so a `fly machine restart` realizes the space if it hasn't already. Confirm with `df -h` afterward. For a single-node DB that restart is brief downtime; schedule it for a money node.
+- **Grow-only means no in-place shrink.** If you over-provision, there is no `--size` down. Reclaiming space is a migration: stand up a smaller volume, `pg_dump`/restore (or replicate + promote) into it, swap, and destroy the old one — real downtime and work. So bias the *initial* size and each extend toward "enough for a while," not "exactly enough."
+- **A replica (once added) carries its own volume.** A streaming replica is a separate machine with a separate `pg_data`; extend each member, and keep the replica's volume ≥ the primary's so it can hold the same dataset.
+- **Snapshots track the size at capture.** Restoring a Fly daily snapshot creates a new volume at the snapshot's size [11][15]; a restored node may need its own extend before it has working headroom.
+- **WAL can spike the disk fast.** `max_wal_size = 2GB` is the steady envelope, but a write burst — or, more dangerously, turning `archive_mode` on with a *failing* `archive_command` — stops WAL recycling and can fill the volume quickly. Headroom plus the proactive `df` watch is the guard.
+
+## The work before real money
+
+Two pieces of the ownership the custom node entails are not optional for a wallet, and both should land before launch. First, point-in-time recovery: wire continuous WAL archiving to object storage — WAL-G or pgBackRest to Tigris — so a volume or host failure is a restore rather than a loss, because Fly's five-day volume snapshots are a floor, not a backup strategy [11]. This is why `archive_mode` ships off: enabling it without a working archive target fills the write-ahead-log directory and stops the database, so it is turned on only once the archive command is in place. Second, availability: a single Fly volume lives on one host in one region and is not network storage, so that host or disk failing takes the node down [15]; a streaming replica in the primary region, promotable on failure, is the step that turns an outage into a failover.
+
 ## Boundaries
 
-This article measures nothing; the tuning and platform figures are cited to their publishers, and the workload is read from the committed wallet and migration, not benchmarked. The memory split is the conventional starting point for two gigabytes [1][2] and wants revisiting against the buffer-cache hit ratio once the node has run. The autovacuum and fillfactor values are sound defaults for an update-heavy table [7][8][9]; the right numbers for Codemojex's `players` table come from watching its HOT-update ratio and dead-tuple trend in production. The single-node, single-volume shape is adequate for launch and not for the availability a money database needs, which the replica and the off-site PITR above address.
+This article measures nothing; the tuning and platform figures are cited to their publishers, and the workload is read from the committed wallet and migration, not benchmarked. The memory split is the conventional starting point for two gigabytes [1][2] and wants revisiting against the buffer-cache hit ratio once the node has run. The autovacuum and fillfactor values are sound defaults for an update-heavy table [7][8][9]; the right numbers for Codemojex's `players` table come from watching its HOT-update ratio and dead-tuple trend in production. The 5 GB volume is a launch estimate, not a measurement — the real size comes from watching the `guesses`/`transactions` growth and the `df` trend, then extending per the section above. The single-node, single-volume shape is adequate for launch and not for the availability a money database needs, which the replica and the off-site PITR above address.
 
 ## Companion files
 
 - `postgres/postgresql.conf` — the tuned configuration: durability fixed, the NVMe planner, the aggressive autovacuum, the observability surface.
-- `postgres/Dockerfile` — the official `postgres:17` image with the conf layered and `PGDATA` placed inside the volume mount.
-- `postgres/fly.toml` — the private `shared-cpu-2x`, two-gigabyte machine with a mounted volume, a TCP check, and a fast-shutdown signal.
+- `postgres/Dockerfile` — the official `postgres:17` image with the conf layered, `PGDATA` placed inside the volume mount, and `initdb/` copied to `/docker-entrypoint-initdb.d/`.
+- `postgres/fly.toml` — the private `shared-cpu-2x`, two-gigabyte machine with a mounted volume, a TCP check, a fast-shutdown signal, and `POSTGRES_DB` in `[env]`.
+- `postgres/initdb/10-echo-role.sh` — the first-boot bootstrap that creates the `echo_mesh` app role from the `POSTGRES_ECHO_*` secrets.
 
 ## References
 
@@ -82,5 +142,6 @@ This article measures nothing; the tuning and platform figures are cited to thei
 12. Fly.io — Managed Postgres (the managed alternative, Shared-2x / 2GB starter): [fly.io/docs/mpg](https://fly.io/docs/mpg/)
 13. Fly.io — Machine sizing (shared minimum 256 and maximum 2048 per vCPU): [fly.io/docs/machines/guides-examples/machine-sizing](https://fly.io/docs/machines/guides-examples/machine-sizing/)
 14. Fly.io — Private Networking (6PN on by default, internal addresses): [fly.io/docs/networking/private-networking](https://fly.io/docs/networking/private-networking/)
-15. Fly.io — Volumes overview (one volume to one machine, single region, NVMe): [fly.io/docs/volumes/overview](https://fly.io/docs/volumes/overview/)
+15. Fly.io — Volumes overview (one volume to one machine, single region, NVMe, grow-only): [fly.io/docs/volumes/overview](https://fly.io/docs/volumes/overview/)
 16. Fly.io — App configuration (the vm section, kill signal and timeout): [fly.io/docs/reference/configuration](https://fly.io/docs/reference/configuration/)
+17. Fly.io — Manage volumes (extend a volume, snapshots): [fly.io/docs/volumes/volume-manage](https://fly.io/docs/volumes/volume-manage/)

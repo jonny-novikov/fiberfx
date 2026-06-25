@@ -1,42 +1,77 @@
-# ValKey Fly.io deployment
+# echo-valkey — the Valkey node
 
-## STAGING — echo-valkey-staging. Deploy with:  fly deploy -c fly.staging.toml
+The **Valkey 9.1** node for the BCS stack: a private, single-machine cache + bus,
+reached over the 6PN at `echo-valkey.internal:6390`. This file covers the node's
+specifics; the generic create → disk → secrets → deploy → verify lifecycle (and the
+private-by-design rules) lives in [`../README.md`](../README.md).
 
-Sized for < 5000 simultaneous players; same durable posture as prod, smaller machine.
+## Image and password
 
-```bash
-fly apps create echo-valkey-staging
-fly volumes create valkey_staging_data --region fra --size 10 -a echo-valkey-staging
-fly secrets set VALKEY_PASSWORD="$(openssl rand -base64 32)" -a echo-valkey-staging
-fly deploy -c fly.staging.toml
-```
+- **Official `valkey/valkey:9.1` image** (`Dockerfile`, `ARG VALKEY_VERSION=9.1`) —
+  **not** a from-source build. It already ships the bundled jemalloc (which
+  `activedefrag` requires), carries the current security patches, and its entrypoint
+  chowns the mounted volume and drops from root to the `valkey` user. The tuned
+  `conf/valkey.conf` is layered on; `CMD` runs `valkey-server /usr/local/etc/valkey/valkey.conf`.
+  (A from-source build is kept in `docs/echo-valkey.Dockerfile` for the benchmark
+  bench — it is not the deploy image.)
+- **The password rides `VALKEY_EXTRA_FLAGS`, not `VALKEY_PASSWORD`.** The entrypoint
+  appends those flags after the config file and a CLI flag overrides the file, so
+  `requirepass` takes effect with the secret never present in any image layer:
 
-Building from source (so you control the Valkey version and get the bundled jemalloc 5.3.0 your bench targets), tuned exactly for the constraints we discussed: single-threaded command loop, second vCPU reserved for background work, memory capped well under 1 GB, eviction off.Quick syntax check on the entrypoint, then presenting: Four files, a self-contained deploy folder (`Dockerfile` expects `conf/valkey.conf` and `docker-entrypoint.sh` beside it).
+  ```bash
+  fly secrets set -a echo-valkey \
+    VALKEY_EXTRA_FLAGS="--requirepass $(openssl rand -hex 32)"
+  ```
 
-The choices that come straight from the `shared-cpu-2x` / 1 GB sizing:
+  The consuming app authenticates with that same password in its connection config.
 
-- **`maxmemory 512mb` + `noeviction`** — half the box, leaving the rest for the AOF-rewrite fork's copy-on-write, jemalloc fragmentation, and the OS. With eviction off, hitting the cap refuses writes (a loud error to alert on) instead of dropping a leaderboard entry or a queued job. Your live state sits far below this, so it's mostly a safety ceiling.
-- **`io-threads 1`** — the deliberate non-default. Extra I/O threads only help network-bound loads; yours is command-bound, so the second vCPU is left for background work instead.
-- **`appendonly yes` / `appendfsync everysec` / `save ""`** — AOF is the ~1s loss bound, and disabling RDB save points means a *single* fork source (the AOF rewrite, with an RDB-preamble base) competing for that second vCPU and the volume, not two.
-- **`lazyfree-* yes` + `activedefrag yes`** — the background work the second core absorbs: big-key frees off the main thread, and incremental defrag (gentle `cycle-max 25`) to claw back fragmentation over a long uptime.
-- **`maxmemory-clients 64mb` + pub/sub buffer limits** — on a 1 GB box, a stuck RESP3 tracking subscriber or slow consumer can't balloon memory; the runaway client is dropped first.
-- **Secret injection** — `requirepass` (and any `VALKEY_MAXMEMORY`/`VALKEY_PORT` override) come from env via the entrypoint, so nothing sensitive is in the image. CLI args override the conf.
+## Conf choices — `conf/valkey.conf` (shared-cpu-2x / 1 GB)
 
-The Dockerfile builds Valkey from source with `MALLOC=jemalloc` (the bundled 5.3.0 your bench targets), no TLS since the 6PN network is the trust boundary. `active-defrag` requires that jemalloc build, which this produces.
+- **`maxmemory 512mb` + `noeviction`** — half the box, leaving the rest for the
+  AOF-rewrite fork's copy-on-write, jemalloc fragmentation, and the OS. Eviction off
+  means hitting the cap refuses writes (a loud error to alert on) rather than dropping
+  a leaderboard entry or a queued job. Live state sits far below this — mostly a ceiling.
+- **`io-threads 1`** — the deliberate non-default. Extra I/O threads only help
+  network-bound loads; this is command-bound, so the second vCPU is left for background work.
+- **`appendonly yes` / `appendfsync everysec` / `save ""`** — AOF is the ~1s loss
+  bound; disabling RDB save points leaves a *single* fork source (the AOF rewrite)
+  competing for the second vCPU and the volume, not two.
+- **`lazyfree-* yes` + `activedefrag yes`** — the background work the second core
+  absorbs: big-key frees off the main thread, and incremental defrag to claw back
+  fragmentation over a long uptime (needs the bundled jemalloc the image provides).
+- **`maxmemory-clients 64mb` + pub/sub buffer limits** — on a 1 GB box a stuck RESP3
+  tracking subscriber or slow consumer can't balloon memory; the runaway client is dropped first.
 
-Deploy:
+The conf binds the wildcard on **port 6390** and writes its AOF to **`/data`** (the
+mounted `valkey_data` volume). No TLS — the 6PN is the trust boundary.
+
+## Deploy (prod)
+
+Private by construction — no public IP (see [`../README.md`](../README.md)). In short:
 
 ```bash
 fly apps create echo-valkey
-fly volumes create valkey_data --region fra --size 3 -a echo-valkey
-fly secrets set VALKEY_PASSWORD="$(openssl rand -hex 32)" -a echo-valkey
-fly deploy -a echo-valkey --build-arg VALKEY_VERSION=8.1.1
+fly volumes create valkey_data --size 3 --region fra -a echo-valkey
+fly secrets set -a echo-valkey VALKEY_EXTRA_FLAGS="--requirepass $(openssl rand -hex 32)"
+fly deploy -a echo-valkey            # the Operator runs the deploy
 ```
 
-```bash
-fly secrets set VALKEY_PASSWORD="<same value>" -a codemoji-phoenix
-```
+## Staging / dev variants (`docs/`)
 
-Pin `VALKEY_VERSION` to one of the tag on the [releases page](https://github.com/valkey-io/valkey/releases)
+Alternate environment configs, deployed with `-c`:
 
-Grafana alert on `used_memory` approaching 512 MB and on CPU throttle/steal for the machine — the two signals that outgrown either the cap or the shared CPU.
+- `docs/echo-valkey.fly.staging.toml` — `echo-valkey-staging`, performance-2x / 2 GB, sized for < 5000 simultaneous players.
+- `docs/echo-valkey.fly.dev.toml` — `echo-valkey-dev`, shared-1x / 512 MB, scale-to-zero, **ephemeral** (no volume; restart = empty store, which is the point in dev).
+- `docs/echo-valkey.Dockerfile` — the from-source build (bench only).
+
+> ⚠️ **These two tomls predate the official-image prod cutover and carry their own
+> drift** — they expose a **public `[[services]]` on port 6379** (prod is private on
+> 6390), set `VALKEY_CONFIG` (which the current `Dockerfile` doesn't read — it hardcodes
+> the conf path and copies only `conf/valkey.conf`), and use a `VALKEY_PASSWORD` secret
+> (prod uses `VALKEY_EXTRA_FLAGS`). Reconcile them to the prod mechanism before using
+> them — as written they are not wired to the as-built image.
+
+## Observability
+
+Grafana: alert on `used_memory` approaching 512 MB, and on CPU throttle/steal for the
+machine — the two signals that you've outgrown either the cap or the shared CPU.
