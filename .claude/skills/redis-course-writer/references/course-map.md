@@ -85,7 +85,7 @@ done). The course is now in the **reframe** (`docs/redis-patterns/specs/reframe-
 roadmap): **`re0` SHIPPED** — the home + the overview landing + the R0.3 `patterns-become-protocol` module (hub +
 3 dives) reframed to the contract-sheet identity; those six pages are the models every later reframed page copies.
 
-**Resume = `re1`**: reframe **R0.2** `redis-under-portal` (hub + 3 dives, + the R0 `llms.txt` sync) — R0 complete.
+**Resume = `re1`**: reframe **R0.2** `redis-under-game` (hub + 3 dives, + the R0 `llms.txt` sync) — R0 complete.
 Then **`re2`–`re5`** reframe R1–R4 chapter by chapter (caching → coordination → queues → time-delay-priority);
 **`re2`/`re3` (R1/R2) are reconciled — contract-sheet, gated PASS, R2 doors retargeted to `/echomq/protocol`; the
 frontier is `re4` (R3 queues)**.

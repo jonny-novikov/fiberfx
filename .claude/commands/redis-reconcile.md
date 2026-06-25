@@ -18,7 +18,7 @@ The law is the **reframe contract** ([`docs/redis-patterns/specs/reframe-echomq/
 the craft is the **`redis-course-writer`** skill + the **`redis-expert`** agent def; the grounding is the
 **grounding map** ([`redis-patterns.roadmap.md`](docs/redis-patterns/redis-patterns.roadmap.md)) resolved to the
 **real code**; the visual + structural model is a **reframed R0 page** on disk (the home `html/redis-patterns/index.html`,
-the R0.2 hub `…/overview/redis-under-portal/index.html`, the hover-select figure `…/patterns-become-protocol/the-four-layers.html`).
+the R0.2 hub `…/overview/redis-under-game/index.html`, the hover-select figure `…/patterns-become-protocol/the-four-layers.html`).
 **Reconcile to fit; never invent, never author a brand-new lesson.**
 
 ## Arguments & scope
@@ -60,7 +60,7 @@ A page conforms when **all** of these hold. **(A)** is the reframe-to-target wor
    / "the closed error set" → the connector's real typed returns (`:disconnected` / `:overloaded` /
    `{:version_fence, got}`) or `Codemojex.Guesses`'s six closed errors. A `Portal.enroll`-style example → an
    `Codemojex.Guesses.submit/3` or `EchoWire`/`EchoMQ.Jobs` call. **Keep every URL slug** (e.g. an
-   `…/redis-under-portal` path stays — change human titles + labels, never the href).
+   `…/redis-under-game` path stays — change human titles + labels, never the href).
 3. **BullMQ → ZERO.** No mention of BullMQ anywhere on a page. The v1 history is told without naming it ("EchoMQ
    broke from its v1 line, now frozen at `1.3.0`"). Never the `bull:` keyspace, never `bullmq.io` in Sources,
    **never Dragonfly** (`echo/apps/codemojex` names Dragonfly the native primary — the reframe overrides it; **Valkey

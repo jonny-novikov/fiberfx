@@ -6,7 +6,10 @@
 > (renamed 2026-06-18, 1:1), and the bus consumer **`Exchange.{Gateway,OrderBook,Decider}`** (`echo/apps/exchange`,
 > deleted) as **`codemojex` / `echo/apps/codemojex`** (manuscript B7). The figure source moved from
 > `docs/echo/bcs/content/bcsN.*` (retired) to `docs/echo/bcs/bcs.N.md`; a new **persistence floor** + the
-> **`/echo-persistence`** door also apply. Authority: the **`bcs-writer`** skill; the page reconcile is **`/bcs-reconcile E<N>`**.
+> **`/echo-persistence`** door also apply. The **Protocol** pillar (`/echomq/protocol`) carries the refined branded-id
+> canon on the immutability contract; the **Queue** pillar (`/echomq/queue`) opens the **`/echo-persistence`** door on
+> its durability-frontier pages (stalled / dead-lettered / archived jobs → `EchoStore.StreamArchive` → `EchoStore.Graft`
+> → Tigris). Authority: the **`bcs-writer`** skill; the page reconcile is **`/bcs-reconcile E<N>`**.
 
 The course **"EchoMQ, In Depth"** is served at **`/echomq`** (folder-routed via `serveDirTree`; **wired live** in
 `main.go` — `/echomq` + `/echomq/*`, `ECHOMQ_DIR`, default `/app/html/echomq`; the URL tree mirrors `html/echomq/`,

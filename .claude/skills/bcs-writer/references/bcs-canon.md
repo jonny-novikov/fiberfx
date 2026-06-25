@@ -83,10 +83,14 @@ r7=data-modeling · r8=production-operations` (R0 = `overview`). Identity: BCS c
 
 **EchoMQ, In Depth (`/echomq`), E0–E5** (three-pillar spine, the §-order in `echo-mq-writer/references/course-map.md`):
 `E0=overview (/echomq + /echomq/overview) · E1=protocol · E2=queue · E3=bus · E4=cache · E5=proof`. Identity:
-dark-editorial. (On-disk transitional dirs `core/substrate/...` are superseded by the pillar sections — see the
-echomq course-map; `html/echomq/bus` is not yet built, so **E3 is build-to-target**.) The retired **E0–E8** numbering
-of the old pre-pillar structure does **not** apply here — `E<N>` is the new six-section spine above, and a **section
-name** (`bus`, `cache`, `protocol`) is always accepted unambiguously.
+dark-editorial. **Built today: overview · protocol · queue; soon (non-anchor `soon` cards): bus · cache · proof.**
+The old pre-pillar `core/` + `substrate/` trees (retired E0–E8 numbering, citing the **deleted** Go port
+`apps/echomq-go` + the **frozen** `echo/apps/echomq`) were **retired/deleted 2026-06-25** — the routes
+`/echomq/{core,substrate,groups,batches,lifecycle,production}` no longer exist; `html/echomq/bus` is not yet built,
+so **E3 bus is build-to-target**. The retired **E0–E8** numbering does **not** apply here — `E<N>` is the
+six-section spine above, and a **section name** (`bus`, `cache`, `protocol`) is always accepted unambiguously.
+**Engine: Valkey 9 only — never Dragonfly; the as-built `@wire_version` is `echomq:2.4.2`** (`stream_consumer.ex`,
+not `2.0.0` and not `3.0.0`) — see [SKILL §1a](../SKILL.md).
 
 **The cross-course doors** (where the new direction adds or re-points an edge):
 

@@ -80,6 +80,33 @@ skill, agent def, command, or page. Each is verbatim-grounded in `bcs.N.md` + th
    - `parse("USR0NgWEfAEJfs") → {:ok, "USR", 320636799581945856}`
    - `decode("USRzzzzzzzzzzz") → :error` (an overflow is refused, not wrapped)
 
+## 1a. Three standing disciplines (added by the 2026-06-25 reconcile — apply to every echomq run)
+
+Cross-cutting facts the courses keep getting wrong; enforce them alongside the five deltas.
+
+A. **Valkey 9 is the only engine — never Dragonfly.** The owned wire's placement story is **Valkey Cluster
+   hash-slots**, not Dragonfly's thread-per-shard: every key of a queue carries the per-queue `{q}` hashtag, so all of
+   a queue's keys hash (CRC16 of the brace bytes) to **one of 16384 hash slots** — which is exactly what keeps a
+   multi-key Lua script legal (no CROSSSLOT) and co-located. Declared keys + the `{q}` hashtag exist FOR that. Cite
+   `https://valkey.io/topics/cluster-spec/` (or `commands/cluster-keyslot/`), never a `dragonflydb.io` page or a
+   `--lock_on_hashtags` flag. Scrub: `grep -riE 'dragonfly' <page>` is **0**.
+
+B. **The wire version is `echomq:2.4.2`** — the as-built `@wire_version`
+   (`echo/apps/echo_mq/lib/echo_mq/stream_consumer.ex`). It is **not** `echomq:2.0.0` (the retired fork label) and
+   **not** `3.0.0` ("3.x" / "Stream Tier 3.0" is the *delivery* name; the wire stamp has not cut over). echomq prose
+   carries **no version labels** (the echo-mq-writer as-shipped rule); where a `@wire_version` constant must appear,
+   use the real one. Scrub: `grep -nE 'echomq:2\.0\.0|EchoMQ 2\.0' <page>` is **0**.
+
+C. **Reachability before reconcile — retire orphaned legacy, don't polish it.** A consumer course can carry an older
+   generation of pages still *served but unlinked* (the retired echomq E0–E8 numbering left `core/` + `substrate/`
+   trees citing the **deleted** Go port `apps/echomq-go` + the **frozen** `echo/apps/echomq`). Before reconciling an
+   echomq pillar, check reachability — does any LIVE page (`html/echomq/index.html` + the built pillars) link in? If
+   nothing does, the tree is orphaned: **retire it** (remove the html + the md mirror + the sitemap `<url>` blocks)
+   rather than spend a reconcile polishing pages that describe deleted code — a blind `sed` "succeeds" on orphans and
+   reports green while preserving the stale citations. The live spine is six pillars — **overview · protocol · queue**
+   (built) · **bus · cache · proof** (soon); the routes `/echomq/{core,substrate,groups,batches,lifecycle,production}`
+   are **gone** (retired 2026-06-25).
+
 ## 2. How to apply — compose, do not re-skin
 
 For each page the run touches:
@@ -104,6 +131,8 @@ P=<page-or-dir>
 grep -rniE 'EchoCache|echo/apps/echo_cache'        $P && echo "DELTA2 FAIL" || echo "EchoStore OK"
 grep -rniE 'Exchange\.[A-Z]|echo/apps/exchange'    $P && echo "DELTA3 FAIL" || echo "codemojex OK"
 grep -rn  'bcs/content/bcs'                         $P && echo "DELTA1 FAIL (retired figure source)" || echo "bcs.N.md OK"
+grep -rniE 'dragonfly'                              $P && echo "ENGINE FAIL (Valkey 9 only — §1a.A)" || echo "Valkey OK"
+grep -rnE  'echomq:2\.0\.0|EchoMQ 2\.0'             $P && echo "VERSION FAIL (echomq:2.4.2, no label — §1a.B)" || echo "as-shipped OK"
 grep -rnoE '(EchoStore|EchoMQ|EchoWire|Codemojex)\.[A-Za-z.]+' $P | sort -u   # re-find each on disk in echo/apps/
 grep -rn  '234878118\|1704067200000\|USR0KHTOWnGLuC' $P   # id vectors, if cited, must be verbatim (delta 5)
 ```

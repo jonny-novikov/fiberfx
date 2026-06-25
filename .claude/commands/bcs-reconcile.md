@@ -78,8 +78,20 @@ A page conforms when **both** hold:
    grep -rniE 'EchoCache|echo/apps/echo_cache'    $D/   # delta 2 targets
    grep -rniE 'Exchange\.[A-Z]|echo/apps/exchange' $D/  # delta 3 targets
    grep -rn  'bcs/content/bcs'                     $D/   # delta 1 targets (retired figure source)
+   grep -rniE 'dragonfly'                          $D/   # §1a.A — Valkey 9 only; reframe to Cluster hash-slots
+   grep -rnE  'echomq:2\.0\.0|EchoMQ 2\.0'         $D/   # §1a.B — the wire is echomq:2.4.2, no version label
    grep -rliE 'ink:#0a0e1a|Cormorant|fonts\.googleapis' $D/   # R-chapter only: still dark-editorial → re-skin
    ls -R $D 2>/dev/null || echo "absent → build-to-target / consider /bcs-author"
+   ```
+6. **Reachability (echomq only) — before reconciling a pillar, prove it is live (§1a.C).** A `core/` or `substrate/`
+   tree may be served-but-orphaned legacy citing deleted code (the deleted Go port `apps/echomq-go`, the frozen
+   `echo/apps/echomq`). If no LIVE page links in, **retire it, don't reconcile it** — a blind reconcile would polish
+   pages describing a deleted world. The live spine is six pillars (overview · protocol · queue built; bus · cache ·
+   proof soon).
+   ```bash
+   grep -rl 'href="/echomq/<section>' html/echomq --include='*.html' | grep -v '/<section>/'   # any live inbound link?
+   # if empty → orphaned: rm -rf html/echomq/<section> + docs/echo/echo_mq/markdown/<section>{,.md}, then drop its
+   # sitemap <url> blocks (filter html/sitemap.xml on /echomq/<section>), and re-point any door-map/spec references.
    ```
 
 ## Step 1 — De-risk (once)
@@ -130,6 +142,8 @@ for p in $(/usr/bin/find $D -name '*.html'); do printf "%s " "$p"; go/jonnify-cm
 /usr/bin/grep -rniE 'EchoCache|echo/apps/echo_cache'    $D/ && echo "DELTA2 FAIL" || echo "EchoStore OK"
 /usr/bin/grep -rniE 'Exchange\.[A-Z]|echo/apps/exchange' $D/ && echo "DELTA3 FAIL" || echo "codemojex OK"
 /usr/bin/grep -rn  'bcs/content/bcs'                     $D/ && echo "DELTA1 FAIL" || echo "bcs.N.md OK"
+/usr/bin/grep -rniE 'dragonfly'                          $D/ && echo "ENGINE FAIL (Valkey 9 only — §1a.A)" || echo "Valkey OK"
+/usr/bin/grep -rnE  'echomq:2\.0\.0|EchoMQ 2\.0'         $D/ && echo "VERSION FAIL (echomq:2.4.2, no label — §1a.B)" || echo "as-shipped OK"
 /usr/bin/grep -rnoE '(EchoStore|EchoMQ|EchoWire|Codemojex)\.[A-Za-z.]+' $D/ | sort -u   # re-find each on disk in echo/apps/
 /usr/bin/grep -rn '234878118\|1704067200000' $D/        # delta 5: if id vectors cited, verbatim only
 ```

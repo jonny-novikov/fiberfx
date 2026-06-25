@@ -29,7 +29,7 @@ Parse the argument string as whitespace-separated tokens:
 - **Token 1 = the chapter.** A chapter **dir slug** (`caching`, `coordination`, `queues`, `time-delay-priority`,
   `streams-events`, `flow-control`, `data-modeling`, `production-operations`) or an `R<N>` number you resolve to its
   slug via the skill's `course-map.md`. **Special: `overview` (or `r0`)** = the R0 set (the home `index.html` +
-  the overview landing `overview/index.html` + R0.2 `redis-under-portal` + R0.3 `patterns-become-protocol`) — all
+  the overview landing `overview/index.html` + R0.2 `redis-under-game` + R0.3 `patterns-become-protocol`) — all
   BUILT; the home, the overview landing, and R0.3 are reframed to the contract-sheet identity (`re0`), R0.2's
   reframe is rung `re1`. Reframing already-built pages follows
   `docs/redis-patterns/specs/reframe-echomq/reframe-echomq.roadmap.md`, not this command's authoring flow.
