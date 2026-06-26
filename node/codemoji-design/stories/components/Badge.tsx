@@ -12,7 +12,7 @@ export const badgeVariants = cva(
         accent: 'bg-accent text-white',
         muted: 'bg-muted text-white',
         success: 'bg-success text-white',
-        gold: 'bg-gradient-gold text-gold-foreground',
+        gold: 'bg-gold-texture text-gold-foreground',
       },
     },
     defaultVariants: { variant: 'accent' },

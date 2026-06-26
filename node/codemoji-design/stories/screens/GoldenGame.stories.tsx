@@ -10,7 +10,7 @@ import { GoldenInProgressScreen, GoldenFinishedScreen } from '../golden-game/Gol
 // Golden/Treatment for that overload note). Two states from the export: an active
 // boosted game (in progress) and the post-settlement winner-take-all (finished).
 // Each is rebuilt LIVE from the design system beside the Figma reference — the gild
-// is the --gradient-gold token (the bezel + the CTAs), not the app's raster gold.png.
+// is the gold TEXTURE (--gold-texture / bg-gold-texture = the app's gold.png raster).
 
 function BoostNote() {
   return (
@@ -23,8 +23,8 @@ function BoostNote() {
       }}
     >
       <strong>Boost class.</strong> <code>gold_multiplier</code> on a <code>classic</code> game — the
-      gild is the tokenized <code>--gradient-gold</code> (see <strong>Golden/Treatment</strong>), not
-      the raster <code>gold.png</code>.
+      gild is the gold <code>--gold-texture</code> (the app&apos;s <code>gold.png</code> raster; see{' '}
+      <strong>Golden/Treatment</strong>).
     </div>
   );
 }

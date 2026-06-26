@@ -9,7 +9,7 @@ import { Button } from '../components/Button';
 // sizes track the Figma master (Russian copy, the "⭐ / N эмоджи / N ячеек" meta).
 // COLOR is the design system's deliberate role layer (the drift the screen view
 // surfaces): a non-gold room uses the `enter` Button (blue) where Figma paints it
-// black; a `golden` boost-class room rides the gold variant (--gradient-gold) + a
+// black; a `golden` boost-class room rides the gold variant (the gold texture) + a
 // gold border, matching Figma's gild. Reuses the shared BoardCard surface; self-
 // contained (onJoin is a callback).
 export interface RoomCardProps {

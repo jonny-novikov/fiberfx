@@ -124,11 +124,11 @@ export const accentThemes = {
 };
 
 // ---------------------------------------------------------------------------
-// gold — the formalized golden treatment. Today the app gilds ad-hoc: a button
-// variant on bg-[url("/images/rooms/gold.png")] (a raster) and ONE inline gold
-// gradient (the golden-room banner in widgets/lobby-info/ui/lobby-info.tsx).
-// This tokenizes the gradient VERBATIM as `--gradient-gold` plus a small set of
-// gold surface/foreground tokens so the gild becomes a token, not a raster.
+// gold — the golden treatment. The app gilds the golden button/room with a metallic
+// gold TEXTURE (bg-[url("/images/rooms/gold.png")]); this package carries that raster
+// (public/assets/gold.png) and exposes it as `--gold-texture` + the `bg-gold-texture`
+// utility, plus a small set of flat gold surface/foreground/border tokens. (Earlier it
+// was a tokenized CSS gradient — replaced here by the faithful Figma texture.)
 //
 // NOTE (overload): "golden" is two unrelated things in the canon —
 //   - a BOOST class (gold_multiplier on a classic game; the Golden Room screens)
@@ -136,11 +136,15 @@ export const accentThemes = {
 // This treatment formalizes the golden VISUALS (the boost-class gild) only.
 // ---------------------------------------------------------------------------
 export const gold = {
-  // verbatim from lobby-info.tsx — the one inline gold gradient in the app.
-  gradientGold:
-    'linear-gradient(269.06deg, #FFE8C1 0.09%, #CC7500 20.15%, #FFD8AB 37.5%, #FFF1D6 55.93%, #E6A900 73.27%, #FFE8BD 92.25%, #FFC88A 112.85%)',
-  // gold surface/foreground tokens — sampled from the gradient's warm mid
-  // (#CC7500) for a flat fill where a gradient is not wanted, white text over.
+  // The golden treatment is the app's gold TEXTURE (public/images/rooms/gold.png,
+  // copied verbatim into this package's public/assets/gold.png) — the metallic fill
+  // Figma uses for the golden button/room, NOT a CSS gradient. Served at
+  // /assets/gold.png (the public/ staticDir). Earlier rungs tokenized this as a
+  // 7-stop linear-gradient because rasters weren't available; the texture is the
+  // faithful original and is restored here.
+  texture: "url('/assets/gold.png')",
+  // gold surface/foreground/border tokens — a flat warm gold (#CC7500) for a fill
+  // where the texture is not wanted, white text over, amber border.
   goldSurface: '#CC7500',
   goldForeground: '#FFFFFF',
   goldBorder: '#E6A900',

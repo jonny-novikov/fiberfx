@@ -5,7 +5,7 @@
 //     --accent channel), recoloring orange/blue/green with the toolbar.
 //   - ROLE-driven (fixed, by intent): `purchase` rides --gradient-purchase (the
 //     orange buy gradient — "Приобрести ключи"), `enter` rides --color-enter
-//     (blue — Open safe / Enter room), `golden` rides --gradient-gold. These
+//     (blue — Open safe / Enter room), `golden` rides the gold texture. These
 //     three signal spend / play / boosted and stay constant under any theme.
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
@@ -28,9 +28,9 @@ export const buttonVariants = cva(
         // Enter — Open safe / Enter room (free or paid, non-gold). FIXED blue:
         // bg-enter = var(--color-enter) (#0050FF).
         enter: 'bg-enter text-white shadow hover:opacity-80 active:scale-95',
-        // Golden — the tokenized gild. bg-gradient-gold = var(--gradient-gold).
+        // Golden — the gold TEXTURE (matches Figma). bg-gold-texture = var(--gold-texture) = gold.png.
         golden:
-          'bg-gradient-gold text-gold-foreground font-bold shadow hover:opacity-90 active:scale-95',
+          'bg-gold-texture text-gold-foreground font-bold shadow hover:opacity-90 active:scale-95',
       },
       size: {
         default: 'h-12 px-4 py-2',

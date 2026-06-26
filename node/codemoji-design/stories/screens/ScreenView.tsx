@@ -30,13 +30,15 @@ function MetaRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-// The gold "BOOST CLASS" pill — carries the --gradient-gold token; shared by the
+// The gold "BOOST CLASS" pill — painted with the gold texture; shared by the
 // drift-view header for a boost-class screen.
 function BoostBadge() {
   return (
     <span
       style={{
-        background: 'var(--gradient-gold)',
+        backgroundImage: 'var(--gold-texture)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
         color: 'var(--color-gold-foreground)',
         fontSize: 10,
         fontWeight: 700,
@@ -50,7 +52,7 @@ function BoostBadge() {
 }
 
 // The device bezel, shared by both panes. `golden` gilds the frame itself with the
-// --gradient-gold token. The inner viewport is supplied by the caller.
+// gold texture. The inner viewport is supplied by the caller.
 function Bezel({
   width,
   golden,
@@ -67,7 +69,10 @@ function Bezel({
           width: width + 14,
           padding: 7,
           borderRadius: width * 0.12,
-          background: golden ? 'var(--gradient-gold)' : '#0d0f12',
+          background: golden ? undefined : '#0d0f12',
+          backgroundImage: golden ? 'var(--gold-texture)' : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
           boxShadow: '0 16px 38px rgba(0,0,0,0.26)',
         }}
       >

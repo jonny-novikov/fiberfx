@@ -4,30 +4,31 @@ import * as React from 'react';
 import { gold } from '../../tokens/tokens.mjs';
 import { Button } from '../components/Button';
 
-// The formalized GOLD treatment. Today the app gilds ad-hoc: a Button variant on
-// a raster (bg-[url("/images/rooms/gold.png")]) and ONE inline gold gradient
-// (the golden-room banner in widgets/lobby-info). This story shows the tokenized
-// form: the --gradient-gold swatch, the `golden` Button variant, and a golden
-// room-card demo (the boost-class gild, re-expressed as tokens not a PNG).
+// The GOLD treatment. The app gilds the golden button/room with a metallic gold
+// TEXTURE (bg-[url("/images/rooms/gold.png")]); this story shows the design-system
+// form: the --gold-texture swatch, the `golden` Button variant, and a golden
+// room-card demo. The texture is carried as public/assets/gold.png.
 
-function GradientSwatch() {
+function TextureSwatch() {
   return (
     <div>
       <div
         style={{
           height: 72,
           borderRadius: 12,
-          background: 'var(--gradient-gold)',
+          backgroundImage: 'var(--gold-texture)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
           border: '1px solid rgba(0,0,0,0.15)',
         }}
       />
-      <code style={{ fontSize: 11 }}>--gradient-gold</code>
+      <code style={{ fontSize: 11 }}>--gold-texture</code>
     </div>
   );
 }
 
 function GoldenRoomCard() {
-  // Re-expresses the golden-room banner: the gradient surface + a boost label +
+  // Re-expresses the golden-room banner: the texture surface + a boost label +
   // the effective-pool figure (mirrors the 03-rooms.md golden-room mock numbers).
   return (
     <div
@@ -41,7 +42,9 @@ function GoldenRoomCard() {
     >
       <div
         style={{
-          background: 'var(--gradient-gold)',
+          backgroundImage: 'var(--gold-texture)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
           color: 'var(--color-gold-foreground)',
           padding: '14px 16px',
           fontWeight: 700,
@@ -75,17 +78,16 @@ function Golden() {
     <div className="font-sans" style={{ color: 'var(--color-dark-muted)', maxWidth: 760 }}>
       <h2 style={{ marginBottom: 8 }}>Gold treatment</h2>
       <p style={{ marginBottom: 16 }}>
-        The gild is now a token. <code>--gradient-gold</code> is the app&apos;s one inline gold
-        gradient (the <code>lobby-info</code> golden-room banner), lifted verbatim; the surface,
-        foreground and border tokens (<code>{gold.goldSurface}</code> /{' '}
-        <code>{gold.goldForeground}</code> / <code>{gold.goldBorder}</code>) give a flat fill where a
-        gradient is not wanted. These supersede the raster{' '}
-        <code>bg-[url(&quot;/images/rooms/gold.png&quot;)]</code>.
+        The gild is the app&apos;s gold <strong>texture</strong>. <code>--gold-texture</code> paints{' '}
+        <code>public/assets/gold.png</code> (the metallic fill Figma uses) via the{' '}
+        <code>bg-gold-texture</code> utility; the surface, foreground and border tokens (
+        <code>{gold.goldSurface}</code> / <code>{gold.goldForeground}</code> /{' '}
+        <code>{gold.goldBorder}</code>) give a flat fill where the texture is not wanted.
       </p>
 
       <section style={{ marginBottom: 24 }}>
         <h3 style={{ marginBottom: 8 }}>Token swatch</h3>
-        <GradientSwatch />
+        <TextureSwatch />
       </section>
 
       <section style={{ marginBottom: 24 }}>

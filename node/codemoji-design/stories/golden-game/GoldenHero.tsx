@@ -1,12 +1,11 @@
 import * as React from 'react';
 import { cn } from '../lib/cn';
 
-// The signature golden surface — the gold-gradient hero on the Golden Room
-// screens (1089:19410 / 1108:27589). Re-expresses the golden variant of
-// widgets/lobby-info: the round timer + the BOOSTED prize pool (the base pool ×
-// gold_multiplier) on a --gradient-gold card, over a "Golden Room / Read rules"
-// banner. The gild is the --gradient-gold token (via the `bg-gradient-gold`
-// utility + a clip-text fill), not the app's gold.png raster.
+// The signature golden surface — the gold hero on the Golden Room screens
+// (1089:19410 / 1108:27589). Re-expresses the golden variant of widgets/lobby-info:
+// the round timer + the BOOSTED prize pool (the base pool × gold_multiplier) on a
+// gold-texture card, over a "Golden Room / Read rules" banner. The gild is the gold
+// TEXTURE (the `bg-gold-texture` utility + a clip-text fill) = the app's gold.png.
 export interface GoldenHeroProps {
   timeLeft?: string;
   prizePool?: number;
@@ -16,10 +15,12 @@ export interface GoldenHeroProps {
   className?: string;
 }
 
-// gold gradient clipped to the text (the app does this inline on the golden
-// banner); uses the --gradient-gold token, not a raw hex.
+// gold TEXTURE clipped to the text (the app does this inline on the golden banner);
+// uses the --gold-texture token (gold.png), covered to the text box.
 const goldText: React.CSSProperties = {
-  background: 'var(--gradient-gold)',
+  backgroundImage: 'var(--gold-texture)',
+  backgroundSize: 'cover',
+  backgroundPosition: 'center',
   WebkitBackgroundClip: 'text',
   backgroundClip: 'text',
   color: 'transparent',
@@ -34,7 +35,7 @@ export function GoldenHero({
 }: GoldenHeroProps) {
   return (
     <div className={cn('overflow-hidden rounded-2xl', className)}>
-      <div className="grid grid-cols-2 gap-3 bg-gradient-gold p-4 text-primary">
+      <div className="grid grid-cols-2 gap-3 bg-gold-texture p-4 text-primary">
         <div className="text-center">
           <div className="text-2xl font-bold leading-none">{timeLeft}</div>
           <div className="mt-1 text-2xs font-medium">Round time</div>

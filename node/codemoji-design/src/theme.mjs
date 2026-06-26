@@ -109,9 +109,8 @@ function themeBlock() {
   lines.push(decl('color-dark-muted', literalColors['dark-muted']) + ' /* #333333 */');
   lines.push('');
 
-  // gold treatment as Tailwind utilities (e.g. bg-gradient-gold, bg-gold,
-  // text-gold-foreground, border-gold-border).
-  lines.push(decl('gradient-gold', gold.gradientGold));
+  // gold treatment — the texture itself is --gold-texture (in :root); these are the
+  // flat color tokens (bg-gold, text-gold-foreground, border-gold-border).
   lines.push(decl('color-gold', gold.goldSurface) + ' /* #CC7500 */');
   lines.push(decl('color-gold-foreground', gold.goldForeground) + ' /* #FFFFFF */');
   lines.push(decl('color-gold-border', gold.goldBorder) + ' /* #E6A900 */');
@@ -134,8 +133,8 @@ function rootBlock() {
   const lines = [];
   for (const [name, value] of Object.entries(base)) lines.push(decl(name, value));
   lines.push('');
-  lines.push('  /* gold treatment (formalized from the app\'s ad-hoc gild) */');
-  lines.push(decl('gradient-gold', gold.gradientGold));
+  lines.push('  /* gold treatment — the metallic gold TEXTURE (public/assets/gold.png) */');
+  lines.push(decl('gold-texture', gold.texture));
   lines.push(decl('gold-surface', gold.goldSurface));
   lines.push(decl('gold-foreground', gold.goldForeground));
   lines.push(decl('gold-border', gold.goldBorder));
@@ -154,14 +153,17 @@ function themeOverrideBlocks() {
     .join('\n\n');
 }
 
-// Tailwind v4 has NO bg-gradient-<name> utility for a --gradient-* theme var, so
-// `bg-gradient-gold` / `bg-gradient-purchase` are no-ops without an explicit
-// @utility (background-image is the right property for a gradient fill). Emitting
-// these here ships the working classes with the drop-in artifact.
+// Tailwind v4 has NO auto utility for a texture / --gradient-* theme var, so these
+// fills are no-ops without an explicit @utility. `bg-gold-texture` paints the gold
+// raster (cover, centered); `bg-gradient-purchase` paints the orange buy gradient.
+// Named bg-gold-texture (NOT bg-gold) so it never collides with the --color-gold
+// auto-generated `bg-gold` color utility.
 function utilityBlock() {
   return [
-    '@utility bg-gradient-gold {',
-    '  background-image: var(--gradient-gold);',
+    '@utility bg-gold-texture {',
+    '  background-image: var(--gold-texture);',
+    '  background-size: cover;',
+    '  background-position: center;',
     '}',
     '',
     '@utility bg-gradient-purchase {',
@@ -184,8 +186,8 @@ export function generateTheme() {
     ' * Drop-in for codemoji-app/src/styles.css token surface: the theme-block',
     ' * names match the app so the same utilities compile, but --accent is a SINGLE',
     ' * themeable channel — the three [data-theme] blocks recolor the Buy/CTA accent',
-    ' * (orange | blue | green). The gold treatment tokenizes the app\'s ad-hoc gild',
-    ' * (--gradient-gold is the lobby-info banner gradient, verbatim).',
+    ' * (orange | blue | green). The gold treatment is the app\'s gold TEXTURE',
+    ' * (--gold-texture = public/assets/gold.png, painted by the bg-gold-texture utility).',
     ' */',
   ].join('\n');
 
