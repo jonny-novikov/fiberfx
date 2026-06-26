@@ -6,6 +6,13 @@ defmodule CodemojexWeb.Endpoint do
     websocket: true,
     longpoll: false
 
+  # Serve the home-page assets (the cm-logo) as Phoenix static files from priv/static/assets.
+  plug Plug.Static,
+    at: "/",
+    from: :codemojex,
+    gzip: false,
+    only: ["assets"]
+
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 

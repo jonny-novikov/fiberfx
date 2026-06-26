@@ -12,6 +12,11 @@ defmodule CodemojexWeb.Router do
     plug CodemojexWeb.Auth
   end
 
+  # The web home page — the Codemoji logo on a neutral-grey field (HTML, not the JSON API).
+  scope "/", CodemojexWeb do
+    get "/", PageController, :home
+  end
+
   # Open routes — trust no caller-supplied identity. The handshake is open because
   # it ISSUES the bearer (it verifies initData, not a SES).
   scope "/api", CodemojexWeb do
