@@ -114,7 +114,9 @@ defmodule Codemojex.Bus do
   end
 
   def start_link(opts \\ []) do
-    {:ok, conn} = EchoWire.start_link(port: Keyword.get(opts, :port, 6390), protocol: 3)
+    # opts is the shared connector option list (protocol/port/host/password); merge defaults so a
+    # bare start still gets a RESP3 lane on 127.0.0.1:6390.
+    {:ok, conn} = EchoWire.start_link(Keyword.merge([port: 6390, protocol: 3], opts))
     :persistent_term.put(@key, conn)
     {:ok, conn}
   end

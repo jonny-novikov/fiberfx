@@ -55,8 +55,11 @@ defmodule Codemojex.Tables do
 
   @impl true
   def init(opts) do
-    port = Keyword.get(opts, :port, 6390)
-    connector = [port: port, protocol: 3]
+    # opts carries the shared connector option list (protocol/port/host/password); take the
+    # connection bits and merge defaults so a bare start still gets a RESP3 lane on 127.0.0.1:6390.
+    connector =
+      [port: 6390, protocol: 3]
+      |> Keyword.merge(Keyword.take(opts, [:host, :port, :password, :protocol]))
 
     games_ttl = Application.get_env(:codemojex, :games_cache_ttl_ms, 600_000)
     sets_ttl = Application.get_env(:codemojex, :sets_cache_ttl_ms, 3_600_000)
