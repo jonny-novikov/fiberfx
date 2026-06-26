@@ -4,13 +4,13 @@ Codemojex is the reference implementation for this course: the game whose runnin
 
 ## The game, and the family it belongs to
 
-A game of Codemojex hides a secret of six emoji in fixed positions, drawn from a themed set; a player submits a sequence and the game reports how close it was. That places it in the Mastermind family, where the defining element is the feedback function — what a guess reveals about the secret — over a code space of positions and symbols. The classic mode reveals a linear score; the Golden Rooms mode reveals nothing until the room closes. Both are the same game with a different feedback policy.
+A game of Codemojex hides a secret of six emoji in fixed positions, drawn from a themed set; a player submits a sequence and the game reports how close it was. That places it in the Mastermind family, where the defining element is the feedback function — what a guess reveals about the secret — over a code space of positions and symbols. The classic mode reveals a linear score; the blind/sealed `golden`-type mode reveals nothing until the game closes. Both are the same game with a different feedback policy. (A **Golden Room** is a third surface — a *live* tournament on the classic base, not the blind type; see the Golden Rooms section below.)
 
 ## The engine and its policies
 
 The Game system is a Mastermind engine. A game (`GAM`) carries a mode and four policies, and the secret, the guess, and the distance math are identical underneath:
 
-- feedback — `score` (the live mode's 0 to 600) or `none` (blind, for Golden Rooms)
+- feedback — `score` (the live mode's 0 to 600) or `none` (blind, the sealed `golden`-type mode)
 - scoring — the linear distance scale, or a coarser exact-match ranking
 - settlement — `live` (a continuous leaderboard, closing on a perfect score or the timer) or `sealed` (one batch at close, paying the top K)
 - economy — the per-guess currency path and the payout curve
@@ -70,15 +70,19 @@ Money is real and a game carries a server-side secret, so both live on the Postg
 > brands land with their `cm.4+` systems. The as-built nine are the namespace table in
 > [`codemojex.design.md`](./codemojex.design.md).
 
-## Golden Rooms
+## Golden Rooms and the blind mode
 
-Golden Rooms are a blind mode of the engine. A player submits a sequence and receives no per-guess feedback; the room accrues a pool over its life (for example a day or two), closes on the timer, and settles once, paying the top players whose combinations were closest. The mode is carried by policy, so it adds no new namespaces:
+Two distinct surfaces once shared the word "golden"; the launch model separates them, and both are policy on the same branded entities, so neither adds a namespace.
+
+**The Golden Room — the tournament (the launch headline).** A Golden Room is a `classic`-typed game carrying the `golden` **marker**: a *live* tournament. A player pays a **$1 buy-in** to become a member for the game's life; the game **gathers ten paid members** before its timer starts; the **buy-ins fund the prize pool** (per-guess fees are platform revenue); and at close the **top finishers split the pool proportionally** while every other member receives consolation clips. A never-filled gather voids and refunds the buy-ins. The full model is the decision surface `docs/codemojex/specs/economy/economy.md` §8 and the engine doc `echo/apps/codemojex/docs/golden-rooms.md`; the build rung is **cm.5** below. The earlier `gold_multiplier` boost is removed (`D-16`) — backend and canon drift absent from the product.
+
+**The blind/sealed mode — the `golden` type.** Separately, the `golden` game *type* is the blind commit-reveal mode (shipped via cm.3): a player submits and receives no per-guess feedback; the game closes on the timer, reveals the secret, and settles once over every guess, paying the top K. It is carried by policy:
 
 - feedback `none`, settlement `sealed`, a reduced emoji set (for example 18 or 24 cells) so the space stays tractable without hints, and an all-pay attempt economy where the fee is sunk whether or not a player places.
-- a provably-fair secret: the game publishes a commitment at open and reveals the secret at close, so a player can verify the secret was fixed in advance (see the specification and architecture draft).
-- an anonymized leaderboard: generated neutral names and avatars, no real personas.
+- a provably-fair secret: the game publishes a commitment at open and reveals the secret at close, so a player can verify the secret was fixed in advance.
+- a forward anonymized leaderboard: generated neutral names and avatars, no real personas (lands with `RMP`).
 
-Golden Rooms exist for live dynamics and for anti-abuse: with no per-guess signal a feedback-driven clicker bot cannot hill-climb toward the secret, and the all-pay structure gives blind farming a negative expected value. Pool balancing and any house participation are an integrity decision held in the architecture draft, with transparent margin levers as the default.
+The blind mode exists for anti-abuse: with no per-guess signal a feedback-driven clicker bot cannot hill-climb toward the secret, and the all-pay structure gives blind farming a negative expected value. Pool balancing and any house participation are an integrity decision held in the design, with transparent margin levers as the default.
 
 ## The six modules
 
@@ -157,7 +161,8 @@ first** (buildable now), then the **blind Golden mode** (its forks ruled before 
 | **cm.2 — classic hardening** (optional) | any classic-mode polish cm.1 defers; folded into cm.1 | B7.3 · B7.6 | folded into cm.1 — no separate rung |
 | **cm.3 — blind Golden** | feedback `none` + the privacy withholding · commit-reveal (`commitment`/`nonce`/`revealed_ms`) · sealed top-K settlement from the pool (the stored `payout_split`) · the per-game reduced set (`cell_count`/`cell_codes`) · the `revealing`/`settling` states | B7.2.3 · B7.4.3 · the Golden Rooms § | ✅ **SHIPPED** (`specs/cm.3.{md,stories.md,llms.md}`) — Arms V-7/V-8/V-14/V-15/V-16 ruled (D-15/D-16), built + committed via the `codemojex-game-rename` rung |
 | **cm.4 — the auth floor** | verified Telegram `initData` (the pure `Codemojex.InitData` HMAC verifier) → a shared **`SES`-in-Valkey** session (the FIRST mutable `EchoStore.Table` — `:tracking` coherence + immediate revocation) · the handshake `POST /api/auth/:platform` (the sole `SES` mint) · the `:auth` plug + socket cutover to `conn.assigns.player` · `players.tg_user_id` resolve-or-create · **`POST /api/players` retired** (the free-money gap) | B7.5 (forward) | ✅ **SHIPPED** (`specs/cm.4.{md,stories.md,llms.md}` + `cm.4.postgres.design.md`) — the dual-architect HIGH-risk Squad rung (`cm-4`); the one pre-launch auth gap closed |
-| **cm.5+ — the deferred systems** | the `BNK` bank + rake · `RMP` membership + the anonymized leaderboard · commerce · growth · analytics | B7.5 · B7.6 + beyond | 📋 named below (§ The feature catalog); out of the core engine's scope |
+| **cm.5 — the Golden Room tournament** | the `:gathering` state machine (+ the `gathering` `games_status` CHECK value · the `ends_ms` `null:false` relaxation) · `start_threshold` (the gather gate, golden-default 10) · `Wallet.buy_in` (the two-sided debit + atomic SQL `+` pool credit · the `SET cm:<game>:paid NX` hint · the `transactions(player,ref) WHERE reason='buy_in'` partial unique index) · `close_split` (live-proportional top-K, mirrors `close_live`) + the consolation clips (`max_score/10`) · `close_void` (per-`(player,ref)` idempotent buy-in refund) · **wire a real sweep** (`close_if_expired` `rooms.ex:298` has zero callers — `I-9`) · the `gold_multiplier` reconcile-out · enforce `buy_in ⇒ not free` · the launch config (the free warm-up room + one Golden Room) | the Golden Rooms § | 📋 **NEXT** — the approved design (calibration `codemojex-golden-calibration`, ledger `D-17`/`D-18`); money-critical/HIGH-risk → Apollo mandatory + the ≥100 determinism loop on Valkey 6390 + Postgres |
+| **cm.6+ — the deferred systems** | the `BNK` bank + rake · `RMP` membership + the anonymized leaderboard · commerce · growth · analytics | B7.5 · B7.6 + beyond | 📋 named below (§ The feature catalog); out of the core engine's scope |
 
 The gate is the codemojex app gate (`TMPDIR=/tmp mix compile --warnings-as-errors` + `mix test
 --include valkey` on Valkey `:6390` + Postgres, plus the fresh-schema reinitialization on the
@@ -177,11 +182,11 @@ The process that ships a rung is the **Codemojex Program** ([`program/codemojex.
 ## The feature catalog
 
 The features that compose the complete game, grouped by system. The Game system is a generic Mastermind
-engine; the classic live room and the Golden Room are two modes of it, selected by policy — so reaching
+engine; the classic live room, the Golden Room tournament, and the blind `golden`-type mode are modes of it, selected by policy — so reaching
 the whole game is a matter of building these features, not new identity types. The **engine core**
 (rooms/modes, the Mastermind engine, games + guesses, the blind Golden mode, the commit-reveal secret,
 the three-currency transactional wallet, the classic + blind API) is **SHIPPED** on the nine as-built
-brands; the systems below it marks 📋 are the **forward** `cm.5+` work (the auth floor — `cm.4` — has
+brands; the systems below it marks 📋 are the **forward** `cm.6+` work (the auth floor — `cm.4` — has
 since shipped: verified `initData` → a shared `SES`-in-Valkey session, the first mutable `EchoStore.Table`).
 
 > **Identity reconcile.** The as-built game re-based its single player entity to **`PLR`** (the
@@ -226,13 +231,21 @@ since shipped: verified `initData` → a shared `SES`-in-Valkey session, the fir
 - Classic mode broadcasts the result; blind mode stores the guess and reveals nothing.
 - Position locking, held in Valkey per player per game, persisting across guesses.
 
-### Golden Rooms (the blind mode) ✅
+### The blind/sealed mode — the `golden` type ✅
 
-- Accept guesses with no per-guess feedback for the room's life.
+- Accept guesses with no per-guess feedback for the game's life.
 - Use a reduced emoji set (a per-game `cell_count` snapshot) to keep the space tractable without hints.
 - Close on the timer; run one settlement pass over all guesses; pay the top K from the pool by the stored `payout_split`.
 - An all-pay attempt economy: a per-attempt fee is sunk whether or not a player places.
 - 📋 An anonymized leaderboard: generated neutral names and avatars (lands with `RMP`).
+
+### The Golden Room tournament 📋 (cm.5)
+
+- A `classic`-typed game with the `golden` **marker** — a live tournament, NOT the blind type and not a boost class (the `gold_multiplier` boost is removed, `D-16`).
+- A **$1 buy-in** is membership for the game's life (a `buy_in` `TXN`, cached in ETS); a `:gathering` state holds the game until **ten paid members** gather, then the live timer starts.
+- Buy-ins **fund the prize pool** (the keystone `$1 × 10 = $10` guaranteed, break-even); per-guess fees are platform revenue.
+- At close the **top finishers split the pool proportionally** (`close_split` reusing `Economy.top_k_split`); every other member receives consolation clips (`max_score/10`).
+- A never-filled gather **voids and refunds the buy-ins** exactly once (`close_void`); a real sweep is wired (`close_if_expired` has no caller today).
 
 ### Provably-fair secret (commit-reveal) ✅
 

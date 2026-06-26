@@ -167,6 +167,27 @@ The Operator changed the approved economy after the Stage-4 close (the backgroun
 
 REOPENED by this change: the membership definition (D-9), the buy-in (D2 → $1 fixed), the settlement (now two-class: pool prize + consolation clips). PENDING Operator clarification: (A) does the gather threshold (10) now count BUY-INS/members or still distinct GUESSERS? (the original ≥1-guess vs the new member=buy-in directly conflict); (B) the top-K prize currency (the pooled keys buy-ins, or diamonds?). The start-mechanic :gathering spine + the never-fills buy-in refund still hold. Once clarified: fold into economy.md + re-verify the money mechanics at the build rung.
 
+### T-15 — Canonical-spec reconcile: grounding re-verified on disk + the per-file drift catalogue
+
+Venus-Reconcile (the successor to the closed design phase) folds the approved launch model (D-18 + economy.md §8, the current truth — SUPERSEDES D-6/D-9 member-by-guess) into the four canon engine specs. Every load-bearing citation RE-VERIFIED on disk before writing (NO-INVENT, venus charter §1):
+
+AS-BUILT MATCH (cite + mark MATCH; the engine already has these):
+- Economy.top_k_split/3 economy.ex:62-77 (pure, dust→rank1) — the proportional payer the live_split settlement REUSES. MATCH.
+- Economy.to_cents/1+to_usd/1 economy.ex:21-27 (1 diamond=1.2¢) — the USD rail for the $1 buy-in display. MATCH.
+- Wallet transaction discipline wallet.ex:158-217: Repo.transaction → lock(player) FOR UPDATE (:195) → non-negative check → update! → txn! paired row. convert_to_keys:118-141 = the single-Repo.transaction paired-txn! template the buy_in inherits. resolve_by_tg:52-88 = the partial-unique-index idempotency precedent (on_conflict::nothing + re-fetch + byte-matched conflict_target:76). txn! reason free-text:201-217 (buy_in/buy_in_refund need NO enum migration). NO Ecto.Multi/update_all/inc anywhere (L-13). MATCH.
+- do_close 2-way dispatch rooms.ex:188-193 (settlement=="sealed"→close_sealed, else→close_live); SET cm:<game>:closed NX rooms.ex:181; close_live:196 / close_sealed:223. MATCH.
+
+DRIFT TO RECONCILE-OUT (cite + mark [RECONCILE], forward-tense — the build rung strikes these):
+- gold_multiplier (D-16): schemas/room.ex:21 + game.ex:35 (default 1), migration:67+:100 (null:false default:1), rooms.ex:40 (default 3 for golden) +:108, Economy.effective_pool/3 ×mult economy.ex:34-36 applied at close rooms.ex:199+:226. ABSENT from the product node/codemoji-app/src (grep no-match, confirms D-16). golden-rooms.md carries it at :4(via boost framing),:13,:30,:35,:39-48,:62.
+- create_room type-default COLLISION rooms.ex:31: type defaults "golden" when golden:true → policies_for("golden"):127 = blind/sealed. D-3/D-18: must STOP defaulting; Golden Room is type:"classic"+golden:true.
+
+FORWARD ENGINE MECHANICS (not shipped — mark forward-tense / build-rung):
+- :gathering state (D-4): NOT in the games_status CHECK (migration:110-113 has scheduled·open·active·revealing·settling·settled·voided); ends_ms null:false migration:93 + validate_required game.ex:67 (I-10) block a nil-ends_ms gathering phase → schema relaxation owed.
+- I-9 RE-CONFIRMED (strongest): close_if_expired rooms.ex:298 is the ONLY occurrence in lib/+test/ — ZERO callers; no send_after/scheduler/sweep anywhere. The timer-close AND never-fills auto-close have NO in-tree trigger today. "Wire a real sweep" is a hard build dependency.
+- Wallet.buy_in, close_split, close_void, start_threshold prop, cm:<game>:paid set, the transactions(player,ref) WHERE reason='buy_in' partial unique index — all NEW surface (forward).
+
+Clip-value (grounds consolation-clips + buy_in⇒not-free): 01-currency-model.md:36-37 clips excluded from available balance + carry no economic value.
+
 ## {codemojex-golden-calibration-decisions} Decisions
 
 ### D-1 — Formation: Flat-L2, the Design-Phase dual-architect variant (+ Apollo mandatory)
@@ -316,6 +337,31 @@ CARRIED FORWARD: the :gathering state machine; the never-fills buy-in refund (ex
 
 RESIDUAL build-rung detail (flagged, not blocking): the exact pool accounting ($10 guarantee as a recouped seed vs a buy-in-funded display) + the keys→diamonds conversion for a buy-in funding the diamond pool — resolved at the build rung; the net (guaranteed $10, buy-in-funded, break-even at 10, zero platform loss, diamonds prize) is fixed here. The build rung re-verifies the revised money mechanics (the buy-in two-sided op now credits a diamond pool; the consolation-clips grant; the member-by-buy-in gather count) under Apollo + the ≥100 loop.
 
+### D-19 — RECONCILED: the four canon engine specs folded to the approved launch model (D-18 + economy.md §8)
+
+Venus-Reconcile executed the canonical-spec reconcile (the successor deliverable Y-9 named). All four boundary files edited; production code, the specs/ design docs, the ledger body, and the Operator-owned gameplay canon UNTOUCHED. No git (Director ratifies).
+
+THE FOLD-IN (each grounded — MATCH at file:line, or forward-tense for the unbuilt build rung):
+1. Golden collision (D-2/D-3/D-18): the Golden Room is disambiguated everywhere as a `type:"classic"` + `golden:true` TOURNAMENT MARKER (buy-in + gather-10 + live-proportional payout); the blind/sealed mode keeps `type:"golden"` as a SEPARATE surface. golden-rooms.md rewritten boost-class→tournament; design.md gains a disambiguation ¶ + tightens "golden game"→"golden-type (blind)" at the two confusable sites (View :92, the per-guess announce :109); roadmap §"Golden Rooms" split into the two surfaces; the `create_golden_room` "stops defaulting type→golden" reconcile noted (rooms.ex:31 collision).
+2. gold_multiplier REMOVED (D-16): every live boost-class claim struck; the term now survives ONLY in reconcile-out context (design.md:137, golden-rooms.md:11/:44, roadmap:77/:164/:244). effective_pool ×mult (economy.ex:34-36) flagged as the build-rung reconcile-out.
+3. :gathering state (D-4) + start_threshold (D-5) + membership=buy-in (D-18, SUPERSEDES D-6/D-9) + the keystone $1×10=$10 (D-18) + two-class settlement (top-K diamonds via top_k_split + consolation clips max_score/10) (D-12/D-18) + never-fills void+refund (D-7/D-14) + the two-sided buy_in op (D-13) — all folded FORWARD-TENSE into golden-rooms.md (full), design.md (state-machine + settlement + economy ¶s), and the new roadmap cm.5 rung.
+4. Fee→pool copy STRUCK (T-5): the pool is buy-in-funded (Golden Room) or platform-seeded (ordinary room); per-guess fees are platform revenue. game_rules.md "entry fees fund the pool / 30% platform fee" reconciled out (the resource table, the Real-Stakes ¶, the summary row); design.md:188 "platform-seeded" → the conditional (seed ordinary / buy-in Golden).
+5. Tier drift FOLDED (T-5): game_rules.md's "30-Tier System" re-headed "a forward extension, NOT the shipped rank" with a D-16 reconcile banner (matching gameplay/README.md:98 + 01-onboarding.md:74, which already label it forward); the "creates 30 natural tiers"/"first-mover bonuses" current-framing struck. golden-rooms.md:4 "same first-mover tiers" removed in the rewrite. (The roadmap's B7.4.2 course-tier lines keep their EXISTING [RECONCILE] note — already tracked, not worsened.)
+
+STRUCTURAL: the roadmap cm.N ladder grows a rung — cm.5 = the Golden Room tournament (the named successor BUILD rung, money-critical/Apollo-mandatory); the deferred-systems bucket renumbered cm.5+ → cm.6+ (rows + the §feature-catalog "cm.6+ work" prose). FLAGGED for Director visibility.
+
+HONESTY GRADIENT: the design.md as-built promise (line 5 "written against the source, not ahead of it") gained an explicit Golden-Room-tournament forward-exception clause, so no reader mistakes the approved-but-unbuilt tournament for shipped surface.
+
+### D-20 — Director ratify: the canonical-spec reconcile is verified BUILD-GRADE (Stage-3 solo review on disk)
+
+The Director's independent Stage-3 review of Venus-Reconcile's canonical reconcile (D-19 / Y-10) passed against disk (not on the report's word):
+- BOUNDARY: exactly the 4 engine specs (codemojex.design.md, codemojex.roadmap.md, golden-rooms.md, codemojex.game_rules.md) + this ledger; git-confirmed ZERO codemojex production code / test / migration touched; the gameplay canon (node/codemoji-design/) untouched (the L-15 FLAG honored, not edited).
+- NO-INVENT: every cited anchor resolves on disk — top_k_split economy.ex:62, effective_pool economy.ex:34-36 (the struck ×mult, a build-rung reconcile-out), SET cm:<game>:closed NX rooms.ex:181, close_if_expired rooms.ex:298 (I-9 zero-callers re-confirmed), Notifier.golden_win/4 rooms.ex:261, the {:golden_win} broadcast in announce_golden rooms.ex:267, the wallet FOR-UPDATE lock discipline wallet.ex:158-217 (lock/1 at :195), convert_to_keys wallet.ex:118, the tg_user_id partial-index idempotency pattern wallet.ex:52-88, and the as-built create_golden_room type-default rooms.ex:31 (UNCHANGED — the site the cm.5 build fixes).
+- FORWARD-TENSE HONESTY: every unbuilt mechanic (:gathering, Wallet.buy_in, close_split, close_void, start_threshold, the wired sweep, the gold_multiplier reconcile-out) marked (forward) / build-rung; codemojex.design.md adds an explicit preamble exception clause preserving its "written against the source, not ahead of it" promise.
+- FAITHFUL TO D-18: membership = the $1 buy-in (supersedes member-by-guess), the enter($1)×floor(10)=$10 break-even keystone, two-class settlement (top_k_split diamond pool + consolation clips max_score/10), gold_multiplier struck, the fee→pool copy struck, the tier-drift folded forward (D-16 linear-only), the free warm-up room "Бокс для разминки".
+- ADVERSARIAL CONSISTENCY PROBE: the residual gold_multiplier mentions are ALL correct removal-references (no half-edit); the roadmap cm.5+→cm.6+ renumber leaves NO dangling cm.5 (cm.5 is now exclusively the Golden Room tournament); the blind-mode settlement also had "(boosted)" removed for cross-consistency; the golden-type(blind)-vs-Golden-Room disambiguation is applied at every confusable site (the types table, View rooms-doc :92, announce :109). No contradiction found.
+VERDICT: BUILD-GRADE for the cm.5 engine build rung. No fork surfaced (the approved design was internally consistent at every seam). Ratified; landing as one LAW-4 pathspec commit.
+
 ## {codemojex-golden-calibration-learnings} Learnings
 
 ### L-1 — The engine specs CONTRADICT THEMSELVES on "golden", and golden-rooms.md sides WITH the gameplay canon
@@ -411,6 +457,18 @@ L — Invented surface is caught by the CONSUMER, not the code+spec
 gold_multiplier read as ground truth to every agent (Venus-A/B, Apollo, the Director) because it is REAL in the backend code+schema+migration+tests AND the design canon — a fiction present in BOTH the implementation and the docs is indistinguishable from fact by anyone reasoning from them. Only the Operator (who knows the real product) flagged it. The disk tell, in hindsight: pervasive in code+canon but ABSENT from the consuming product (node/codemoji-app, the real frontend, grep-confirmed).
 
 LESSON: on a reconcile rung, a surface present in code+canon but absent from the consumer is a DRIFT candidate — cross-check the CONSUMER, not just the code+spec. This sharpens NO-INVENT: "grounded in a real file:line" is necessary but NOT sufficient — the file:line itself can be invented surface that propagated. The cheapest detector is the consumer cross-check (here: a single grep of node/codemoji-app).
+
+### L-15 — FLAG (not edited): the Operator-owned gameplay canon still carries the gold_multiplier boost-class model that D-16/D-18 supersede
+
+The reconcile boundary is the four ENGINE specs; node/codemoji-design/gameplay/ is READ-ONLY (the Operator is actively editing it). Grep shows that canon STILL defines a Golden Room as the gold_multiplier BOOST CLASS, pervasively — the model D-16 removed and D-18 replaced with the tournament:
+- 03-rooms.md:3,8,9,11,89,91,95,101,107-118,137,150,153,160,166 — "boost class on a classic-type room", gold_multiplier default 3×, effective_pool=pool*multiplier, "winner-take-all over the boosted pool", "no separate Golden split policy".
+- README.md:13,79,123,126 — "boost class", "the boosted pool", the Modes/Disambiguation table (golden TYPE = blind; Golden ROOM = boost). 04-sections.md:105,109; 05-stories.md:11.
+
+This is a TRUE canon drift now: post-D-18 the Golden Room is a TOURNAMENT (buy-in + gather-10 + live-proportional top-K split over a buy-in-funded pool + consolation clips), NOT a gold_multiplier boost class. The engine specs I reconcile now DIVERGE from the gameplay canon on the Golden Room definition.
+
+NOTE the canon is already CORRECT on the OTHER two reconciles: README.md:98 + 01-onboarding.md:74 explicitly say "no tier ladder, no first-mover bonus in the shipped engine" and label game_rules.md's 30-tier a forward extension. So only the gold_multiplier boost-class framing is the open canon drift.
+
+ROUTING: the Director surfaces to the Operator that the gameplay canon's Golden-Room screens (03-rooms.md "in progress"/"finished", README disambiguation §, 04-sections.md:109) need the Operator's own reconcile from boost-class → tournament — the calibration's source-of-truth surface now trails the approved model on this one axis. Venus-Reconcile did NOT touch it (boundary-honored).
 
 ## {codemojex-golden-calibration-alternatives} Alternatives
 
@@ -639,6 +697,43 @@ SUCCESSORS (NOT this rung): (1) the canonical-spec reconcile — a fresh Venus f
 
 DETERMINISM POSTURE: docs-only design deliverable — no code/suite changed (the sole rung-scope diff is economy/economy.md). No determinism loop applies; the verification floor for a design deliverable is internal consistency + NO-INVENT grounding (every named surface at a real file:line or forward-tense) + Apollo BUILD-GRADE + the Operator rulings — all satisfied.
 
+### Y-10 — Canonical-spec reconcile: COMPLETE, in the working tree (Director ratifies + commits)
+
+DELIVERABLE: the four canon engine specs folded to the approved Golden-Room launch model (D-18 + economy.md §8). Spec-only; NO production code, NO git. Grounding re-verified on disk (T-15): every MATCH claim cited at file:line, every unbuilt mechanic forward-tense.
+
+FILES CHANGED (4):
+- echo/apps/codemojex/docs/golden-rooms.md — REWRITTEN boost-class → tournament (the heaviest). New model: golden = tournament marker on type:"classic"; membership = the $1 buy-in; :gathering → gather-10 → live timer; the keystone $1×10=$10 break-even, buy-in-funded pool; two-class settlement (top-K proportional diamonds + consolation clips max_score/10); never-fills void+refund; the two-sided buy_in op; gold_multiplier struck; the launch config. Shipped substrate cited (top_k_split economy.ex:62, the SET NX close rooms.ex:181, golden_win rooms.ex:261, the wallet discipline wallet.ex:158-217); tournament mechanics forward-tense.
+- docs/codemojex/codemojex.design.md — 11 surgical edits: the types-table golden row de-boosted; a Golden-Room disambiguation ¶; "golden game"→"golden-type (blind)" at View :92 + announce :109; gold_multiplier struck from the games bullet :137; the status ladder gains `gathering` + the Golden-Room traversal; the join ¶ + the state-machine gain the forward gather phase (with the cm:<game>:started NX start-lock + the sweep note); the settlement flow gains close_split/close_void/consolation-clips; "platform-seeded" → the seed/buy-in conditional :188; the line-5 as-built promise gains the forward-exception clause.
+- docs/codemojex/codemojex.roadmap.md — 7 edits: the engine-summary + feedback-policy conflations disambiguated; §"Golden Rooms" split into the two surfaces (tournament vs blind golden-type); a NEW cm.5 rung = the Golden Room tournament (names every build obligation); the deferred bucket renumbered cm.5+ → cm.6+ (table row + the §feature-catalog "cm.6+ work" prose + the catalog heading "Golden Rooms (the blind mode)" → "the `golden` type" + a forward "Golden Room tournament 📋 (cm.5)" catalog entry).
+- echo/apps/codemojex/docs/codemojex.game_rules.md — 10 edits: fee→pool copy struck (resource table, the Real-Stakes ¶, the summary row); the 30-Tier System re-headed "a forward extension, NOT the shipped rank" + a D-16 reconcile banner; "first-mover bonuses" + "creates 30 natural tiers" current-framing folded forward.
+
+LEDGER LOGGED: T-15 (grounding + drift catalogue) · L-15 (the gameplay-canon drift FLAG) · D-19 (the locked reconcile) · this Y-10.
+
+DRIFT FLAGGED, NOT EDITED (boundary-honored — the Operator owns it; L-15): node/codemoji-design/gameplay/ STILL pervasively defines the Golden Room as the gold_multiplier BOOST CLASS (03-rooms.md:3/8/9/11/89/91/95/101/107-118/137/150/153/166; README.md:13/79/123/126; 04-sections.md:105/109; 05-stories.md:11). Post-D-18 that canon now DIVERGES from the reconciled engine specs on the Golden-Room definition (boost-class → tournament). The Operator's own gameplay surface needs the same boost-class → tournament reconcile. NOTE: that canon is already CORRECT on tiers (README.md:98 + 01-onboarding.md:74 label the 30-tier forward) — only the gold_multiplier framing is the open canon drift.
+
+OPTIONAL DOCS INSPECTED (no edit owed): 01-currency-model.md clean; 02-rooms-and-emoji-sets.md:15 "Initial prize pool (platform promote to play)" is CORRECT for an ordinary room's seed (only the Golden Room overrides to buy-in funding) — consistent, not drift.
+
+VERDICT: BUILD-GRADE for the cm.5 build rung — the canon now describes the approved target; the unbuilt mechanics are honestly forward-tense.
+
+BUILD-RUNG TODO DIGEST (cm.5, the named successor; carries the D-17/Y-9/Apollo gates):
+1. :gathering state — add to the games_status CHECK; relax ends_ms null:false (migration:93) + validate_required (game.ex:67).
+2. start_threshold prop (rooms+games, snapshot; golden-default 10, nil=legacy first-join).
+3. Membership = the buy_in TXN paid-set (SUPERSEDES member-by-guess); the gather counts paid members; the N/threshold counter reads it onto the board.
+4. Wallet.buy_in — one Repo.transaction: lock(player) debit + atomic SQL `+` on games.prize_pool (NEVER app-RMW) + SET cm:<game>:paid NX hint + the transactions(player,ref) WHERE reason='buy_in' PARTIAL UNIQUE INDEX (the HEADLINE cross-store money-leak gate, Apollo Y-5/L-10). No Ecto.Multi precedent — use the convert_to_keys idiom (wallet.ex:118).
+5. The keystone pool ($1×10=$10, buy-in-funded diamond pool); the keys→diamonds pool accounting is the D-18 residual.
+6. close_split — MIRRORS close_live (NOT close_sealed — the L-9 cache-write/{:revealed} trap); reuses Economy.top_k_split; the live trigger.
+7. Consolation clips = max_score/10 granted on finish (paid-but-never-guessed → 0).
+8. close_void — per-(player,ref) idempotent + crash-resumable buy-in refund under the SET NX; refund BUY-INS ONLY (per-guess fees = revenue).
+9. cm:<game>:started NX guard on the gathering→open transition (the L-7 3-non-atomic-ops race).
+10. WIRE A REAL SWEEP — I-9 RE-CONFIRMED: close_if_expired (rooms.ex:298) is the ONLY occurrence in lib/+test/, zero callers, no scheduler.
+11. gold_multiplier reconcile-out: the schema columns (room.ex:21/game.ex:35, migration:67/:100), effective_pool ×mult (economy.ex:34-36), and the golden_blind test multiplier.
+12. Enforce buy_in ⇒ not free (changeset rule).
+13. create_golden_room: stop defaulting type→golden (rooms.ex:31); default start_threshold 10; FIXTURE AUDIT — existing golden tests join <10 → permanent gathering (U-1).
+14. ≥100 determinism loop on Valkey 6390 + Postgres; Apollo MANDATORY (money-critical).
+15. Launch config: the free warm-up room "Бокс для разминки" + one Golden Room.
+
+For the Operator (flagged): the gameplay-canon boost-class → tournament reconcile (L-15), the cm.5/cm.6+ roadmap renumber visibility.
+
 ## {codemojex-golden-calibration-escalations} Escalations
 
 ### E-1 — [economy, Operator sub-forks] Two genuinely-open economic forks the design surfaces but does NOT decide
@@ -655,3 +750,11 @@ Terminal decision D-18 (the consolidated launch model) + report Y-9 (the design-
 LAW-4 discipline: pathspec EXCLUDES the heavily-entangled Operator out-of-band tree (docs/echo-persistence/**, docs/redis-patterns/**, docs/echo/**, memory/**, go/**, elixir/**, node/codemoji-design/stories/**, and ~40 other modified/untracked paths). NO git add -A, NO bare commit; git diff --cached re-verified == the two rung files only. No rebase in progress. NOT pushed (operator runs deploys).
 
 GATE for a design-phase land: no code changed → no mix/Valkey/determinism gate; the deliverable gate (consistency + NO-INVENT grounding + Apollo BUILD-GRADE + Operator approval) is green (D-15, D-17, D-18). Next, per the Operator directive "commit first then reconcile — fresh Venus": spawn a NEW Venus to reconcile the canonical specs to D-18 (a separate deliverable, its own later commit).
+
+### Z-2 — LAND: the canonical-spec reconcile committed (one LAW-4 pathspec commit)
+
+D-19 (Venus-Reconcile's locked reconcile) + D-20 (Director ratify, Stage-3 BUILD-GRADE) + Y-10 (Venus report). One Director pathspec commit of the reconcile rung's surface: the 4 canonical engine specs (docs/codemojex/codemojex.design.md, docs/codemojex/codemojex.roadmap.md, echo/apps/codemojex/docs/golden-rooms.md, echo/apps/codemojex/docs/codemojex.game_rules.md) + this ledger + the .registry.json (the rung's now-settled team state — Venus-Reconcile registered, no further spawns this rung — folded into this commit per the codemojex-ship §2 audit surface).
+
+LAW-4 discipline: pathspec EXCLUDES the heavily-entangled Operator out-of-band tree; NO git add -A, NO bare commit; git diff --cached re-verified == the rung surface only. NOT pushed (operator runs deploys).
+
+This LANDS the literal "Change the Golden Rooms Game Mechanics specs" deliverable (the Operator's founding directive). The canon now describes the approved tournament target with every unbuilt mechanic honestly forward-tense. NAMED SUCCESSOR (NOT this rung): cm.5 — the Golden Room engine build (roadmap §cm.5; money-critical/HIGH-risk → Apollo mandatory + the ≥100 determinism loop on Valkey 6390 + Postgres), carrying the 15-item build-rung TODO digest from Venus-Reconcile's report. OPEN FLAG for the Operator (L-15): node/codemoji-design/gameplay/ still defines the Golden Room as the gold_multiplier boost class and needs the same reconcile on that Operator-owned surface.

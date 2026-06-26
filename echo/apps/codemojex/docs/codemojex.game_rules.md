@@ -38,18 +38,18 @@ Every guess costs Keys. Keys are earned through gameplay, purchased with Stars, 
 |:--------:|---------|-------------|
 | 🔑 Keys | Submit guesses | Purchase with ⭐ Stars |
 | ⭐ Stars | Buy keys, entry fees | In-app purchase, rewards |
-| 💰 Prize Pool | Round rewards | Entry fees (30% platform fee) |
+| 💰 Prize Pool | Round rewards | Buy-ins (a Golden Room tournament) or a platform seed — not per-guess fees |
 
 ### ⏱️ Round Timer — The Pressure Cooker
 
 Each round has a countdown (typically 24-48 hours). 
-The timer creates urgency: submit early to claim first-mover bonuses, or wait to analyze others' progress? 
+The timer creates urgency: submit early to build standing, or wait to analyze others' progress? 
 Time is a strategic dimension.
 
 ### 🏆 Prize Pool — Real Stakes
 
-Players contribute to the prize pool through entry fees. 
-After a 30% game fee, the remaining 70% is distributed to top performers. 
+A Golden Room's prize pool is funded by player **buy-ins**; an ordinary room's pool is **platform-seeded**. Per-guess fees are platform revenue, not pool. 
+At close the top finishers **split the pool** proportionally, and every other member of a tournament receives consolation clips. 
 Higher scores = larger share. This transforms casual play into genuine competition.
 
 ### 📌 Position Locking — Strategic Anchoring
@@ -131,7 +131,7 @@ Every correct emoji earns points, even if misplaced.
 ### The 20-Point Gap Design
 
 Notice the uniform 20-point gaps between each distance level. 
-This isn't accidental — these gaps create exactly **30 natural scoring tiers** and reserve space for future mechanics.
+The shipped engine ranks the **raw linear total** (0–600) — there is no tier ladder; the uniform gaps partition the range into 30 milestones a **future** extension could surface as tiers (see below), but today they are not a scoring mechanic.
 
 ```
 D0: 100 ─┐
@@ -182,10 +182,12 @@ Percentage = 520 ÷ 600 = 87%
 
 ---
 
-## The 30-Tier System
+## The 30-Tier System — a forward extension, NOT the shipped rank
 
-The Linear scoring system creates exactly 30 natural tiers, forming a ladder from 0 to 600 points. 
-Each tier represents 20 points and a meaningful milestone.
+> **Reconcile (`D-16`, linear-only).** The shipped engine ranks the **raw best linear total**; there is **no tier ladder and no first-mover bonus** (`codemojex.design.md`; `gameplay/README.md:98`). The 30-tier structure here is a documented **future** mechanic, not the current scoring — do not show tier badges as live.
+
+The linear scale partitions 0 to 600 into exactly 30 uniform 20-point milestones — the ladder a future tier mechanic would build on (the shipped rank is the raw total, not these tiers). 
+Each milestone represents 20 points.
 
 ### Complete Tier Table
 
@@ -247,9 +249,9 @@ The 30-tier structure enables our most innovative competitive mechanic.
 | **Distance** | Absolute difference: `\|guess_position - secret_position\|` |
 | **Linear Scoring** | 100-80-60-40-20-0 point scale with uniform 20-point gaps |
 | **Maximum Score** | 600 points (6 × 100) = 100% = Perfect |
-| **Tier** | 20-point milestone (30 total: 0, 20, 40... 580, 600) |
+| **Tier** | a 20-point milestone (30 total) — a *forward* extension, not the shipped rank (the engine ranks the raw linear total) |
 | **Key** | Resource consumed per guess attempt |
-| **Prize Pool** | Accumulated entry fees minus 30% platform fee |
+| **Prize Pool** | Buy-ins (a Golden Room tournament) or a platform seed; per-guess fees are platform revenue |
 | **Position Lock** | Confirmed emoji position that persists across guesses |
 
 ---
