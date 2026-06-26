@@ -26,13 +26,13 @@ export function NavPhonePanel({ onBack, onMenu, className }: NavPhonePanelProps)
       <img src={`${ASSET}/iphone-topbar.png`} alt="" className="block w-full" />
 
       {/* app header — back · logo-on-circle · extra controls (inset) */}
-      <div className="flex items-center justify-between px-4">
+      <div className="flex items-center justify-between px-3">
         <button type="button" onClick={onBack} aria-label="Back" className="shrink-0">
           <img src={`${ASSET}/tg-back.png`} alt="Back" className="block h-8 w-auto" />
         </button>
 
         {/* the cat logo, enlarged, on a circle matching the control-grey buttons */}
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-control">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-control">
           <img src={`${ASSET}/cm-logo-sm.png`} alt="CODEMOJI" className="block h-11 w-auto" />
         </div>
 
