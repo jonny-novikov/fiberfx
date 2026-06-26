@@ -22,8 +22,8 @@ export interface BoardTabsProps {
 }
 
 const DEFAULT_TABS: BoardTab[] = [
-  { id: 'history', label: 'History' },
-  { id: 'leaderboard', label: 'Leaderboard' },
+  { id: 'history', label: '📋 История' },
+  { id: 'leaderboard', label: '🏆 Лидерборд' },
 ];
 
 export function BoardTabs({

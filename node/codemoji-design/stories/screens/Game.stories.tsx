@@ -15,6 +15,8 @@ function BoardView() {
   return (
     <DriftView
       screen={boardCanonical as Screen}
+      width={375}
+      flush
       note={
         <p style={{ fontSize: 13, opacity: 0.85, margin: 0 }}>
           The free game. <code>mode: both</code> — the same board serves free and Golden play; the
