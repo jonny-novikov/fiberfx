@@ -5,20 +5,26 @@
 // Image bytes flow bridge -> here -> disk, never through an agent's context —
 // this is the Mac-side egress the toolkit prototypes (Fork 2 / B1).
 //
-// ACTION SURFACE — what the deployed plugin backs today (post-figl.3):
+// ACTION SURFACE — what the deployed plugin backs today (post-figl.4):
 //   LIVE     get-current-page · get-selection · get-all-pages ·
-//            find-nodes(query) · get-node-properties(nodeId?) · export-node(nodeId?,format) ·
+//            find-nodes(query) ·
+//            get-node-properties(nodeId?, depth?, maxNodes?) ·
+//            export-node(nodeId?, format) ·
 //            get-batch-nodes(nodeIds[])
 //            - nodeId is OPTIONAL on get-node-properties / export-node — omit it
 //              to fall back to the current page's single selected node.
 //            - export-node returns { nodeId, format, data: base64, w, h, byteLen }
 //              (Fork 2 / B1 / ADR-1 — base64 wire, decoded Mac-side).
-//            - serializeNodeDetailed now carries cornerRadius (+ per-corner,
+//            - serializeNodeDetailed carries cornerRadius (+ per-corner,
 //              figma.mixed-guarded), auto-layout fields (only when layoutMode !== 'NONE'),
 //              and absoluteBoundingBox (ADR-3).
 //            - get-batch-nodes collapses N round-trips into 1; missing nodes
 //              come back as per-id { id, error } entries, not a batch failure (ADR-3).
-//   PROPOSED get-node-tree (JSON_REST_V1 + depth/fields/maxNodes projection, S-2) ·
+//            - get-node-properties(depth) collapses an N-call boundedWalk into one
+//              recursive call over the SAME serializeNodeDetailed (ADR-2 / C2);
+//              depth absent ≡ today's single-node shape EXACTLY, maxNodes caps
+//              the walk (default 500) — when hit, root carries truncated:true.
+//   PROPOSED get-node-tree (JSON_REST_V1 + fields projection, S-2 sibling) ·
 //            resolve-variables (Variable.resolveForConsumer — plugin-only, figl.5) ·
 //            get-component-instances (getMainComponentAsync + overrides dedup, S-2)
 

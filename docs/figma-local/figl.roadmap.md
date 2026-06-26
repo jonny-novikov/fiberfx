@@ -81,12 +81,18 @@
   and `advertised ⊆ backed` holds.
 
 ### `figl.4` — One-call bounded subtree (C2 / ADR-2) (Windows deploy)
-- **Do:** `get-node-properties` gains an optional `depth` (absent ≡ today's single node, exactly)
-  + a `maxNodes` cap; the plugin recurses the *same* `serializeNodeDetailed` over children.
-- **Deploy:** Windows (plugin).
-- **Verify:** `depth` absent returns the unchanged single-node shape; `depth: 2` returns a
-  bounded tree in one call; `maxNodes` truncates rather than exceeding the 30s bridge timeout
-  (`bridge-server.js:148`); the toolkit's `boundedWalk` can collapse to one call.
+- **Do:** `get-node-properties` gains an optional `depth` (absent ≡ today's single-node shape,
+  EXACTLY — no extra fields) + a `maxNodes` cap (default 500, sized to keep the walk well
+  under `bridge-server.js:148`'s ~30s). The plugin's new `serializeSubtree` recurses the
+  *same* `serializeNodeDetailed` over children to `depth`, replacing the lite `{id,name,type}`
+  child stubs with detailed children; when the cap is hit, the walk stops and the root carries
+  `truncated: true` + `nodeCount`.
+- **Deploy:** Windows (plugin) + Mac `mcp.js` (Zod schema picks up the new params).
+- **Verify:** `depth` absent returns the byte-identical single-node shape (no `truncated` /
+  `nodeCount` fields); `depth: 2` returns a bounded tree in one call; `maxNodes` truncates
+  rather than exceeding the 30s bridge timeout; the toolkit's `boundedWalk` *can* collapse to
+  one call (kept as N-calls today — the depth-collapsed walk is an optional future optimization
+  the depth surface unblocks, not a `figl.4` deliverable).
 
 ### `figl.5` — `resolve-variables` (forced) + async hardening (D1 tokens / ADR-4, ADR-8) (Windows deploy)
 - **Do (resolve-variables):** a new tool resolving a node's bound variables via

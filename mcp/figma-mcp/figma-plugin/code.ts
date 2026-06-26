@@ -44,7 +44,7 @@ figma.ui.onmessage = async (msg) => {
           result = await findNodes(params.query);
           break;
         case 'get-node-properties':
-          result = await getNodeProperties(params.nodeId);
+          result = await getNodeProperties(params.nodeId, params.depth, params.maxNodes);
           break;
         case 'export-node':
           result = await exportNode(params.nodeId, params.format);
@@ -154,13 +154,53 @@ async function findNodes(query: string) {
   return results.map(node => serializeNode(node));
 }
 
-async function getNodeProperties(nodeId?: string) {
+// Default maxNodes when depth is given without an explicit cap. Sized to fit a
+// CODEMOJIES-scale screen (77 nodes) several times over while keeping the walk
+// well under the ~30s bridge timeout (`bridge-server.js:148`).
+const DEFAULT_MAX_NODES = 500;
+
+async function getNodeProperties(nodeId?: string, depth?: number, maxNodes?: number) {
   const id = resolveNodeId(nodeId);
   const node = figma.getNodeById(id);
   if (!node) {
     throw new Error(`Node not found: ${id}`);
   }
-  return serializeNodeDetailed(node);
+  // ADR-2: depth absent ≡ today's single-node shape, EXACTLY. The recursive
+  // path is opt-in; the default response is byte-identical to pre-figl.4.
+  if (depth === undefined) {
+    return serializeNodeDetailed(node);
+  }
+  return serializeSubtree(node, depth, maxNodes ?? DEFAULT_MAX_NODES);
+}
+
+// Bounded recursive walk over the SAME serializeNodeDetailed (ADR-2 / C2 — one
+// node shape, deeper). depth=0 is "just this node, no children expanded";
+// depth=N expands N levels. maxNodes caps the total detailed serializations so
+// a deep tree truncates rather than blowing the 30s bridge timeout — when the
+// cap is hit, the walk stops and the root carries truncated:true + nodeCount.
+function serializeSubtree(root: BaseNode, depth: number, maxNodes: number) {
+  let count = 0;
+  let truncated = false;
+
+  function walk(node: BaseNode, d: number): any {
+    count++;
+    const data = serializeNodeDetailed(node);
+    if (d <= 0) return data;
+    if (!('children' in node) || !Array.isArray((node as any).children)) return data;
+    const kids = (node as any).children as BaseNode[];
+    const richKids: any[] = [];
+    for (const c of kids) {
+      if (count >= maxNodes) { truncated = true; break; }
+      richKids.push(walk(c, d - 1));
+    }
+    data.children = richKids; // replaces the lite {id,name,type} stub from serializeNode
+    return data;
+  }
+
+  const result = walk(root, depth);
+  result.nodeCount = count;
+  if (truncated) result.truncated = true;
+  return result;
 }
 
 async function exportNode(nodeId?: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG') {

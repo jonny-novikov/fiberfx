@@ -177,14 +177,16 @@ server.registerTool(
   "get-node-properties",
   {
     title: "Get Node Properties",
-    description: "Gets detailed properties of a specific node by its ID. Omit nodeId to fall back to the current page's single selected node (multi-selection is an error).",
+    description: "Gets detailed properties of a node by its ID. Omit nodeId to fall back to the current page's single selected node (multi-selection is an error). Pass depth>=0 to expand children recursively in one call (depth=0 = just this node + lite child stubs, depth=1 = one level deep with detailed children, etc.). maxNodes caps the total detailed serializations (default 500) — when the cap is hit, the response carries truncated:true and nodeCount. Omit depth to get the byte-identical single-node shape (no truncated/nodeCount fields).",
     inputSchema: {
-      nodeId: z.string().optional()
+      nodeId: z.string().optional(),
+      depth: z.number().int().nonnegative().optional(),
+      maxNodes: z.number().int().positive().optional(),
     },
   },
-  async ({ nodeId }) => {
+  async ({ nodeId, depth, maxNodes }) => {
     const normalizedNodeId = nodeId ? normalizeNodeId(nodeId) : undefined;
-    const result = await requestFigma('get-node-properties', { nodeId: normalizedNodeId });
+    const result = await requestFigma('get-node-properties', { nodeId: normalizedNodeId, depth, maxNodes });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );

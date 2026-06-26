@@ -109,12 +109,29 @@ Build in order. Each rung lands as one change-set, deploys, and is verified agai
   `handshake.status: "ok"`.
 
 ### `figl.4` — one-call bounded subtree (Windows deploy) · ADR-2
-- **Edit:** `get-node-properties` gains an optional `depth` (**absent ≡ today's single-node shape,
-  exactly**) and a `maxNodes` cap; the plugin recurses the *same* `serializeNodeDetailed`.
-- **Deploy:** `[WIN]` `build-plugin`; `[FIGMA-manual]` reload; `[MAC]` sync the `mcp.js` param +
-  reconnect.
-- **Verify:** `depth` absent returns the unchanged shape; `depth: 2` returns a bounded tree in one
-  call; `maxNodes` truncates rather than exceeding the ~30s bridge timeout (`bridge-server.js:148`).
+- **Edit (plugin):** `getNodeProperties(nodeId?, depth?, maxNodes?)` — when `depth` is omitted,
+  return `serializeNodeDetailed(node)` **byte-identically to pre-figl.4** (no `truncated` /
+  `nodeCount` fields added). When `depth` is given, the new `serializeSubtree` walks the SAME
+  `serializeNodeDetailed` recursively, replacing the lite `{id,name,type}` child stubs with
+  detailed children; `maxNodes` (default `500`, sized for a CODEMOJIES-scale screen well under
+  the ~30s bridge timeout) caps total serializations — when hit, the root carries
+  `truncated: true` + `nodeCount`. Dispatch the new params through the `case 'get-node-properties'`.
+- **Edit (mcp.js):** extend the `get-node-properties` Zod schema with
+  `depth: z.number().int().nonnegative().optional()` and
+  `maxNodes: z.number().int().positive().optional()`; forward both unchanged. No change to
+  `ADVERTISED_ACTIONS` (same tool, additive params).
+- **Lockstep:** `node/codemoji-design/src/bridge.mjs` — refresh the ACTION SURFACE doc to mention
+  the new `depth?` / `maxNodes?` params on `get-node-properties`. `extract.mjs:60-82`'s
+  `boundedWalk` keeps its current per-node calls — collapsing it to one depth-call is an
+  *optional future optimization* the depth surface unblocks, not a `figl.4` deliverable
+  (ADR-2's "absent ≡ today's shape EXACTLY" preserves the existing client).
+- **Deploy:** `[WIN]` `build-plugin`; `[FIGMA-manual]` reload; `[MAC]` sync `mcp.js` + reconnect.
+- **Verify:** `get-node-properties { nodeId: "94:2974" }` returns the byte-identical pre-figl.4
+  shape (no `truncated` / `nodeCount`); `get-node-properties { nodeId: "94:2974", depth: 2 }`
+  returns one detailed-children tree in one call; `get-node-properties { nodeId: "94:2974",
+  depth: 10, maxNodes: 20 }` returns `{ truncated: true, nodeCount: 20 }` rather than blocking
+  on the ~30s bridge timeout (`bridge-server.js:148`); `check-bridge-status` still reports
+  `handshake.status: "ok"` (action surface unchanged).
 
 ### `figl.5` — `resolve-variables` + async hardening (Windows deploy) · ADR-4, ADR-8
 - **Edit:** a new `resolve-variables` tool resolving a node's bound variables via
