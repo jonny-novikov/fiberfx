@@ -8,9 +8,15 @@ if config_env() == :prod do
     System.get_env("DATABASE_URL") ||
       raise "environment variable DATABASE_URL is missing"
 
+  # Fly's 6PN is IPv6-only (echo-postgres.internal resolves to an AAAA record only), so Postgrex
+  # must dial inet6 — otherwise the Repo silently never connects (Ecto retries forever, no crash,
+  # and a DB-less /api/health hides it). ECTO_IPV6=true is already set in fly.toml; read it here.
+  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+
   config :codemojex, Codemojex.Repo,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10")
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
+    socket_options: maybe_ipv6
 
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
