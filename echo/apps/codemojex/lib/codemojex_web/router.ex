@@ -29,6 +29,12 @@ defmodule CodemojexWeb.Router do
     # verified handshake.
     post "/auth/:platform", AuthController, :handshake
 
+    # cm.5: the inbound Telegram webhook (the production inbound transport). Open route —
+    # authenticated by Telegram's secret-token HEADER in the controller, not a player SES.
+    # Inert until CODEMOJI_WEBHOOK_SECRET is set (the controller fails closed). Telegram
+    # registers it via setWebhook(url: ".../api/telegram/webhook", secret_token: <secret>).
+    post "/telegram/webhook", TelegramController, :webhook
+
     get "/rooms", GameController, :rooms
     get "/games/:id", GameController, :game
     get "/games/:id/leaderboard", GameController, :leaderboard

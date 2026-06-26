@@ -22,12 +22,15 @@ defmodule Codemojex.Notifier do
   @spec notify(integer() | binary(), binary(), keyword()) ::
           {:ok, EchoData.BrandedId.t()} | {:error, term()}
   def notify(chat_id, text, opts \\ []) do
-    job_id = EchoData.BrandedId.generate!("NOT")
+    job_id = EchoData.BrandedId.generate!("JOB")
     payload = Jason.encode!(%{chat: chat_id, text: text, opts: Map.new(opts), id: job_id, attempt: 1})
 
-    # Lanes.enqueue returns {:ok, :enqueued} | {:ok, :duplicate} (both success — a duplicate
-    # NOT id is harmless), {:error, :kind}, or a connector passthrough.
-    case Lanes.enqueue(Bus.conn(), NotificationWorker.queue(), to_string(chat_id), job_id, payload) do
+    # A bus lane is keyed by a BRANDED id (EchoMQ.Lanes.lane_key!) — the chat id is not branded, so
+    # each notification rides its own JOB-id lane and the ring rotates across them for fairness,
+    # drained by Codemojex.NotificationWorker. This mirrors the shipped scoring enqueue (a JOB id +
+    # a branded group), the only shape EchoMQ.Lanes.claim can drain. Lanes.enqueue returns
+    # {:ok, :enqueued} | {:ok, :duplicate} (both success), {:error, :kind}, or a connector passthrough.
+    case Lanes.enqueue(Bus.conn(), NotificationWorker.queue(), job_id, job_id, payload) do
       {:ok, _} -> {:ok, job_id}
       other -> {:error, other}
     end

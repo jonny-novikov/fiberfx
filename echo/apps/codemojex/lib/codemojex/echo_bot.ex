@@ -10,10 +10,9 @@ defmodule Codemojex.EchoBot do
 
   **In (from Telegram):** an inbound update — from `echo_bot`'s updater via
   `Codemojex.Bot.Handler`, or from a webhook handing a raw map to `ingest/1` — is normalized
-  and bridged onto the bus as a `CMD` job on a fair lane per chat (`bridge/1`). That keeps the
-  inbound path fast and makes commands durable, per-chat ordered, and replayable; a separate
-  consumer (`Codemojex.CommandWorker`) drains the lane and replies through the same
-  notification path.
+  and bridged onto the bus as a `JOB` on its own fair bus lane (`bridge/1`). That keeps the
+  inbound path fast and makes commands durable and replayable; a separate consumer
+  (`Codemojex.CommandWorker`) drains the lanes and replies through the same notification path.
   """
   use GenServer
   require Logger
@@ -62,7 +61,7 @@ defmodule Codemojex.EchoBot do
   def bridge(%EchoBot.Platform.Update{chat_ref: nil}), do: {:ok, :ignored}
 
   def bridge(%EchoBot.Platform.Update{} = u) do
-    job_id = EchoData.BrandedId.generate!("CMD")
+    job_id = EchoData.BrandedId.generate!("JOB")
 
     payload =
       Jason.encode!(%{
@@ -73,7 +72,12 @@ defmodule Codemojex.EchoBot do
         text: u.text
       })
 
-    case Lanes.enqueue(Bus.conn(), @commands_queue, to_string(u.chat_ref), job_id, payload) do
+    # A bus lane is keyed by a BRANDED id (EchoMQ.Lanes.lane_key!) — the chat id is not branded, so
+    # each command rides its own JOB-id lane and the ring rotates across them for fairness (no chat
+    # starves another), claimed by Codemojex.CommandWorker. Per-chat ORDERING is not preserved, which
+    # is fine: the bot's commands are independent. This mirrors the shipped scoring enqueue (a JOB id
+    # + a branded group), the only shape EchoMQ.Lanes.claim can drain.
+    case Lanes.enqueue(Bus.conn(), @commands_queue, job_id, job_id, payload) do
       {:ok, _} -> {:ok, job_id}
       other -> {:error, other}
     end

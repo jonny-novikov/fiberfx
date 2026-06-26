@@ -51,27 +51,35 @@ if config_env() == :prod do
 
   config :codemojex, valkey_port: String.to_integer(System.get_env("VALKEY_PORT") || "6390")
 
-  # The Codemoji Telegram bot. CODEMOJI_BOT_TOKEN is the single switch:
+  # The Codemoji Telegram bot (@codemoji_bot). CODEMOJI_BOT_TOKEN arms the OUTBOUND send path —
+  # Codemojex.Bot resolves it so the notification worker can deliver. Unset → every send drops with
+  # :no_token and the app still boots (the bot is simply idle).
   #
-  #   * OUTBOUND (game → Telegram) — Codemojex.Bot resolves this token, so the notification
-  #     worker can deliver. Without it every send drops with :no_token (the app still runs).
-  #   * INBOUND (Telegram → game) — the echo_bot engine long-polls updates for the Codemoji bot
-  #     (priv/bots/codemoji.yaml → handler Codemojex.Bot.Handler), which bridges each update onto
-  #     the bus, drained by Codemojex.CommandWorker (/start, /help). See
-  #     apps/codemojex/docs/notifications.md.
+  # INBOUND transport is chosen by CODEMOJI_WEBHOOK_SECRET:
   #
-  # Unset → the bot stays fully idle: sends drop, no updater runs, the engine boots clean
-  # (F10.1-INV1). The path is resolved from codemojex's OWN priv dir (the YAML ships there), not
-  # echo_bot's, so the engine app does not carry a consumer-specific bot.
+  #   * SET   → WEBHOOK mode (production). Telegram POSTs to /api/telegram/webhook, secret-checked
+  #             against this value by CodemojexWeb.TelegramController, then bridged onto the bus. No
+  #             poller runs (echo_bot's updater stays at its :none base), so this SCALES across
+  #             machines. Register once with:
+  #               setWebhook(url: "https://codemoji.games/api/telegram/webhook",
+  #                          secret_token: <CODEMOJI_WEBHOOK_SECRET>)
+  #   * UNSET → POLLING fallback. The echo_bot engine long-polls updates for the Codemoji bot
+  #             (priv/bots/codemoji.yaml → Codemojex.Bot.Handler). SINGLE machine only — a second
+  #             getUpdates poller gets Telegram 409 Conflict.
   #
-  # OPERATIONAL: :polling runs exactly ONE getUpdates consumer per bot token — keep codemojex at a
-  # SINGLE machine while polling (a second poller gets Telegram 409 Conflict). The webhook
-  # transport (POST → Codemojex.EchoBot.ingest/1) lifts that constraint and is the scale-out path.
+  # Either way the inbound update lands as a CMD job on the bus, drained by Codemojex.CommandWorker.
+  # See apps/codemojex/docs/notifications.md.
   if bot_token = System.get_env("CODEMOJI_BOT_TOKEN") do
     config :codemojex, Codemojex.Telegram, token: bot_token
 
-    config :echo_bot,
-      updater: :polling,
-      bot_config: Path.join(:code.priv_dir(:codemojex), "bots/codemoji.yaml")
+    case System.get_env("CODEMOJI_WEBHOOK_SECRET") do
+      secret when is_binary(secret) and secret != "" ->
+        config :codemojex, CodemojexWeb.TelegramController, secret: secret
+
+      _ ->
+        config :echo_bot,
+          updater: :polling,
+          bot_config: Path.join(:code.priv_dir(:codemojex), "bots/codemoji.yaml")
+    end
   end
 end

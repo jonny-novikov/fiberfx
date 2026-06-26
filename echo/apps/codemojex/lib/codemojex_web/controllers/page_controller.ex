@@ -22,11 +22,11 @@ defmodule CodemojexWeb.PageController do
         align-items: center;
         justify-content: center;
       }
-      img { max-width: 80vmin; max-height: 80vmin; height: auto; width: auto; }
+      img { max-width: 60vmin; max-height: 60vmin; height: auto; width: auto; }
     </style>
   </head>
   <body>
-    <img src="/assets/cm-logo.png" alt="Codemoji" />
+    <img src="/assets/cm-logo-md.png" alt="Codemoji" />
   </body>
   </html>
   """
