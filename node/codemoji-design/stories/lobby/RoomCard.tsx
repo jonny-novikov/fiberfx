@@ -49,7 +49,7 @@ export function RoomCard({
     >
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-h3 font-bold leading-none">{name}</h2>
+          <h2 className="text-h1 font-bold leading-none">{name}</h2>
           <h2 className="text-h1 font-bold leading-none">${prize}</h2>
         </div>
         <p className="flex items-center gap-2 text-h5 text-card-foreground-secondary">
