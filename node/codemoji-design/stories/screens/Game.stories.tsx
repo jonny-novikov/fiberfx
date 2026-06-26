@@ -2,24 +2,28 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import * as React from 'react';
 // .mjs data module — typed via allowJs (inferred from the manifest); cast to Screen below.
 import { boardScreens, boardCanonical } from './screens.data.mjs';
-import { ScreenView, PhoneFrame, ThemeNote, type Screen } from './ScreenView';
-import { Button } from '../components/Button';
+import { DriftView, PhoneFrame, type Screen } from './ScreenView';
+import { BoardScreen } from '../board/BoardScreen';
 
 // Game (Free) — the standard, non-boosted gameplay board: compose + submit a
 // 6-emoji guess. "Free" distinguishes it from the boosted Golden Game (see
-// Screens/Golden Game). Its in-game purchase CTA (Buy keys) renders live — the
-// canonical demo of the themeable accent in its real screen context.
+// Screens/Golden Game). The board is rebuilt LIVE from the design system beside the
+// Figma reference, so the in-game purchase CTA shows its orange role color and drift
+// against Figma is visible side by side.
 
 function BoardView() {
   return (
-    <ScreenView screen={boardCanonical as Screen}>
-      <p style={{ fontSize: 13, opacity: 0.85, marginBottom: 14 }}>
-        The free game. <code>mode: both</code> — the same board serves free and Golden play; the
-        boost lives on the room, not the board (see <strong>Screens/Golden&nbsp;Game</strong>).
-      </p>
-      <Button variant="purchase">Buy keys</Button>
-      <ThemeNote>The purchase CTA is the fixed orange buy gradient (“Приобрести ключи”).</ThemeNote>
-    </ScreenView>
+    <DriftView
+      screen={boardCanonical as Screen}
+      note={
+        <p style={{ fontSize: 13, opacity: 0.85, margin: 0 }}>
+          The free game. <code>mode: both</code> — the same board serves free and Golden play; the
+          boost lives on the room, not the board (see <strong>Screens/Golden&nbsp;Game</strong>).
+        </p>
+      }
+    >
+      <BoardScreen />
+    </DriftView>
   );
 }
 

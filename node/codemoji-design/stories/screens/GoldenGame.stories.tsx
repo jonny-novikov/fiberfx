@@ -2,15 +2,15 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import * as React from 'react';
 // .mjs data module — typed via allowJs (inferred from the manifest); cast to Screen below.
 import { goldenInProgress, goldenFinished, goldenScreens } from './screens.data.mjs';
-import { ScreenView, PhoneFrame, type Screen } from './ScreenView';
-import { Button } from '../components/Button';
+import { DriftView, PhoneFrame, type Screen } from './ScreenView';
+import { GoldenInProgressScreen, GoldenFinishedScreen } from '../golden-game/GoldenScreen';
 
 // Golden Game — the boost-class room: a gold_multiplier on an otherwise classic
 // game (NOT the app's separate blind commit-reveal "golden" type — see
 // Golden/Treatment for that overload note). Two states from the export: an active
 // boosted game (in progress) and the post-settlement winner-take-all (finished).
-// The gild is the design system's --gradient-gold token (the bezel + the CTA),
-// not the app's raster gold.png.
+// Each is rebuilt LIVE from the design system beside the Figma reference — the gild
+// is the --gradient-gold token (the bezel + the CTAs), not the app's raster gold.png.
 
 function BoostNote() {
   return (
@@ -20,7 +20,6 @@ function BoostNote() {
         paddingLeft: 12,
         fontSize: 12,
         opacity: 0.85,
-        marginTop: 14,
       }}
     >
       <strong>Boost class.</strong> <code>gold_multiplier</code> on a <code>classic</code> game — the
@@ -32,24 +31,29 @@ function BoostNote() {
 
 function InProgressView() {
   return (
-    <ScreenView screen={goldenInProgress as Screen} golden>
-      <Button variant="golden" style={{ width: '100%' }}>
-        Enter Golden Room
-      </Button>
-      <BoostNote />
-    </ScreenView>
+    <DriftView screen={goldenInProgress as Screen} golden note={<BoostNote />}>
+      <GoldenInProgressScreen />
+    </DriftView>
   );
 }
 
 function FinishedView() {
   return (
-    <ScreenView screen={goldenFinished as Screen} golden>
-      <p style={{ fontSize: 13, opacity: 0.85 }}>
-        Post-settlement: winner-take-all of the boosted pool (the <code>golden_win</code> moment;
-        entities <code>TXN</code> · <code>NOT</code>).
-      </p>
-      <BoostNote />
-    </ScreenView>
+    <DriftView
+      screen={goldenFinished as Screen}
+      golden
+      note={
+        <>
+          <p style={{ fontSize: 13, opacity: 0.85, margin: '0 0 10px' }}>
+            Post-settlement: winner-take-all of the boosted pool (the <code>golden_win</code> moment;
+            entities <code>TXN</code> · <code>NOT</code>).
+          </p>
+          <BoostNote />
+        </>
+      }
+    >
+      <GoldenFinishedScreen />
+    </DriftView>
   );
 }
 

@@ -2,24 +2,20 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import * as React from 'react';
 // .mjs data module — typed via allowJs (inferred from the manifest); cast to Screen below.
 import { roomsLobbyScreens, roomsLobbyCanonical } from './screens.data.mjs';
-import { ScreenView, PhoneFrame, ThemeNote, type Screen } from './ScreenView';
-import { Button } from '../components/Button';
+import { DriftView, PhoneFrame, type Screen } from './ScreenView';
+import { LobbyScreen } from '../lobby/LobbyScreen';
 
 // Rooms (Lobby) — the room list a player enters from the main hub. Its own
-// dedicated screen (vs the combined Screens/Catalog grid): the canonical lobby up
-// close, plus the design-variant explorations. The lobby's primary CTA renders
-// live so the accent recolors with the Theme toolbar.
+// dedicated screen (vs the combined Screens/Catalog grid): the lobby rebuilt LIVE
+// from the design system beside the Figma reference, so the room-entry buttons show
+// the blue `enter` role color (not the black baked into the export) and any drift
+// against Figma is visible side by side.
 
 function LobbyView() {
   return (
-    <ScreenView screen={roomsLobbyCanonical as Screen}>
-      <p style={{ fontSize: 13, opacity: 0.85, marginBottom: 14 }}>
-        Lists open rooms (entity <code>ROM</code>). Golden Rooms surface here too — see{' '}
-        <strong>Screens/Golden&nbsp;Game</strong> for the boosted variant.
-      </p>
-      <Button variant="enter">Enter room</Button>
-      <ThemeNote>The room-entry CTA is a fixed blue role color (not theme-driven).</ThemeNote>
-    </ScreenView>
+    <DriftView screen={roomsLobbyCanonical as Screen}>
+      <LobbyScreen />
+    </DriftView>
   );
 }
 
