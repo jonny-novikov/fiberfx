@@ -20,9 +20,5 @@ export default meta;
 
 type Story = StoryObj<typeof SubscriptionBanner>;
 
-export const Default: Story = {
-  args: {
-    teaser: 'Unlock daily rewards',
-    description: 'Subscribe to claim free keys every day and skip the wait.',
-  },
-};
+// Defaults render the Figma master copy (the "Тысяча." pitch + "Это что такое?").
+export const Default: Story = {};

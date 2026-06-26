@@ -28,7 +28,7 @@ export function StatusBar({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex h-8 w-full items-center justify-between rounded-2xl bg-card px-3 text-2xs text-card-foreground',
+        'flex h-8 w-full items-center justify-between rounded-2xl bg-card px-3 text-h5 text-card-foreground',
         className
       )}
     >

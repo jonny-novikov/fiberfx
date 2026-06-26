@@ -13,7 +13,7 @@ import { LobbyScreen } from '../lobby/LobbyScreen';
 
 function LobbyView() {
   return (
-    <DriftView screen={roomsLobbyCanonical as Screen}>
+    <DriftView screen={roomsLobbyCanonical as Screen} width={375}>
       <LobbyScreen />
     </DriftView>
   );

@@ -20,4 +20,4 @@ export default meta;
 
 type Story = StoryObj<typeof BuyKeysBanner>;
 
-export const Default: Story = { args: { players: 25693 } };
+export const Default: Story = { args: { totalEarned: 25693 } };

@@ -37,7 +37,7 @@ export function ArchiveRoomItem({
     <BoardCard className={className}>
       <div className="flex items-center justify-between">
         <h3 className="text-h1 text-card-foreground">{name}</h3>
-        <p className="text-large font-bold">${prize.toLocaleString()}</p>
+        <p className="text-large font-bold">${prize}</p>
       </div>
 
       {/* the revealed secret code (left) + the faint game id (right) */}

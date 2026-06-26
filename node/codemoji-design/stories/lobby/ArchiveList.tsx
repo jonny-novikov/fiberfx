@@ -3,21 +3,23 @@ import { cn } from '../lib/cn';
 import { Button } from '../components/Button';
 import { ArchiveRoomItem } from './ArchiveRoomItem';
 
-// The lobby's "Room archive" section (121:2056) — the titled list of finished
-// rooms below the live safes. Re-expresses widgets/archive-rooms/archive-rooms-
-// list: a heading, a stack of ArchiveRoomItem cards, and a full-width "Show
-// more" pager. Self-contained — paging is the onShowMore callback (no infinite-
-// query / spinner / clock-tick); each item is a fully-formed ArchiveRoomItem.
+// A titled list of finished rooms in the lobby (121:2056). Re-expresses
+// widgets/archive-rooms/archive-rooms-list: a heading, a stack of ArchiveRoomItem
+// cards, and a full-width "Показать больше" pager. The lobby uses this twice (Figma:
+// "Ваши золотые комнаты" then "Архив комнат") — so the title is a prop. The pager is
+// shown only when onShowMore is given. Self-contained — each item is a fully-formed
+// ArchiveRoomItem; no infinite-query / spinner / clock-tick.
 export interface ArchiveListProps {
+  title?: string;
   items: React.ComponentProps<typeof ArchiveRoomItem>[];
   onShowMore?: () => void;
   className?: string;
 }
 
-export function ArchiveList({ items, onShowMore, className }: ArchiveListProps) {
+export function ArchiveList({ title = 'Архив комнат', items, onShowMore, className }: ArchiveListProps) {
   return (
     <div className={cn(className)}>
-      <h2 className="text-h1 px-4 text-primary">Room archive</h2>
+      <h2 className="text-h1 px-4 font-bold text-primary">{title}</h2>
 
       <div className="mt-4 space-y-2">
         {items.map((item, index) => (
@@ -25,9 +27,11 @@ export function ArchiveList({ items, onShowMore, className }: ArchiveListProps) 
         ))}
       </div>
 
-      <Button variant="outline" className="mt-4 w-full" onClick={onShowMore}>
-        Show more
-      </Button>
+      {onShowMore && (
+        <Button variant="outline" className="mt-4 w-full" onClick={onShowMore}>
+          Показать больше
+        </Button>
+      )}
     </div>
   );
 }

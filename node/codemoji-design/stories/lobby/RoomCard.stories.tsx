@@ -21,12 +21,14 @@ export default meta;
 
 type Story = StoryObj<typeof RoomCard>;
 
-export const Standard: Story = { args: { name: 'Steel box', prize: 1352, bestPercent: 60 } };
-export const Free: Story = { args: { name: 'Warmup box', prize: 52, emojiCount: 12, bestPercent: 20 } };
+// Args track the Figma master rooms (Простой сейф / Золотая комната / Стальной ящик).
+export const Free: Story = {
+  args: { name: 'Простой сейф', prize: 52, stars: 1, emojiCount: 80, cells: 6, ctaLabel: 'Открыть 🔑 бесплатно' },
+};
 export const Golden: Story = {
   name: 'Golden room',
-  args: { name: 'Golden room', prize: 2352, bestPercent: 80, golden: true },
+  args: { name: 'Золотая комната', prize: 10, stars: 1, emojiCount: 80, cells: 6, ctaLabel: 'Открыть сейф 🔑 1', golden: true },
 };
-export const Closed: Story = {
-  args: { name: 'Hardcore level', prize: 2352, bestPercent: 100, disabled: true },
+export const Progress: Story = {
+  args: { name: 'Стальной ящик', prize: 1352, stars: 2, emojiCount: 140, cells: 6, bestPercent: 24.32, ctaLabel: 'Открыть 🔑 сейф' },
 };

@@ -2,45 +2,45 @@ import * as React from 'react';
 import { cn } from '../lib/cn';
 import { Button } from '../components/Button';
 
-// The dark teaser banner near the top of the lobby (121:2056). Re-expresses
-// widgets/subscription-banner: the app paints it with a .webp background image
-// (`bg-[url(...)]`) and a `<CloseIcon />` SVG + the app's `variant="clear"` /
-// `variant="secondary"` buttons — none of which exist in the design system. Here
-// it is a flat `bg-primary` surface, a Unicode "✕" close, and the themeable
-// `buy` Button (rides bg-accent, reads on dark). Self-contained: onClose / onCta
-// are callbacks, no dialog or localStorage.
+// The "Тысяча" hero banner in the lobby (121:2056, Figma "Emoji section" 880:16787) —
+// a dark image card pitching the $1000 prize. The app paints it with a .webp hero;
+// rasters 404 in the design system, so this stands in with a flat `bg-primary` surface.
+// Text is verbatim from the Figma master (the "Тысяча." pitch), and the CTA is Figma's
+// light button with black label ("Это что такое?"), reproduced via the card tokens
+// (bg-card / text-card-foreground). Self-contained: onClose / onCta are callbacks.
 export interface SubscriptionBannerProps {
-  teaser?: string;
+  heading?: string;
   description?: string;
+  ctaLabel?: string;
   onClose?: () => void;
   onCta?: () => void;
   className?: string;
 }
 
 export function SubscriptionBanner({
-  teaser = 'Unlock daily rewards',
-  description = 'Subscribe to claim free keys every day and skip the wait.',
+  heading = 'Тысяча.',
+  description = 'Не миллионов, чтобы ты сразу испугался и спрятался за скепсис. И не двадцать баксов, чтобы ты снисходительно фыркнул. Ровно столько, чтобы ты сказал: «Хм… а вдруг?»',
+  ctaLabel = 'Это что такое?',
   onClose,
   onCta,
   className,
 }: SubscriptionBannerProps) {
   return (
     <div className={cn('relative rounded-2xl bg-primary p-6 text-white', className)}>
-      <button
-        type="button"
-        aria-label="Dismiss"
-        onClick={onClose}
-        className="absolute right-3 top-3 text-white transition-opacity hover:opacity-70"
-      >
-        ✕
-      </button>
-      <p className="text-xs font-medium">
-        {teaser}
-        <br />
-        {description}
-      </p>
-      <Button className="mt-4" variant="buy" onClick={onCta}>
-        What's this?
+      {onClose && (
+        <button
+          type="button"
+          aria-label="Закрыть"
+          onClick={onClose}
+          className="absolute right-3 top-3 text-white transition-opacity hover:opacity-70"
+        >
+          ✕
+        </button>
+      )}
+      <p className="text-h3 font-bold">{heading}</p>
+      <p className="mt-2 text-h5 font-medium leading-snug">{description}</p>
+      <Button className="mt-4 bg-card text-card-foreground" variant="default" onClick={onCta}>
+        {ctaLabel}
       </Button>
     </div>
   );
