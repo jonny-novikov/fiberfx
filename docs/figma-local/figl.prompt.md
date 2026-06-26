@@ -89,14 +89,24 @@ Build in order. Each rung lands as one change-set, deploys, and is verified agai
   `node bin/codemoji-design.mjs extract` still renders end-to-end.
 
 ### `figl.3` — targeted enrichment + real `get-batch-nodes` (Windows deploy) · ADR-3
-- **Edit:** `serializeNodeDetailed` gains `cornerRadius` (+ per-corner) behind a `figma.mixed`
-  guard, the four auto-layout fields **only when `layoutMode !== 'NONE'`**, and
-  `absoluteBoundingBox` (`:6976`). Implement the `get-batch-nodes` plugin case (loop
-  `getNodeByIdAsync` → `serializeNodeDetailed`); the `mcp.js` wrapper already exists.
-- **Deploy:** `[WIN]` `build-plugin`; `[FIGMA-manual]` reload.
+- **Edit (enrichment, A2):** `serializeNodeDetailed` gains `cornerRadius`
+  (+ `topLeftRadius` / `topRightRadius` / `bottomLeftRadius` / `bottomRightRadius`) behind a
+  `figma.mixed` guard (unified value emitted only when every corner agrees; per-corner numbers
+  always concrete), the four auto-layout fields (`layoutMode`, `paddingTop|Right|Bottom|Left`,
+  `itemSpacing`, `layoutSizingHorizontal|Vertical`) **only when `layoutMode !== 'NONE'`**, and
+  `absoluteBoundingBox` (`:6976`).
+- **Edit (`get-batch-nodes` — both halves):** implement the plugin case (loop
+  `getNodeByIdAsync` → `serializeNodeDetailed`; missing nodes come back as `{id, error}`
+  per-id) AND re-add the `mcp.js` `registerTool` wrapper (`figl.1` dropped it Mac-side so
+  `advertised==live` held while the handler was missing). Add `'get-batch-nodes'` to both
+  `BACKED_ACTIONS` (plugin) and `ADVERTISED_ACTIONS` (mcp.js).
+- **Deploy:** `[WIN]` `build-plugin`; `[FIGMA-manual]` reload; `[MAC]` sync `mcp.js` + reconnect
+  (the mcp.js wrapper changed).
 - **Verify:** a frame returns `cornerRadius`/padding where present and **omits** auto-layout on a
   `layoutMode: 'NONE'` node (so `get-selection` is not bloated); `get-batch-nodes` returns N
-  enriched nodes in one call and now appears as backed in `check-bridge-status`.
+  enriched nodes in one call (and missing ids come back as `{id, error}` entries, not a batch
+  failure); `check-bridge-status` lists `get-batch-nodes` under `backedActions` with
+  `handshake.status: "ok"`.
 
 ### `figl.4` — one-call bounded subtree (Windows deploy) · ADR-2
 - **Edit:** `get-node-properties` gains an optional `depth` (**absent ≡ today's single-node shape,

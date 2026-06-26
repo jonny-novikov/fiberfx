@@ -62,14 +62,23 @@
   recent render; the toolkit's `extract` still renders end-to-end against the new contract.
 
 ### `figl.3` — Targeted payload enrichment + re-implement `get-batch-nodes` (Windows deploy)
-- **Do (A2 / ADR-3):** `serializeNodeDetailed` gains `cornerRadius` (+ per-corner, `figma.mixed`
-  guarded), the four auto-layout fields **emitted only when `layoutMode !== 'NONE'`**, and
-  `absoluteBoundingBox` (`plugin-api.d.ts:6976`). Implement the `get-batch-nodes` plugin handler
-  (loop `getNodeByIdAsync` → `serializeNodeDetailed`); its `mcp.js` wrapper already exists.
+- **Do (A2 / ADR-3):** `serializeNodeDetailed` gains `cornerRadius` (+ per-corner
+  `topLeftRadius` / `topRightRadius` / `bottomLeftRadius` / `bottomRightRadius`,
+  `figma.mixed`-guarded — the unified value is emitted only when every corner agrees, the
+  per-corner numbers are always concrete), the four auto-layout fields
+  (`layoutMode`, `paddingTop|Right|Bottom|Left`, `itemSpacing`,
+  `layoutSizingHorizontal|Vertical`) **emitted only when `layoutMode !== 'NONE'`**, and
+  `absoluteBoundingBox` (`plugin-api.d.ts:6976`).
+- **Do (`get-batch-nodes`):** re-add both halves — the plugin handler (loop
+  `getNodeByIdAsync` → `serializeNodeDetailed`; missing nodes come back as `{id, error}`
+  per-id rather than failing the batch) AND the `mcp.js` `registerTool` wrapper (figl.1
+  dropped it Mac-side so `advertised==live` held while the handler was missing). Adds
+  `'get-batch-nodes'` to both `BACKED_ACTIONS` (plugin) and `ADVERTISED_ACTIONS` (mcp.js).
 - **Deploy:** Windows (plugin).
-- **Verify:** a frame returns `cornerRadius`/padding where present and *omits* auto-layout on a
-  `layoutMode: 'NONE'` node (so `get-selection` is not bloated); `get-batch-nodes` returns N
-  enriched nodes in one call; the handshake now lists `get-batch-nodes` as backed.
+- **Verify:** a frame returns `cornerRadius` / padding where present and *omits* auto-layout
+  on a `layoutMode: 'NONE'` node (so `get-selection` is not bloated); `get-batch-nodes`
+  returns N enriched nodes in one call; the handshake now lists `get-batch-nodes` as backed
+  and `advertised ⊆ backed` holds.
 
 ### `figl.4` — One-call bounded subtree (C2 / ADR-2) (Windows deploy)
 - **Do:** `get-node-properties` gains an optional `depth` (absent ≡ today's single node, exactly)

@@ -24,6 +24,7 @@ const ADVERTISED_ACTIONS = [
   'find-nodes',
   'get-node-properties',
   'export-node',
+  'get-batch-nodes',
 ];
 
 const server = new McpServer({
@@ -215,6 +216,22 @@ server.registerTool(
       byteLen: result.byteLen ?? buf.length,
     };
     return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
+  }
+);
+
+server.registerTool(
+  "get-batch-nodes",
+  {
+    title: "Get Batch Node Properties",
+    description: "Gets detailed properties for multiple nodes in one bridge round-trip — much faster than calling get-node-properties N times. Missing-node failures are recorded per-id (the batch does not fail on the first miss). Each entry uses the same shape as get-node-properties.",
+    inputSchema: {
+      nodeIds: z.array(z.string())
+    },
+  },
+  async ({ nodeIds }) => {
+    const normalizedNodeIds = nodeIds.map(normalizeNodeId);
+    const result = await requestFigma('get-batch-nodes', { nodeIds: normalizedNodeIds });
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );
 

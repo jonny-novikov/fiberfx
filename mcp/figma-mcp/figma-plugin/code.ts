@@ -10,6 +10,7 @@ const BACKED_ACTIONS = [
   'find-nodes',
   'get-node-properties',
   'export-node',
+  'get-batch-nodes',
 ] as const;
 
 function connectToBridge() {
@@ -47,6 +48,9 @@ figma.ui.onmessage = async (msg) => {
           break;
         case 'export-node':
           result = await exportNode(params.nodeId, params.format);
+          break;
+        case 'get-batch-nodes':
+          result = await getBatchNodes(params.nodeIds);
           break;
         default:
           throw new Error(`Unknown action: ${action}`);
@@ -179,6 +183,28 @@ async function exportNode(nodeId?: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG'
   };
 }
 
+// Collapses N round-trips through the bridge into one (ADR-3). Loops the async
+// node lookup (ADR-8 — async is harmless under legacy mode and forward-safe
+// against any later dynamic-page adoption); missing-node failures are recorded
+// per-id rather than failing the whole batch.
+async function getBatchNodes(nodeIds: string[]) {
+  if (!Array.isArray(nodeIds)) throw new Error('get-batch-nodes: nodeIds must be an array');
+  const out: any[] = [];
+  for (const id of nodeIds) {
+    try {
+      const node = await figma.getNodeByIdAsync(id);
+      if (!node) {
+        out.push({ id, error: `Node not found: ${id}` });
+      } else {
+        out.push(serializeNodeDetailed(node));
+      }
+    } catch (e) {
+      out.push({ id, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return out;
+}
+
 function serializeNode(node: BaseNode) {
   const base: any = {
     id: node.id,
@@ -199,23 +225,55 @@ function serializeNode(node: BaseNode) {
 
 function serializeNodeDetailed(node: BaseNode) {
   const data: any = serializeNode(node);
+  const n = node as any;
 
   if ('visible' in node) data.visible = node.visible;
   if ('locked' in node) data.locked = node.locked;
 
-  if ('x' in node) data.x = node.x;
-  if ('y' in node) data.y = node.y;
-  if ('width' in node) data.width = node.width;
-  if ('height' in node) data.height = node.height;
+  if ('x' in node) data.x = n.x;
+  if ('y' in node) data.y = n.y;
+  if ('width' in node) data.width = n.width;
+  if ('height' in node) data.height = n.height;
 
   if ('fills' in node) {
-    data.fills = JSON.parse(JSON.stringify(node.fills));
+    data.fills = JSON.parse(JSON.stringify(n.fills));
   }
   if ('strokes' in node) {
-    data.strokes = JSON.parse(JSON.stringify(node.strokes));
+    data.strokes = JSON.parse(JSON.stringify(n.strokes));
   }
   if ('effects' in node) {
-    data.effects = JSON.parse(JSON.stringify(node.effects));
+    data.effects = JSON.parse(JSON.stringify(n.effects));
+  }
+
+  // figl.3 / ADR-3 — cornerRadius behind a figma.mixed guard. The unified value
+  // is only meaningful when every corner agrees; the per-corner numbers are
+  // always concrete and always safe to emit.
+  if ('cornerRadius' in node) {
+    if (n.cornerRadius !== figma.mixed) {
+      data.cornerRadius = n.cornerRadius;
+    }
+    if ('topLeftRadius' in node) data.topLeftRadius = n.topLeftRadius;
+    if ('topRightRadius' in node) data.topRightRadius = n.topRightRadius;
+    if ('bottomLeftRadius' in node) data.bottomLeftRadius = n.bottomLeftRadius;
+    if ('bottomRightRadius' in node) data.bottomRightRadius = n.bottomRightRadius;
+  }
+
+  // figl.3 / ADR-3 — auto-layout fields, emitted ONLY when the node actually
+  // participates in auto-layout. Bare frames stay slim so get-selection is not bloated.
+  if ('layoutMode' in node && n.layoutMode !== 'NONE') {
+    data.layoutMode = n.layoutMode;
+    if ('paddingTop' in node) data.paddingTop = n.paddingTop;
+    if ('paddingRight' in node) data.paddingRight = n.paddingRight;
+    if ('paddingBottom' in node) data.paddingBottom = n.paddingBottom;
+    if ('paddingLeft' in node) data.paddingLeft = n.paddingLeft;
+    if ('itemSpacing' in node) data.itemSpacing = n.itemSpacing;
+    if ('layoutSizingHorizontal' in node) data.layoutSizingHorizontal = n.layoutSizingHorizontal;
+    if ('layoutSizingVertical' in node) data.layoutSizingVertical = n.layoutSizingVertical;
+  }
+
+  if ('absoluteBoundingBox' in node && n.absoluteBoundingBox) {
+    const abb = n.absoluteBoundingBox;
+    data.absoluteBoundingBox = { x: abb.x, y: abb.y, width: abb.width, height: abb.height };
   }
 
   if (node.type === 'TEXT') {
