@@ -5,14 +5,15 @@
 // Image bytes flow bridge -> here -> disk, never through an agent's context —
 // this is the Mac-side egress the toolkit prototypes (Fork 2 / B1).
 //
-// ACTION SURFACE — what the deployed plugin backs today (post-figl.4):
+// ACTION SURFACE — what the deployed plugin backs today (post-figl.5):
 //   LIVE     get-current-page · get-selection · get-all-pages ·
 //            find-nodes(query) ·
 //            get-node-properties(nodeId?, depth?, maxNodes?) ·
 //            export-node(nodeId?, format) ·
-//            get-batch-nodes(nodeIds[])
-//            - nodeId is OPTIONAL on get-node-properties / export-node — omit it
-//              to fall back to the current page's single selected node.
+//            get-batch-nodes(nodeIds[]) ·
+//            resolve-variables(nodeId?)
+//            - nodeId is OPTIONAL on get-node-properties / export-node / resolve-variables —
+//              omit it to fall back to the current page's single selected node.
 //            - export-node returns { nodeId, format, data: base64, w, h, byteLen }
 //              (Fork 2 / B1 / ADR-1 — base64 wire, decoded Mac-side).
 //            - serializeNodeDetailed carries cornerRadius (+ per-corner,
@@ -24,15 +25,22 @@
 //              recursive call over the SAME serializeNodeDetailed (ADR-2 / C2);
 //              depth absent ≡ today's single-node shape EXACTLY, maxNodes caps
 //              the walk (default 500) — when hit, root carries truncated:true.
+//            - resolve-variables walks node-level boundVariables AND per-paint
+//              bindings on fills/strokes/effects/layoutGrids, returns
+//              {nodeId, bindings:[{field, variableId, name, value, resolvedType}|{...error}], count}
+//              — the one capability the Mac client cannot supply
+//              (valuesByMode "will not resolve any aliases", plugin-typings :11441;
+//              only Variable.resolveForConsumer, :11432, walks the chain) (ADR-4).
+//            - All node lookups are async (figma.getNodeByIdAsync) — defensive
+//              against any future documentAccess:dynamic-page adoption (ADR-8).
 //   PROPOSED get-node-tree (JSON_REST_V1 + fields projection, S-2 sibling) ·
-//            resolve-variables (Variable.resolveForConsumer — plugin-only, figl.5) ·
 //            get-component-instances (getMainComponentAsync + overrides dedup, S-2)
 
 export const BRIDGE_URL = process.env.FIGMA_BRIDGE_URL || 'http://192.168.3.120:3001';
 
 export const ACTION_SURFACE = {
-  live: ['get-current-page', 'get-selection', 'get-all-pages', 'find-nodes', 'get-node-properties', 'export-node', 'get-batch-nodes'],
-  proposed: ['get-node-tree', 'resolve-variables', 'get-component-instances'],
+  live: ['get-current-page', 'get-selection', 'get-all-pages', 'find-nodes', 'get-node-properties', 'export-node', 'get-batch-nodes', 'resolve-variables'],
+  proposed: ['get-node-tree', 'get-component-instances'],
 };
 
 /** GET /health -> { status, connected, hasDocument } */
@@ -61,6 +69,7 @@ export const getCurrentPage = () => request('get-current-page');
 export const getNode = (nodeId) => request('get-node-properties', { nodeId: normId(nodeId) });
 export const exportNode = (nodeId, format = 'PNG') => request('export-node', { nodeId: normId(nodeId), format });
 export const findNodes = (query) => request('find-nodes', { query });
+export const resolveVariables = (nodeId) => request('resolve-variables', { nodeId: normId(nodeId) });
 
 /** "94-2974" -> "94:2974" (mirrors mcp.js normalizeNodeId). */
 export function normId(id) {

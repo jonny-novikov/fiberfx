@@ -25,6 +25,7 @@ const ADVERTISED_ACTIONS = [
   'get-node-properties',
   'export-node',
   'get-batch-nodes',
+  'resolve-variables',
 ];
 
 const server = new McpServer({
@@ -233,6 +234,22 @@ server.registerTool(
   async ({ nodeIds }) => {
     const normalizedNodeIds = nodeIds.map(normalizeNodeId);
     const result = await requestFigma('get-batch-nodes', { nodeIds: normalizedNodeIds });
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.registerTool(
+  "resolve-variables",
+  {
+    title: "Resolve Bound Variables",
+    description: "Walks a node's variable bindings (node-level boundVariables AND per-paint bindings on fills/strokes/effects/layoutGrids) and resolves each VARIABLE_ALIAS via Variable.resolveForConsumer (the one capability the Mac client physically cannot supply — valuesByMode does not follow aliases). Returns {nodeId, bindings:[{field, variableId, name, value, resolvedType}|{...error}], count}. Per-binding errors do not fail the whole call. Omit nodeId to fall back to the current page's single selected node.",
+    inputSchema: {
+      nodeId: z.string().optional(),
+    },
+  },
+  async ({ nodeId }) => {
+    const normalizedNodeId = nodeId ? normalizeNodeId(nodeId) : undefined;
+    const result = await requestFigma('resolve-variables', { nodeId: normalizedNodeId });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
 );

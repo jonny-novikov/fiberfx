@@ -11,6 +11,7 @@ const BACKED_ACTIONS = [
   'get-node-properties',
   'export-node',
   'get-batch-nodes',
+  'resolve-variables',
 ] as const;
 
 function connectToBridge() {
@@ -51,6 +52,9 @@ figma.ui.onmessage = async (msg) => {
           break;
         case 'get-batch-nodes':
           result = await getBatchNodes(params.nodeIds);
+          break;
+        case 'resolve-variables':
+          result = await resolveVariables(params.nodeId);
           break;
         default:
           throw new Error(`Unknown action: ${action}`);
@@ -161,7 +165,10 @@ const DEFAULT_MAX_NODES = 500;
 
 async function getNodeProperties(nodeId?: string, depth?: number, maxNodes?: number) {
   const id = resolveNodeId(nodeId);
-  const node = figma.getNodeById(id);
+  // ADR-8: async swap. Sync getNodeById works under legacy mode but throws
+  // under documentAccess:dynamic-page (typings :423); the async form is
+  // behavior-preserving today and defensive against future adoption.
+  const node = await figma.getNodeByIdAsync(id);
   if (!node) {
     throw new Error(`Node not found: ${id}`);
   }
@@ -205,7 +212,8 @@ function serializeSubtree(root: BaseNode, depth: number, maxNodes: number) {
 
 async function exportNode(nodeId?: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG') {
   const id = resolveNodeId(nodeId);
-  const node = figma.getNodeById(id) as SceneNode;
+  // ADR-8: async swap (see getNodeProperties comment).
+  const node = (await figma.getNodeByIdAsync(id)) as SceneNode;
   if (!node) {
     throw new Error(`Node not found: ${id}`);
   }
@@ -243,6 +251,95 @@ async function getBatchNodes(nodeIds: string[]) {
     }
   }
   return out;
+}
+
+// ADR-4: the one capability the Mac client physically cannot supply.
+// `valuesByMode` "will not resolve any aliases" (typings :11441) — only
+// `Variable.resolveForConsumer(consumer)` (:11432) walks the chain to a
+// concrete value, and it needs a SceneNode that lives only inside the plugin.
+//
+// Walks every alias reachable from the node — both at the node-level
+// (`node.boundVariables`) AND inside the per-Paint bindings on
+// fills/strokes/effects/layoutGrids (where most fill-color bindings live,
+// e.g. the 14 CODEMOJIES aliases). Returns `{nodeId, bindings, count}` —
+// each binding records its source path, the variable id/name, and either
+// {value, resolvedType} on success or {error} on failure (per-binding, so one
+// dead alias does not fail the whole call).
+async function resolveVariables(nodeId?: string) {
+  const id = resolveNodeId(nodeId);
+  const node = await figma.getNodeByIdAsync(id);
+  if (!node) {
+    throw new Error(`Node not found: ${id}`);
+  }
+  const sceneNode = node as SceneNode;
+  const bindings: any[] = [];
+
+  async function pushAlias(field: string, alias: any) {
+    if (!alias || alias.type !== 'VARIABLE_ALIAS' || typeof alias.id !== 'string') return;
+    const variable = await figma.variables.getVariableByIdAsync(alias.id);
+    if (!variable) {
+      bindings.push({ field, variableId: alias.id, error: 'Variable not found' });
+      return;
+    }
+    try {
+      const resolved = variable.resolveForConsumer(sceneNode);
+      bindings.push({
+        field,
+        variableId: alias.id,
+        name: variable.name,
+        resolvedType: resolved.resolvedType,
+        value: resolved.value,
+      });
+    } catch (e) {
+      bindings.push({
+        field,
+        variableId: alias.id,
+        name: variable.name,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
+  // 1. Node-level boundVariables (scalar + multi-value + componentProperties).
+  const nbv = (node as any).boundVariables;
+  if (nbv && typeof nbv === 'object') {
+    for (const key of Object.keys(nbv)) {
+      const val = nbv[key];
+      if (Array.isArray(val)) {
+        for (let i = 0; i < val.length; i++) await pushAlias(`${key}[${i}]`, val[i]);
+      } else if (val && typeof val === 'object' && (val as any).type === 'VARIABLE_ALIAS') {
+        await pushAlias(key, val);
+      } else if (val && typeof val === 'object') {
+        // componentProperties: { [propertyName]: VariableAlias }
+        for (const propName of Object.keys(val)) {
+          await pushAlias(`${key}.${propName}`, (val as any)[propName]);
+        }
+      }
+    }
+  }
+
+  // 2. Per-paint boundVariables on fills / strokes / effects / layoutGrids
+  //    (e.g. SOLID.boundVariables.color — where the CODEMOJIES aliases live).
+  for (const arrayKey of ['fills', 'strokes', 'effects', 'layoutGrids']) {
+    const arr = (node as any)[arrayKey];
+    if (!Array.isArray(arr)) continue;
+    for (let i = 0; i < arr.length; i++) {
+      const entry = arr[i];
+      if (!entry || !entry.boundVariables) continue;
+      for (const subKey of Object.keys(entry.boundVariables)) {
+        const subVal = entry.boundVariables[subKey];
+        if (Array.isArray(subVal)) {
+          for (let j = 0; j < subVal.length; j++) {
+            await pushAlias(`${arrayKey}[${i}].${subKey}[${j}]`, subVal[j]);
+          }
+        } else {
+          await pushAlias(`${arrayKey}[${i}].${subKey}`, subVal);
+        }
+      }
+    }
+  }
+
+  return { nodeId: id, bindings, count: bindings.length };
 }
 
 function serializeNode(node: BaseNode) {

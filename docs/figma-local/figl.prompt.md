@@ -134,14 +134,34 @@ Build in order. Each rung lands as one change-set, deploys, and is verified agai
   `handshake.status: "ok"` (action surface unchanged).
 
 ### `figl.5` — `resolve-variables` + async hardening (Windows deploy) · ADR-4, ADR-8
-- **Edit:** a new `resolve-variables` tool resolving a node's bound variables via
-  `Variable.resolveForConsumer` (`:11432`), returning resolved value + type per bound field. Swap
-  the sync `figma.getNodeById` (`code.ts:124,132`) → `getNodeByIdAsync` (`:421`) —
-  behavior-preserving under legacy mode, defensive ahead of any dynamic-page adoption (S-3).
+- **Edit (plugin, resolve-variables):** a new `resolve-variables` action — register the case in
+  the action switch, add `'resolve-variables'` to `BACKED_ACTIONS`. The implementation walks
+  every alias reachable from the node: node-level `boundVariables` (scalar fields, multi-value
+  arrays, `componentProperties` map) AND per-paint `boundVariables` inside `fills` / `strokes` /
+  `effects` / `layoutGrids` (where the 14 CODEMOJIES fill-color aliases live). For each
+  `{type: 'VARIABLE_ALIAS', id}` it calls `figma.variables.getVariableByIdAsync` (`:2077`)
+  then `variable.resolveForConsumer(sceneNode)` (`:11432`). Returns
+  `{nodeId, bindings:[{field, variableId, name, value, resolvedType}|{...error}], count}` —
+  per-binding errors do NOT fail the whole call (one dead alias does not poison the response).
+- **Edit (plugin, async hardening):** swap sync `figma.getNodeById` → `getNodeByIdAsync`
+  (`:421`) at the surviving call sites in `getNodeProperties` and `exportNode` (the figl.3
+  `getBatchNodes` was async from day one). Both functions are already `async`, so the swap is
+  behavior-preserving under legacy mode; it is defensive ahead of any future
+  `documentAccess: dynamic-page` adoption (which would make the sync form throw, `:423`).
+- **Edit (mcp.js):** add `'resolve-variables'` to `ADVERTISED_ACTIONS` and register the tool
+  with Zod schema `{nodeId: z.string().optional()}`; forward through `requestFigma`.
+- **Lockstep:** `node/codemoji-design/src/bridge.mjs` — promote `resolve-variables` from
+  `PROPOSED` to `LIVE` in `ACTION_SURFACE`, refresh the doc, add a thin `resolveVariables(id)`
+  wrapper.
 - **Deploy:** `[WIN]` `build-plugin`; `[FIGMA-manual]` reload; `[MAC]` sync `mcp.js` + reconnect.
-- **Verify:** a bound `VariableID` resolves to a concrete value + `resolvedType`; the 14
-  `CODEMOJIES` aliases (`node/codemoji-design/figma/codemojies/tokens.md`) resolve to real
-  bindings; the async swap preserves every existing read.
+- **Verify:** `resolve-variables { nodeId: <a CODEMOJIES tile> }` returns each fill-color
+  binding as `{field: 'fills[0].color', variableId, name, value: {r,g,b,a}, resolvedType:
+  'COLOR'}`; the 14 `CODEMOJIES` aliases
+  (`node/codemoji-design/figma/codemojies/tokens.md`) resolve to real bindings; every prior
+  read (`get-node-properties`, `export-node`, `get-batch-nodes`, the new `resolve-variables`)
+  still works unchanged under legacy mode; `check-bridge-status` lists `resolve-variables`
+  under `backedActions` with `handshake.status: "ok"` (advertised ⊆ backed holds with the new
+  action added on both sides).
 
 ## Lockstep rule (the no-CI safeguard)
 

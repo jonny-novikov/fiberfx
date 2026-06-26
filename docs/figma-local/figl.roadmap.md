@@ -95,16 +95,24 @@
   the depth surface unblocks, not a `figl.4` deliverable).
 
 ### `figl.5` — `resolve-variables` (forced) + async hardening (D1 tokens / ADR-4, ADR-8) (Windows deploy)
-- **Do (resolve-variables):** a new tool resolving a node's bound variables via
-  `Variable.resolveForConsumer` (`plugin-api.d.ts:11432`), returning resolved value + type per
-  bound field. The one capability the Mac client cannot supply.
-- **Do (async hardening):** swap sync `figma.getNodeById` (`code.ts:124,132`) → `getNodeByIdAsync`
-  (`plugin-api.d.ts:421`) — behavior-preserving under legacy mode, defensive ahead of any
-  dynamic-page adoption.
-- **Deploy:** Windows (plugin).
+- **Do (resolve-variables):** a new plugin action `resolve-variables` resolves a node's bound
+  variables via `Variable.resolveForConsumer` (`plugin-api.d.ts:11432`) — the one capability the
+  Mac client cannot supply (`valuesByMode` "will not resolve any aliases", `:11441`). Walks
+  node-level `boundVariables` (scalar fields + multi-value arrays + `componentProperties`) AND
+  per-paint `boundVariables` on `fills`/`strokes`/`effects`/`layoutGrids` (where the CODEMOJIES
+  fill-color aliases live). Returns `{nodeId, bindings:[{field, variableId, name, value,
+  resolvedType}|{...error}], count}` — per-binding errors do not fail the whole call. Variable
+  lookup uses the async `getVariableByIdAsync` (`:2077`) for ADR-8 consistency.
+- **Do (async hardening):** swap sync `figma.getNodeById` → `getNodeByIdAsync`
+  (`plugin-api.d.ts:421`) at every surviving call site — `getNodeProperties` and `exportNode`
+  (the `figl.3` `getBatchNodes` was async from day one). Behavior-preserving under legacy
+  mode, defensive ahead of any dynamic-page adoption.
+- **Deploy:** Windows (plugin) + Mac `mcp.js` (the new tool's registration).
 - **Verify:** a bound `VariableID` resolves to a concrete value + `resolvedType`; the 14
-  `CODEMOJIES` aliases (`tokens.md`) resolve to real bindings; the async swap preserves every
-  existing read.
+  `CODEMOJIES` aliases (`node/codemoji-design/figma/codemojies/tokens.md`) resolve to real
+  bindings via `resolve-variables`; every prior read (`get-node-properties`, `export-node`,
+  `get-batch-nodes`) still works unchanged; `check-bridge-status` lists `resolve-variables`
+  under `backedActions` with `handshake.status: "ok"`.
 
 ## Seams & open decisions (deferred — surfaced, not resolved)
 
