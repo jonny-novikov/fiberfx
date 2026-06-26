@@ -115,3 +115,39 @@ zero-exposure with the rake as its natural successor when margin matters.
 **The launch Golden Room:** a buy-in (keys priced in USD) + a per-guess fee → a **buy-ins-only** pool → gather
 **10** distinct guessers → a live timed round → a **live-proportional** top-K payout; never-fills refunds the
 buy-ins exactly-once. The design phase is complete; the canonical-spec reconcile + the engine build follow.
+
+## 8. The consolidated launch model (Operator refinements, post-Stage-4)
+
+After the Stage-4 close the Operator refined the Golden Room into its launch shape. This section is the
+**current truth**; §1–§7 are the decision history (`D-18` + this entry supersede where they differ).
+
+**Membership = the buy-in.**
+- A one-time **buy-in = $1** via a pure function `buy_in(game)` that takes the game's `keys_to_enter` param but
+  **ignores it** (returns `$1`) — a forward config hook; a flat `$1` at launch.
+- Paying makes the PLR a **member for the room's life** — recorded as the `buy_in` TXN in Store (Postgres),
+  cached in ETS. The member set = PLRs with a `buy_in` TXN for the game (**supersedes `D-9`'s member-by-guess**;
+  no separate Valkey members-set).
+
+**Gather + the self-funding guaranteed pool.**
+- Gather trigger = **10 paid members** → the live timer starts + state → in-progress. Players **can guess during
+  gathering** (scored, building standing); the **pool increases** with each buy-in; the **Room Lobby always
+  shows the live prize pool + the enter fee**.
+- **The keystone:** `enter_fee ($1) × floor (10) = the guaranteed pool ($10)`. The hard-10 floor is the
+  **break-even point** — a guaranteed **$10** pool that the 10 buy-ins fund exactly, so the **platform never
+  loses money** on a started game (≥10 buy-ins ≥ the $10 guarantee); a never-fills game voids + refunds. The
+  pool grows past $10 above 10 players. (Refines D1: the $10 is the buy-in×floor guaranteed minimum,
+  buy-in-funded, zero net exposure — both lenses' wins from one coupling.)
+
+**Settlement — two classes (every member is paid).**
+- **Top-K members** split the **diamond** prize pool proportionally (`top_k_split`; diamonds convert to keys
+  10:1 on win — the existing mechanic remains).
+- **Every other member** receives **clips = `max_score / 10`** granted on finish (a member who paid but never
+  guessed → 0). Clips are valueless → no farm.
+
+**Carried forward:** the `:gathering` state machine; the never-fills buy-in refund (exactly-once);
+`gold_multiplier` removed; `type:"golden"` for blind; the free warm-up room "Бокс для разминки".
+
+**Residual build-rung detail (flagged):** the exact pool accounting (the $10 guarantee as a recouped seed vs a
+buy-in-funded display) + the keys→diamonds conversion for a buy-in funding the diamond pool — resolved at the
+build rung; the net (guaranteed $10, buy-in-funded, break-even at 10, zero platform loss, diamond prize) is
+fixed here.
