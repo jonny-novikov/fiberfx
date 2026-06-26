@@ -1,6 +1,46 @@
 # @codemoji/design
 
-Design-system package for Codemoji — currently the home of the **figma-local extraction toolkit**: a Mac-side CLI that pulls a Figma screen (structure + reference renders + a token map) straight from the figma-local bridge and sorts it into reviewable artifacts.
+Design-system package for Codemoji. Two halves share one package:
+
+1. the **design system** — the token source of truth (`tokens/tokens.mjs`), a
+   theme generator that emits Tailwind v4 CSS-first text (`dist/theme.css`), and
+   a **Storybook** that dogfoods both (see [Design system](#design-system) below
+   and [`THEMING.md`](THEMING.md));
+2. the **figma-local extraction toolkit** (the rest of this README): a Mac-side
+   CLI that pulls a Figma screen straight from the figma-local bridge.
+
+## Design system
+
+The design system owns the Codemoji tokens. `tokens/tokens.mjs` is the
+structured source of truth (the base oklch palette copied verbatim from the app,
+the `--text-*` scale, `--font-sans`, the three `accentThemes`, and the `gold`
+treatment). `codemoji-design theme` emits `dist/theme.css` — a drop-in for the
+token surface of `codemoji-app/src/styles.css`, with a **single themeable
+`--accent`** channel and three `[data-theme]` blocks (orange / blue / green).
+Storybook (`@storybook/react-vite`, React 19 + Vite 7 + Tailwind v4) imports that
+generated CSS, so its foundations / components / golden / screens stories show
+the live tokens.
+
+```bash
+pnpm theme            # regenerate dist/theme.css from tokens/tokens.mjs (offline)
+pnpm storybook        # Storybook dev server on :6006 (live accent theming)
+pnpm build-storybook  # static build -> storybook-static/
+```
+
+- **Stories.** Foundations (Colors / Typography / Themes), Components (Button /
+  Badge — self-contained CVA primitives that mirror the app's `cn`), Golden (the
+  formalized `--gradient-gold` treatment), and Screens (the game-screen catalog
+  read from `gameplay/manifest.json`, each screen its reference PNG + metadata).
+- **Adoption + the gold treatment** that supersedes `gold.png` + the inline
+  gradient: [`THEMING.md`](THEMING.md) (the FUTURE integration; not applied yet).
+- **Exports.** `@codemoji/design/theme.css` → `dist/theme.css`;
+  `@codemoji/design/tokens` → `tokens/tokens.mjs`.
+
+---
+
+## figma-local extraction toolkit
+
+The rest of this package is the **figma-local extraction toolkit**: a Mac-side CLI that pulls a Figma screen (structure + reference renders + a token map) straight from the figma-local bridge and sorts it into reviewable artifacts.
 
 It doubles as a **reference implementation of the proposed figma-local MCP enhancements** — every place the current MCP is too lossy or too heavy, the toolkit works around it and records the gap (see `manifest.json` → `gaps` and `docs/figma-local/`).
 
