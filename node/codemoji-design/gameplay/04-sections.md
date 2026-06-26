@@ -104,7 +104,10 @@ The winner card is what the closer fans out at the moment a `classic` game settl
 
 The card pairs with two notifications: a `prize_won/3` text notification (or `golden_win/4` if the room is gold-boosted — see [03-rooms.md#golden-room-finished](03-rooms.md#golden-room-finished)) enqueued on the `cm.notify` lane, and the channel push that lets the live surface show the moment to everyone watching (`notifications.md:33` + `notifications.md:63-66`).
 
-A `golden`-type game has its own surface — the `revealed` event carrying the secret, the final board, and the payouts in one fat push (`codemojex.design.md:180`) — and this winner card is the `classic`-mode flourish; build the golden variant separately if/when the design lands.
+Two distinct close paths to keep straight, both adjacent to this card:
+
+- **Golden Room (boost class on a `classic`-type room).** The Winner card still fires here — Golden Room is `classic`-typed, so the close path is identical. The full-page public view of the same close is [`03-rooms.md#golden-room-finished`](03-rooms.md#golden-room-finished); the "louder moment" the Golden Room is designed for comes from `golden_win/4` + the `{:golden_win}` PubSub broadcast, not a separate card.
+- **`golden` game *type* (blind/sealed commit-reveal).** Different mechanism, no Winner card — the close fans out a single `revealed` event carrying the secret, the final board, and the payouts in one fat push (`codemojex.design.md:180`). Build that surface separately if/when the design lands.
 
 ![Winner](assets/winner-771-15371.png)
 
