@@ -74,8 +74,18 @@ export function LobbyScreen() {
         {/* LOWER band — the rounded "rooms" sheet (Figma Frame 139): a full-bleed
             #D8E4EB (--color-background) panel with rounded top corners (r≈26) that
             the room list + everything below sit on. The cards keep the master's
-            ≈8px side inset; the sheet itself runs edge-to-edge. */}
-        <div className="mt-2 flex flex-col gap-2 rounded-t-[26px] bg-background px-2 pb-10 pt-6">
+            ≈8px side inset; the sheet itself runs edge-to-edge. ELEVATION: Figma's
+            sheet reads because it sits on a black backdrop; under the board-gradient
+            override the sheet fill (#D8E4EB) equals the gradient at this height, so
+            an upward drop-shadow + a 1px top highlight is what makes the rounded box
+            read against the gradient (the rounding is otherwise zero-contrast). */}
+        <div
+          className="relative z-10 mt-2 flex flex-col gap-2 rounded-t-[26px] bg-background px-2 pb-10 pt-6"
+          style={{
+            boxShadow:
+              '0 -1px 0 rgba(255,255,255,0.7), 0 -5px 22px rgba(31,45,61,0.20), 0 -16px 40px rgba(31,45,61,0.10)',
+          }}
+        >
           <RoomList rooms={LOBBY_ROOMS} />
           <ArchiveList title="Ваши золотые комнаты" items={LOBBY_GOLDEN_ARCHIVE} />
           <ArchiveList title="Архив комнат" items={LOBBY_ARCHIVE} onShowMore={() => {}} />
