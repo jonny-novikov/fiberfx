@@ -6,13 +6,15 @@ The acceptance-criteria catalogue, generated from the as-built BDD story tests
 under `test/stories/`. Each row is a feature whose Given/When/Then scenarios are
 runnable ExUnit tests against the real game.
 
-**8 features, 40 scenarios.**
+**10 features, 52 scenarios.**
 
 | Feature | Scenarios |
 |---|---|
-| [Economy](economy.stories.md) | 10 |
+| [Economy](economy.stories.md) | 11 |
 | [Emoji codes](emoji-codes.stories.md) | 6 |
 | [Golden blind](golden-blind.stories.md) | 4 |
+| [Golden economy](golden-economy.stories.md) | 6 |
+| [Golden tournament](golden-tournament.stories.md) | 5 |
 | [Privacy](privacy.stories.md) | 3 |
 | [Rooms and games](rooms-and-games.stories.md) | 4 |
 | [Scoring](scoring.stories.md) | 6 |

@@ -6,7 +6,7 @@
 > `test/stories/economy_story_test.exs`. Every scenario below is an ExUnit test driving the
 > real Codemojex game, so the catalogue cannot drift from the code.
 
-**10 scenarios.**
+**11 scenarios.**
 
 ## Scenario: diamonds convert to keys at a fixed 10:1, floored
 
@@ -51,7 +51,13 @@
 
 - **Given** only two players but a five-weight split
 - **When** the pool settles top-K with the default [40,25,15,12,8]
-- **Then** only the assigned ranks are paid and the share normalizes over 40+25
+- **Then** only the assigned ranks are paid, the share normalizes over 40+25, and the whole pool drains
+
+## Scenario: the sealed split drains the whole pool — no diamond is stranded
+
+- **Given** a five-rank board over an awkward pool that does not divide evenly
+- **When** the pool settles top-K over a pool of 999
+- **Then** the sum of the payouts equals the whole pool (the rounding dust is paid to rank 1)
 
 ## Scenario: the sealed split is pure: re-running pays identically
 

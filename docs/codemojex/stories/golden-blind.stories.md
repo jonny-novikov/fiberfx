@@ -23,11 +23,11 @@
 ## Scenario: the sealed close reveals the secret and the commitment verifies
 
 - **Given** a golden game with a scored guess, subscribed for the reveal
-- **When** the timer expires and the game is closed (the sealed pass runs)
+- **When** the game is closed (the sealed pass runs)
 - **Then** one revealed event arrives whose secret+nonce recompute to the published commitment
 
 ## Scenario: the sealed settlement is exactly-once — a second close pays nothing
 
-- **Given** a golden game closed once on its timer (sealed top-K paid)
+- **Given** a golden game closed once (sealed top-K paid)
 - **When** the game is closed again (the sealed pass must not re-pay)
 - **Then** the second close is a no-op and the balance is unchanged
