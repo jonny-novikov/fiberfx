@@ -17,8 +17,8 @@ function LobbyView() {
         Lists open rooms (entity <code>ROM</code>). Golden Rooms surface here too — see{' '}
         <strong>Screens/Golden&nbsp;Game</strong> for the boosted variant.
       </p>
-      <Button variant="buy">Enter room</Button>
-      <ThemeNote>Live — recolors with the ▸ Theme toolbar (orange · blue · green).</ThemeNote>
+      <Button variant="enter">Enter room</Button>
+      <ThemeNote>The room-entry CTA is a fixed blue role color (not theme-driven).</ThemeNote>
     </ScreenView>
   );
 }

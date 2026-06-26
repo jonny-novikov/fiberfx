@@ -7,7 +7,7 @@ import { Button } from '../components/Button';
 // widgets/promo-banner: a white card with a centered "earned over all time"
 // headline + a description, then a full-width buy CTA. The app uses
 // `variant="gradient"` (an orange gradient) + a lucide <StarIcon>; here the CTA
-// is the themeable `buy` Button (rides bg-accent) and the star is a Unicode "⭐".
+// is the `purchase` Button (the same orange buy gradient, tokenized) + a "⭐".
 // Reuses the shared BoardCard surface; self-contained (onBuy is a callback).
 export interface PromoBannerProps {
   /** total winnings across all players, in whole currency units */
@@ -25,7 +25,7 @@ export function PromoBanner({ totalEarned = 25693, onBuy, className }: PromoBann
       <p className="mt-3 text-xs text-card-foreground-secondary">
         Buy keys to crack more safes and grow the pool
       </p>
-      <Button className="mt-4 w-full" variant="buy" onClick={onBuy}>
+      <Button className="mt-4 w-full" variant="purchase" onClick={onBuy}>
         Buy keys ⭐
       </Button>
     </BoardCard>

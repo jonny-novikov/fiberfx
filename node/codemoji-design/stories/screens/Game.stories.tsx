@@ -17,8 +17,8 @@ function BoardView() {
         The free game. <code>mode: both</code> — the same board serves free and Golden play; the
         boost lives on the room, not the board (see <strong>Screens/Golden&nbsp;Game</strong>).
       </p>
-      <Button variant="buy">Buy keys</Button>
-      <ThemeNote>Live — recolors with the ▸ Theme toolbar (orange · blue · green).</ThemeNote>
+      <Button variant="purchase">Buy keys</Button>
+      <ThemeNote>The purchase CTA is the fixed orange buy gradient (“Приобрести ключи”).</ThemeNote>
     </ScreenView>
   );
 }

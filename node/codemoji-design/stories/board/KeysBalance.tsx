@@ -4,9 +4,8 @@ import { BoardCard } from './lib/BoardCard';
 import { Button } from '../components/Button';
 
 // The keys balance card (94:2974) — the player's key count over a Buy button.
-// Re-expresses entities/balance/balance-key-widget. The Buy button reuses the
-// `buy` Button variant, which rides bg-accent, so the CTA recolors with the
-// Theme toolbar (orange | blue | green).
+// Re-expresses entities/balance/balance-key-widget. The Buy button is a
+// `purchase` CTA — the orange buy gradient (a purchase: a fixed role color).
 export interface KeysBalanceProps {
   keys?: number;
   onBuy?: () => void;
@@ -20,7 +19,7 @@ export function KeysBalance({ keys = 0, onBuy, className }: KeysBalanceProps) {
       <p className="text-xs text-card-foreground-secondary">
         Spend a key to lock in a guess. Buy more to keep playing.
       </p>
-      <Button variant="buy" className="w-full" onClick={onBuy}>
+      <Button variant="purchase" className="w-full" onClick={onBuy}>
         Buy keys
       </Button>
     </BoardCard>

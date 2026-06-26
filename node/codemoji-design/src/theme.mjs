@@ -20,6 +20,7 @@ import {
   fontSans,
   accentThemes,
   gold,
+  actions,
 } from '../tokens/tokens.mjs';
 
 const PKG_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -116,6 +117,11 @@ function themeBlock() {
   lines.push(decl('color-gold-border', gold.goldBorder) + ' /* #E6A900 */');
   lines.push('');
 
+  // action colors (role-based button colors): bg-gradient-purchase, bg-enter.
+  lines.push(decl('gradient-purchase', actions.gradientPurchase));
+  lines.push(decl('color-enter', actions.enter) + ' /* #0050FF */');
+  lines.push('');
+
   // font
   lines.push(decl('font-sans', fontSans));
 
@@ -131,6 +137,10 @@ function rootBlock() {
   lines.push(decl('gold-surface', gold.goldSurface));
   lines.push(decl('gold-foreground', gold.goldForeground));
   lines.push(decl('gold-border', gold.goldBorder));
+  lines.push('');
+  lines.push('  /* action colors (role-based button colors) */');
+  lines.push(decl('gradient-purchase', actions.gradientPurchase));
+  lines.push(decl('enter', actions.enter));
   return `:root {\n${lines.join('\n')}\n}`;
 }
 
@@ -139,6 +149,22 @@ function themeOverrideBlocks() {
   return Object.entries(accentThemes)
     .map(([name, hex]) => `[data-theme="${name}"] {\n${decl('accent', hex)}\n}`)
     .join('\n\n');
+}
+
+// Tailwind v4 has NO bg-gradient-<name> utility for a --gradient-* theme var, so
+// `bg-gradient-gold` / `bg-gradient-purchase` are no-ops without an explicit
+// @utility (background-image is the right property for a gradient fill). Emitting
+// these here ships the working classes with the drop-in artifact.
+function utilityBlock() {
+  return [
+    '@utility bg-gradient-gold {',
+    '  background-image: var(--gradient-gold);',
+    '}',
+    '',
+    '@utility bg-gradient-purchase {',
+    '  background-image: var(--gradient-purchase);',
+    '}',
+  ].join('\n');
 }
 
 // --- public API ------------------------------------------------------------
@@ -160,7 +186,7 @@ export function generateTheme() {
     ' */',
   ].join('\n');
 
-  return `${header}\n\n${themeBlock()}\n\n${rootBlock()}\n\n${themeOverrideBlocks()}\n`;
+  return `${header}\n\n${themeBlock()}\n\n${rootBlock()}\n\n${themeOverrideBlocks()}\n\n${utilityBlock()}\n`;
 }
 
 /**

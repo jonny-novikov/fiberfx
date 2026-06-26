@@ -146,6 +146,21 @@ export const gold = {
   goldBorder: '#E6A900',
 };
 
+// ---------------------------------------------------------------------------
+// actions — SEMANTIC, role-based button colors (FIXED, not theme-following).
+// The app colors action buttons by INTENT rather than by the global accent:
+//   - purchase ("Приобрести ключи" / Buy keys) -> the orange buy gradient,
+//     verbatim from shared/ui/button.tsx variant="gradient" (#FF8800->#FF4800).
+//   - enter (Open safe / Enter room — free or paid, NON-gold) -> blue (#0050FF,
+//     the app's --link / the blue accent-theme value).
+// Golden rooms keep the `gold` treatment above. These three carry meaning
+// (spend / play / boosted) and stay constant under any [data-theme].
+// ---------------------------------------------------------------------------
+export const actions = {
+  gradientPurchase: 'linear-gradient(90deg, #FF8800 0%, #FF4800 100%)',
+  enter: '#0050FF',
+};
+
 export default {
   base,
   literalColors,
@@ -153,4 +168,5 @@ export default {
   fontSans,
   accentThemes,
   gold,
+  actions,
 };

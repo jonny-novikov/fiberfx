@@ -5,10 +5,10 @@ import { Button } from '../components/Button';
 
 // A room ("safe") card in the lobby (121:2056) — the centerpiece. Re-expresses
 // entities/rooms/room-item: the room name + prize, a star / emoji-count / cells
-// meta line, a best-guess progress bar, and the Open-safe CTA. A `golden`
-// boost-class room rides the gold Button variant (--gradient-gold) + a gold
-// border. Reuses the shared BoardCard surface; self-contained (no join mutation
-// or router — onJoin is a callback).
+// meta line, a best-guess progress bar, and the Open-safe CTA: non-gold rooms
+// use the `enter` Button (blue); a `golden` boost-class room rides the gold
+// variant (--gradient-gold) + a gold border. Reuses the shared BoardCard
+// surface; self-contained (no join mutation or router — onJoin is a callback).
 export interface RoomCardProps {
   name: string;
   /** prize pool in whole currency units; rendered as $N */
@@ -63,7 +63,7 @@ export function RoomCard({
         </div>
       </div>
 
-      <Button variant={golden ? 'golden' : 'default'} disabled={disabled} onClick={onJoin}>
+      <Button variant={golden ? 'golden' : 'enter'} disabled={disabled} onClick={onJoin}>
         💸 Open safe
       </Button>
     </BoardCard>
