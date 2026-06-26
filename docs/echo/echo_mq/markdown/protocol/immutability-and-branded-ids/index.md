@@ -31,7 +31,7 @@ connection that does not match the wire is refused before it can corrupt it.
   (`string.sub(ARGV[1], 1, 3) ~= 'JOB'`). The Elixir maps `{:error, {:server, "EMQKIND" <> _}} -> {:error, :kind}`.
 - `EchoData.BrandedId`: `3 × [A-Z]` namespace ++ `base62(snowflake)` padded to 11 = **14 bytes**; the Snowflake layout
   `ts(41) << 22 | node(10) << 12 | seq(12)`, epoch `1704067200000`.
-- `EchoMQ.Connector` `@wire_version "echomq:2.0.0"` (a quoted code constant, never a course label); `fence/2` reads
+- `EchoMQ.Connector` `@wire_version "echomq:2.4.2"` (a quoted code constant, never a course label); `fence/2` reads
   `GET {emq}:version` at connect — match → run, absent → claim with `SET … NX` then confirm, mismatch →
   `{:error, {:version_fence, got}}`, fatal on reconnect.
 
