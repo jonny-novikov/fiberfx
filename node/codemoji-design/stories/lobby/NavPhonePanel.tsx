@@ -1,71 +1,41 @@
 import * as React from 'react';
 import { cn } from '../lib/cn';
 
-// The phone chrome atop a screen (Figma "Header old (iOS)", 375×92) — the iOS status
-// row (system time + signal / wi-fi / battery) over the app header (a "‹ Back" pill,
-// the CODEMOJI wordmark, and the extra-controls cluster: collapse chevron + overflow
-// menu). Background is TRANSPARENT by default so it floats on the screen-fill gradient;
-// pass `solid` for an opaque card surface. Self-contained — onBack is a callback, the
-// status glyphs are Unicode (no SpriteEmoji / SVG icons).
+// The phone chrome atop a screen (Figma "Header old (iOS)", 375×92), built from the
+// exported status-bar assets in public/assets/status-bar/: the iOS status bar
+// (system time · Dynamic Island · signal / wi-fi / battery) over the app header
+// (the "‹ Back" pill, the CODEMOJI cat logo, and the extra-controls menu). The
+// assets carry their own (transparent-surround) surfaces, so the panel itself has no
+// background — it floats on the screen-fill gradient. Self-contained: onBack / onMenu
+// are callbacks. Assets are served at /assets/status-bar/* (see .storybook/main.ts).
+const ASSET = '/assets/status-bar';
+
 export interface NavPhonePanelProps {
-  /** system clock, left of the status row */
-  time?: string;
-  /** the centered wordmark; defaults to the CODEMOJI logo */
-  logo?: React.ReactNode;
   onBack?: () => void;
   onMenu?: () => void;
-  /** opaque card surface instead of the default transparent background */
-  solid?: boolean;
   className?: string;
 }
 
-export function NavPhonePanel({
-  time = '9:41',
-  logo,
-  onBack,
-  onMenu,
-  solid = false,
-  className,
-}: NavPhonePanelProps) {
+export function NavPhonePanel({ onBack, onMenu, className }: NavPhonePanelProps) {
   return (
-    <div className={cn('flex flex-col gap-2', solid && 'rounded-2xl bg-card p-2', className)}>
-      {/* iOS status row — time · signal / wi-fi / battery */}
-      <div className="flex h-6 items-center justify-between px-1 text-h5 font-semibold text-dark-muted">
-        <span>{time}</span>
-        <span className="flex items-center gap-1" aria-label="status">
-          <span aria-hidden>📶</span>
-          <span aria-hidden>🛜</span>
-          <span aria-hidden>🔋</span>
-        </span>
-      </div>
+    <div className={cn('flex flex-col gap-2', className)}>
+      {/* iOS status bar — time · Dynamic Island · signal / wi-fi / battery */}
+      <img src={`${ASSET}/iphone-topbar.png`} alt="" className="block w-full" />
 
-      {/* app header — back · logo · extra controls (same-height row) */}
-      <div className="flex h-10 items-center justify-between">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex h-9 items-center gap-1 rounded-full bg-primary px-3 text-h5 font-medium text-primary-foreground"
-        >
-          <span aria-hidden>‹</span>
-          <span>Back</span>
+      {/* app header — back · cat logo · extra controls (vertically centered) */}
+      <div className="flex items-center justify-between px-1">
+        <button type="button" onClick={onBack} aria-label="Back" className="shrink-0">
+          <img src={`${ASSET}/tg-back.png`} alt="Back" className="block h-8 w-auto" />
         </button>
 
-        <span className="text-h2 font-bold tracking-tight text-dark-muted">
-          {logo ?? (
-            <>
-              C<span aria-hidden>🎭</span>DEMOJI
-            </>
-          )}
-        </span>
+        <img
+          src={`${ASSET}/cm-logo-sm.png`}
+          alt="CODEMOJI"
+          className="block h-10 w-auto shrink-0"
+        />
 
-        <button
-          type="button"
-          onClick={onMenu}
-          aria-label="Extra controls"
-          className="flex h-9 items-center gap-3 rounded-full bg-primary px-3 text-h3 text-primary-foreground"
-        >
-          <span aria-hidden>⌄</span>
-          <span aria-hidden>⋮</span>
+        <button type="button" onClick={onMenu} aria-label="Extra controls" className="shrink-0">
+          <img src={`${ASSET}/tg-menu.png`} alt="" className="block h-8 w-auto" />
         </button>
       </div>
     </div>

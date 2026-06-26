@@ -2,8 +2,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import * as React from 'react';
 import { NavPhonePanel } from './NavPhonePanel';
 
-// Lobby story — the phone chrome. Shown on the app screen-fill gradient so the
-// default transparent background reads the way it does on a real screen.
+// Lobby story — the phone chrome, built from the exported status-bar assets. Shown on
+// the app screen-fill gradient so the transparent panel reads as it does on a real
+// screen. (Assets load from /assets/status-bar/* via the public/ staticDir.)
 const meta: Meta<typeof NavPhonePanel> = {
   title: 'Lobby/Nav Phone Panel',
   component: NavPhonePanel,
@@ -22,5 +23,4 @@ export default meta;
 
 type Story = StoryObj<typeof NavPhonePanel>;
 
-export const Transparent: Story = {};
-export const Solid: Story = { args: { solid: true } };
+export const Default: Story = {};
