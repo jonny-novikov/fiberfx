@@ -120,6 +120,8 @@ function themeBlock() {
   // action colors (role-based button colors): bg-gradient-purchase, bg-enter.
   lines.push(decl('gradient-purchase', actions.gradientPurchase));
   lines.push(decl('color-enter', actions.enter) + ' /* #0050FF */');
+  // nav chrome control grey (bg-control) — matches the tg-back / tg-menu rasters.
+  lines.push(decl('color-control', actions.control) + ' /* #A8ACB0 */');
   lines.push('');
 
   // font
@@ -141,6 +143,7 @@ function rootBlock() {
   lines.push('  /* action colors (role-based button colors) */');
   lines.push(decl('gradient-purchase', actions.gradientPurchase));
   lines.push(decl('enter', actions.enter));
+  lines.push(decl('control', actions.control));
   return `:root {\n${lines.join('\n')}\n}`;
 }
 

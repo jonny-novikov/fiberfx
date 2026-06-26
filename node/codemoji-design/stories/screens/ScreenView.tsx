@@ -108,10 +108,14 @@ export function PhoneFrame({
 export function LiveFrame({
   width = 300,
   golden = false,
+  flush = false,
   children,
 }: {
   width?: number;
   golden?: boolean;
+  /** when true, no inner padding — the screen renders edge-to-edge (full-bleed
+   *  status bar / corners), and the screen component manages its own padding. */
+  flush?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -120,7 +124,7 @@ export function LiveFrame({
         style={{
           width,
           background: 'linear-gradient(180deg, var(--color-bg-app-from), var(--color-bg-app-to))',
-          padding: '12px 8px',
+          padding: flush ? 0 : '12px 8px',
         }}
       >
         {children}
@@ -171,12 +175,15 @@ export function DriftView({
   screen,
   golden = false,
   width = 300,
+  flush = false,
   note,
   children,
 }: {
   screen: Screen;
   golden?: boolean;
   width?: number;
+  /** pass through to the live frame — render the build edge-to-edge (no inner pad). */
+  flush?: boolean;
   note?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -202,7 +209,7 @@ export function DriftView({
       </p>
       <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <PaneCol label="Design system" tag="LIVE" tagColor="var(--color-success)">
-          <LiveFrame width={width} golden={golden}>
+          <LiveFrame width={width} golden={golden} flush={flush}>
             {children}
           </LiveFrame>
         </PaneCol>

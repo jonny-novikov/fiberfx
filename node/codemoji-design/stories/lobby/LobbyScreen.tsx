@@ -53,8 +53,12 @@ const SCREEN_FILL = 'linear-gradient(180deg, var(--color-bg-app-from), var(--col
 export function LobbyScreen() {
   return (
     <div className="font-sans" style={{ background: SCREEN_FILL }}>
-      <div className="mx-auto flex max-w-sm flex-col gap-3 pb-8 pt-2">
+      {/* phone chrome — full-bleed (status bar to the corners), near the top */}
+      <div className="pt-2">
         <NavPhonePanel />
+      </div>
+      {/* the screen content — inset like the Figma master (≈8px side margins) */}
+      <div className="mx-auto flex max-w-sm flex-col gap-3 px-2 pb-8 pt-2">
         <StatusBar username="@vitalysacred" diamonds={3584} clips={58} keys={34} />
         <PromoBanner totalEarned={25693} />
         <SubscriptionBanner />

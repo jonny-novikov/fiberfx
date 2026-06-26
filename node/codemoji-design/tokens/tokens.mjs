@@ -159,6 +159,10 @@ export const gold = {
 export const actions = {
   gradientPurchase: 'linear-gradient(90deg, #FF8800 0%, #FF4800 100%)',
   enter: '#0050FF',
+  // the iOS control-pill grey — the fill of the nav chrome buttons (the exported
+  // tg-back / tg-menu rasters), reused for the circle behind the nav logo so it
+  // matches the buttons exactly. Sampled #A8ACB0 (opaque) from tg-back.png.
+  control: '#A8ACB0',
 };
 
 export default {
