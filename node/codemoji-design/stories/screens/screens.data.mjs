@@ -8,26 +8,36 @@ import manifest from '../../gameplay/manifest.json';
 // The two Golden Room screens (boost-class), flagged in the catalog.
 export const GOLDEN_SCREEN_IDS = ['1089:19410', '1108:27589'];
 
+// The curation filter — ids the manifest's top-level `excluded` block removes from
+// BOTH the gameplay catalog and Storybook (onboarding screens, pruned board
+// design-exploration variants, the leaderboard). Applied once below so every
+// consumer (catalog grid, derived groups, dedicated stories) respects it.
+export const EXCLUDED_IDS = new Set((manifest.excluded ?? []).map((e) => e.figma_id));
+
 const assetUrl = (asset) => '/gameplay/' + String(asset).replace(/^assets\//, '');
 
 export const categories = manifest.categories;
 
-export const screens = manifest.screens.map((s) => ({
-  ...s,
-  url: assetUrl(s.asset),
-  isGolden: GOLDEN_SCREEN_IDS.includes(s.figma_id),
-}));
+export const screens = manifest.screens
+  .filter((s) => !EXCLUDED_IDS.has(s.figma_id))
+  .map((s) => ({
+    ...s,
+    url: assetUrl(s.asset),
+    isGolden: GOLDEN_SCREEN_IDS.includes(s.figma_id),
+  }));
 
-// screens grouped by category id, in the manifest's category order.
-export const screensByCategory = categories.map((c) => ({
-  ...c,
-  screens: screens.filter((s) => s.category === c.id),
-}));
+// screens grouped by category id, in the manifest's category order; empty
+// categories (e.g. onboarding after the filter) are dropped so the catalog never
+// renders a ghost section header.
+export const screensByCategory = categories
+  .map((c) => ({ ...c, screens: screens.filter((s) => s.category === c.id) }))
+  .filter((c) => c.screens.length > 0);
 
 export const counts = {
   screens: screens.length,
-  categories: categories.length,
+  categories: screensByCategory.length,
   manifestScreens: manifest.screens.length,
+  excluded: EXCLUDED_IDS.size,
   golden: screens.filter((s) => s.isGolden).length,
 };
 
