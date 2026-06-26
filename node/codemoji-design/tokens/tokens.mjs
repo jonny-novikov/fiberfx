@@ -93,6 +93,7 @@ export const literalColors = {
   success: 'hsl(141, 71%, 48%)', // #00D95F - green
   muted: 'hsl(0, 0%, 40%)', // #666666 - gray
   'dark-muted': 'hsl(0, 0%, 20%)', // #333333 - dark gray
+  'main-blue': '#54C0EC', // #54C0EC - Main Blue (the app's leaderboard metric/bar tint; FIXED, not themeable)
 };
 
 // ---------------------------------------------------------------------------

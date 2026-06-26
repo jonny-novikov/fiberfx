@@ -6,9 +6,9 @@ import { cn } from '../lib/cn';
 // player's @handle, then a right-aligned metric-over-score pair with a thin progress
 // bar (the bar tracks score/maxScore). The metric is verbatim from the data — the
 // achievement TIME for the top scorers (ties broken by who got there first), else a
-// match percent. A "leader-change notifications" toggle closes the list. The app's
-// ad-hoc #54C0EC tint is mapped onto the design system's themeable `accent`, so the
-// metric + bar recolor with the theme toolbar (the deliberate, documented drift).
+// match percent. A "leader-change notifications" toggle closes the list. The metric +
+// bar are the app's FIXED "Main Blue" token (--color-main-blue #54C0EC), NOT the
+// themeable accent — pinned by Operator ruling so the leaderboard's blue is constant.
 const DEFAULT_MAX_SCORE = 600;
 
 export interface LeaderboardEntry {
@@ -61,11 +61,11 @@ export function LeaderboardRow({
       {/* metric over score, then a thin accent-filled progress bar */}
       <div className="flex w-[88px] shrink-0 flex-col justify-center gap-1">
         <div className="flex items-center justify-between leading-none">
-          <span className="text-2xs font-medium text-accent">{item.metric}</span>
+          <span className="text-2xs font-medium text-main-blue">{item.metric}</span>
           <span className="text-sm font-medium text-dark-muted tabular-nums">{item.score}</span>
         </div>
         <div className="h-[7px] w-full overflow-hidden rounded-full bg-slot">
-          <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+          <div className="h-full rounded-full bg-main-blue" style={{ width: `${pct}%` }} />
         </div>
       </div>
     </div>

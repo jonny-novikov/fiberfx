@@ -107,6 +107,7 @@ function themeBlock() {
   lines.push(decl('color-success', literalColors.success) + ' /* #00D95F */');
   lines.push(decl('color-muted', literalColors.muted) + ' /* #666666 */');
   lines.push(decl('color-dark-muted', literalColors['dark-muted']) + ' /* #333333 */');
+  lines.push(decl('color-main-blue', literalColors['main-blue']) + ' /* #54C0EC */');
   lines.push('');
 
   // gold treatment — the texture itself is --gold-texture (in :root); these are the
