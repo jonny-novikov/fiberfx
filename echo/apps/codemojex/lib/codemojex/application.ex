@@ -45,6 +45,10 @@ defmodule Codemojex.Application do
         # an in-memory CHAMP view of the leaderboard, rebuildable from Graft via EchoData.ChampView
         {EchoData.ChampServer, name: Codemojex.Leaderboard},
 
+        # the periodic game sweep (cm.5): the timer-close for :open games, the
+        # never-fills void for :gathering Golden Rooms, and the engagement nudges.
+        Codemojex.Sweep,
+
         CodemojexWeb.Endpoint
       ]
       |> maybe_committer(conn)

@@ -32,7 +32,17 @@ defmodule Codemojex.Schemas.Game do
     field :clip_cost, :integer, default: 1
     field :status, :string, default: "open"
     field :golden, :boolean, default: false
-    field :gold_multiplier, :integer, default: 1
+    # the Golden Room tournament levers, snapshotted from the room at start (cm.5).
+    # All nullable: nil = not a Golden config. `start_threshold` is the paid-member
+    # gather count; `entry_fee_keys` the buy-in; `virtual_deposit` the 💎 seed;
+    # `first_movers`/`entry_fee_revenue_percentage` the fee waterfall; `room_deadline`
+    # the promotional-event end (= the game-end, ends_ms aligns to it at open).
+    field :start_threshold, :integer
+    field :entry_fee_keys, :integer
+    field :virtual_deposit, :integer
+    field :first_movers, :integer
+    field :entry_fee_revenue_percentage, :integer
+    field :room_deadline, :utc_datetime
     timestamps(type: :utc_datetime_usec)
   end
 
@@ -62,8 +72,20 @@ defmodule Codemojex.Schemas.Game do
       :clip_cost,
       :status,
       :golden,
-      :gold_multiplier
+      :start_threshold,
+      :entry_fee_keys,
+      :virtual_deposit,
+      :first_movers,
+      :entry_fee_revenue_percentage,
+      :room_deadline
     ])
-    |> validate_required([:id, :secret, :started_ms, :ends_ms])
+    # ends_ms is no longer required: a :gathering game holds it nil until the gather
+    # completes (cm.5 D-2). started_ms stays required (stamped at formation).
+    |> validate_required([:id, :secret, :started_ms])
+    # the dual guard mirroring the DB CHECK: the platform's revenue share is 0..100
+    |> validate_number(:entry_fee_revenue_percentage,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
   end
 end

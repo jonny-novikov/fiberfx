@@ -53,17 +53,19 @@ defmodule Codemojex.View do
 
       r ->
         set = Cache.fetch_set(r.emojiset)
-        base = %{
-          game: game,
-          room: Map.get(r, :room),
-          emojiset: set && EmojiSet.snapshot(set),
-          ends_ms: r.ends_ms,
-          prize_pool: r.prize_pool,
-          prize_usd: Economy.to_usd(r.prize_pool),
-          guess_fee: r.guess_fee,
-          free: r.free,
-          status: r.status
-        }
+        base =
+          %{
+            game: game,
+            room: Map.get(r, :room),
+            emojiset: set && EmojiSet.snapshot(set),
+            ends_ms: r.ends_ms,
+            prize_pool: r.prize_pool,
+            prize_usd: Economy.to_usd(r.prize_pool),
+            guess_fee: r.guess_fee,
+            free: r.free,
+            status: r.status
+          }
+          |> put_gather(game, r)
 
         if revealed?(r) do
           best = best_score(game)
@@ -121,6 +123,17 @@ defmodule Codemojex.View do
   defp revealed?(r) do
     Map.get(r, :feedback, "score") != "none" or not is_nil(Map.get(r, :revealed_ms))
   end
+
+  # The live gather counter for a :gathering Golden Room (cm.5 R14): paid/threshold,
+  # the paid count from the cheap Valkey :paid set hint. Absent for a started game.
+  defp put_gather(view, game, %{status: :gathering} = r) do
+    Map.put(view, :gather, %{
+      paid: scard("cm:" <> game <> ":paid"),
+      threshold: Map.get(r, :start_threshold)
+    })
+  end
+
+  defp put_gather(view, _game, _r), do: view
 
   # The commitment is published from open for a golden game (so the player records
   # it for later verification); a classic game has none.

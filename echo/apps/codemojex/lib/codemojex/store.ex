@@ -9,11 +9,43 @@ defmodule Codemojex.Store do
   """
   import Ecto.Query
   alias Codemojex.Repo
-  alias Codemojex.Schemas.{Player, Game, Guess, Room, EmojiSet}
+  alias Codemojex.Schemas.{Player, Game, Guess, Room, Transaction, EmojiSet}
 
   # games -----------------------------------------------------------------
   def put_game(id, m), do: upsert(Game, id, m)
   def game(id), do: to_map(Repo.get(Game, id))
+
+  @doc """
+  The ledger-authoritative paid-member count for a game (cm.5): the number of
+  `buy_in` TXNs with `ref = game`. This is the source of truth for the gather gate
+  and re-derivable across a Valkey flush (the `cm:<game>:paid` set is only a hint).
+  """
+  def paid_count(game) do
+    Repo.one(
+      from t in Transaction,
+        where: t.ref == ^game and t.reason == "buy_in",
+        select: count(t.id)
+    ) || 0
+  end
+
+  @doc "The member PLR ids for a game — the players with a `buy_in` TXN (cm.5)."
+  def members(game) do
+    Repo.all(
+      from t in Transaction,
+        where: t.ref == ^game and t.reason == "buy_in",
+        select: t.player
+    )
+  end
+
+  @doc """
+  The games the sweep must act on (cm.5 R9): `:open` games (whose `ends_ms` timer the
+  sweep checks for the close) and `:gathering` games (whose `room_deadline` the sweep
+  checks for the void + the engagement nudges). Returns the plain game maps.
+  """
+  def due_games do
+    Repo.all(from g in Game, where: g.status in ["open", "gathering"])
+    |> Enum.map(&to_map/1)
+  end
 
   # rooms -----------------------------------------------------------------
   def put_room(id, m), do: upsert(Room, id, m)

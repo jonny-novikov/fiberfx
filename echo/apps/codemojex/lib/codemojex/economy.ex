@@ -27,13 +27,29 @@ defmodule Codemojex.Economy do
   end
 
   @doc """
-  The pool actually paid out at settlement. A Golden Room multiplies its diamond
-  `pool` by `mult` — the platform funds the boost — while a normal room pays its
-  pool as-is. The multiplier is applied once, at close, over the seeded pool.
+  The pool-credit diamonds for a Golden Room buy-in at 1-based paid `ordinal` (cm.5
+  R-WATERFALL). A configurable fee waterfall over the platform's virtual deposit:
+
+    * `ordinal ∈ [1, start_threshold]` → **0** — the fee is platform revenue,
+      recovering the seeded `virtual_deposit` (zero/near-zero loss);
+    * `ordinal ∈ [start_threshold+1, start_threshold+first_movers]` → the first-mover
+      band: the platform keeps `revenue_pct`%, the rest funds the pool —
+      `floor(entry_fee_keys × (100 − revenue_pct) / 100) × 10` diamonds;
+    * `ordinal > start_threshold + first_movers` → **0** — 100% platform revenue.
+
+  The player always pays `entry_fee_keys`; this is only the **pool** portion (the
+  platform portion is implicit). The keys portion is floored BEFORE the ×10 keys→💎
+  conversion (the rounding pin, cm.5 §11), so the pool conserves to whole diamonds.
+  Pure: the same inputs always yield the same credit.
   """
-  def effective_pool(pool, golden, mult)
-  def effective_pool(pool, true, mult) when is_integer(mult) and mult > 0, do: pool * mult
-  def effective_pool(pool, _golden, _mult), do: pool
+  def entry_fee_split(ordinal, start_threshold, first_movers, revenue_pct, entry_fee_keys)
+      when ordinal > start_threshold and ordinal <= start_threshold + first_movers do
+    pool_keys = div(entry_fee_keys * (100 - revenue_pct), 100)
+    pool_keys * @diamonds_per_key
+  end
+
+  def entry_fee_split(_ordinal, _start_threshold, _first_movers, _revenue_pct, _entry_fee_keys),
+    do: 0
 
   @doc """
   Winner-take-all payout — the room-close rule: the whole `pool` (diamonds) goes

@@ -18,5 +18,11 @@ defmodule Codemojex.Schemas.Transaction do
     txn
     |> cast(attrs, [:id, :player, :currency, :delta, :reason, :ref])
     |> validate_required([:id, :player, :currency, :delta, :reason])
+    # cm.5: the DB-error → changeset-error bridge for the buy-in double-charge guard.
+    # Names the SAME partial index as the migration. Defense-in-depth — the buy-in
+    # INSERT uses Pattern A (on_conflict: :nothing) directly, so a violation should
+    # not surface here, but this keeps a stray buy_in conflict a changeset error, not
+    # a raised ConstraintError. Mirrors player.ex:33.
+    |> unique_constraint(:ref, name: :transactions_buy_in_once_index)
   end
 end

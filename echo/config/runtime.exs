@@ -32,6 +32,10 @@ if config_env() == :prod do
     server: true,
     url: [host: phx_host, port: 443, scheme: "https"],
     http: [ip: {0, 0, 0, 0, 0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")],
+    # Accept /socket WebSocket Origins from BOTH the public host and the *.fly.dev fallback, so the
+    # PHX_HOST apex cutover (codemojex.fly.dev -> codemoji.games) drops no live game socket on either
+    # host. The Telegram Mini App's WS Origin is its launch URL's host (the apex, once cut over).
+    check_origin: ["https://#{phx_host}", "https://codemojex.fly.dev"],
     secret_key_base: secret_key_base
 
   # The shared Valkey — the EchoMQ bus + the real-time competitive state — lives on the dedicated
@@ -46,4 +50,28 @@ if config_env() == :prod do
   end
 
   config :codemojex, valkey_port: String.to_integer(System.get_env("VALKEY_PORT") || "6390")
+
+  # The Codemoji Telegram bot. CODEMOJI_BOT_TOKEN is the single switch:
+  #
+  #   * OUTBOUND (game → Telegram) — Codemojex.Bot resolves this token, so the notification
+  #     worker can deliver. Without it every send drops with :no_token (the app still runs).
+  #   * INBOUND (Telegram → game) — the echo_bot engine long-polls updates for the Codemoji bot
+  #     (priv/bots/codemoji.yaml → handler Codemojex.Bot.Handler), which bridges each update onto
+  #     the bus, drained by Codemojex.CommandWorker (/start, /help). See
+  #     apps/codemojex/docs/notifications.md.
+  #
+  # Unset → the bot stays fully idle: sends drop, no updater runs, the engine boots clean
+  # (F10.1-INV1). The path is resolved from codemojex's OWN priv dir (the YAML ships there), not
+  # echo_bot's, so the engine app does not carry a consumer-specific bot.
+  #
+  # OPERATIONAL: :polling runs exactly ONE getUpdates consumer per bot token — keep codemojex at a
+  # SINGLE machine while polling (a second poller gets Telegram 409 Conflict). The webhook
+  # transport (POST → Codemojex.EchoBot.ingest/1) lifts that constraint and is the scale-out path.
+  if bot_token = System.get_env("CODEMOJI_BOT_TOKEN") do
+    config :codemojex, Codemojex.Telegram, token: bot_token
+
+    config :echo_bot,
+      updater: :polling,
+      bot_config: Path.join(:code.priv_dir(:codemojex), "bots/codemoji.yaml")
+  end
 end

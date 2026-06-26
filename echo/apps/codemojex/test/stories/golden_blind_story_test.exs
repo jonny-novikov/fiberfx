@@ -17,11 +17,14 @@ defmodule Codemojex.Stories.GoldenBlindStoryTest do
     # sealed close is triggered EXPLICITLY via `close_now/1` (it dispatches on
     # `settlement == "sealed"` regardless of the timer), so the flow is
     # deterministic, not clock-dependent (no `:expired` race).
+    # The BLIND/sealed mode is reached by an explicit type:"golden" (cm.5 R12 —
+    # `golden:true` is now the live-tournament marker, a SEPARATE thing). This test
+    # exercises the blind commit-reveal flow, so it creates a type:"golden" room.
     {:ok, room} =
-      Codemojex.create_golden_room("Golden Den", set,
+      Codemojex.create_room("Golden Den", set,
+        type: "golden",
         seed_pool: 1000,
         guess_fee: 1,
-        gold_multiplier: 2,
         duration_ms: 600_000
       )
 

@@ -140,8 +140,13 @@ defmodule Codemojex.ScoreWorker do
             {:scored, %{game: game, player: name, pct: s.percentage, eff: eff}}
           )
 
-          # a perfect crack ends a classic game immediately (winner-take-all)
-          if s.total == 600, do: Rooms.close_game(game)
+          # a perfect crack ends a STARTED game immediately. The :open guard is the
+          # state gate (cm.5 INV-STATE): a 600 during a Golden Room's :gathering
+          # builds standing but must NOT settle an unfilled pool — only the gather
+          # (or the deadline void) leaves :gathering. The status is read from the
+          # system of record (the cached blob's status can lag a gather/arm; the
+          # secret it caches is immutable, coherence :none — but the status is not).
+          if s.total == 600 and started?(game), do: Rooms.close_game(game)
         end
 
         :ok
@@ -150,6 +155,10 @@ defmodule Codemojex.ScoreWorker do
         :ok
     end
   end
+
+  # The authoritative state gate for the perfect-crack close: only an :open game
+  # settles on a 600 (cm.5 INV-STATE). Read from Postgres (the cache status can lag).
+  defp started?(game), do: Map.get(Store.game(game) || %{}, :status) == :open
 end
 
 defmodule Codemojex.Settle do
@@ -205,7 +214,23 @@ defmodule Codemojex do
 
   # rooms & games
   def create_room(name, set, opts \\ []), do: Rooms.create_room(name, set, opts)
-  def create_golden_room(name, set, opts \\ []), do: Rooms.create_room(name, set, Keyword.put(opts, :golden, true))
+
+  @doc """
+  Create a Golden Room tournament (cm.5 R12): a `type:"classic"`, `golden:true` room
+  that forms in `:gathering` and pays a live top-K split + consolation clips. Defaults
+  `start_threshold` to 10 (the paid-member gather count); every other D-7 lever
+  (`entry_fee_keys`, `virtual_deposit`, `first_movers`, `entry_fee_revenue_percentage`,
+  `room_deadline`) is passed through from `opts`. The blind mode is a SEPARATE thing,
+  reached only by an explicit `create_room(type: "golden")`.
+  """
+  def create_golden_room(name, set, opts \\ []) do
+    opts =
+      opts
+      |> Keyword.put(:golden, true)
+      |> Keyword.put_new(:start_threshold, 10)
+
+    Rooms.create_room(name, set, opts)
+  end
   defdelegate join_room(room, player), to: Rooms
   def close(game), do: Settle.close(game)
   defdelegate close_now(game), to: Rooms, as: :close_game

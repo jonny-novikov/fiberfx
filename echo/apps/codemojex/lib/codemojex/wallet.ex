@@ -11,7 +11,7 @@ defmodule Codemojex.Wallet do
   """
   import Ecto.Query
   alias Codemojex.Repo
-  alias Codemojex.Schemas.{Player, Transaction}
+  alias Codemojex.Schemas.{Player, Transaction, Game}
   alias Codemojex.Economy
 
   @empty %{keys: 0, clips: 0, diamonds: 0, bonus_diamonds: 0, locked_diamonds: 0}
@@ -94,14 +94,48 @@ defmodule Codemojex.Wallet do
     end
   end
 
-  @doc "Charge a guess against the right currency for the game; refuse if short. `ref` is the game id."
-  def charge_guess(player, game_map, ref) do
-    {currency, cost} =
-      if Map.get(game_map, :free, false),
-        do: {:clips, Map.get(game_map, :clip_cost, 1)},
-        else: {:keys, Map.get(game_map, :guess_fee, 1)}
+  @doc """
+  Charge a guess against the right currency for the game; refuse if short. `ref` is
+  the game id.
 
-    debit(player, currency, cost, "guess", ref)
+  For a **golden (paid) game** the charge is two-sided (cm.5 R-GUESSPOOL): the keys
+  debit AND an atomic SQL `+` adding `guess_fee × 10` 💎 to the game's prize_pool, in
+  ONE transaction — every guess funds the pool. A free game, or a non-golden paid
+  game, charges only (the pool is funded only for a Golden Room).
+  """
+  def charge_guess(player, game_map, ref) do
+    cond do
+      Map.get(game_map, :free, false) ->
+        debit(player, :clips, Map.get(game_map, :clip_cost, 1), "guess", ref)
+
+      Map.get(game_map, :golden, false) ->
+        charge_guess_golden(player, Map.get(game_map, :guess_fee, 1), ref)
+
+      true ->
+        debit(player, :keys, Map.get(game_map, :guess_fee, 1), "guess", ref)
+    end
+  end
+
+  # The golden two-sided guess charge: debit the keys fee AND fund the pool with
+  # fee×10 💎 (the atomic SQL `+`, never an app-side RMW — additive, no dedup), in
+  # one transaction. `ref` is the game id (the pool lives on the games row).
+  defp charge_guess_golden(player, fee, ref) do
+    Repo.transaction(fn ->
+      case lock(player) do
+        nil ->
+          Repo.rollback(:no_player)
+
+        p ->
+          if p.keys < fee do
+            Repo.rollback(:insufficient)
+          else
+            update!(p, %{keys: p.keys - fee})
+            txn!(player, :keys, -fee, "guess", ref)
+            inc_pool!(ref, fee * Economy.diamonds_per_key())
+            p.keys - fee
+          end
+      end
+    end)
   end
 
   @doc "Buy keys (paid externally via Telegram Stars); `ref` is the payment id."
@@ -137,6 +171,99 @@ defmodule Codemojex.Wallet do
               %{keys: p.keys + keys, diamonds: p.diamonds - diamonds}
           end
       end
+    end)
+  end
+
+  @doc """
+  The Golden Room entry-fee buy-in — the two-sided, exactly-once op (cm.5 R4, the
+  money headline). ONE `Repo.transaction` (the `convert_to_keys` idiom; **NO
+  Ecto.Multi**):
+
+    1. lock the **games** row FOR UPDATE — this serializes per-game buy-ins so the
+       member ordinal + the gather count are exact, AND serializes the
+       `:gathering → :open` start trigger (it subsumes the cross-store start race;
+       the Valkey `:started` NX is belt-and-suspenders);
+    2. lock the **player** row FOR UPDATE;
+    3. `ordinal = count(buy_in TXNs for this game) + 1` — exact under the games lock;
+    4. insert the `buy_in` TXN with **Pattern A** (`on_conflict: :nothing`,
+       `conflict_target` byte-matched to the partial index `where:` predicate). A
+       suppressed insert (already a member) ⇒ roll back `:already_member`, mutating
+       nothing (the double-charge gate, INV-EXACTLY-ONCE-BUYIN);
+    5. else debit `entry_fee_keys` (the players_non_negative CHECK is the short-balance
+       backstop) and add the **tiered** pool portion (`Economy.entry_fee_split/5`,
+       computed HERE under the lock) via the atomic SQL `+` (skipped when 0).
+
+  Exactly-once lives in the **ledger** (the partial unique index), co-located with the
+  debit + the pool `+`, crash-safe by construction — the Valkey `:paid` hint can crash
+  either way without a double-charge or a money leak (L-10). Writes Postgres only.
+
+  Returns `{:ok, :member}` (wrote), `{:ok, :already_member}` (suppressed, no mutation),
+  or `{:error, reason}` (insufficient keys, no player/game).
+  """
+  def buy_in(player, game) do
+    Repo.transaction(fn ->
+      g = lock_game(game)
+      p = lock(player)
+
+      cond do
+        is_nil(g) ->
+          Repo.rollback(:no_game)
+
+        is_nil(p) ->
+          Repo.rollback(:no_player)
+
+        true ->
+          before = buy_in_count(game)
+          ordinal = before + 1
+          fee = g.entry_fee_keys || 0
+
+          case insert_buy_in(player, game, before) do
+            :suppressed ->
+              :already_member
+
+            :wrote ->
+              if p.keys < fee, do: Repo.rollback(:insufficient)
+              if fee > 0, do: update!(p, %{keys: p.keys - fee})
+
+              pool =
+                Economy.entry_fee_split(
+                  ordinal,
+                  g.start_threshold || 0,
+                  g.first_movers || 0,
+                  g.entry_fee_revenue_percentage || 0,
+                  fee
+                )
+
+              if pool > 0, do: inc_pool!(game, pool)
+              :member
+          end
+      end
+    end)
+  end
+
+  @doc """
+  Distribute a settled Golden Room's pool in ONE `Repo.transaction` (cm.5 R-HOLD): a
+  💎 prize credit per top-K player (`top_k_payouts` = `[{player, diamonds}]`) and a
+  clip grant per consolation member (`consolation_grants` = `[{player, clips}]`). The
+  nested `deposit_prize`/`grant` transactions JOIN this parent (Ecto savepoints), so
+  the whole finish commits atomically (the double-entry the holding record requires);
+  a zero amount is skipped. Each credit/grant records its own TXN with `ref = game`.
+  """
+  def distribute_pool(game, top_k_payouts, consolation_grants) do
+    Repo.transaction(fn ->
+      Enum.each(top_k_payouts, fn {p, diamonds} ->
+        if diamonds > 0 do
+          {:ok, _} = deposit_prize(p, diamonds, game)
+        end
+      end)
+
+      Enum.each(consolation_grants, fn {p, clips} ->
+        if clips > 0 do
+          {:ok, _} = credit(p, :clips, clips, "consolation", game)
+        end
+      end)
+
+      :ok
     end)
   end
 
@@ -193,6 +320,58 @@ defmodule Codemojex.Wallet do
   defp credit(_player, _currency, _amount, _reason, _ref), do: {:error, :bad_amount}
 
   defp lock(id), do: Repo.one(from p in Player, where: p.id == ^id, lock: "FOR UPDATE")
+
+  # Lock the games row FOR UPDATE — the per-game serialization point for buy_in (the
+  # member ordinal, the gather count, and the start trigger). nil if the game is gone.
+  defp lock_game(id), do: Repo.one(from g in Game, where: g.id == ^id, lock: "FOR UPDATE")
+
+  # The ledger-authoritative paid-member count for a game: the number of buy_in TXNs
+  # with ref = game. Exact under the games-row lock buy_in holds.
+  defp buy_in_count(game) do
+    Repo.one(
+      from t in Transaction, where: t.ref == ^game and t.reason == "buy_in", select: count(t.id)
+    )
+  end
+
+  # Insert the buy_in TXN with Pattern A: on_conflict :nothing on the partial unique
+  # index (player, ref) WHERE reason='buy_in'. The conflict_target fragment MUST match
+  # the migration `where:` predicate byte-for-byte — a bare [:player, :ref] would not
+  # match the partial index. Returns :wrote (a row was inserted) or :suppressed (a
+  # conflict — already a member).
+  #
+  # The truth is the LEDGER, not the returned struct: on_conflict: :nothing returns a
+  # :loaded struct carrying the MINTED id even when the write was suppressed (the
+  # resolve_by_tg note, wallet.ex:80-85), so an id check would treat every conflict as
+  # a write. Instead the caller passes the buy_in count BEFORE the insert and we
+  # re-count after — the count rose iff a row was actually written.
+  defp insert_buy_in(player, game, before) do
+    tid = EchoData.BrandedId.generate!("TXN")
+
+    {:ok, _row} =
+      %Transaction{}
+      |> Transaction.changeset(%{
+        id: tid,
+        player: player,
+        currency: "keys",
+        delta: 0,
+        reason: "buy_in",
+        ref: game
+      })
+      |> Repo.insert(
+        on_conflict: :nothing,
+        conflict_target: {:unsafe_fragment, "(player, ref) WHERE reason = 'buy_in'"}
+      )
+
+    if buy_in_count(game) > before, do: :wrote, else: :suppressed
+  end
+
+  # The atomic SQL `+` on a game's prize_pool (💎) — never an app-side read-modify-
+  # write (the lost-update guard). The buy-in's games-row lock already serializes, so
+  # this is the canonical idiom + belt-and-suspenders; the guess path calls it lockless.
+  defp inc_pool!(game, diamonds) do
+    {1, _} = Repo.update_all(from(g in Game, where: g.id == ^game), inc: [prize_pool: diamonds])
+    :ok
+  end
 
   defp update!(p, changes) do
     {:ok, _} = p |> Player.balance_changeset(changes) |> Repo.update()

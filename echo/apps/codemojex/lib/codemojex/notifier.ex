@@ -47,10 +47,23 @@ defmodule Codemojex.Notifier do
     notify(chat_id, "🏆 You won prize #{prize_id}: #{diamonds} 💎. Tap to claim.")
   end
 
-  @doc "Notify a player they won a Golden Room, with the boosted diamonds and the multiplier."
-  @spec golden_win(integer() | binary(), EchoData.BrandedId.t(), non_neg_integer(), pos_integer()) ::
+  @doc "Notify a player they won a Golden Room, with the diamond amount."
+  @spec golden_win(integer() | binary(), EchoData.BrandedId.t(), non_neg_integer()) ::
           {:ok, EchoData.BrandedId.t()} | {:error, term()}
-  def golden_win(chat_id, game_id, diamonds, multiplier) do
-    notify(chat_id, "✨ GOLDEN ROOM #{game_id} — you took #{diamonds} 💎 at a #{multiplier}x boost. Tap to claim.")
+  def golden_win(chat_id, game_id, diamonds) do
+    notify(chat_id, "✨ GOLDEN ROOM #{game_id} — you took #{diamonds} 💎. Tap to claim.")
+  end
+
+  @doc """
+  Nudge a member of a gathering Golden Room toward its `room_deadline` — the
+  bot-engagement notification (cm.5 R9). The deadline is the promotional-event end.
+  """
+  @spec gather_nudge(integer() | binary(), EchoData.BrandedId.t(), DateTime.t()) ::
+          {:ok, EchoData.BrandedId.t()} | {:error, term()}
+  def gather_nudge(chat_id, game_id, %DateTime{} = deadline) do
+    notify(
+      chat_id,
+      "⏳ The Golden Room #{game_id} is gathering — it ends #{DateTime.to_string(deadline)}. Bring a friend to fill the room!"
+    )
   end
 end
