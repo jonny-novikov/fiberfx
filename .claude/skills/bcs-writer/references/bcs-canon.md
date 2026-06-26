@@ -8,7 +8,7 @@ maps where each figure lives and how the three numbering schemes line up.
 
 | Ch | File | Course route | Grounds (cite figures from here) |
 |---|---|---|---|
-| B0 | `bcs.0.md` | `/bcs/overview` | the one relocation; **the branded-id vectors** (`placement("USR0KHTOWnGLuC")=234878118`); the stack + the floor |
+| B0 | `bcs.0.md` | `/bcs/overview` | the one relocation; **the branded-id vectors** (`hash32(274557032793636864)=234878118`); the stack + the floor |
 | B1 | `bcs.1.md` | `/bcs/ideas` | the system substrate; the identity contract read as architecture; ECS → BCS |
 | B2 | `bcs.2.md` | `/bcs/elixir-core` | the law on OTP: `EchoData.Bcs.{PropertyStore,Supervisor,EdgeStore,Archetypes,gate}`, the CHAMP forest, `application.ex` self-check (the **id vectors** again) |
 | B3 | `bcs.3.md` | `/bcs/bus` | **EchoMQ** Valkey-native: the `emq:{q}:` keyspace, jobs + lanes, the Stream Tier |
@@ -32,7 +32,7 @@ across Elixir · Node · Go · PostgreSQL · WASM). The runtime asserts these at
 they are **source truths, not benchmarks**:
 
 ```
-placement("USR0KHTOWnGLuC")  →  234878118              (native and pure agree)
+hash32(274557032793636864)   →  234878118             (placement of id "USR0KHTOWnGLuC"; native & pure agree)
 parse("USR0NgWEfAEJfs")      →  {:ok, "USR", 320636799581945856}
 decode("USRzzzzzzzzzzz")     →  :error                 (an overflow is refused, not wrapped)
 ```

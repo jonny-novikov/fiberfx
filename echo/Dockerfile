@@ -2,8 +2,8 @@
 # Codemojex release image.
 # Pinned to this umbrella's toolchain (Elixir 1.18.4 / OTP 28.5.0.1). Umbrella-ROOT
 # build of the `codemojex` app (the Telegram Mini App Phoenix surface) plus its
-# in-umbrella deps (echo_mq · echo_data · echo_wire · echo_store); echo_bot and
-# echo_graft are EXCLUDED (each its own concern). A slim runtime stage is added on a
+# in-umbrella deps (echo_mq · echo_data · echo_wire · echo_store); only echo_graft is
+# EXCLUDED (its own concern — echo_bot IS built: codemojex calls EchoBot.deliver/ingest for Telegram I/O). A slim runtime stage is added on a
 # node:*-bookworm-slim base — `node` is reserved for a forthcoming Node worker; the
 # build itself is Elixir-only. The release name is `codemojex` (the OTP artifact;
 # INDEPENDENT of the Fly app `codemoji-phoenix`).
@@ -64,6 +64,7 @@ COPY apps/echo_mq/mix.exs apps/echo_mq/
 COPY apps/echo_data/mix.exs apps/echo_data/
 COPY apps/echo_wire/mix.exs apps/echo_wire/
 COPY apps/echo_store/mix.exs apps/echo_store/
+COPY apps/echo_bot/mix.exs apps/echo_bot/
 
 # Resolve + compile prod deps from the umbrella root.
 RUN mix deps.get --only prod
@@ -71,12 +72,16 @@ RUN mix deps.compile
 
 # Copy the app + its in-umbrella deps' source. codemojex carries a priv/ (the Ecto migrations); echo_data
 # carries native/ (the optional codec sources — branded_id.rs / echo_native.c / Makefile);
-# echo_wire/echo_mq are lib-only.
+# echo_wire/echo_mq are lib-only; echo_bot carries vendor/ (the vendored ex_gram on its
+# elixirc_paths) + priv/ (the bot YAML) and is a real codemojex dep (Telegram notifications).
 COPY apps/echo_wire/lib apps/echo_wire/lib
 COPY apps/echo_data/lib apps/echo_data/lib
 COPY apps/echo_data/native apps/echo_data/native
 COPY apps/echo_mq/lib apps/echo_mq/lib
 COPY apps/echo_store/lib apps/echo_store/lib
+COPY apps/echo_bot/lib apps/echo_bot/lib
+COPY apps/echo_bot/vendor apps/echo_bot/vendor
+COPY apps/echo_bot/priv apps/echo_bot/priv
 COPY apps/codemojex/lib apps/codemojex/lib
 COPY apps/codemojex/priv apps/codemojex/priv
 

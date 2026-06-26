@@ -76,7 +76,7 @@ skill, agent def, command, or page. Each is verbatim-grounded in `bcs.N.md` + th
    characters carrying a 63-bit snowflake `ts(41) | node(10) | seq(12)`, epoch **`1704067200000`** (2024-01-01).
    Four properties: **typed · ordered · placed · conformant**. The figures both courses may cite are the
    **boot-asserted vectors** (`self_check!` in `branded_id.ex`), **not benchmarks** — quote them verbatim:
-   - `placement("USR0KHTOWnGLuC") → 234878118` (native and pure agree)
+   - `hash32(274557032793636864) → 234878118` — the **placed** property; native and pure agree (the snowflake `274557032793636864` encodes to the id `USR0KHTOWnGLuC`). The real surface is `EchoData.BrandedId.hash32/1`; `placement(id)` is conceptual shorthand for *parse → `hash32`* — there is **no** `placement/1` function to cite.
    - `parse("USR0NgWEfAEJfs") → {:ok, "USR", 320636799581945856}`
    - `decode("USRzzzzzzzzzzz") → :error` (an overflow is refused, not wrapped)
 
