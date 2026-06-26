@@ -4,7 +4,8 @@ import { cn } from '../lib/cn';
 // The History / Leaderboard tab strip above the player list (94:2974).
 // Re-expresses shared/ui/tabs built PLAIN — no Radix: a full-width row of
 // border-b-2 buttons where only the underline COLOUR changes between states
-// (active = accent, inactive = a faint border), so there is no layout shift.
+// (active = the fixed Main Blue #54C0EC, matching the app/Figma; inactive = a
+// faint border), so there is no layout shift.
 // Controlled when `active`+`onChange` are passed, otherwise self-managed.
 export interface BoardTab {
   id: string;
@@ -59,7 +60,7 @@ export function BoardTabs({
               className={cn(
                 'flex-1 whitespace-nowrap border-b-2 px-2 py-3 text-sm font-medium transition-colors',
                 isActive
-                  ? 'border-accent text-accent'
+                  ? 'border-main-blue text-main-blue'
                   : 'border-border/30 text-dark-muted'
               )}
             >

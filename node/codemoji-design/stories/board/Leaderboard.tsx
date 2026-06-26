@@ -58,7 +58,7 @@ export function LeaderboardRow({
         {item.handle}
       </p>
 
-      {/* metric over score, then a thin accent-filled progress bar */}
+      {/* metric over score, then a thin Main-Blue-filled progress bar */}
       <div className="flex w-[88px] shrink-0 flex-col justify-center gap-1">
         <div className="flex items-center justify-between leading-none">
           <span className="text-2xs font-medium text-main-blue">{item.metric}</span>

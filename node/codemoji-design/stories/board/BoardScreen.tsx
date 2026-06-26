@@ -25,8 +25,9 @@ import { BoardCard } from './lib/BoardCard';
 // dashboard carries a soft blue lift so it reads against the gradient.
 //
 // COLOR is the design system's role layer: the submit is the master's blue `enter`,
-// the leaderboard metric/bar ride the themeable `accent`. GuessActions / BoardTabs /
-// EmojiKeyboard / EmojiSlots / GameRules / ShareKeys are SHARED with the Golden Game.
+// the leaderboard metric/bar + the active tab use the app's fixed Main Blue (#54C0EC).
+// GuessActions / BoardTabs / EmojiKeyboard / EmojiSlots / GameRules / ShareKeys are
+// SHARED with the Golden Game.
 // Static sample data.
 //
 // Exported as a plain component (not a story) so it backs BOTH the Board/Overview
