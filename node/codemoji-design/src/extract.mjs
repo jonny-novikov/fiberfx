@@ -82,11 +82,10 @@ export async function boundedWalk(rootId, { depth = 3, childCap = 20, sample = 2
 }
 
 /**
- * Render nodes to PNG, decoding the CURRENT int-array egress Mac-side.
- * The plugin returns { data:[int,...] } (Array.from(bytes)) — ~6-10x the byte
- * size on the wire. We decode here (the Fork 2 / B1 "Mac writes the file" half);
- * the plugin SHOULD send figma.base64Encode(bytes) to cut the wire ~6x. Bytes
- * never enter an agent context — only the file path + size do.
+ * Render nodes to PNG, decoding the plugin's base64 egress Mac-side.
+ * The plugin returns { data: base64, w, h, byteLen } (figma.base64Encode(bytes),
+ * Fork 2 / B1 / ADR-1) — cuts the wire ~6x vs the original int-array shape.
+ * Bytes never enter an agent context — only the file path + size do.
  */
 export async function renderNodes(targets, refDir) {
   mkdirSync(refDir, { recursive: true });
@@ -94,10 +93,10 @@ export async function renderNodes(targets, refDir) {
   for (const t of targets) {
     try {
       const res = await bridge.exportNode(t.id, 'PNG');
-      const buf = Buffer.from(res.data); // GAP: int-array egress -> Fork 2 / B1 (base64)
+      const buf = Buffer.from(res.data, 'base64'); // base64 egress (Fork 2 / B1 / ADR-1)
       const file = `${t.id.replace(':', '-')}_${slug(t.name)}.png`;
       writeFileSync(join(refDir, file), buf);
-      renders.push({ id: t.id, name: t.name, file, kb: Math.round(buf.length / 1024) });
+      renders.push({ id: t.id, name: t.name, file, kb: Math.round(buf.length / 1024), w: res.w, h: res.h });
     } catch (e) {
       renders.push({ id: t.id, name: t.name, error: String(e.message || e) });
     }

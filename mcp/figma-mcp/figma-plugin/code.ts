@@ -1,6 +1,17 @@
 const BRIDGE_URL = 'ws://localhost:3000';
 let ws: WebSocket | null = null;
 
+// Single source of truth for the capability handshake (ADR-5).
+// Order matches the switch below; both must move together when an action is added.
+const BACKED_ACTIONS = [
+  'get-current-page',
+  'get-selection',
+  'get-all-pages',
+  'find-nodes',
+  'get-node-properties',
+  'export-node',
+] as const;
+
 function connectToBridge() {
   figma.ui.postMessage({ type: 'connect', url: BRIDGE_URL });
 }
@@ -8,6 +19,7 @@ function connectToBridge() {
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'ws-connected') {
     console.log('Connected to bridge server');
+    sendBackedActions();
     await sendDocumentUpdate();
   }
 
@@ -72,6 +84,24 @@ async function sendDocumentUpdate() {
   figma.ui.postMessage({ type: 'ws-send', data });
 }
 
+function sendBackedActions() {
+  figma.ui.postMessage({
+    type: 'ws-send',
+    data: { type: 'backed-actions', actions: BACKED_ACTIONS },
+  });
+}
+
+// Selection fallback (ADR-5): a tool called with no nodeId resolves to the
+// current page's single selected node. Multi-selection is an explicit error —
+// the caller must address one node at a time when they care which one.
+function resolveNodeId(nodeId?: string): string {
+  if (nodeId) return nodeId;
+  const sel = figma.currentPage.selection;
+  if (sel.length === 1) return sel[0].id;
+  if (sel.length === 0) throw new Error('No nodeId given and the current page has no selection.');
+  throw new Error(`No nodeId given and the current selection has ${sel.length} nodes (expected exactly 1).`);
+}
+
 function serializePage(page: PageNode) {
   return {
     id: page.id,
@@ -120,25 +150,32 @@ async function findNodes(query: string) {
   return results.map(node => serializeNode(node));
 }
 
-async function getNodeProperties(nodeId: string) {
-  const node = figma.getNodeById(nodeId);
+async function getNodeProperties(nodeId?: string) {
+  const id = resolveNodeId(nodeId);
+  const node = figma.getNodeById(id);
   if (!node) {
-    throw new Error(`Node not found: ${nodeId}`);
+    throw new Error(`Node not found: ${id}`);
   }
   return serializeNodeDetailed(node);
 }
 
-async function exportNode(nodeId: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG') {
-  const node = figma.getNodeById(nodeId) as SceneNode;
+async function exportNode(nodeId?: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG') {
+  const id = resolveNodeId(nodeId);
+  const node = figma.getNodeById(id) as SceneNode;
   if (!node) {
-    throw new Error(`Node not found: ${nodeId}`);
+    throw new Error(`Node not found: ${id}`);
   }
 
   const bytes = await node.exportAsync({ format });
+  const w = 'width' in node ? node.width : undefined;
+  const h = 'height' in node ? node.height : undefined;
   return {
-    nodeId,
+    nodeId: id,
     format,
-    data: Array.from(bytes)
+    data: figma.base64Encode(bytes),
+    w,
+    h,
+    byteLen: bytes.length,
   };
 }
 

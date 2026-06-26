@@ -1,10 +1,30 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import os from "node:os";
+import path from "node:path";
+import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 
 const BRIDGE_URL = process.env.FIGMA_BRIDGE_URL || 'http://localhost:3001';
 const MAX_RETRIES = 3;
 const INITIAL_RETRY_DELAY = 1000;
+
+// Bounded render root (ADR-1). Override with FIGMA_MCP_RENDER_ROOT;
+// otherwise renders land in a sub-dir of the OS temp dir. The directory is
+// auto-created at startup; cleanup is explicit via the cleanup-renders tool.
+const RENDER_ROOT = process.env.FIGMA_MCP_RENDER_ROOT || path.join(os.tmpdir(), 'figma-mcp-renders');
+mkdirSync(RENDER_ROOT, { recursive: true });
+
+// Plugin-backed tools (ADR-5). Compared against /health backedActions in
+// check-bridge-status; a mismatch is WARN, never a hard fail.
+const ADVERTISED_ACTIONS = [
+  'get-current-page',
+  'get-selection',
+  'get-all-pages',
+  'find-nodes',
+  'get-node-properties',
+  'export-node',
+];
 
 const server = new McpServer({
   name: "figma-local-mcp",
@@ -59,6 +79,25 @@ function normalizeNodeId(input) {
   }
 
   return trimmed;
+}
+
+// "1h" / "30m" / "24h" / "7d" / "60s" / "500ms" or a bare integer (ms).
+function parseDurationMs(input) {
+  if (typeof input === 'number') return input;
+  if (typeof input !== 'string') throw new Error(`keepSince must be a string like "1h" or a number of ms`);
+  const m = input.trim().match(/^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?$/i);
+  if (!m) throw new Error(`keepSince: unrecognized duration "${input}" (expected "1h", "30m", "24h", "7d", "60s", "500ms")`);
+  const n = parseFloat(m[1]);
+  const unit = (m[2] || 'ms').toLowerCase();
+  const mult = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[unit];
+  return n * mult;
+}
+
+// fs-safe filename: nodeId ":" -> "_"; ISO timestamp; lowercase ext.
+function renderFilename(nodeId, format) {
+  const safe = String(nodeId || 'node').replace(/[^A-Za-z0-9_-]+/g, '_');
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  return `${safe}_${ts}.${String(format || 'png').toLowerCase()}`;
 }
 
 async function requestFigma(action, params) {
@@ -137,13 +176,13 @@ server.registerTool(
   "get-node-properties",
   {
     title: "Get Node Properties",
-    description: "Gets detailed properties of a specific node by its ID, including style properties, dimensions, and more. Works entirely locally through the Figma plugin - no API key required.",
+    description: "Gets detailed properties of a specific node by its ID. Omit nodeId to fall back to the current page's single selected node (multi-selection is an error).",
     inputSchema: {
-      nodeId: z.string()
+      nodeId: z.string().optional()
     },
   },
   async ({ nodeId }) => {
-    const normalizedNodeId = normalizeNodeId(nodeId);
+    const normalizedNodeId = nodeId ? normalizeNodeId(nodeId) : undefined;
     const result = await requestFigma('get-node-properties', { nodeId: normalizedNodeId });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
   }
@@ -153,17 +192,29 @@ server.registerTool(
   "export-node",
   {
     title: "Export Node as Image",
-    description: "Exports a node as an image in PNG, SVG, or JPG format. Works entirely locally through the Figma plugin - no API key required.",
+    description: "Exports a node as an image in PNG, SVG, or JPG format. Writes the bytes to a bounded Mac temp path and returns {path, w, h, byteLen} — the bytes never enter the tool result. Omit nodeId to fall back to the current page's single selected node.",
     inputSchema: {
-      nodeId: z.string(),
+      nodeId: z.string().optional(),
       format: z.enum(['PNG', 'SVG', 'JPG']).optional()
     },
   },
   async ({ nodeId, format }) => {
     const resolvedFormat = (format || 'PNG').toUpperCase();
-    const normalizedNodeId = normalizeNodeId(nodeId);
+    const normalizedNodeId = nodeId ? normalizeNodeId(nodeId) : undefined;
     const result = await requestFigma('export-node', { nodeId: normalizedNodeId, format: resolvedFormat });
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    const buf = Buffer.from(result.data, 'base64');
+    const file = renderFilename(result.nodeId || normalizedNodeId, resolvedFormat);
+    const fullPath = path.join(RENDER_ROOT, file);
+    writeFileSync(fullPath, buf);
+    const out = {
+      path: fullPath,
+      nodeId: result.nodeId,
+      format: resolvedFormat,
+      w: result.w,
+      h: result.h,
+      byteLen: result.byteLen ?? buf.length,
+    };
+    return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
   }
 );
 
@@ -171,11 +222,86 @@ server.registerTool(
   "check-bridge-status",
   {
     title: "Check Bridge Status",
-    description: "Checks if the Figma bridge server is running and if a Figma plugin is connected.",
+    description: "Checks if the Figma bridge server is running, if a Figma plugin is connected, and whether every advertised plugin-backed tool is actually backed by the deployed plugin (advertised ⊆ backed). A mismatch is reported as a warning, never an error.",
   },
   async () => {
-    const result = await callBridge('/health');
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    const health = await callBridge('/health');
+    const backed = Array.isArray(health.backedActions) ? health.backedActions : null;
+    const missing = backed ? ADVERTISED_ACTIONS.filter(a => !backed.includes(a)) : [];
+    const extra = backed ? backed.filter(a => !ADVERTISED_ACTIONS.includes(a)) : [];
+    const handshake = backed === null
+      ? { status: 'unknown', note: 'plugin has not reported a backed-actions list (older plugin? disconnected?)' }
+      : missing.length === 0
+        ? { status: 'ok', note: 'advertised ⊆ backed' }
+        : { status: 'warn', note: `${missing.length} advertised tool(s) NOT backed by the deployed plugin: ${missing.join(', ')}` };
+    const out = {
+      ...health,
+      advertised: ADVERTISED_ACTIONS,
+      handshake,
+      extra, // actions the plugin backs but mcp.js does not yet advertise (forward-compat)
+      renderRoot: RENDER_ROOT,
+    };
+    return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
+  }
+);
+
+server.registerTool(
+  "cleanup-renders",
+  {
+    title: "Cleanup Render Files",
+    description: "Deletes files in the bounded render root. Provide keepLast (keep the N most recent) and/or keepSince (keep files newer than this duration — e.g. '1h', '30m', '24h', '7d', or a bare number of ms). A file is kept if it satisfies EITHER rule; everything else is deleted. dryRun=true lists what would be deleted without acting. At least one of keepLast / keepSince is required.",
+    inputSchema: {
+      keepLast: z.number().int().nonnegative().optional(),
+      keepSince: z.union([z.string(), z.number()]).optional(),
+      dryRun: z.boolean().optional(),
+    },
+  },
+  async ({ keepLast, keepSince, dryRun }) => {
+    if (keepLast === undefined && keepSince === undefined) {
+      throw new Error("cleanup-renders: must provide keepLast or keepSince (or both).");
+    }
+    const sinceMs = keepSince === undefined ? null : parseDurationMs(keepSince);
+    const cutoff = sinceMs === null ? null : Date.now() - sinceMs;
+
+    const entries = readdirSync(RENDER_ROOT, { withFileTypes: true })
+      .filter(d => d.isFile())
+      .map(d => {
+        const full = path.join(RENDER_ROOT, d.name);
+        const st = statSync(full);
+        return { name: d.name, path: full, mtimeMs: st.mtimeMs, size: st.size };
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs); // newest first
+
+    const keptIdx = new Set();
+    if (keepLast !== undefined) {
+      for (let i = 0; i < Math.min(keepLast, entries.length); i++) keptIdx.add(i);
+    }
+    if (cutoff !== null) {
+      for (let i = 0; i < entries.length; i++) if (entries[i].mtimeMs >= cutoff) keptIdx.add(i);
+    }
+
+    const kept = [];
+    const deleted = [];
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (keptIdx.has(i)) {
+        kept.push({ path: e.path, mtimeMs: e.mtimeMs, size: e.size });
+      } else {
+        if (!dryRun) unlinkSync(e.path);
+        deleted.push({ path: e.path, mtimeMs: e.mtimeMs, size: e.size });
+      }
+    }
+
+    const out = {
+      root: RENDER_ROOT,
+      dryRun: dryRun === true,
+      rules: { keepLast: keepLast ?? null, keepSince: keepSince ?? null },
+      totalKept: kept.length,
+      totalDeleted: deleted.length,
+      kept,
+      deleted,
+    };
+    return { content: [{ type: "text", text: JSON.stringify(out, null, 2) }] };
   }
 );
 

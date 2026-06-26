@@ -32,7 +32,7 @@ live on Windows; the bridge is the relay that joins them.
 
 | Component | Runs on | Role (verified) | Frozen names |
 |---|---|---|---|
-| `mcp.js` | Mac (this repo) | stdio MCP server; each tool forwards as HTTP `POST /request {action,params}` to `BRIDGE_URL` (`mcp.js:5`). Registers **10** tools (`mcp.js:73-214`). `version: "2.0.0"` is a bare label with no handshake (`mcp.js:12`). | the 10 tool ids |
+| `mcp.js` | Mac (this repo) | stdio MCP server; each plugin-backed tool forwards as HTTP `POST /request {action,params}` to `BRIDGE_URL` (`mcp.js:5`). Post-`figl.1` + `figl.2`, registers **9** tools: the **6** plugin-backed (`get-current-page` · `get-selection` · `get-all-pages` · `find-nodes` · `get-node-properties` · `export-node`) plus the **3** Mac-side (`get-figma-document` over the cached `/document` · `check-bridge-status` over `/health` with the advertised-vs-backed handshake · `cleanup-renders` over the bounded `RENDER_ROOT`). `version: "2.0.0"` is a bare label. | the 9 tool ids |
 | `bridge-server.js` | Windows (`192.168.3.120`) | HTTP `:3001` (`/health`, `/document`, `POST /request`) + WebSocket `:3000`; pure relay request→plugin→response; ~30s timeout (`bridge-server.js:148`); single connection; **no auth**, CORS `*` (`:63`). | `/request`, `/health` |
 | `figma-plugin/` | inside Figma (Windows) | `code.ts` action switch backs **6** actions (`get-current-page`, `get-selection`, `get-all-pages`, `find-nodes`, `get-node-properties`, `export-node`); all else falls to `default → "Unknown action"`. `ui.html` holds the WebSocket (the plugin can only dial *out*). | the 6 actions |
 
@@ -143,6 +143,18 @@ on the un-tested box.
 relay a file writer and lands the file on the wrong machine; B3 (int-array) is a context-blowing
 footgun for any non-toolkit caller. New invariant: `mcp.js` gains a *bounded* filesystem write
 (temp dir + cleanup) — specify the write root or it ages into orphaned files.
+
+**Cleanup addendum (Operator 2026-06-26, ruled with figl.2).** Cleanup is an **explicit MCP
+tool**, not an implicit background sweep — no surprise deletions, no daemon state, the agent
+decides when to run it. The `cleanup-renders` tool takes `keepLast` (int — keep the N most
+recent) and/or `keepSince` (`"1h"` / `"30m"` / `"24h"` / `"7d"` / bare ms — keep files newer
+than the cutoff); a file is **kept if it satisfies either rule** (so the two parameters are
+additive guards, never restrictive). `dryRun: true` lists what would be deleted without
+acting. At least one of `keepLast` / `keepSince` is required (the empty call would mean
+"delete everything," which is too dangerous to be implicit). The render root is
+`FIGMA_MCP_RENDER_ROOT` or `os.tmpdir()/figma-mcp-renders`. **CHOSEN-AGAINST:** a background
+TTL sweep (would delete a render the agent was about to re-use) and trusting OS temp cleanup
+(unreliable across macOS/Linux/Docker, and the long-running MCP process keeps the dir alive).
 
 ### ADR-2 — subtree fetch is a `depth` param on the existing tool
 **RULED (C2).** `get-node-properties` gains an optional `depth` (absent ≡ today's single-node

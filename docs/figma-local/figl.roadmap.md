@@ -19,8 +19,10 @@
 - **`figma.mixed` is guarded** — any property that can return the `unique symbol`
   (`plugin-api.d.ts:909`) is guarded before serialization; an unguarded read mangles the whole
   payload to `{}` (ADR-3).
-- **Writes are bounded** — the Mac-side file write (`figl.2`) targets a specified root with
-  cleanup; no orphaned files.
+- **Writes are bounded** — the Mac-side file write (`figl.2`) targets a specified
+  `RENDER_ROOT` (`FIGMA_MCP_RENDER_ROOT` or `os.tmpdir()/figma-mcp-renders`); cleanup is an
+  **explicit MCP tool** (`cleanup-renders`) the agent invokes — no background sweep, no daemon
+  state, never an implicit deletion (Operator 2026-06-26, ADR-1 addendum).
 - **The handshake flags, never bricks** — a version/capability mismatch degrades to a warning on
   `check-bridge-status`, never a hard failure against an older deployed plugin (ADR-5).
 
@@ -34,20 +36,30 @@
   `check-bridge-status` unchanged.
 - **Risk:** lowest in the program (a deletion on a version-controlled file).
 
-### `figl.2` — Egress + the capability handshake (**first Windows deploy**)
+### `figl.2` — Egress + the capability handshake + cleanup tool (**first Windows deploy**)
 - **Do (egress, B1 / ADR-1):** `code.ts` `exportNode` returns `figma.base64Encode(bytes)`
   (`plugin-api.d.ts:1886`) instead of `Array.from(bytes)` (`code.ts:141`); `mcp.js` base64-decodes,
-  writes to a bounded Mac path, returns `{path, w, h, byteLen}`. Update `extract.mjs:97`
-  (`Buffer.from(res.data)` → read base64 / consume `{path}`) in **lockstep**.
-- **Do (handshake, E2 / ADR-5):** the plugin reports its backed-action list; `/health`
-  (`bridge-server.js:76`) returns it; `mcp.js` asserts advertised ⊆ backed and flags a mismatch
-  via `check-bridge-status`. Selection-default (nodeId omitted ⇒ current selection) rides along.
+  writes to `RENDER_ROOT` (`FIGMA_MCP_RENDER_ROOT` or `os.tmpdir()/figma-mcp-renders`), returns
+  `{path, nodeId, format, w, h, byteLen}`. Update `extract.mjs:97`
+  (`Buffer.from(res.data)` → `Buffer.from(res.data, 'base64')`) in **lockstep**.
+- **Do (cleanup, ADR-1 addendum):** a new `cleanup-renders` MCP tool — explicit (no background
+  sweep). Params: `keepLast` (int) and/or `keepSince` (`"1h"` / `"30m"` / `"24h"` / `"7d"`); a
+  file is kept if it satisfies either rule. `dryRun: true` previews without deleting. At least
+  one rule is required.
+- **Do (handshake, E2 / ADR-5):** the plugin reports its backed-action list on `ws-connected`
+  via a new `backed-actions` WS message; `bridge-server.js` caches it and `/health`
+  (`bridge-server.js:76`) returns it as `backedActions`; `mcp.js` asserts advertised ⊆ backed
+  and flags a mismatch via `check-bridge-status` (status `"warn"` with the missing list, never a
+  throw). Selection-default (nodeId omitted on `get-node-properties` / `export-node` ⇒ the
+  current page's **single** selected node; multi-selection is an error) rides along.
 - **Deploy:** Windows (plugin + bridge `/health`). The egress is the worst live defect; the
   handshake is the guard every later rung relies on — they ship together so the box is never
   left advertising-unchecked.
-- **Verify:** `export-node 94:2974` returns a path + dims, writes a non-empty PNG, returns no
-  bytes; `check-bridge-status` lists backed actions and shows advertised ⊆ backed; the toolkit's
-  `extract` still renders end-to-end against the new contract.
+- **Verify:** `export-node 94:2974` returns a `{path, w, h, byteLen}`, writes a non-empty PNG,
+  returns no bytes; `check-bridge-status` lists `backedActions`, an `advertised` array, and a
+  `handshake.status: "ok"`; calling `export-node` with no `nodeId` (and one Figma node selected)
+  returns the rendered selection; `cleanup-renders { keepLast: 1 }` deletes all but the most
+  recent render; the toolkit's `extract` still renders end-to-end against the new contract.
 
 ### `figl.3` — Targeted payload enrichment + re-implement `get-batch-nodes` (Windows deploy)
 - **Do (A2 / ADR-3):** `serializeNodeDetailed` gains `cornerRadius` (+ per-corner, `figma.mixed`

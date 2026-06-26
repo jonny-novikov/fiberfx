@@ -59,24 +59,34 @@ Build in order. Each rung lands as one change-set, deploys, and is verified agai
 - **Verify:** the two tools no longer appear; the other 8 still respond; `check-bridge-status` is
   unchanged. *This rung proves the loop with zero deploy risk.*
 
-### `figl.2` — base64 egress + the capability handshake (**first Windows deploy**) · ADR-1, ADR-5
+### `figl.2` — base64 egress + the capability handshake + cleanup tool (**first Windows deploy**) · ADR-1, ADR-5
 - **Edit (egress, B1):** `code.ts` `exportNode` returns `figma.base64Encode(bytes)` (typings
-  `:1886`) in place of `Array.from(bytes)` (`code.ts:141`). `mcp.js` base64-decodes, writes to a
-  **bounded** Mac path (a configured temp root, with cleanup), and returns `{path, w, h, byteLen}`
-  — no bytes in the tool result.
-- **Edit (handshake, E2):** the plugin reports its backed-action list (from the `code.ts:20-41`
-  switch); `bridge-server.js` `/health` (`:76`) includes it; `mcp.js` asserts its advertised set ⊆
-  the backed set and **flags** a mismatch through `check-bridge-status` (warning, never a hard
-  fail). Add selection-default: a tool called with no `nodeId` falls back to
-  `figma.currentPage.selection`.
+  `:1886`) in place of `Array.from(bytes)` (`code.ts:141`), with `{nodeId, format, data, w, h, byteLen}`.
+  `mcp.js` base64-decodes, writes to a **bounded** Mac path (`RENDER_ROOT = FIGMA_MCP_RENDER_ROOT`
+  or `os.tmpdir()/figma-mcp-renders`), and returns `{path, nodeId, format, w, h, byteLen}` —
+  no bytes in the tool result.
+- **Edit (cleanup, ADR-1 addendum):** a new `cleanup-renders` MCP tool — explicit cleanup, no
+  background sweep. Params: `keepLast` (int) and/or `keepSince` (`"1h"` / `"30m"` / `"24h"` /
+  `"7d"` / bare ms); a file is kept if it satisfies either rule. `dryRun: true` previews.
+  At least one rule is required (the empty call is rejected).
+- **Edit (handshake, E2):** the plugin sends a `backed-actions` WS message on `ws-connected`
+  (carrying the `BACKED_ACTIONS` const that mirrors the `code.ts:20-41` switch);
+  `bridge-server.js` caches it and `/health` (`:76`) includes it as `backedActions`; `mcp.js`
+  asserts its advertised set ⊆ the backed set and **flags** a mismatch through
+  `check-bridge-status` (status `"warn"` with the missing list, never a hard fail).
+  Add selection-default: `get-node-properties` / `export-node` called with no `nodeId` fall
+  back to `figma.currentPage.selection` when it has **exactly one** node (multi-selection is
+  an explicit error).
 - **Lockstep:** update the toolkit `node/codemoji-design/src/extract.mjs:97` (it currently decodes
-  the int-array via `Buffer.from(res.data)`) to consume the new `{path,...}` contract — ship it
-  **with** this rung so the working client never breaks.
+  the int-array via `Buffer.from(res.data)`) to consume the new base64 contract
+  (`Buffer.from(res.data, 'base64')`) — ship it **with** this rung so the working client never breaks.
 - **Deploy:** `[WIN]` `build-plugin`; `[FIGMA-manual]` reload; restart the bridge for the `/health`
   change; `[MAC]` sync `mcp.js` + reconnect.
 - **Verify:** `export-node 94:2974` returns a path + dims + `byteLen`, writes a non-empty PNG, and
-  returns **no** byte array; `check-bridge-status` lists the backed actions and shows advertised ⊆
-  backed; `node bin/codemoji-design.mjs extract` still renders end-to-end.
+  returns **no** byte array; `check-bridge-status` lists the backed actions and shows
+  `handshake.status: "ok"` with `advertised ⊆ backed`; selection-default works (no-nodeId call
+  with one selection); `cleanup-renders { keepLast: 1 }` deletes all but the newest;
+  `node bin/codemoji-design.mjs extract` still renders end-to-end.
 
 ### `figl.3` — targeted enrichment + real `get-batch-nodes` (Windows deploy) · ADR-3
 - **Edit:** `serializeNodeDetailed` gains `cornerRadius` (+ per-corner) behind a `figma.mixed`

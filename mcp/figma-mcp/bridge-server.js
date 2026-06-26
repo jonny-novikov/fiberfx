@@ -6,6 +6,7 @@ const HTTP_PORT = 3001;
 
 let currentDocument = null;
 let figmaConnection = null;
+let backedActions = null; // capability handshake (ADR-5): set by the plugin on connect, cleared on disconnect
 const pendingRequests = new Map();
 let requestIdCounter = 0;
 
@@ -23,6 +24,11 @@ wss.on('connection', (ws) => {
       if (message.type === 'document-update') {
         currentDocument = message.document;
         console.log('Document updated:', currentDocument?.name);
+      }
+
+      if (message.type === 'backed-actions') {
+        backedActions = Array.isArray(message.actions) ? [...message.actions] : null;
+        console.log('Backed actions:', backedActions);
       }
 
       if (message.type === 'response') {
@@ -47,6 +53,7 @@ wss.on('connection', (ws) => {
     console.log('Figma plugin disconnected');
     figmaConnection = null;
     currentDocument = null;
+    backedActions = null;
   });
 
   ws.on('error', (error) => {
@@ -78,7 +85,8 @@ const httpServer = http.createServer(async (req, res) => {
       res.end(JSON.stringify({
         status: 'ok',
         connected: figmaConnection !== null,
-        hasDocument: currentDocument !== null
+        hasDocument: currentDocument !== null,
+        backedActions: backedActions // null when no plugin connected; an array once the plugin reports
       }));
       return;
     }
