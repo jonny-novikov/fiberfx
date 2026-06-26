@@ -28,15 +28,15 @@ export function StatusBar({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex h-8 w-full items-center justify-between rounded-2xl bg-card px-3 text-h5 text-card-foreground',
+        'flex h-8 w-full items-center justify-between rounded-2xl bg-card px-3 text-2xs text-card-foreground',
         className
       )}
     >
-      <span className="font-bold">{username}</span>
+      <span className="font-medium">{username}</span>
       <span className="flex items-center gap-3 text-card-foreground-secondary">
-        <span>💎 {diamonds.toLocaleString()}</span>
-        <span>📎 {clips.toLocaleString()}</span>
-        <span>🔑 {keys.toLocaleString()}</span>
+        <span>💎 {diamonds}</span>
+        <span>📎 {clips}</span>
+        <span>🔑 {keys}</span>
       </span>
     </button>
   );

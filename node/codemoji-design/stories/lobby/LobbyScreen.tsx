@@ -4,6 +4,7 @@ import * as React from 'react';
 import { GameRules } from '../board/GameRules';
 import { ShareKeys } from '../board/ShareKeys';
 // Lobby-specific components.
+import { NavPhonePanel } from './NavPhonePanel';
 import { StatusBar } from '../board/StatusBar';
 import { SubscriptionBanner } from './SubscriptionBanner';
 import { PromoBanner } from './PromoBanner';
@@ -13,12 +14,14 @@ import { BuyKeysBanner } from './BuyKeysBanner';
 import { CharacterFooter } from './CharacterFooter';
 
 // The whole Rooms→Lobby screen (121:2056) assembled from the design system, in the
-// Figma master's vertical order: status bar → earnings promo → "Тысяча" hero → the
-// room list → your golden rooms → the room archive → rules → share → mascot → a
-// repeated promo. Text + sizes track Figma (375-wide frame, real Russian copy);
-// COLOR is the design system's role layer (blue room-entry where Figma is black —
-// the deliberate drift the Screens/Rooms (Lobby) view surfaces). GameRules /
-// ShareKeys / StatusBar are REUSED from the board. Static sample data.
+// Figma master's vertical order: phone chrome → resources bar → earnings promo →
+// "Тысяча" hero → the room list → your golden rooms → the room archive → rules →
+// share → mascot → a repeated promo. Text + sizes track Figma (375-wide frame, real
+// Russian copy); the screen carries the board's "All Screen Fill" gradient
+// (--color-bg-app-from → --color-bg-app-to). COLOR is the design system's role layer
+// (blue room-entry / orange purchase where Figma is black — the deliberate drift the
+// Screens/Rooms (Lobby) view surfaces). GameRules / ShareKeys / StatusBar are REUSED
+// from the board. Static sample data.
 //
 // Exported as a plain component (not a story) so it backs BOTH the Lobby/Overview
 // story AND the Screens/Rooms (Lobby) drift view (live build vs the Figma export).
@@ -43,19 +46,26 @@ export const LOBBY_ARCHIVE = [
   { name: 'Простой сейф', prize: 52, code: ['🌟', '🍎', '🐙', '🎯', '💫', '🥇'], gameId: '271597758257020999', timeAgo: '5ч назад', winner: '@mara' },
 ];
 
+// The board's "All Screen Fill" gradient (Figma 94:2974 fill) — top-light to
+// bottom-blue, on the design system's bg tokens.
+const SCREEN_FILL = 'linear-gradient(180deg, var(--color-bg-app-from), var(--color-bg-app-to))';
+
 export function LobbyScreen() {
   return (
-    <div className="font-sans mx-auto flex max-w-sm flex-col gap-3">
-      <StatusBar username="@vitalysacred" diamonds={3584} clips={58} keys={34} />
-      <PromoBanner totalEarned={25693} />
-      <SubscriptionBanner />
-      <RoomList rooms={LOBBY_ROOMS} />
-      <ArchiveList title="Ваши золотые комнаты" items={LOBBY_GOLDEN_ARCHIVE} />
-      <ArchiveList title="Архив комнат" items={LOBBY_ARCHIVE} onShowMore={() => {}} />
-      <GameRules />
-      <ShareKeys />
-      <CharacterFooter />
-      <BuyKeysBanner totalEarned={25693} />
+    <div className="font-sans" style={{ background: SCREEN_FILL }}>
+      <div className="mx-auto flex max-w-sm flex-col gap-3 pb-8 pt-2">
+        <NavPhonePanel />
+        <StatusBar username="@vitalysacred" diamonds={3584} clips={58} keys={34} />
+        <PromoBanner totalEarned={25693} />
+        <SubscriptionBanner />
+        <RoomList rooms={LOBBY_ROOMS} />
+        <ArchiveList title="Ваши золотые комнаты" items={LOBBY_GOLDEN_ARCHIVE} />
+        <ArchiveList title="Архив комнат" items={LOBBY_ARCHIVE} onShowMore={() => {}} />
+        <GameRules />
+        <ShareKeys />
+        <CharacterFooter />
+        <BuyKeysBanner totalEarned={25693} />
+      </div>
     </div>
   );
 }
