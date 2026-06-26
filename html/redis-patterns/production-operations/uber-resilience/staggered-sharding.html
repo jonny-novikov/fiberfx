@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.05.1 · Staggered sharding · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.05.1 — Uber sharded its Redis cache by a scheme deliberately different from the Docstore database scheme, so when a Redis cluster goes down its missed traffic spreads across many database shards instead of concentrating on one hot shard. Misalign the failure domains. The BCS echo is a contrast: the {q} hashtag deliberately gathers a queue's keys onto one of 16384 slots for atomic multi-key Lua. Placement is a design choice the sharding scheme encodes.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);margin-top:10px;max-width:78ch}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the sharding figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .nlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .nsub{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .pglbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .cluster rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:1.5}
+.cflow .shard rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.2;transition:fill .18s ease,stroke .18s ease}
+.cflow .shard.hot rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.6}
+.cflow .shard.warm rect{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.8}
+.cflow .flow{stroke:var(--b-dim);stroke-width:1.4;fill:none;opacity:.55;transition:opacity .18s ease,stroke .18s ease}
+.cflow .flow.on{opacity:1;stroke:var(--r-red);stroke-width:2.2}
+.cflow .flow.spread.on{stroke:var(--b-ts)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/uber-resilience">uber-resilience</a><span class="rsep">/</span><span class="rcur">staggered-sharding</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#trap">The trap</a>
+      <a href="#misalign">Misalign</a>
+      <a href="#echo">The BCS echo</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.05.1 &#183; Uber: resilience &amp; staggered sharding &#8212; dive 1</p>
+      <h1>Staggered sharding: <span class="hns">misalign the failure domains</span>.</h1>
+      <p class="lede">Uber sharded its Redis cache by a scheme <b>deliberately different</b> from the database&#8217;s,
+      so when a Redis cluster goes down its missed traffic spreads across many database shards instead of
+      concentrating on one hot shard.</p>
+      <p class="heronote">Grounding: the Uber case study (<em>How Uber Uses Integrated Redis Cache</em>) for the
+      sharding scheme &#183; the BCS echo &#8212; the <code>{q}</code> hashtag and CRC16 slot from R8.03, not
+      re-derived here. Valkey is the BCS engine; Uber&#8217;s Redis and Docstore are the case study.</p>
+
+      <figure class="anatomy" aria-labelledby="ssCap">
+        <figcaption id="ssCap"><b>One Redis cluster goes down.</b> Toggle the two sharding schemes to see where its
+        missed load lands &#8212; aligned schemes concentrate it on one hot shard; staggered schemes spread it.</figcaption>
+        <div class="segbar" id="schemeSel" role="group" aria-label="Choose the cache sharding scheme">
+          <button type="button" data-scheme="aligned" aria-pressed="false">aligned schemes</button>
+          <button type="button" data-scheme="staggered" aria-pressed="false">staggered schemes</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 210" role="img" aria-label="A downed Redis cluster at the top, with arrows running to four Docstore shards below. Under aligned schemes one arrow runs to a single shard, which turns hot and overloaded. Under staggered schemes four thinner arrows fan out to all four shards, each warm but none overloaded. Toggle the scheme to see the missed load concentrate on one hot shard or spread across many.">
+          <g class="cluster"><rect x="160" y="20" width="140" height="40" rx="6"></rect><text class="nlbl" x="230" y="38">Redis cluster k</text><text class="nsub" x="230" y="52">down &#8212; misses fall through</text></g>
+          <text class="pglbl" id="flowCap" x="230" y="92">select a scheme to route the missed load</text>
+          <path class="flow aligned" data-scheme="aligned" d="M230 60 L100 132"></path>
+          <path class="flow spread" data-scheme="staggered" d="M230 60 L100 132"></path>
+          <path class="flow spread" data-scheme="staggered" d="M230 60 L196 132"></path>
+          <path class="flow spread" data-scheme="staggered" d="M230 60 L292 132"></path>
+          <path class="flow spread" data-scheme="staggered" d="M230 60 L388 132"></path>
+          <g class="shard" id="db0"><rect x="44" y="136" width="96" height="38" rx="4"></rect><text class="nlbl" x="92" y="158">DB shard 0</text></g>
+          <g class="shard" id="db1"><rect x="148" y="136" width="96" height="38" rx="4"></rect><text class="nlbl" x="196" y="158">DB shard 1</text></g>
+          <g class="shard" id="db2"><rect x="252" y="136" width="96" height="38" rx="4"></rect><text class="nlbl" x="300" y="158">DB shard 2</text></g>
+          <g class="shard" id="db3"><rect x="356" y="136" width="96" height="38" rx="4"></rect><text class="nlbl" x="404" y="158">DB shard 3</text></g>
+          <text class="pglbl" x="230" y="196">a hot shard is a correlated failure; spread load is survivable</text>
+        </svg>
+        <div class="readout" id="ssOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a scheme.
+        Aligned: cluster k fronts shard k, so all of k&#8217;s missed load lands on one shard &#8212; a hot shard.
+        Staggered: k&#8217;s keys scatter by the database&#8217;s own scheme across many shards &#8212; the load
+        fans out.</div>
+        <p class="booknote">Static facts &#8212; aligned &#8594; one Redis cluster maps to one DB shard, so its
+        failure strikes one shard &#183; staggered &#8594; the two schemes are independent, so a cluster&#8217;s
+        keys disperse across many shards.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="trap">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The aligned-sharding trap</h2>
+        <span class="ssrc">ByteByteGo &#183; the failure model</span>
+      </div>
+      <div class="prose">
+        <p>Put a cache in front of a database and the cache absorbs the read load. The question staggered sharding
+        answers is: <em>when a piece of the cache fails, where does its load go?</em></p>
+        <p>The naive design shards the cache the same way the database is sharded. It feels clean &#8212; Redis
+        cluster <em>k</em> fronts Docstore shard <em>k</em>, the mapping is one to one, a key&#8217;s cache home
+        and its database home are found the same way. The problem appears only on failure. If Redis cluster
+        <em>k</em> goes down, every read that would have hit it now misses and falls through to Docstore &#8212;
+        and because the sharding is aligned, all of that traffic lands on the <strong>one</strong> Docstore shard
+        <em>k</em> that backed it. That shard now carries its own normal load plus the entire missed load of the
+        cache cluster in front of it.</p>
+        <p>It becomes a <strong>hot shard</strong>: an overloaded database shard, a correlated failure that can
+        take the database shard down too, which makes more of the cache miss, which piles more onto the shard.
+        Aligned sharding makes the cache and the database fail <em>together</em>, one region of the keyspace at a
+        time.</p>
+      </div>
+      <p class="take">The danger is not the cluster going down &#8212; that is expected and survivable. The danger
+      is the missed load all landing on one place, because the two stores are sharded the same way.</p>
+    </section>
+
+    <section id="misalign">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>Misalign the schemes</h2>
+        <span class="ssrc">ByteByteGo &#183; staggered sharding</span>
+      </div>
+      <div class="prose">
+        <p>Uber&#8217;s design refuses the alignment. The Redis cluster is sharded by a scheme
+        <strong>different</strong> from the database&#8217;s, so the set of keys held by one Redis cluster does
+        <strong>not</strong> correspond to the set of keys on one database shard. When a Redis cluster goes down,
+        the keys it held are scattered &#8212; by the database&#8217;s own scheme &#8212; across <strong>many</strong>
+        database shards. The missed load fans out instead of concentrating. No single Docstore shard inherits the
+        whole failure; each absorbs a fraction it can carry.</p>
+        <p>The principle is general: <strong>decorrelate the failure domains.</strong> A cache cluster and a
+        database shard are two failure domains; if their boundaries line up, a failure in one maps directly onto a
+        failure in the other. Stagger the boundaries &#8212; make the two sharding functions independent &#8212;
+        and a failure in one domain disperses across the other instead of striking a single matching unit.</p>
+      </div>
+      <dl class="deflist">
+        <dt>aligned</dt><dd>Redis cluster <em>k</em> fronts DB shard <em>k</em>. A clean map &#8212; and a hot shard on failure.</dd>
+        <dt>staggered</dt><dd>The two sharding functions are independent. A cluster&#8217;s keys disperse across many DB shards.</dd>
+        <dt>the cost</dt><dd>No tidy one-to-one map between a cluster and a shard &#8212; which is exactly what disperses the load.</dd>
+        <dt>the gain</dt><dd>A cache failure becomes a fraction of extra load on each of many shards, not an outage on one.</dd>
+      </dl>
+      <p class="take">Two schemes deliberately out of step. The cost is the loss of a tidy map; the gain is that a
+      cache cluster&#8217;s failure can never concentrate into a hot shard.</p>
+    </section>
+
+    <section id="echo">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The BCS echo &#8212; placement is the hashtag</h2>
+        <span class="ssrc">echo_mq/keyspace.ex &#183; the {q} hashtag</span>
+      </div>
+      <div class="prose">
+        <p>The BCS bus places keys with a scheme too, and it is worth being precise about what that scheme is and
+        is not. EchoMQ pins a queue&#8217;s keys to one Valkey hash slot with a <strong>hashtag</strong>. Every key
+        of a queue is built as <code>emq:{q}:&lt;type&gt;</code> &#8212; the queue name sits inside the braces
+        &#8212; and Valkey hashes a key only over the substring between the first <code>{</code> and <code>}</code>.
+        So every <code>emq:{orders}:*</code> key hashes to the same slot, one of 16384, decided by the queue name.
+        <code>EchoMQ.Keyspace</code> computes the slot client-side:</p>
+      </div>
+      <pre class="code"><span class="cmt"># echo/apps/echo_mq/lib/echo_mq/keyspace.ex — the result derived in full in R8.03</span>
+def <b>slot</b>(key) when is_binary(key), do: rem(crc16(<b>hashtag</b>(key), 0), 16384)</pre>
+      <div class="prose">
+        <p>The known vector on disk is <code>slot("123456789") == 12739</code>. The full derivation &#8212; CRC16
+        over the braced substring, mod 16384, the cluster-spec algorithm &#8212; is
+        <a href="/redis-patterns/production-operations/pinterest-task-queue/functional-partitioning">R8.03.1</a>;
+        this dive reuses the result, it does not re-derive it.</p>
+        <p>The connection to staggered sharding is a <strong>contrast</strong>, not an equivalence. Uber
+        <em>decorrelates</em> two schemes &#8212; the cache&#8217;s sharding and the database&#8217;s are
+        deliberately different, so a cache failure disperses across database shards. EchoMQ <em>correlates</em> one
+        scheme on purpose &#8212; a queue&#8217;s keys are deliberately pinned to one slot by the <code>{q}</code>
+        hashtag, so a multi-key Lua script over one queue is always a single-slot operation and the queue&#8217;s
+        state is co-located.</p>
+      </div>
+
+      <div class="anatomy" aria-labelledby="slotCap">
+        <figcaption id="slotCap" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px"><b>Pick a key.</b>
+        The slot is a function of the braced substring only &#8212; so every key of one queue gathers on one slot.</figcaption>
+        <div class="segbar" id="keySel" role="group" aria-label="Pick a queue key to hash">
+          <button type="button" data-key="orders-pending" aria-pressed="false">emq:{orders}:pending</button>
+          <button type="button" data-key="orders-claimed" aria-pressed="false">emq:{orders}:claimed</button>
+          <button type="button" data-key="cm-pending" aria-pressed="false">emq:{cm}:pending</button>
+        </div>
+        <div class="readout" id="slotOut" aria-live="polite"><span class="rk">readout &#183;</span> Pick a key. The
+        hashtag is the substring between the first <code>{</code> and <code>}</code>; the slot is
+        <code>CRC16(hashtag) mod 16384</code>. Two keys of the same queue share a hashtag, so they share a slot.</div>
+        <p class="booknote">Static facts (the same queue gathers) &#8212; <code>{orders}</code> &#8594; both
+        <code>orders</code> keys land on one slot &#183; <code>{cm}</code> &#8594; a different queue, a different
+        slot &#183; the braces, not the whole key, decide placement.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; placement decided by the scheme</span>
+        <h3>The hashtag that gathers a queue</h3>
+        <p>A queue&#8217;s keys all share the braced tag, so they hash to one slot &#8212; the opposite placement
+        choice to Uber&#8217;s, made with the same deliberateness, verbatim from the keyspace:</p>
+        <figure class="frozen">
+          <figcaption>echo/apps/echo_mq/lib/echo_mq/keyspace.ex &#183; co-location by hashtag<span class="tag">frozen</span></figcaption>
+          <pre><span class="fd"># every key of one queue lands on one slot</span>
+def queue_key(queue, type), do: ["emq:{", queue, "}:", type]
+
+<span class="fd"># the slot is a function of the braced substring — no registry</span>
+def slot(key), do: rem(crc16(hashtag(key), 0), 16384)</pre>
+        </figure>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>Valkey divides the keyspace into 16384 hash slots; a
+      key&#8217;s slot is <code>CRC16(key) mod 16384</code>, and a <code>{...}</code> hashtag pins every key
+      sharing the tag to the same slot. That co-location is what keeps a multi-key Lua script over one queue legal
+      &#8212; every key lands on one slot, so there is no CROSSSLOT error. The algorithm and the hashtag rule are
+      the engine&#8217;s own: <a href="https://valkey.io/topics/cluster-spec/" rel="noopener">valkey.io/topics/cluster-spec</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>Stagger the cache&#8217;s sharding scheme against the database&#8217;s so the failure domains do not
+          line up &#8212; a cache cluster&#8217;s failure disperses across many DB shards instead of striking one
+          as a hot shard.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application (a contrast)</span>
+          <p>The <code>{q}</code> hashtag deliberately <em>gathers</em> a queue&#8217;s keys onto one of 16384
+          slots &#8212; the opposite choice, for atomic multi-key Lua. Both are placement decisions the sharding
+          function encodes on purpose.</p>
+        </div>
+      </div>
+      <p class="take">Uber spreads to isolate a failure; echo gathers to keep a script atomic. The shared lesson
+      is that placement is a design choice the sharding scheme encodes &#8212; decide where keys land, and decide
+      it for the failure and consistency properties you want.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; placement is a design choice</h2>
+        <span class="ssrc">next &#8594; R8.05.2</span>
+      </div>
+      <div class="prose">
+        <p>Staggered sharding is one move with a clear root: do not let the cache&#8217;s failure domains line up
+        with the database&#8217;s. Shard the cache by a different scheme, and a cache cluster&#8217;s failure
+        disperses across many database shards instead of striking one as a hot shard. The BCS bus makes the
+        opposite placement choice with the same kind of deliberateness &#8212; the <code>{q}</code> hashtag
+        gathers a queue&#8217;s keys onto one slot for atomic scripts. The next dive stops the bus from hammering a
+        node that is failing: the sliding-window circuit breaker, and the connector&#8217;s backpressure cousin.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://www.uber.com/blog/how-uber-serves-over-40-million-reads-per-second-using-an-integrated-cache/" rel="noopener">Uber Engineering &mdash; <em>How Uber Serves Over 40 Million Reads Per Second Using an Integrated Cache</em></a> &mdash; the primary engineering account of CacheFront: sharding Redis by partition key (distinct from the Docstore sharding) to avoid a hot shard, the sliding-window circuit breaker, and the 40M reads/second figures.</li>
+            <li><a href="https://blog.bytebytego.com/p/how-uber-uses-integrated-redis-cache" rel="noopener">ByteByteGo &mdash; <em>How Uber Uses Integrated Redis Cache to Serve 40M Reads/Second</em></a> &mdash; the staggered sharding scheme: misaligning the Redis and database sharding so a cache cluster&#8217;s failure spreads across many database shards instead of creating a hot shard.</li>
+            <li><a href="https://valkey.io/topics/cluster-spec/" rel="noopener">Valkey &mdash; <em>Cluster specification</em></a> &mdash; the 16384 hash slots, <code>CRC16 mod 16384</code>, and the <code>{...}</code> hashtag the BCS keyspace computes to co-locate a queue.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/uber-resilience">R8.05 &#183; Uber: resilience &amp; staggered sharding</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/uber-resilience/circuit-breakers">R8.05.2 &#183; Circuit breakers</a><span class="rs">the next dive &#8212; stop hammering a sick node</span></li>
+            <li><a href="/redis-patterns/production-operations/pinterest-task-queue/functional-partitioning">R8.03.1 &#183; Functional partitioning</a><span class="rs">the <code>{q}</code> hashtag and CRC16 slot, derived in full</span></li>
+            <li><a href="/redis-patterns/production-operations">R8 &#183; Production &amp; Operations</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the Queue pillar &#8212; the braced keyspace behind co-location</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/uber-resilience"><span class="pk">previous</span>&#8592; R8.05 &#183; Uber: resilience &amp; staggered sharding</a>
+      <a class="pgx" href="/redis-patterns/production-operations/uber-resilience/circuit-breakers"><span class="pk">next</span>R8.05.2 &#183; Circuit breakers &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/uber-resilience/staggered-sharding">R8.05.1 &#183; Staggered sharding</a>
+        <a href="/redis-patterns/production-operations/uber-resilience/circuit-breakers">R8.05.2 &#183; Circuit breakers</a>
+        <a href="/redis-patterns/production-operations/uber-resilience/graceful-degradation">R8.05.3 &#183; Graceful degradation</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: aligned vs staggered sharding (pure over a fixed model) ---------- */
+  // pure: scheme -> {hot shard set, flow caption, readout}
+  var SCHEMES = {
+    'aligned':   { hot: ['db0'], warm: [], cap: 'aligned — all of cluster k’s missed load lands on one shard', out: 'Aligned: cluster k fronts shard k, so all of k’s missed load lands on one shard — DB shard 0 turns hot, an overloaded shard that can fail too.' },
+    'staggered': { hot: [], warm: ['db0','db1','db2','db3'], cap: 'staggered — k’s keys scatter across all four shards', out: 'Staggered: k’s keys scatter by the database’s own scheme across DB shards 0–3 — each takes a fraction it can carry, no hot shard.' }
+  };
+  var cflow = document.getElementById('cflow');
+  var schemeButtons = document.querySelectorAll('#schemeSel button');
+  var ssOut = document.getElementById('ssOut');
+  var flowCap = document.getElementById('flowCap');
+  var shards = ['db0','db1','db2','db3'];
+  // pure: paint the diagram for a scheme, sync buttons + readout — hover or click.
+  function selectScheme(scheme) {
+    schemeButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-scheme') === scheme ? 'true' : 'false');
+    });
+    if (cflow) {
+      cflow.querySelectorAll('.flow').forEach(function (f) {
+        f.classList.toggle('on', !!scheme && f.getAttribute('data-scheme') === scheme);
+      });
+      shards.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var s = scheme ? SCHEMES[scheme] : null;
+        el.classList.toggle('hot', !!s && s.hot.indexOf(id) >= 0);
+        el.classList.toggle('warm', !!s && s.warm.indexOf(id) >= 0);
+      });
+    }
+    if (flowCap) flowCap.textContent = scheme ? SCHEMES[scheme].cap : 'select a scheme to route the missed load';
+    if (ssOut) {
+      ssOut.innerHTML = scheme
+        ? '<span class="rk">scheme &#183;</span> ' + SCHEMES[scheme].out
+        : '<span class="rk">readout &#183;</span> Select a scheme. Aligned: cluster k fronts shard k, so all of k&#8217;s missed load lands on one shard — a hot shard. Staggered: k&#8217;s keys scatter by the database&#8217;s own scheme across many shards — the load fans out.';
+    }
+  }
+  schemeButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var scheme = b.getAttribute('data-scheme');
+      selectScheme(b.getAttribute('aria-pressed') === 'true' ? null : scheme);
+    });
+    b.addEventListener('mouseenter', function () { selectScheme(b.getAttribute('data-scheme')); });
+  });
+
+  /* ---------- Interactive 2: the hashtag slot (pure CRC16-XMODEM over the braced substring) ---------- */
+  // pure: CRC16-XMODEM (poly 0x1021), the cluster-spec hash function the keyspace computes
+  function crc16(str) {
+    var crc = 0;
+    for (var i = 0; i < str.length; i++) {
+      crc ^= (str.charCodeAt(i) & 0xff) << 8;
+      for (var j = 0; j < 8; j++) {
+        crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+        crc &= 0xffff;
+      }
+    }
+    return crc;
+  }
+  // pure: hashtag = substring between the first { and the next } (the cluster-spec rule)
+  function hashtag(key) {
+    var a = key.indexOf('{');
+    if (a < 0) return key;
+    var b = key.indexOf('}', a + 1);
+    if (b < 0 || b === a + 1) return key;
+    return key.slice(a + 1, b);
+  }
+  function slot(key) { return crc16(hashtag(key)) % 16384; }
+  var keyButtons = document.querySelectorAll('#keySel button');
+  var slotOut = document.getElementById('slotOut');
+  // pure: describe a key — its hashtag and the slot every key of that queue shares.
+  function selectKey(key) {
+    keyButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-key') === key ? 'true' : 'false');
+    });
+    if (slotOut) {
+      if (!key) {
+        slotOut.innerHTML = '<span class="rk">readout &#183;</span> Pick a key. The hashtag is the substring between the first <code>{</code> and <code>}</code>; the slot is <code>CRC16(hashtag) mod 16384</code>. Two keys of the same queue share a hashtag, so they share a slot.';
+        return;
+      }
+      var keyStr = 'emq:{' + key.split('-')[0] + '}:' + key.split('-')[1];
+      var tag = hashtag(keyStr);
+      var sl = slot(keyStr);
+      slotOut.innerHTML = '<span class="rk">key &#183;</span> <code>' + keyStr + '</code><br>' +
+        '<span class="rk">hashtag &#183;</span> <code>' + tag + '</code> &#8212; the braced substring only<br>' +
+        '<span class="rk">slot &#183;</span> <b>' + sl + '</b> &#8212; every <code>emq:{' + tag + '}:*</code> key of this queue lands here';
+    }
+  }
+  keyButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-key');
+      selectKey(b.getAttribute('aria-pressed') === 'true' ? null : key);
+    });
+    b.addEventListener('mouseenter', function () { selectKey(b.getAttribute('data-key')); });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

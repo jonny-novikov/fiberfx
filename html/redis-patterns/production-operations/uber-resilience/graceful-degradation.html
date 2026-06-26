@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.05.3 · Graceful degradation · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.05.3 — A cache exists to be faster than the store behind it; the resilience question is what happens when the cache is not there. Uber's answer is graceful degradation: a miss or short-circuit falls through to Docstore — slower but served — for P75 latency down ~75%, P99.9 down over 67%, and a region failover at over 6M reads/second. The BCS echo is the connector's capped-jittered-backoff reconnect and fail-not-replay (:disconnected, never re-run), with -READONLY taught as the Valkey failover pattern.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);margin-top:10px;max-width:78ch}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the degradation figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .nlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .nsub{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .pglbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .node rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.4;transition:opacity .18s ease}
+.cflow .node.store rect{stroke:var(--b-node)}
+.cflow .node.gone rect{stroke:var(--r-red);stroke-dasharray:4 3}
+.cflow .path{stroke:var(--b-dim);stroke-width:1.5;fill:none;opacity:.28;transition:opacity .18s ease,stroke .18s ease;marker-end:url(#gdArrow)}
+.cflow .path.on{opacity:1;stroke:var(--r-red);stroke-width:2.4}
+.cflow .path.served.on{stroke:var(--b-node)}
+.cflow.focus .node{opacity:.34}
+.cflow.focus .node.lit{opacity:1}
+.cflow.focus .node.lit.gone rect{stroke-width:2.4}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/uber-resilience">uber-resilience</a><span class="rsep">/</span><span class="rcur">graceful-degradation</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#degrade">Degrade</a>
+      <a href="#results">Results</a>
+      <a href="#echo">The BCS echo</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.05.3 &#183; Uber: resilience &amp; staggered sharding &#8212; dive 3</p>
+      <h1>Graceful degradation: <span class="hns">a worse answer beats no answer</span>.</h1>
+      <p class="lede">A cache exists to be faster than the store behind it. The resilience question is what happens
+      when the cache is <em>not there</em>. Uber&#8217;s answer is graceful degradation: a miss or short-circuit
+      <b>falls through to Docstore</b> &#8212; slower, but served.</p>
+      <p class="heronote">Grounding: the Uber case study (<em>How Uber Uses Integrated Redis Cache</em>) for the
+      degradation path and the results &#183; the as-built <code>echo/apps/echo_wire/lib/echo_mq/connector.ex</code>
+      for the applied half. This dive frames failover through Uber&#8217;s lens and cross-links R8.02. Valkey is
+      the BCS engine; Uber&#8217;s Redis and Docstore are the case study.</p>
+
+      <figure class="anatomy" aria-labelledby="gdCap">
+        <figcaption id="gdCap"><b>Follow a read as the cache degrades.</b> Select a condition to trace the
+        request&#8217;s path &#8212; every degraded path still ends at a served value, on the durable store or a
+        remote region.</figcaption>
+        <div class="segbar" id="condSel" role="group" aria-label="Select the cache condition the read meets">
+          <button type="button" data-cond="hit" aria-pressed="false">cache hit</button>
+          <button type="button" data-cond="miss" aria-pressed="false">cache miss</button>
+          <button type="button" data-cond="short" aria-pressed="false">short-circuited</button>
+          <button type="button" data-cond="region" aria-pressed="false">region down</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 210" role="img" aria-label="A read enters from the left to the Redis cache; from the cache one path returns a fast hit, another falls through to Docstore on a miss or short-circuit, and a third routes to a remote region when the primary region is down. Every path other than the hit is slower but still ends at a served value. Select a condition to light the path the read takes.">
+          <defs>
+            <marker id="gdArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0 0 L6 3 L0 6 z" fill="var(--b-dim)"></path></marker>
+          </defs>
+          <g class="node read lit"><rect x="20" y="84" width="92" height="44" rx="6"></rect><text class="nlbl" x="66" y="104">read</text><text class="nsub" x="66" y="120">a get</text></g>
+          <g class="node cache lit"><rect x="170" y="84" width="100" height="44" rx="6"></rect><text class="nlbl" x="220" y="104">Redis cache</text><text class="nsub" x="220" y="120">in memory</text></g>
+          <g class="node store"><rect x="330" y="28" width="106" height="44" rx="6"></rect><text class="nlbl" x="383" y="48">Docstore</text><text class="nsub" x="383" y="64">durable, slower</text></g>
+          <g class="node remote"><rect x="330" y="140" width="106" height="44" rx="6"></rect><text class="nlbl" x="383" y="160">remote region</text><text class="nsub" x="383" y="176">failover path</text></g>
+          <path class="path enter" d="M112 106 L170 106"></path>
+          <path class="path served hit" data-cond="hit" d="M270 100 L300 92 L270 100"></path>
+          <text class="pglbl hitlbl" x="290" y="82" style="display:none">hit returns here</text>
+          <path class="path served fall" data-cond="fall" d="M270 96 L330 58"></path>
+          <path class="path served far" data-cond="far" d="M270 116 L330 158"></path>
+          <text class="pglbl" x="230" y="200">a hit is fastest; a miss or short-circuit falls through; a dead region routes remote &#8212; all served</text>
+        </svg>
+        <div class="readout" id="gdOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        condition. A hit returns from memory; a miss or a short-circuited request falls through to Docstore
+        (slower but served); a downed region routes the read to a remote region. Degraded, not failed.</div>
+        <p class="booknote">Static facts &#8212; hit &#8594; fast, from memory &#183; miss / short-circuit &#8594;
+        fall through to Docstore &#183; region down &#8594; failover to the remote region &#8212; every path ends
+        at a served value.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="degrade">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Degrade, do not fail</h2>
+        <span class="ssrc">ByteByteGo &#183; fall through to Docstore</span>
+      </div>
+      <div class="prose">
+        <p>Graceful degradation is the discipline of having a worse-but-working answer ready for when the best
+        answer is unavailable. For the integrated cache the best answer is a Redis hit; the worse-but-working
+        answer is a Docstore read. A request that misses the cache, or that the circuit breaker short-circuits, or
+        that hits a node which is down, does not error back to the caller &#8212; it <strong>falls through to
+        Docstore</strong>. The read is slower than a cache hit because it pays the full database cost, but it
+        returns a correct value. The cache is an optimisation in front of the truth; when the optimisation is
+        gone, the truth is still reachable.</p>
+        <p>This is why the circuit breaker (the previous dive) is safe to be aggressive. Short-circuiting a request
+        only helps if there is somewhere for that request to go; the fall-through to Docstore is that somewhere.
+        Tripping the breaker does not drop the read &#8212; it reroutes it to the durable path. The two techniques
+        compose: the breaker rules out <em>Redis</em>, and graceful degradation routes the read to <em>Docstore</em>.</p>
+      </div>
+      <p class="take">A miss, a short-circuit, a dead node &#8212; each falls through to the durable store rather
+      than erroring. The cache is the fast path; the database is the answer that is always there.</p>
+    </section>
+
+    <section id="results">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The results, and remote-region failover</h2>
+        <span class="ssrc">ByteByteGo &#183; the measured effect</span>
+      </div>
+      <div class="prose">
+        <p>The combined effect of the integrated cache with its resilience layer was measured. Latency fell sharply
+        at the tail as well as the median: <strong>P75 latency down about 75%, P99.9 latency down over 67%</strong>,
+        with latency spikes limited rather than allowed to run away. The tail matters most here &#8212; P99.9 is
+        where the dead-node timeouts and the hot-shard pile-ups would have shown up, and that is exactly where the
+        circuit breaker and the staggered sharding hold the line.</p>
+        <p>Degradation also scales up a level, from a node to a <strong>region</strong>. A documented use case
+        running at <strong>over 6 million reads per second with a 99% cache hit rate</strong> had its primary
+        region run into trouble and <strong>failed over successfully to a remote region</strong>. The cache being
+        unavailable in one region degraded to the remote path rather than taking the read down &#8212; the same
+        fall-through principle, applied to a whole region&#8217;s worth of cache instead of a single node. The
+        title figure for the whole integrated cache is <strong>40 million reads per second</strong>; the
+        resilience story is what let that number stay up under trouble.</p>
+      </div>
+      <dl class="deflist">
+        <dt>P75</dt><dd>Down about 75% &#8212; the median read got much faster with the cache in front.</dd>
+        <dt>P99.9</dt><dd>Down over 67% &#8212; the tail, where dead-node timeouts hide, held the line.</dd>
+        <dt>region failover</dt><dd>A use case at over 6M reads/s failed over to a remote region rather than dropping the read.</dd>
+        <dt>aggregate</dt><dd>40M reads/second served from the integrated cache, kept up under trouble.</dd>
+      </dl>
+      <p class="take">The win is at the tail and at the region boundary &#8212; P99.9 down over 67%, and a region
+      failure absorbed by failing over rather than failing the read.</p>
+    </section>
+
+    <section id="echo">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The BCS echo &#8212; recover by reconnecting, fail honestly</h2>
+        <span class="ssrc">echo_wire/connector.ex &#183; backoff + fail-not-replay</span>
+      </div>
+      <div class="prose">
+        <p>The EchoMQ connector&#8217;s graceful behaviour under a lost dependency is two properties: it fails the
+        in-flight work honestly, and it recovers by reconnecting with backoff. Both are in the as-built
+        connector.</p>
+        <p><strong>Fail-not-replay.</strong> When the socket to Valkey drops, every in-flight caller is failed
+        <code>:disconnected</code> and the in-flight FIFO is cleared. The connector does not silently retry those
+        calls, because it cannot know which are idempotent &#8212; replaying a non-idempotent command after a
+        partial failure could double-apply it. A fast, honest error is the safe degradation: the caller is told at
+        once that the call did not complete, and the retry decision is left to the calling code.</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_wire/lib/echo_mq/connector.ex &#183; in-flight callers failed :disconnected, never replayed<span class="tag">frozen</span></figcaption>
+        <pre>Enum.each(:queue.to_list(s.pending), fn
+  {:internal, _, _, _, _} -&gt; :ok
+  {from, _, _, _, _} -&gt; GenServer.reply(from, {:error, <b>:disconnected</b>})
+end)</pre>
+      </figure>
+      <div class="prose">
+        <p><strong>Capped jittered backoff reconnect.</strong> After the socket drops, the connector schedules a
+        reconnect, and each failed attempt backs off &#8212; doubling the delay up to a cap, with jitter so a fleet
+        of connectors does not retry in lockstep:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_wire/lib/echo_mq/connector.ex &#183; @backoff_min 100, @backoff_max 2_000<span class="tag">frozen</span></figcaption>
+        <pre>defp schedule(%{sock: nil} = s) do
+  jitter = :rand.uniform(div(s.backoff, 2) + 1)
+  Process.send_after(self(), :reconnect, s.backoff + jitter)
+  %{s | backoff: <b>min(s.backoff * 2, s.backoff_max)</b>}
+end</pre>
+      </figure>
+      <div class="prose">
+        <p>Backoff is the recovery analogue of degradation: rather than spin on a node that is down (which would
+        amplify the failure, the very thing the circuit breaker prevents), the connector waits a little longer
+        between attempts, up to the <code>@backoff_max</code> of <code>2_000</code> ms, and re-fences on every
+        reconnect. Its <code>stats/1</code> reports <code>status: :reconnecting</code> and a <code>reconnects</code>
+        count, so the recovery is observable.</p>
+      </div>
+
+      <div class="anatomy" aria-labelledby="boCap">
+        <figcaption id="boCap" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px"><b>Step the backoff.</b>
+        Each failed reconnect doubles the base delay up to the cap &#8212; select an attempt to compute its base
+        delay from the real <code>min(backoff * 2, 2000)</code>.</figcaption>
+        <div class="segbar" id="boSel" role="group" aria-label="Select the reconnect attempt">
+          <button type="button" data-att="1" aria-pressed="false">attempt 1</button>
+          <button type="button" data-att="2" aria-pressed="false">attempt 2</button>
+          <button type="button" data-att="3" aria-pressed="false">attempt 3</button>
+          <button type="button" data-att="4" aria-pressed="false">attempt 4</button>
+          <button type="button" data-att="5" aria-pressed="false">attempt 5</button>
+          <button type="button" data-att="6" aria-pressed="false">attempt 6</button>
+        </div>
+        <div class="readout" id="boOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an attempt.
+        The base delay starts at <code>@backoff_min</code> = 100 ms and doubles each failed attempt, capped at
+        <code>@backoff_max</code> = 2000 ms; a jitter of up to half the base is added on top.</div>
+        <p class="booknote">Static facts &#8212; base doubles 100 &#8594; 200 &#8594; 400 &#8230; capped at 2000
+        &#183; jitter <code>:rand.uniform(div(backoff, 2) + 1)</code> &#183; the wait spreads a fleet&#8217;s
+        retries so they do not reconnect in lockstep.</p>
+      </div>
+
+      <div class="prose">
+        <p>There is one guard. The connector has <strong>no special <code>-READONLY</code> handler</strong>. A
+        Valkey primary failover surfaces to a client as a <code>-READONLY</code> error from a not-yet-promoted
+        replica, but the connector does not branch on that string &#8212; its recovery to a topology change is the
+        general one: the socket drops, the supervised connector reconnects. So <code>-READONLY</code> is taught
+        here as the Valkey failover <em>signal</em> the connector recovers from by reconnecting, not as an echo
+        surface. <a href="/redis-patterns/production-operations/persistence-pooling-failover">R8.02
+        (persistence, pooling &amp; failover)</a> taught the READONLY-reconnect failover and pool sizing in full;
+        this dive frames the same recovery through Uber&#8217;s resilience lens rather than duplicating it.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">door &#183; the durability floor</span>
+        <h3>/echo-persistence</h3>
+        <p>A cache or a queue serves from memory; when the question is <em>where does the value survive a
+        crash</em>, that is the durable substrate&#8217;s job. <code>/echo-persistence</code> is the dial from
+        holding nothing to committing every record off-box, beneath the volatile tiers.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>When a Valkey primary fails over, a client that
+      reconnects to a replica before it is promoted sees <code>-READONLY You can&#8217;t write against a read only
+      replica</code>; once the replica is promoted the writes succeed. The owned wire has no
+      <code>-READONLY</code>-specific branch &#8212; it recovers from the socket drop a failover causes by
+      reconnecting with backoff, re-fencing each time. Valkey&#8217;s guidance on failover and the latency around
+      it is at <a href="https://valkey.io/topics/latency/" rel="noopener">valkey.io/topics/latency</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>When the fast path is gone, serve the slow path (fall through to the durable store) and recover the
+          fast path without hammering it &#8212; back off, retry, re-test.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>On socket loss the connector fails in-flight callers <code>:disconnected</code> (a fast honest error,
+          never a silent replay) and reconnects with capped jittered backoff (<code>@backoff_min 100</code> &#8594;
+          <code>@backoff_max 2_000</code>), re-fencing on every reconnect.</p>
+        </div>
+      </div>
+      <p class="take">Uber falls through to a durable store and fails over a region; the connector fails in-flight
+      work honestly and reconnects with backoff. Both keep a worse-but-working path ready, and recover without
+      amplifying the failure.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; a worse answer beats no answer</h2>
+        <span class="ssrc">end of R8.05</span>
+      </div>
+      <div class="prose">
+        <p>Graceful degradation is the discipline of always having a worse-but-working path. Uber&#8217;s
+        integrated cache falls through to Docstore on a miss or short-circuit, which is what makes the aggressive
+        circuit breaker safe and what let a region failover keep serving &#8212; P75 down about 75%, P99.9 down
+        over 67%, 40M reads/second held up under trouble. The EchoMQ connector reaches the same posture by failing
+        in-flight work honestly (<code>:disconnected</code>, never replayed) and recovering with capped jittered
+        backoff, treating a <code>-READONLY</code> failover as a socket drop to reconnect through. With this, the
+        Uber module closes; return to the
+        <a href="/redis-patterns/production-operations">Production &amp; Operations chapter</a> to continue.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://www.uber.com/blog/how-uber-serves-over-40-million-reads-per-second-using-an-integrated-cache/" rel="noopener">Uber Engineering &mdash; <em>How Uber Serves Over 40 Million Reads Per Second Using an Integrated Cache</em></a> &mdash; the primary engineering account of CacheFront: sharding Redis by partition key (distinct from the Docstore sharding) to avoid a hot shard, the sliding-window circuit breaker, and the 40M reads/second figures.</li>
+            <li><a href="https://blog.bytebytego.com/p/how-uber-uses-integrated-redis-cache" rel="noopener">ByteByteGo &mdash; <em>How Uber Uses Integrated Redis Cache to Serve 40M Reads/Second</em></a> &mdash; graceful degradation falling through to Docstore, the P75 &#8722;75% / P99.9 &#8722;67% latency results, and the remote-region failover at over 6M reads/second.</li>
+            <li><a href="https://valkey.io/topics/latency/" rel="noopener">Valkey &mdash; <em>Diagnosing latency issues</em></a> &mdash; failover and reconnect behaviour, and the <code>-READONLY</code> signal a client recovers from by reconnecting.</li>
+            <li><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker" rel="noopener">Microsoft Learn &mdash; <em>Circuit Breaker pattern</em></a> &mdash; the half-open probe that re-tests a recovering dependency, the recovery analogue of backoff-and-retry.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/uber-resilience">R8.05 &#183; Uber: resilience &amp; staggered sharding</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/uber-resilience/circuit-breakers">R8.05.2 &#183; Circuit breakers</a><span class="rs">the previous dive &#8212; stop hammering a sick node</span></li>
+            <li><a href="/redis-patterns/production-operations/persistence-pooling-failover">R8.02 &#183; Persistence, pooling &amp; failover</a><span class="rs">the READONLY-reconnect failover and pool sizing in full</span></li>
+            <li><a href="/redis-patterns/production-operations">R8 &#183; Production &amp; Operations</a><span class="rs">the chapter</span></li>
+            <li><a href="/echo-persistence">/echo-persistence</a><span class="rs">the durability floor beneath the volatile tiers</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the Queue pillar &#8212; the connector&#8217;s reconnect and fail-not-replay</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/uber-resilience/circuit-breakers"><span class="pk">previous</span>&#8592; R8.05.2 &#183; Circuit breakers</a>
+      <a class="pgx" href="/redis-patterns/production-operations"><span class="pk">next</span>R8 &#183; Production &amp; Operations &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/uber-resilience/staggered-sharding">R8.05.1 &#183; Staggered sharding</a>
+        <a href="/redis-patterns/production-operations/uber-resilience/circuit-breakers">R8.05.2 &#183; Circuit breakers</a>
+        <a href="/redis-patterns/production-operations/uber-resilience/graceful-degradation">R8.05.3 &#183; Graceful degradation</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: follow a read as the cache degrades (pure lookup over paths) ---------- */
+  var CONDS = {
+    'hit':    { lit: ['read','cache'], paths: ['enter','hit'], out: 'cache hit — the value is in Redis and returns from memory, the fast path. No fall-through needed.' },
+    'miss':   { lit: ['read','cache','store'], paths: ['enter','fall'], out: 'cache miss — the read falls through to Docstore, populates the cache, and returns. Slower than a hit, but served.' },
+    'short':  { lit: ['read','cache','store'], paths: ['enter','fall'], out: 'short-circuited — the circuit breaker has tripped this node, so the request skips Redis and falls straight through to Docstore. Served, no timeout paid.' },
+    'region': { lit: ['read','cache','remote'], paths: ['enter','far'], out: 'region down — the primary region’s cache is unavailable, so the read fails over to a remote region. A use case at over 6M reads/s did exactly this. Degraded, not failed.' }
+  };
+  var cflow = document.getElementById('cflow');
+  var allNodes = cflow ? Array.prototype.slice.call(cflow.querySelectorAll('.node')) : [];
+  var allPaths = cflow ? Array.prototype.slice.call(cflow.querySelectorAll('.path')) : [];
+  var condButtons = document.querySelectorAll('#condSel button');
+  var gdOut = document.getElementById('gdOut');
+  var hitLbl = cflow ? cflow.querySelector('.hitlbl') : null;
+  // pure: light the nodes + paths for a condition, sync buttons + readout — hover or click.
+  function pathClass(name) { return { enter: 'enter', hit: 'hit', fall: 'fall', far: 'far' }[name]; }
+  function selectCond(cond) {
+    condButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-cond') === cond ? 'true' : 'false');
+    });
+    if (cflow) {
+      cflow.classList.toggle('focus', !!cond);
+      var lit = cond && CONDS[cond] ? CONDS[cond].lit : [];
+      allNodes.forEach(function (n) {
+        var keep = lit.some(function (c) { return n.classList.contains(c); });
+        n.classList.toggle('lit', !!cond && keep);
+        n.classList.toggle('gone', !!cond && cond === 'region' && n.classList.contains('cache'));
+      });
+      var litPaths = cond && CONDS[cond] ? CONDS[cond].paths : [];
+      allPaths.forEach(function (p) {
+        var on = litPaths.some(function (name) { return p.classList.contains(pathClass(name)); });
+        p.classList.toggle('on', !!cond && on);
+      });
+      if (hitLbl) hitLbl.style.display = (cond === 'hit') ? '' : 'none';
+    }
+    if (gdOut) {
+      gdOut.innerHTML = cond
+        ? '<span class="rk">' + cond + ' &#183;</span> <b>' + CONDS[cond].out + '</b>'
+        : '<span class="rk">readout &#183;</span> Select a condition. A hit returns from memory; a miss or a short-circuited request falls through to Docstore (slower but served); a downed region routes the read to a remote region. Degraded, not failed.';
+    }
+  }
+  condButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var cond = b.getAttribute('data-cond');
+      selectCond(b.getAttribute('aria-pressed') === 'true' ? null : cond);
+    });
+    b.addEventListener('mouseenter', function () { selectCond(b.getAttribute('data-cond')); });
+  });
+
+  /* ---------- Interactive 2: step the reconnect backoff (pure: the real min(backoff*2, 2000) doubling) ---------- */
+  var BACKOFF_MIN = 100;   // @backoff_min
+  var BACKOFF_MAX = 2000;  // @backoff_max
+  // pure: the base delay before attempt n — start at min, double each prior attempt, cap at max.
+  function baseDelay(n) {
+    var b = BACKOFF_MIN;
+    for (var i = 1; i < n; i++) b = Math.min(b * 2, BACKOFF_MAX);
+    return b;
+  }
+  var boButtons = document.querySelectorAll('#boSel button');
+  var boOut = document.getElementById('boOut');
+  function selectAtt(att) {
+    boButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-att') === att ? 'true' : 'false');
+    });
+    if (boOut) {
+      if (!att) {
+        boOut.innerHTML = '<span class="rk">readout &#183;</span> Select an attempt. The base delay starts at <code>@backoff_min</code> = 100 ms and doubles each failed attempt, capped at <code>@backoff_max</code> = 2000 ms; a jitter of up to half the base is added on top.';
+        return;
+      }
+      var n = parseInt(att, 10);
+      var base = baseDelay(n);
+      var jitterMax = Math.floor(base / 2) + 1;
+      var capped = base === BACKOFF_MAX && n > 1 ? ' (capped at @backoff_max)' : '';
+      boOut.innerHTML = '<span class="rk">attempt &#183;</span> ' + n + '<br>' +
+        '<span class="rk">base delay &#183;</span> <b>' + base + ' ms</b>' + capped + '<br>' +
+        '<span class="rk">scheduled wait &#183;</span> ' + base + ' + rand(1..' + jitterMax + ') ms &#8212; jitter spreads a fleet&#8217;s retries';
+    }
+  }
+  boButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var att = b.getAttribute('data-att');
+      selectAtt(b.getAttribute('aria-pressed') === 'true' ? null : att);
+    });
+    b.addEventListener('mouseenter', function () { selectAtt(b.getAttribute('data-att')); });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

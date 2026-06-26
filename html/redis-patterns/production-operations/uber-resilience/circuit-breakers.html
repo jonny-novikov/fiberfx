@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.05.2 · Circuit breakers · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.05.2 — When a Redis node is down, every call to it pays a timeout before it fails; at millions of requests per second that amplifies one node's failure into a service-wide spike. Uber's sliding-window circuit breaker counts errors per node per time bucket, short-circuits a fraction once a threshold is hit, and trips until the window passes. The BCS echo is the connector's max_pending backpressure — same goal, a different mechanism: a depth limit, not an error-rate trip.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+.prose ol{margin:0 0 14px 1.3rem}
+.prose ol li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);margin-top:10px;max-width:78ch}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the sliding-window figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .nlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .nsub{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .pglbl{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .bucket rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.2;transition:fill .18s ease,stroke .18s ease}
+.cflow .bucket.cur rect{stroke:var(--b-ink);stroke-width:2}
+.cflow .bucket .bn{font:11px var(--mono);text-anchor:middle;fill:var(--b-ink)}
+.cflow .bucket .berr{font:9px var(--mono);text-anchor:middle;fill:var(--b-dim)}
+.cflow .state{transition:opacity .18s ease}
+.cflow .state rect{stroke-width:1.4}
+.cflow .state.closed rect{fill:var(--b-card);stroke:var(--b-node)}
+.cflow .state.partial rect{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.cflow .state.tripped rect{fill:var(--r-red-tint);stroke:var(--r-red)}
+.cflow .state{opacity:.32}
+.cflow .state.on{opacity:1}
+.cflow .state.on rect{stroke-width:2.8}
+.cflow .slbl{font:10px var(--mono);text-anchor:middle;fill:var(--b-ink)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/uber-resilience">uber-resilience</a><span class="rsep">/</span><span class="rcur">circuit-breakers</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#cost">The cost</a>
+      <a href="#window">The window</a>
+      <a href="#echo">The BCS echo</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.05.2 &#183; Uber: resilience &amp; staggered sharding &#8212; dive 2</p>
+      <h1>Circuit breakers: <span class="hns">stop hammering a sick node</span>.</h1>
+      <p class="lede">When a Redis node is down, every call to it pays a timeout before it fails &#8212; and at
+      millions of requests per second that penalty compounds into a service-wide slowdown. Uber&#8217;s
+      <b>sliding-window circuit breaker</b> counts errors per node, short-circuits a fraction once a threshold is
+      hit, and trips until the window passes.</p>
+      <p class="heronote">Grounding: the Uber case study (<em>How Uber Uses Integrated Redis Cache</em>) and the
+      canonical Circuit Breaker pattern for the technique &#183; the as-built
+      <code>echo/apps/echo_wire/lib/echo_mq/connector.ex</code> for the applied half. Valkey is the BCS engine;
+      Uber&#8217;s Redis is the case study.</p>
+
+      <figure class="anatomy" aria-labelledby="cbCap">
+        <figcaption id="cbCap"><b>Walk the breaker&#8217;s state as errors accumulate.</b> Select an error level
+        in the window to see the breaker close, short-circuit a fraction, or trip &#8212; the window&#8217;s sum
+        decides.</figcaption>
+        <div class="segbar" id="errSel" role="group" aria-label="Select the error count in the sliding window">
+          <button type="button" data-err="low" aria-pressed="false">few errors</button>
+          <button type="button" data-err="mid" aria-pressed="false">threshold crossed</button>
+          <button type="button" data-err="high" aria-pressed="false">errors climbing</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 220" role="img" aria-label="A sliding window of four time buckets, each holding an error count, with the current bucket marked. Below, three breaker states: closed (all requests pass), short-circuiting a fraction (some requests skip to the fallback), and tripped (no requests reach the node). Selecting an error level fills the buckets and lights the state the window's summed count puts the breaker into.">
+          <text class="pglbl" x="230" y="18">sliding window &#8212; errors per node, per time bucket</text>
+          <g class="bucket" id="bk0"><rect x="40" y="28" width="84" height="44" rx="5"></rect><text class="bn" id="bn0" x="82" y="48">0</text><text class="berr" x="82" y="64">bucket t&#8722;3</text></g>
+          <g class="bucket" id="bk1"><rect x="130" y="28" width="84" height="44" rx="5"></rect><text class="bn" id="bn1" x="172" y="48">0</text><text class="berr" x="172" y="64">bucket t&#8722;2</text></g>
+          <g class="bucket" id="bk2"><rect x="220" y="28" width="84" height="44" rx="5"></rect><text class="bn" id="bn2" x="262" y="48">0</text><text class="berr" x="262" y="64">bucket t&#8722;1</text></g>
+          <g class="bucket cur" id="bk3"><rect x="310" y="28" width="84" height="44" rx="5"></rect><text class="bn" id="bn3" x="352" y="48">0</text><text class="berr" x="352" y="64">bucket t (now)</text></g>
+          <text class="pglbl" id="sumCap" x="230" y="98">sum over the window determines the state</text>
+          <g class="state closed" id="stClosed"><rect x="32" y="118" width="124" height="56" rx="6"></rect><text class="slbl" x="94" y="142">closed</text><text class="slbl" x="94" y="158" style="fill:var(--b-dim)">all pass</text></g>
+          <g class="state partial" id="stPartial"><rect x="168" y="118" width="124" height="56" rx="6"></rect><text class="slbl" x="230" y="142">short-circuit</text><text class="slbl" x="230" y="158" style="fill:var(--b-dim)">a fraction</text></g>
+          <g class="state tripped" id="stTripped"><rect x="304" y="118" width="124" height="56" rx="6"></rect><text class="slbl" x="366" y="142">tripped</text><text class="slbl" x="366" y="158" style="fill:var(--b-dim)">none reach node</text></g>
+          <text class="pglbl" x="230" y="200">old buckets age out as the window slides &#8212; recovered failures drop from the sum</text>
+        </svg>
+        <div class="readout" id="cbOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an error
+        level. The breaker sums the errors in the window; below the threshold it stays closed, at the threshold it
+        short-circuits a fraction, and as errors climb it trips so no request reaches the node until the window
+        passes.</div>
+        <p class="booknote">Static facts &#8212; closed &#8594; all requests pass to the node &#183; short-circuit
+        &#8594; a fraction skip straight to the fallback, paying no timeout &#183; tripped &#8594; none reach the
+        node until the window slides and the counts age out.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="cost">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The cost of calling a dead node</h2>
+        <span class="ssrc">ByteByteGo &#183; the latency penalty</span>
+      </div>
+      <div class="prose">
+        <p>A cache in front of a database trades a fast in-memory hit for a slow fall-through on a miss. That trade
+        is good while the cache is healthy. It inverts when a node is <em>down</em>: a request routed to a dead
+        node does not return quickly with a miss &#8212; it waits for a connection or a read to <strong>time
+        out</strong>, then fails. Every such request pays the full timeout before it can fall through to the
+        database.</p>
+        <p>At millions of requests per second, this is the dangerous case. The slow timeouts pile up, threads and
+        connections stay blocked waiting on a node that will not answer, and the latency penalty for one bad node
+        bleeds into the whole service. The naive behaviour &#8212; keep trying the node, keep timing out &#8212;
+        is precisely what amplifies a single node&#8217;s failure into a system-wide latency spike.</p>
+      </div>
+      <p class="take">A dead node is more expensive than a slow one, because the cost is paid as a timeout per
+      request &#8212; and at scale, that compounds into a service-wide spike.</p>
+    </section>
+
+    <section id="window">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The sliding-window circuit breaker</h2>
+        <span class="ssrc">ByteByteGo &#183; Circuit Breaker pattern</span>
+      </div>
+      <div class="prose">
+        <p>The circuit breaker breaks that loop. It is the canonical resilience pattern: stop calling a dependency
+        that is known to be failing, and fail fast instead of waiting for each call to time out. Uber&#8217;s is a
+        <strong>sliding-window</strong> breaker, per node:</p>
+        <ol>
+          <li><strong>Count errors per node, per time bucket.</strong> Each node has a window divided into
+          buckets; failed calls in the current bucket increment its count.</li>
+          <li><strong>Sum over the window&#8217;s width.</strong> The breaker&#8217;s view of a node&#8217;s health
+          is the sum of the buckets in the window &#8212; recent errors weigh, old errors age out as the window
+          slides forward.</li>
+          <li><strong>Short-circuit a fraction once the threshold is hit.</strong> When the error count crosses the
+          threshold, the breaker short-circuits a fraction of requests to that node: those requests skip the doomed
+          call and go straight to the fallback, paying no timeout.</li>
+          <li><strong>Trip until the window passes.</strong> If errors keep accumulating, the breaker trips fully
+          &#8212; no requests reach the node at all &#8212; and stays tripped until the window passes and the
+          counts age out, at which point traffic is allowed back to test whether the node has recovered.</li>
+        </ol>
+        <p>The sliding window is the key refinement over a naive counter. A flat lifetime error count would trip on
+        old, recovered failures; the old buckets age out of the sum, so the windowed count tracks how the node is
+        doing <em>now</em>.
+        Short-circuiting a <em>fraction</em> before tripping fully is the second refinement &#8212; it sheds the
+        worst of the load while still probing whether the node is coming back, rather than going hard open and
+        blind.</p>
+      </div>
+      <dl class="deflist">
+        <dt>closed</dt><dd>Errors below the threshold. All requests pass through to the node.</dd>
+        <dt>short-circuit</dt><dd>Threshold crossed. A fraction of requests skip the node and go to the fallback.</dd>
+        <dt>tripped</dt><dd>Errors climbing. No requests reach the node until the window slides past the failures.</dd>
+        <dt>the window</dt><dd>Old buckets age out of the sum, so recovered failures drop and the count tracks health now.</dd>
+      </dl>
+      <p class="take">Count errors in a moving window, shed a fraction at the threshold, trip if it worsens, and
+      let the window forget &#8212; a breaker that reflects the node&#8217;s health now, not its whole history.</p>
+    </section>
+
+    <section id="echo">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The BCS echo &#8212; backpressure, not a circuit breaker</h2>
+        <span class="ssrc">echo_wire/connector.ex &#183; max_pending</span>
+      </div>
+      <div class="prose">
+        <p>The EchoMQ connector reaches the same <em>goal</em> &#8212; do not pile work onto a struggling path
+        &#8212; but by a different mechanism, and the difference is the whole point of this section.</p>
+        <p>The connector bounds its <strong>in-flight depth</strong>. Every pipeline waiting for a reply sits in a
+        FIFO; the connector caps how many can be outstanding at once with <code>max_pending</code> (default
+        <code>10_000</code>). When the cap is reached, the next call is refused immediately with
+        <code>{:error, :overloaded}</code> instead of being queued without bound:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_wire/lib/echo_mq/connector.ex &#183; the bounded in-flight depth<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># the cap is in-flight DEPTH, not an error rate over a window</span>
+def handle_call({:pipeline, _}, _from, %{pending_n: n, max_pending: max} = s) when n &gt;= max do
+  emit([:emq, :connector, :overload], %{pending: n}, %{label: s.label})
+  {:reply, {:error, <b>:overloaded</b>}, %{s | overloads: s.overloads + 1}}
+end</pre>
+      </figure>
+      <div class="prose">
+        <p>This is <strong>backpressure</strong>, a bounded queue &#8212; and it is <strong>not a circuit
+        breaker</strong>. The distinction is sharp and worth keeping:</p>
+        <ul>
+          <li>A <strong>circuit breaker</strong> watches a dependency&#8217;s <em>error rate</em> over a sliding
+          window and stops calling it once the errors cross a threshold. Its trigger is <em>failures over
+          time</em>.</li>
+          <li><strong><code>max_pending</code> backpressure</strong> watches the connector&#8217;s
+          <em>in-flight depth</em> and refuses new work once too many requests are outstanding. Its trigger is
+          <em>concurrency right now</em> &#8212; it does not count errors or track a window.</li>
+        </ul>
+        <p>They share a goal &#8212; refuse to amplify a struggling path &#8212; but a depth limit and an
+        error-rate trip are different instruments. The connector has two more analogues that, together with the
+        bound, cover the circuit breaker&#8217;s <em>goals</em> without being one: <strong>fail-fast</strong>
+        errors (a call against a dead socket returns <code>{:error, :disconnected}</code> at once rather than
+        hanging) and <strong>supervised reconnect</strong> with capped jittered backoff (the connector backs off
+        between reconnect attempts rather than spinning on a node that is down &#8212; the next dive). Same goals
+        &#8212; fail fast, do not hammer a sick dependency, recover &#8212; different mechanisms.</p>
+      </div>
+
+      <div class="anatomy" aria-labelledby="trigCap">
+        <figcaption id="trigCap" style="font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px"><b>Which mechanism fires?</b>
+        Select a trigger to see which guard reacts &#8212; the two watch different signals, so they fire on
+        different conditions.</figcaption>
+        <div class="segbar" id="trigSel" role="group" aria-label="Select a trigger condition">
+          <button type="button" data-trig="errs" aria-pressed="false">node errors over a window</button>
+          <button type="button" data-trig="depth" aria-pressed="false">too many requests in flight</button>
+          <button type="button" data-trig="dead" aria-pressed="false">socket already dropped</button>
+        </div>
+        <div class="readout" id="trigOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        trigger. A circuit breaker reacts to errors over time; the connector&#8217;s <code>max_pending</code> bound
+        reacts to in-flight depth; fail-fast reacts to a dead socket. Different signals, different guards.</div>
+        <p class="booknote">Static facts &#8212; errors-over-a-window &#8594; a circuit breaker (Uber&#8217;s
+        concept) &#183; in-flight depth &#8594; <code>max_pending</code> &#8594; <code>:overloaded</code>
+        (backpressure) &#183; dead socket &#8594; <code>:disconnected</code> (fail-fast).</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; the in-flight bound</span>
+        <h3>codemojex on a saturated wire</h3>
+        <p>A burst of guesses during a popular round flows through one <code>EchoMQ.Connector</code>; if Valkey
+        slows and replies back up past <code>max_pending</code>, the next guess gets a fast <code>:overloaded</code>
+        rather than swelling an unbounded queue that would make the slowdown worse. The bound sheds load at the
+        edge so a saturated wire degrades instead of collapsing.</p>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>A circuit breaker is a client-side pattern &#8212;
+      Valkey does not implement one for you; the connector&#8217;s bounded in-flight depth and fail-fast errors are
+      the client&#8217;s responsibility, layered over the engine. Valkey&#8217;s own guidance on the latency a slow
+      or unreachable instance imposes &#8212; the cost the circuit breaker and the bound exist to cap &#8212; is at
+      <a href="https://valkey.io/topics/latency/" rel="noopener">valkey.io/topics/latency</a>.</p>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A sliding-window circuit breaker counts a node&#8217;s errors over time, short-circuits a fraction at
+          the threshold, and trips until the window passes &#8212; failing fast against a known-bad dependency.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application (same goal, a different mechanism)</span>
+          <p><code>max_pending</code> caps in-flight <em>depth</em> and answers <code>:overloaded</code> &#8212;
+          backpressure, not an error-rate trip. With fail-fast (<code>:disconnected</code>) and reconnect-backoff,
+          the connector meets the breaker&#8217;s goals by different means.</p>
+        </div>
+      </div>
+      <p class="take">Same goal, different instrument: Uber trips on an error rate over a window; the connector
+      refuses on in-flight depth. Calling the bound a circuit breaker would blur a real distinction &#8212;
+      backpressure is a depth limit, a breaker is an error-rate trip.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; same goal, different instrument</h2>
+        <span class="ssrc">next &#8594; R8.05.3</span>
+      </div>
+      <div class="prose">
+        <p>Calling a dead node is expensive: each request pays a timeout, and at scale those timeouts amplify one
+        node&#8217;s failure into a service-wide spike. Uber&#8217;s sliding-window circuit breaker counts errors
+        per node, short-circuits a fraction once a threshold is hit, and trips until the window passes &#8212;
+        failing fast against a known-bad dependency. The EchoMQ connector reaches the same goal with a different
+        instrument: <code>max_pending</code> backpressure caps in-flight depth and answers <code>:overloaded</code>,
+        fail-fast returns <code>:disconnected</code> against a dead socket, and supervised backoff keeps it from
+        spinning on a down node. The next dive follows the request that gets short-circuited &#8212; graceful
+        degradation, falling through to the durable store.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://www.uber.com/blog/how-uber-serves-over-40-million-reads-per-second-using-an-integrated-cache/" rel="noopener">Uber Engineering &mdash; <em>How Uber Serves Over 40 Million Reads Per Second Using an Integrated Cache</em></a> &mdash; the primary engineering account of CacheFront: sharding Redis by partition key (distinct from the Docstore sharding) to avoid a hot shard, the sliding-window circuit breaker, and the 40M reads/second figures.</li>
+            <li><a href="https://blog.bytebytego.com/p/how-uber-uses-integrated-redis-cache" rel="noopener">ByteByteGo &mdash; <em>How Uber Uses Integrated Redis Cache to Serve 40M Reads/Second</em></a> &mdash; the sliding-window circuit breaker: per-node error counts in time buckets, short-circuit a fraction, trip until the window passes.</li>
+            <li><a href="https://learn.microsoft.com/en-us/azure/architecture/patterns/circuit-breaker" rel="noopener">Microsoft Learn &mdash; <em>Circuit Breaker pattern</em></a> &mdash; the canonical resilience pattern, its closed/open/half-open states, and the fail-fast rationale.</li>
+            <li><a href="https://valkey.io/topics/latency/" rel="noopener">Valkey &mdash; <em>Diagnosing latency issues</em></a> &mdash; the latency a slow or unreachable instance imposes &#8212; the cost the breaker and the in-flight bound exist to cap.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/uber-resilience">R8.05 &#183; Uber: resilience &amp; staggered sharding</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/uber-resilience/staggered-sharding">R8.05.1 &#183; Staggered sharding</a><span class="rs">the previous dive &#8212; spread the failure</span></li>
+            <li><a href="/redis-patterns/production-operations/uber-resilience/graceful-degradation">R8.05.3 &#183; Graceful degradation</a><span class="rs">the next dive &#8212; fall through, stay available</span></li>
+            <li><a href="/redis-patterns/production-operations">R8 &#183; Production &amp; Operations</a><span class="rs">the chapter</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the Queue pillar &#8212; the connector and its bounded in-flight depth</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/uber-resilience/staggered-sharding"><span class="pk">previous</span>&#8592; R8.05.1 &#183; Staggered sharding</a>
+      <a class="pgx" href="/redis-patterns/production-operations/uber-resilience/graceful-degradation"><span class="pk">next</span>R8.05.3 &#183; Graceful degradation &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/uber-resilience/staggered-sharding">R8.05.1 &#183; Staggered sharding</a>
+        <a href="/redis-patterns/production-operations/uber-resilience/circuit-breakers">R8.05.2 &#183; Circuit breakers</a>
+        <a href="/redis-patterns/production-operations/uber-resilience/graceful-degradation">R8.05.3 &#183; Graceful degradation</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the sliding-window breaker (pure: sum the buckets, decide the state) ---------- */
+  // A fixed threshold of 10 errors over the window; states derived purely from the summed count.
+  var THRESHOLD = 10;
+  var WINDOWS = {
+    'low':  { buckets: [1, 0, 2, 1], note: 'few errors' },
+    'mid':  { buckets: [2, 3, 3, 3], note: 'threshold crossed' },
+    'high': { buckets: [4, 5, 6, 7], note: 'errors climbing' }
+  };
+  // pure: summed count -> state key (closed | partial | tripped)
+  function stateFor(sum) {
+    if (sum < THRESHOLD) return 'closed';
+    if (sum < 2 * THRESHOLD) return 'partial';
+    return 'tripped';
+  }
+  var STATE_TEXT = {
+    'closed':  'closed — all requests pass through to the node; the node is healthy enough.',
+    'partial': 'short-circuit — the threshold is crossed, so a fraction of requests skip the node and go straight to the fallback, paying no timeout.',
+    'tripped': 'tripped — errors keep climbing, so no request reaches the node until the window slides past the failures and the counts age out.'
+  };
+  var cflow = document.getElementById('cflow');
+  var errButtons = document.querySelectorAll('#errSel button');
+  var cbOut = document.getElementById('cbOut');
+  var sumCap = document.getElementById('sumCap');
+  var stateEls = { closed: document.getElementById('stClosed'), partial: document.getElementById('stPartial'), tripped: document.getElementById('stTripped') };
+  // pure: paint the buckets + light the state for an error level — hover or click.
+  function selectErr(level) {
+    errButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-err') === level ? 'true' : 'false');
+    });
+    var w = level ? WINDOWS[level] : { buckets: [0, 0, 0, 0] };
+    var sum = w.buckets.reduce(function (a, b) { return a + b; }, 0);
+    var st = level ? stateFor(sum) : null;
+    for (var i = 0; i < 4; i++) {
+      var bn = document.getElementById('bn' + i);
+      if (bn) bn.textContent = String(w.buckets[i]);
+    }
+    Object.keys(stateEls).forEach(function (k) {
+      if (stateEls[k]) stateEls[k].classList.toggle('on', !!st && k === st);
+    });
+    if (sumCap) sumCap.textContent = level
+      ? 'window sum = ' + sum + ' (threshold ' + THRESHOLD + ') → ' + st
+      : 'sum over the window determines the state';
+    if (cbOut) {
+      cbOut.innerHTML = level
+        ? '<span class="rk">window sum &#183;</span> ' + sum + ' over the window (threshold ' + THRESHOLD + ')<br><span class="rk">state &#183;</span> <b>' + STATE_TEXT[st] + '</b>'
+        : '<span class="rk">readout &#183;</span> Select an error level. The breaker sums the errors in the window; below the threshold it stays closed, at the threshold it short-circuits a fraction, and as errors climb it trips so no request reaches the node until the window passes.';
+    }
+  }
+  errButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var level = b.getAttribute('data-err');
+      selectErr(b.getAttribute('aria-pressed') === 'true' ? null : level);
+    });
+    b.addEventListener('mouseenter', function () { selectErr(b.getAttribute('data-err')); });
+  });
+
+  /* ---------- Interactive 2: which guard fires (pure lookup — backpressure vs breaker vs fail-fast) ---------- */
+  var TRIGGERS = {
+    'errs':  { who: 'a circuit breaker', mech: 'errors over a sliding window cross a threshold → short-circuit a fraction, then trip. This is Uber’s concept; echo_mq does not implement a circuit breaker.', cls: 'idea' },
+    'depth': { who: 'max_pending backpressure', mech: 'too many pipelines are in flight (pending_n ≥ max_pending, default 10000) → the next call is refused with :overloaded. A depth limit, not an error-rate trip.', cls: 'elix' },
+    'dead':  { who: 'fail-fast', mech: 'the socket is already gone → a call returns :disconnected at once rather than hanging; in-flight callers are failed :disconnected and never replayed.', cls: 'elix' }
+  };
+  // pure: trigger -> readout
+  function describeTrig(trig) {
+    var t = TRIGGERS[trig];
+    return '<span class="rk">fires &#183;</span> <b>' + t.who + '</b><br><span class="rk">why &#183;</span> ' + t.mech;
+  }
+  var trigButtons = document.querySelectorAll('#trigSel button');
+  var trigOut = document.getElementById('trigOut');
+  function selectTrig(trig) {
+    trigButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-trig') === trig ? 'true' : 'false');
+    });
+    if (trigOut) {
+      trigOut.innerHTML = trig
+        ? describeTrig(trig)
+        : '<span class="rk">readout &#183;</span> Select a trigger. A circuit breaker reacts to errors over time; the connector&#8217;s <code>max_pending</code> bound reacts to in-flight depth; fail-fast reacts to a dead socket. Different signals, different guards.';
+    }
+  }
+  trigButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var trig = b.getAttribute('data-trig');
+      selectTrig(b.getAttribute('aria-pressed') === 'true' ? null : trig);
+    });
+    b.addEventListener('mouseenter', function () { selectTrig(b.getAttribute('data-trig')); });
+  });
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

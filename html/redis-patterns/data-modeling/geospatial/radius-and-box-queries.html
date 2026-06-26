@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7.06.2 — Radius and box queries · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R7.06.2 · BYRADIUS vs BYBOX: circle vs rectangle spatial search with GEOSEARCH. GEOSEARCHSTORE persists results as a Sorted Set. The metadata-in-a-separate-Hash pattern: GEO returns ids, HGETALL fetches the row. Real-time driver tracking and application-layer geofencing with Pub/Sub. Core Valkey GEO commands — no module required.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.hero-split{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:34px;align-items:center}
+.hero-split .hero{padding:30px 0 10px}
+.crumbs{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:0 0 14px}
+.crumbs a{color:var(--b-dim)}
+.crumbs .sep{color:var(--b-line)}
+.crumbs .here{color:var(--r-red)}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+.toc-mini{display:flex;flex-wrap:wrap;gap:8px;font-family:var(--mono);font-size:12.5px;margin:16px 0 0}
+.toc-mini a{border:1px solid var(--b-line);border-radius:var(--rad);padding:4px 10px;color:var(--b-ink)}
+.toc-mini a:hover{border-color:var(--r-red);color:var(--r-red)}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+div.door:hover{box-shadow:none}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+.door code{font-size:.86em}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.tbl{width:100%;border-collapse:collapse;margin:0 0 18px;font-family:var(--mono);font-size:12.5px}
+.tbl th,.tbl td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--b-line);vertical-align:top}
+.tbl th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--b-dim)}
+.tbl td{color:var(--b-ink)}
+.tbl td.hi{color:var(--r-red);font-weight:700}
+.tbl td code{font-size:.92em}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- shape figure (BYRADIUS vs BYBOX toggle) ---------- */
+.shapefig{width:100%;height:auto;display:block;margin-top:4px}
+.shapefig .sh{cursor:pointer}
+.shapefig .sh .shfill{fill:var(--b-pay-tint);stroke:var(--b-ts);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.shapefig .sh.on .shfill{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.shapefig.focus .sh{opacity:.3;transition:opacity .18s ease}
+.shapefig.focus .sh.on{opacity:1}
+.shapefig text{font-family:var(--mono)}
+
+/* ---------- flow figure (2-step find-nearby + fetch metadata) ---------- */
+.flowfig{width:100%;height:auto;display:block;margin-top:4px}
+.flowfig .step{cursor:pointer}
+.flowfig .step rect{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.4;transition:fill .18s ease,stroke .18s ease}
+.flowfig .step.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.flowfig.focus .step{opacity:.3;transition:opacity .18s ease}
+.flowfig.focus .step.on{opacity:1}
+.flowfig text{font-family:var(--mono)}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .hero-split{grid-template-columns:1fr;gap:8px}
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the page</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling">data-modeling</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling/geospatial">geospatial</a><span class="rsep">/</span><span class="rcur">radius-and-box-queries</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#shapes">Circle vs box</a>
+      <a href="#store">Store results</a>
+      <a href="#metadata">Metadata</a>
+      <a href="#tracking">Tracking</a>
+      <a href="#geofence">Geofencing</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <div class="hero-split">
+      <section class="hero">
+        <nav class="crumbs" aria-label="Breadcrumb">
+          <a href="/redis-patterns">Redis Patterns</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling</a>
+          <span class="sep">/</span>
+          <a href="/redis-patterns/data-modeling/geospatial">Geospatial</a>
+          <span class="sep">/</span>
+          <span class="here">Radius and box queries</span>
+        </nav>
+        <p class="kicker">R7.06.2 &middot; dive 2</p>
+        <h1><span class="hns">Radius</span> and box queries.</h1>
+        <p class="lede"><code>GEOSEARCH</code> answers &#8220;what is near here?&#8221; in two shapes: a <strong>circle</strong>
+          (<code>BYRADIUS</code>) or a <strong>rectangle</strong> (<code>BYBOX</code>). Toggle the shape; the same reference
+          point returns different member sets.</p>
+        <p class="heronote">A circle clips the corners; a rectangle extends into them. Toggle above to see the difference.
+          The second interactive walks the two-step pattern: <code>GEOSEARCH</code> finds nearby ids, then
+          <code>HGETALL</code> fetches each record from its companion Hash.</p>
+        <div class="toc-mini" aria-label="On this page">
+          <a href="#shapes">Circle vs box</a>
+          <a href="#store">Store results</a>
+          <a href="#metadata">Metadata</a>
+          <a href="#tracking">Tracking</a>
+          <a href="#geofence">Geofencing</a>
+        </div>
+      </section>
+
+      <!-- Interactive 1: BYRADIUS vs BYBOX shape toggle -->
+      <figure class="anatomy" aria-labelledby="shapeCap">
+        <figcaption id="shapeCap"><b>BYRADIUS vs BYBOX.</b> Toggle the shape; the readout names which restaurants fall
+          inside — a circle clips the corners that a box captures.</figcaption>
+        <div class="segbar" id="shapeSel" role="group" aria-label="Search shape to compare">
+          <button type="button" data-s="radius" aria-pressed="false">BYRADIUS 3 km</button>
+          <button type="button" data-s="box" aria-pressed="false">BYBOX 6 6 km</button>
+        </div>
+        <svg class="shapefig" id="shapefig" viewBox="0 0 440 200"
+          role="img" aria-label="A map grid showing a reference point and four nearby restaurants. BYRADIUS 3km is a circle; BYBOX 6x6km is a square. The circle excludes the two corner restaurants; the box includes them.">
+          <!-- grid lines -->
+          <line x1="10" y1="100" x2="430" y2="100" stroke="var(--b-line)" stroke-width="1"/>
+          <line x1="220" y1="10" x2="220" y2="190" stroke="var(--b-line)" stroke-width="1"/>
+          <!-- reference point (centre) -->
+          <circle cx="220" cy="100" r="5" fill="var(--r-red)" id="refPt"/>
+          <text x="228" y="97" font-size="11" fill="var(--b-ink)" font-family="var(--mono)">origin</text>
+          <!-- BYRADIUS shape (circle) — data-s="radius" -->
+          <g class="sh" data-s="radius" id="shRadius">
+            <circle class="shfill" cx="220" cy="100" r="80"/>
+          </g>
+          <!-- BYBOX shape (square) — data-s="box" -->
+          <g class="sh" data-s="box" id="shBox">
+            <rect class="shfill" x="140" y="20" width="160" height="160" rx="4"/>
+          </g>
+          <!-- restaurant dots and labels -->
+          <!-- A: inside both — North 60px -->
+          <circle cx="220" cy="40" r="6" fill="var(--b-node)" id="dotA"/>
+          <text x="228" y="44" font-size="10" fill="var(--b-ink)" font-family="var(--mono)">A · 1.8 km N</text>
+          <!-- B: inside both — East 60px -->
+          <circle cx="280" cy="100" r="6" fill="var(--b-node)" id="dotB"/>
+          <text x="286" y="104" font-size="10" fill="var(--b-ink)" font-family="var(--mono)">B · 1.5 km E</text>
+          <!-- C: corner (NE) — inside BOX, outside RADIUS, 90px diagonal ~127km scale -->
+          <circle cx="295" cy="35" r="6" fill="var(--b-seq)" id="dotC"/>
+          <text x="301" y="39" font-size="10" fill="var(--b-ink)" font-family="var(--mono)">C · 2.9 km NE</text>
+          <!-- D: corner (SW) — inside BOX, outside RADIUS -->
+          <circle cx="148" cy="168" r="6" fill="var(--b-seq)" id="dotD"/>
+          <text x="156" y="172" font-size="10" fill="var(--b-ink)" font-family="var(--mono)">D · 2.8 km SW</text>
+          <!-- legend -->
+          <circle cx="14" cy="186" r="5" fill="var(--b-node)"/>
+          <text x="23" y="189" font-size="10" fill="var(--b-dim)" font-family="var(--mono)">in both shapes</text>
+          <circle cx="120" cy="186" r="5" fill="var(--b-seq)"/>
+          <text x="129" y="189" font-size="10" fill="var(--b-dim)" font-family="var(--mono)">box-only (corner)</text>
+        </svg>
+        <div class="readout" id="shapeOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a shape.
+          <code>BYRADIUS</code> searches a circle; <code>BYBOX</code> searches a rectangle width &times; height centred
+          on the reference point. Same origin, different result sets at the corners.</div>
+      </figure>
+    </div>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="shapes">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>Circle vs rectangle &mdash; BYRADIUS and BYBOX</h2>
+        <span class="ssrc">geospatial.md.txt &middot; Searching by Radius / Searching by Bounding Box</span>
+      </div>
+      <div class="prose">
+        <p><code>GEOSEARCH</code> takes a <strong>shape</strong> argument that controls the area. Both shapes are centred
+          on the reference point, which may be a stored member (<code>FROMMEMBER</code>) or explicit coordinates
+          (<code>FROMLONLAT</code>):</p>
+      </div>
+      <figure class="frozen" aria-label="BYRADIUS and BYBOX — from figure 17">
+        <figcaption>valkey.io/commands/geosearch/ &middot; figure 17 &mdash; shapes<span class="tag">frozen</span></figcaption>
+        <pre><b>GEOSEARCH</b> locations FROMLONLAT -122.4 37.8 <b>BYRADIUS 50 km</b> COUNT 10 ASC
+<b>GEOSEARCH</b> locations FROMLONLAT -122.4 37.8 <b>BYBOX 100 80 km</b> COUNT 10 ASC
+<span class="fd">#          key        from-lon  from-lat  shape         opts</span>
+<span class="fd"># BYBOX takes width × height — the box is centred on the reference point</span></pre>
+      </figure>
+      <div class="prose">
+        <p>A circle with radius 50 km and a box 100 km wide by 80 km tall both contain many of the same members, but
+          differ at the corners: the circle clips them; the box includes them. A delivery zone or a map-tile bounding
+          box is a natural fit for <code>BYBOX</code>; a &#8220;restaurants within N km&#8221; query is a natural fit
+          for <code>BYRADIUS</code>.</p>
+        <p>Output options on both shapes:</p>
+        <ul>
+          <li><code>WITHCOORD</code> &mdash; include stored coordinates.</li>
+          <li><code>WITHDIST</code> &mdash; include the distance from the reference point.</li>
+          <li><code>WITHHASH</code> &mdash; include the raw geohash integer (the ZSET score).</li>
+          <li><code>COUNT N</code> &mdash; return at most N results.</li>
+          <li><code>ASC</code> / <code>DESC</code> &mdash; sort by distance, closest or furthest first.</li>
+        </ul>
+      </div>
+      <p class="take"><code>BYRADIUS</code> draws a circle; <code>BYBOX</code> draws a rectangle. The choice is domain-driven:
+        a delivery zone is a rectangle; a proximity search is a circle. Both accept the same output modifiers.</p>
+    </section>
+
+    <section id="store">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>GEOSEARCHSTORE &mdash; persisting results</h2>
+        <span class="ssrc">geospatial.md.txt &middot; Storing Search Results</span>
+      </div>
+      <div class="prose">
+        <p><code>GEOSEARCHSTORE</code> runs a spatial query and writes the result set to a <strong>new key</strong> as a
+          Sorted Set. Because a GEO set is a Sorted Set (that is the subject of the next dive), the output can be consumed
+          with <code>ZRANGE</code>, <code>ZCARD</code>, or <code>ZREM</code> like any other Sorted Set:</p>
+      </div>
+      <figure class="frozen" aria-label="GEOSEARCHSTORE example">
+        <figcaption>valkey.io/commands/geosearchstore/ &middot; figure 17 &mdash; storing results<span class="tag">frozen</span></figcaption>
+        <pre><b>GEOSEARCHSTORE</b> nearby_cache locations FROMLONLAT -122.4 37.8 BYRADIUS 50 km
+<span class="fd">#               dest-key     src-key   from-coords               shape</span>
+<span class="fd"># Result stored as a Sorted Set with geohash scores at nearby_cache</span></pre>
+      </figure>
+      <div class="prose">
+        <p>Use <code>GEOSEARCHSTORE</code> when the same spatial query is repeated frequently: run it once, cache the
+          Sorted Set, and serve repeated reads from the cached key. The output is re-queryable with any ZSET command,
+          including a second <code>GEOSEARCH</code> over the stored result.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>GEOSEARCH</code> and <code>GEOSEARCHSTORE</code>
+        are <strong>core Valkey</strong> commands (available since Redis 6.2 / Valkey 9, no module required). They
+        supersede the older <code>GEORADIUS</code> / <code>GEORADIUSBYMEMBER</code> forms, which are deprecated and
+        should not appear in new code. See
+        <a href="https://valkey.io/commands/geosearch/" rel="noopener">valkey.io/commands/geosearch</a> &middot;
+        <a href="https://valkey.io/commands/geosearchstore/" rel="noopener">valkey.io/commands/geosearchstore</a>.</p>
+      <p class="take"><code>GEOSEARCHSTORE</code> materialises a spatial query as a reusable Sorted Set. Because the
+        output is a ZSET, all downstream ZSET commands apply without any conversion.</p>
+    </section>
+
+    <section id="metadata">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Location with metadata &mdash; the separate-Hash pattern</h2>
+        <span class="ssrc">geospatial.md.txt &middot; Location with Metadata</span>
+      </div>
+      <div class="prose">
+        <p>A GEO member carries only a name. The Sorted Set score is the geohash integer; there is no room for
+          additional fields. The pattern for attaching metadata:</p>
+        <ol style="margin:0 0 14px 1.1rem">
+          <li style="margin-bottom:7px"><strong>Add a named id as the GEO member</strong> &mdash; the name is the join key.</li>
+          <li style="margin-bottom:7px"><strong>Store all metadata in a Hash under that id</strong>.</li>
+          <li style="margin-bottom:7px"><strong>Search returns ids; then fetch each Hash</strong>.</li>
+        </ol>
+      </div>
+      <figure class="frozen" aria-label="Separate-Hash pattern — from geospatial.md.txt">
+        <figcaption>valkey.io/commands/geoadd/ &middot; geospatial.md.txt &mdash; the metadata pattern<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># Step 1: add the id as the GEO member</span>
+<b>GEOADD</b> restaurants -122.4194 37.7749 "restaurant:123"
+
+<span class="fd"># Step 2: store metadata in a companion Hash</span>
+<b>HSET</b> restaurant:123 name "Joe's Diner" cuisine "American" rating "4.5"
+
+<span class="fd"># Step 3: search returns ids; fetch each row</span>
+<b>GEOSEARCH</b> restaurants FROMLONLAT -122.4 37.8 BYRADIUS 5 km
+<b>HGETALL</b> restaurant:123</pre>
+      </figure>
+      <div class="prose">
+        <p>The GEO set is the spatial index. The Hash is the record. They are joined by the member name. This is the
+          general pattern for any secondary index in Valkey: one structure holds the index (the ordering or location),
+          a separate Hash holds the row, and the application fetches from both using the id as the join key.</p>
+      </div>
+
+      <!-- Interactive 2: two-step find + fetch flow -->
+      <figure class="anatomy" aria-labelledby="flowCap">
+        <figcaption id="flowCap"><b>Two-step find-nearby and fetch.</b> Select each step; the readout names the command
+          and what it returns.</figcaption>
+        <div class="segbar" id="flowSel" role="group" aria-label="Step in the find-and-fetch flow">
+          <button type="button" data-f="search" aria-pressed="false">Step 1 · GEOSEARCH</button>
+          <button type="button" data-f="fetch" aria-pressed="false">Step 2 · HGETALL</button>
+        </div>
+        <svg class="flowfig" id="flowfig" viewBox="0 0 440 120"
+          role="img" aria-label="Two steps: Step 1 GEOSEARCH returns a list of member names (ids). Step 2 HGETALL fetches the metadata Hash for each id. Selecting a step highlights it and the readout explains the command.">
+          <!-- step 1 box -->
+          <g class="step" data-f="search">
+            <rect x="10" y="20" width="180" height="80" rx="8"/>
+            <text font-size="12" font-weight="700" fill="var(--b-ink)" x="100" y="52" text-anchor="middle" font-family="var(--mono)">GEOSEARCH</text>
+            <text font-size="10" fill="var(--b-dim)" x="100" y="68" text-anchor="middle" font-family="var(--mono)">restaurants</text>
+            <text font-size="10" fill="var(--b-dim)" x="100" y="82" text-anchor="middle" font-family="var(--mono)">BYRADIUS 5 km</text>
+          </g>
+          <!-- arrow -->
+          <text x="210" y="66" font-size="20" fill="var(--b-dim)" font-family="var(--mono)" text-anchor="middle">&#8594;</text>
+          <text x="210" y="82" font-size="9" fill="var(--b-dim)" font-family="var(--mono)" text-anchor="middle">ids</text>
+          <!-- step 2 box -->
+          <g class="step" data-f="fetch">
+            <rect x="250" y="20" width="180" height="80" rx="8"/>
+            <text font-size="12" font-weight="700" fill="var(--b-ink)" x="340" y="52" text-anchor="middle" font-family="var(--mono)">HGETALL</text>
+            <text font-size="10" fill="var(--b-dim)" x="340" y="68" text-anchor="middle" font-family="var(--mono)">restaurant:123</text>
+            <text font-size="10" fill="var(--b-dim)" x="340" y="82" text-anchor="middle" font-family="var(--mono)">&#8594; name, cuisine &hellip;</text>
+          </g>
+        </svg>
+        <div class="readout" id="flowOut" aria-live="polite"><span class="rk">readout &middot;</span> Select a step to
+          see the command and what it returns. The GEO set holds the spatial index; the Hash holds the record;
+          the member name is the join key between them.</div>
+      </figure>
+
+      <p class="take">The GEO set is a spatial index, not a record store. Every row lives in its own Hash, keyed by
+        the same name used as the GEO member. A search returns ids; a separate <code>HGETALL</code> per id fetches
+        the row. This two-step pattern is the standard secondary-index idiom in Valkey.</p>
+    </section>
+
+    <section id="tracking">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Real-time location tracking</h2>
+        <span class="ssrc">geospatial.md.txt &middot; Real-Time Location Tracking</span>
+      </div>
+      <div class="prose">
+        <p>For moving entities (drivers, delivery personnel), each GPS ping is a <code>GEOADD</code>. The command is
+          idempotent on the member name &mdash; calling it again moves the entity&#8217;s position without adding a
+          duplicate member. A companion Hash holds the availability state and timestamp:</p>
+      </div>
+      <figure class="frozen" aria-label="Real-time driver tracking">
+        <figcaption>valkey.io/commands/geoadd/ &middot; geospatial.md.txt &mdash; tracking<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># GPS ping updates the driver's position</span>
+<b>GEOADD</b> drivers -122.4 37.8 "driver:456"
+
+<span class="fd"># Availability and freshness in a companion Hash</span>
+<b>HSET</b> driver:456:status last_update 1706648400 available 1
+
+<span class="fd"># Find nearby available drivers</span>
+<b>GEOSEARCH</b> drivers FROMLONLAT -122.4 37.8 BYRADIUS 5 km COUNT 20</pre>
+      </figure>
+      <div class="prose">
+        <p>The application filters on availability and freshness after receiving the ids from <code>GEOSEARCH</code>:
+          fetch each <code>driver:N:status</code> Hash and discard stale or unavailable drivers. This is the same
+          separate-Hash pattern from the previous section &mdash; the GEO set holds the spatial index; the Hash holds
+          the operational state.</p>
+      </div>
+      <p class="take"><code>GEOADD</code> is idempotent on the member name: a second call with new coordinates moves
+        the entity, not duplicates it. Each GPS ping is a single <code>GEOADD</code>; availability and freshness live
+        in a companion Hash.</p>
+    </section>
+
+    <section id="geofence">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>Geofencing &mdash; application-layer enter / exit detection</h2>
+        <span class="ssrc">geospatial.md.txt &middot; Geofencing</span>
+      </div>
+      <div class="prose">
+        <p>Valkey does not provide built-in geofence events. Geofencing is an application-layer pattern:</p>
+        <ol style="margin:0 0 14px 1.1rem">
+          <li style="margin-bottom:7px">Store the geofence definition (centre coordinates and radius, or a bounding box).</li>
+          <li style="margin-bottom:7px">On each location update, run <code>GEOSEARCH</code> to test whether the entity
+            is inside the fence.</li>
+          <li style="margin-bottom:7px">Compare the current membership result to the previous state.</li>
+          <li style="margin-bottom:7px">On a state change (inside &rarr; outside, or outside &rarr; inside), publish
+            an enter or exit event with <code>PUBLISH</code>.</li>
+        </ol>
+        <p>This is a poll-then-compare loop. The application owns the state machine; Valkey provides the spatial test
+          (<code>GEOSEARCH</code>) and the messaging bus (Pub/Sub). An entity&#8217;s membership in the result set of
+          a <code>GEOSEARCH BYRADIUS</code> is the fence test.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern &mdash; standalone</span>
+          <p><code>GEOSEARCH BYRADIUS</code> as the fence test + <code>PUBLISH</code> on state change; the application
+            holds the previous state and detects the transition.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&rarr;</div>
+        <div class="cell elix">
+          <span class="lbl">the honest absence</span>
+          <p>Geospatial is orthogonal to codemojex (a location-agnostic emoji-guessing game; players are not placed
+            in space). The standalone example is the grounding &mdash; no codemojex surface applies here.</p>
+        </div>
+      </div>
+
+      <p class="take">Geofencing on Valkey is a two-step application pattern: <code>GEOSEARCH</code> answers the
+        spatial membership question; the application detects enter/exit by comparing successive answers. The engine
+        provides no reactive trigger &mdash; the poll cadence determines the detection latency.</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &middot; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/geosearch/" rel="noopener">Valkey &mdash; <em>GEOSEARCH</em></a> &mdash; <code>BYRADIUS</code>, <code>BYBOX</code>, <code>FROMMEMBER</code>, <code>FROMLONLAT</code>, and output options.</li>
+            <li><a href="https://valkey.io/commands/geosearchstore/" rel="noopener">Valkey &mdash; <em>GEOSEARCHSTORE</em></a> &mdash; persisting results as a Sorted Set for downstream processing.</li>
+            <li><a href="https://valkey.io/commands/geoadd/" rel="noopener">Valkey &mdash; <em>GEOADD</em></a> &mdash; adding or updating member positions; idempotent on member name.</li>
+            <li><a href="https://valkey.io/commands/geodist/" rel="noopener">Valkey &mdash; <em>GEODIST</em></a> &mdash; distance between two members in m / km / mi / ft.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling/geospatial/the-geohash-sorted-set">R7.06.3 &middot; The geohash sorted set</a><span class="rs">the structure reveal: a GEO set IS a Sorted Set</span></li>
+            <li><a href="/redis-patterns/data-modeling/vector-sets">R7.05 &middot; Vectors &amp; similarity search</a><span class="rs">another distance-based query structure</span></li>
+            <li><a href="/redis-patterns/data-modeling/bitmap-patterns">R7.04 &middot; Bitmaps</a><span class="rs">the modeling family: boolean flags in minimal memory</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/data-modeling/geospatial/geoadd-and-geosearch"><span class="pk">prev</span>&#8592; R7.06.1 &middot; GEOADD and GEOSEARCH</a>
+      <a class="pgx" href="/redis-patterns/data-modeling/geospatial/the-geohash-sorted-set"><span class="pk">next</span>R7.06.3 &middot; The geohash sorted set &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied &mdash; the Redis design patterns, taught applied and grounded in the real
+          echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/data-modeling/geospatial/the-geohash-sorted-set">R7.06.3 &middot; The geohash sorted set</a>
+        <a href="/redis-patterns/data-modeling/vector-sets">R7.05 &middot; Vectors &amp; similarity search</a>
+        <a href="/redis-patterns/data-modeling/bitmap-patterns">R7.04 &middot; Bitmaps</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns &mdash; this course</a>
+        <a href="/bcs/overview">The Branded Component System &mdash; overview</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp &mdash; activate to decode">
+        build <span class="id" id="stampId">TSK0OHBDFyEWcS</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- interactive 1: shape toggle (BYRADIUS vs BYBOX) ---------- */
+  // Pure lookup from shape key to description. No side effects beyond .on class and readout.
+  var SHAPES = {
+    radius: {
+      text: '<b>BYRADIUS 3 km</b> &mdash; a <b>circle</b> of radius 3 km centred on the reference point. Restaurants A (1.8 km N) and B (1.5 km E) are inside. Restaurants C (2.9 km NE, diagonal) and D (2.8 km SW, diagonal) are <b>outside</b> &mdash; the circle clips the corners.',
+      inside: ['dotA', 'dotB']
+    },
+    box: {
+      text: '<b>BYBOX 6 6 km</b> &mdash; a <b>rectangle</b> 6 km wide &times; 6 km tall centred on the reference point. All four restaurants are inside &mdash; the box extends into the corners the circle clips. Same origin; different result set.',
+      inside: ['dotA', 'dotB', 'dotC', 'dotD']
+    }
+  };
+  var shapeFig = document.getElementById('shapefig');
+  var shapeButtons = document.querySelectorAll('#shapeSel button');
+  var shapeOut = document.getElementById('shapeOut');
+  function selectShape(s) {
+    shapeButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-s') === s ? 'true' : 'false');
+    });
+    if (shapeFig) {
+      shapeFig.classList.toggle('focus', !!s);
+      shapeFig.querySelectorAll('.sh').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-s') === s);
+      });
+    }
+    if (s && SHAPES[s]) {
+      shapeOut.innerHTML = '<span class="rk">readout &middot;</span> ' + SHAPES[s].text;
+    } else {
+      shapeOut.innerHTML = '<span class="rk">readout &middot;</span> Select a shape. <code>BYRADIUS</code> searches a circle; <code>BYBOX</code> searches a rectangle width &times; height centred on the reference point. Same origin, different result sets at the corners.';
+    }
+  }
+  shapeButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = b.getAttribute('data-s');
+      selectShape(b.getAttribute('aria-pressed') === 'true' ? null : s);
+    });
+    b.addEventListener('mouseenter', function () { selectShape(b.getAttribute('data-s')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#shapeSel button[aria-pressed="true"]');
+      selectShape(pressed ? pressed.getAttribute('data-s') : null);
+    });
+  });
+  shapeFig && shapeFig.querySelectorAll('.sh').forEach(function (g) {
+    g.addEventListener('mouseenter', function () { selectShape(g.getAttribute('data-s')); });
+  });
+
+  /* ---------- interactive 2: two-step find + fetch flow ---------- */
+  // Pure lookup from step key to command description.
+  var STEPS = {
+    search: { text: '<b>GEOSEARCH restaurants FROMLONLAT -122.4 37.8 BYRADIUS 5 km</b> &mdash; returns a list of member names (ids) within 5 km: <code>["restaurant:123", "restaurant:456"]</code>. The GEO set is the spatial index. The result carries names, not records.' },
+    fetch:  { text: '<b>HGETALL restaurant:123</b> &mdash; fetches the full metadata record from the companion Hash: <code>name "Joe\'s Diner" cuisine "American" rating "4.5"</code>. Repeat for each id returned by <code>GEOSEARCH</code>. The Hash is the record; the GEO member name is the join key.' }
+  };
+  var flowFig = document.getElementById('flowfig');
+  var flowButtons = document.querySelectorAll('#flowSel button');
+  var flowOut = document.getElementById('flowOut');
+  function selectFlow(f) {
+    flowButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-f') === f ? 'true' : 'false');
+    });
+    if (flowFig) {
+      flowFig.classList.toggle('focus', !!f);
+      flowFig.querySelectorAll('.step').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-f') === f);
+      });
+    }
+    if (f && STEPS[f]) {
+      flowOut.innerHTML = '<span class="rk">readout &middot;</span> ' + STEPS[f].text;
+    } else {
+      flowOut.innerHTML = '<span class="rk">readout &middot;</span> Select a step to see the command and what it returns. The GEO set holds the spatial index; the Hash holds the record; the member name is the join key between them.';
+    }
+  }
+  flowButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var f = b.getAttribute('data-f');
+      selectFlow(b.getAttribute('aria-pressed') === 'true' ? null : f);
+    });
+    b.addEventListener('mouseenter', function () { selectFlow(b.getAttribute('data-f')); });
+    b.addEventListener('mouseleave', function () {
+      var pressed = document.querySelector('#flowSel button[aria-pressed="true"]');
+      selectFlow(pressed ? pressed.getAttribute('data-f') : null);
+    });
+  });
+  flowFig && flowFig.querySelectorAll('.step').forEach(function (g) {
+    g.addEventListener('mouseenter', function () { selectFlow(g.getAttribute('data-f')); });
+  });
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R8.04.3 · What became core · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="R8.04.3 — The precise attribution: the technique of packing ziplists into a linked list was used internally at Twitter but never upstreamed (matt.sh: they 'haven't contributed their implementation back to the world'); quicklist became core Redis in 3.2, independently re-implemented by Matt Stancliff (PR #2143), then evolved to listpack nodes in 7.0. A scale-driven technique became a core encoding, not a code donation. The BCS echo: EchoMQ inherits the encoding for free because all Valkey lists are quicklists.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.1rem}
+.prose li{margin-bottom:7px}
+.prose ol{margin:0 0 14px 1.2rem}
+.prose ol li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.booknote{font-family:var(--mono);font-size:12px;color:var(--b-dim);margin-top:10px;max-width:78ch}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+.ethic{font-size:.98rem;color:var(--b-ink);max-width:74ch;margin-bottom:22px}
+
+/* ---------- deflist ---------- */
+.deflist{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-family:var(--mono);font-size:13px;margin:6px 0 14px;max-width:78ch}
+.deflist dt{color:var(--r-red);font-weight:700}
+.deflist dd{color:var(--b-ink)}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- doors ---------- */
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--b-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- module additions (the contract-sheet devices) ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+.door .frozen{margin:12px 0 0}
+div.door:hover{box-shadow:none}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+  .deflist{grid-template-columns:1fr}
+}
+@media (max-width:600px){
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+/* ---------- the timeline figure (hover-select, à la /bcs/ideas/system-substrate) ---------- */
+.cflow{width:100%;height:auto;display:block;margin-top:4px}
+.cflow .nlbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:middle}
+.cflow .nsub{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .pglbl{font:9px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.cflow .axis{stroke:var(--b-line);stroke-width:1.4}
+.cflow .era{cursor:pointer;transition:opacity .18s ease}
+.cflow .era .box{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.4}
+.cflow .era.internal .box{fill:var(--r-red-tint);stroke:var(--r-red)}
+.cflow .era .dot{fill:var(--b-ts)}
+.cflow .era.internal .dot{fill:var(--r-red)}
+.cflow.focus .era{opacity:.26}
+.cflow.focus .era.on{opacity:1}
+.cflow.focus .era.on .box{stroke-width:2.6}
+/* ---------- the claim-verifier figure ---------- */
+.claims{width:100%;height:auto;display:block;margin-top:4px}
+.claims .clbl{font:11px var(--mono);fill:var(--b-ink);text-anchor:start}
+.claims .csub{font:9px var(--mono);fill:var(--b-dim);text-anchor:start}
+.claims .claim{cursor:pointer;transition:opacity .18s ease}
+.claims .claim rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.4}
+.claims .claim .mark{font:12px var(--mono);font-weight:700;fill:var(--b-node);text-anchor:middle}
+.claims.focus .claim{opacity:.26}
+.claims.focus .claim.on{opacity:1}
+.claims.focus .claim.on rect{stroke:var(--r-red);stroke-width:2.6}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/production-operations">production-operations</a><span class="rsep">/</span><a href="/redis-patterns/production-operations/twitter-internals">twitter-internals</a><span class="rsep">/</span><span class="rcur">what-became-core</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#attribution">The attribution</a>
+      <a href="#listpack">The listpack</a>
+      <a href="#echo">The BCS echo</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R8.04.3 &#183; Twitter/X: internals &amp; custom structures &#8212; dive 3</p>
+      <h1>What became core: <span class="hns">a technique, not a donation</span>.</h1>
+      <p class="lede">The technique of packing ziplists into a linked list was used internally at Twitter and never
+      upstreamed. Quicklist became core Redis in 3.2 &#8212; <b>independently re-implemented by Matt Stancliff</b> &#8212;
+      then evolved to listpack nodes in 7.0. A scale-driven technique became a core encoding.</p>
+      <p class="heronote">Grounding: the Twitter case study (Matt Stancliff, <em>Redis Quicklist</em>; redis/redis PR
+      #2143) &#183; the BCS echo &#8212; <code>EchoMQ.Lanes</code> in echo_mq/lanes.ex. Valkey is the BCS engine;
+      Twitter&#8217;s own Redis is the case study.</p>
+
+      <figure class="anatomy" aria-labelledby="eraCap">
+        <figcaption id="eraCap"><b>How the technique became the encoding.</b> Select an era to light it and read what
+        happened and who wrote it &#8212; Twitter&#8217;s code was never the core feature.</figcaption>
+        <div class="segbar" id="eraSel" role="group" aria-label="Which era of the quicklist story to inspect">
+          <button type="button" data-era="internal" aria-pressed="false">internal at Twitter</button>
+          <button type="button" data-era="core" aria-pressed="false">quicklist · Redis 3.2</button>
+          <button type="button" data-era="listpack" aria-pressed="false">listpack · 7.0</button>
+        </div>
+        <svg class="cflow" id="cflow" viewBox="0 0 460 170" role="img" aria-label="A left-to-right timeline of three eras. First, the technique of ziplists in a linked list used internally at Twitter and elsewhere, in private code that was never contributed back. Second, quicklist shipped in core Redis 3.2, re-implemented independently by Matt Stancliff in pull request 2143 — not from Twitter's source. Third, the node encoding became the listpack in Redis 7.0. Select an era to read what happened and who wrote it.">
+          <line class="axis" x1="24" y1="118" x2="440" y2="118"></line>
+          <g class="era internal" data-era="internal">
+            <rect class="box" x="22" y="44" width="116" height="48" rx="6"></rect>
+            <text class="nlbl" x="80" y="64">internal</text>
+            <text class="nsub" x="80" y="80">ziplists in a list</text>
+            <circle class="dot" cx="80" cy="118" r="4"></circle>
+            <text class="pglbl" x="80" y="138">private &#183; not upstreamed</text>
+          </g>
+          <g class="era core" data-era="core">
+            <rect class="box" x="172" y="44" width="116" height="48" rx="6"></rect>
+            <text class="nlbl" x="230" y="64">quicklist</text>
+            <text class="nsub" x="230" y="80">Redis 3.2 &#183; PR #2143</text>
+            <circle class="dot" cx="230" cy="118" r="4"></circle>
+            <text class="pglbl" x="230" y="138">by Matt Stancliff</text>
+          </g>
+          <g class="era listpack" data-era="listpack">
+            <rect class="box" x="322" y="44" width="116" height="48" rx="6"></rect>
+            <text class="nlbl" x="380" y="64">listpack</text>
+            <text class="nsub" x="380" y="80">node encoding</text>
+            <circle class="dot" cx="380" cy="118" r="4"></circle>
+            <text class="pglbl" x="380" y="138">Redis 7.0</text>
+          </g>
+        </svg>
+        <div class="readout" id="eraOut" aria-live="polite"><span class="rk">readout &#183;</span> Select an era. A
+        private technique &#8212; ziplists in a linked list &#8212; became core Redis as quicklist (3.2, by Matt
+        Stancliff), then evolved to listpack nodes (7.0). Twitter&#8217;s own implementation was never contributed.</div>
+        <p class="booknote">The author (verbatim) &#8212; <em>&#8220;Twitter started doing this years ago to store
+        everybody&#8217;s timelines, but for various reasons they haven&#8217;t contributed their implementation back
+        to the world.&#8221;</em></p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="attribution">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The precise attribution</h2>
+        <span class="ssrc">matt.sh &#183; PR #2143</span>
+      </div>
+      <div class="prose">
+        <p>It is tempting to say Twitter contributed quicklist. That is wrong, and the encoding&#8217;s author says so
+        directly: <em>&#8220;Twitter started doing this years ago to store everybody&#8217;s timelines, but for
+        various reasons they haven&#8217;t contributed their implementation back to the world.&#8221;</em></p>
+        <p>The honest version has three parts:</p>
+        <ol>
+          <li><strong>The technique was internal at Twitter and elsewhere.</strong> Storing lists as ziplists inside a
+          linked list was a known scale technique, used to hold timelines affordably. It lived in private
+          codebases.</li>
+          <li><strong>It became core Redis as a separate, independent implementation.</strong> Quicklist shipped in
+          <strong>Redis 3.2</strong>, <strong>authored by Matt Stancliff</strong> (redis/redis PR #2143) &#8212;
+          written from the idea, not from Twitter&#8217;s source.</li>
+          <li><strong>Twitter&#8217;s own code was never upstreamed.</strong> The implementation that ran
+          Twitter&#8217;s timelines did not become the core feature; the core feature was re-built in the open.</li>
+        </ol>
+        <p>So the lesson is a scale-driven internal technique becoming a core encoding &#8212; not a corporate code
+        donation. A pattern proven privately at scale was independently implemented as a primitive everyone ships. The
+        credit for the core feature is the implementer&#8217;s; the motivation came from a problem several large
+        deployments had already solved in private.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="clCap">
+        <figcaption id="clCap"><b>Check the three honest parts.</b> Select a claim to light it and read the source
+        that supports it &#8212; each is verified, none is the &#8220;Twitter donated the code&#8221; myth.</figcaption>
+        <div class="segbar" id="clSel" role="group" aria-label="Which attribution claim to verify">
+          <button type="button" data-claim="technique" aria-pressed="false">internal technique</button>
+          <button type="button" data-claim="independent" aria-pressed="false">independent author</button>
+          <button type="button" data-claim="notupstream" aria-pressed="false">never upstreamed</button>
+        </div>
+        <svg class="claims" id="claims" viewBox="0 0 460 150" role="img" aria-label="Three claims about the quicklist attribution, each with a check mark. First: the technique of ziplists in a linked list was used internally at Twitter and elsewhere, supported by the matt.sh quote. Second: quicklist was authored independently by Matt Stancliff and shipped in Redis 3.2, supported by redis/redis pull request 2143. Third: Twitter's own implementation was never upstreamed. Select a claim to read its source.">
+          <g class="claim" data-claim="technique">
+            <rect x="14" y="14" width="432" height="34" rx="5"></rect>
+            <text class="mark" x="32" y="36">&#10003;</text>
+            <text class="clbl" x="52" y="29">the technique was internal at Twitter</text>
+            <text class="csub" x="52" y="42">source &#183; matt.sh &#8212; used to store timelines, in private code</text>
+          </g>
+          <g class="claim" data-claim="independent">
+            <rect x="14" y="56" width="432" height="34" rx="5"></rect>
+            <text class="mark" x="32" y="78">&#10003;</text>
+            <text class="clbl" x="52" y="71">quicklist was authored independently</text>
+            <text class="csub" x="52" y="84">source &#183; redis/redis PR #2143 &#8212; Matt Stancliff, Redis 3.2</text>
+          </g>
+          <g class="claim" data-claim="notupstream">
+            <rect x="14" y="98" width="432" height="34" rx="5"></rect>
+            <text class="mark" x="32" y="120">&#10003;</text>
+            <text class="clbl" x="52" y="113">Twitter&#8217;s own code was never upstreamed</text>
+            <text class="csub" x="52" y="126">source &#183; matt.sh &#8212; &#8220;haven&#8217;t contributed&#8230; back to the world&#8221;</text>
+          </g>
+        </svg>
+        <div class="readout" id="clOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a claim. All
+        three are verified: the technique was internal, the core feature was written independently by Matt Stancliff,
+        and Twitter&#8217;s own implementation was never contributed &#8212; a technique became core, not a code
+        donation.</div>
+        <p class="booknote">Together these say the same thing: credit the core encoding to its open re-implementation,
+        not to the deployment that first used the technique.</p>
+      </figure>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the myth</span>
+          <p>&#8220;Twitter contributed quicklist to Redis.&#8221; Stated everywhere, and wrong &#8212; Twitter
+          <em>&#8220;haven&#8217;t contributed their implementation back to the world.&#8221;</em></p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">the fact</span>
+          <p>Twitter used the <em>technique</em> internally; quicklist was authored independently by Matt Stancliff
+          and shipped in Redis 3.2 (PR #2143). A technique became core, not a transfer of source.</p>
+        </div>
+      </div>
+      <p class="take">The distinction matters: a private technique at scale can become everyone&#8217;s default, but
+      the core feature&#8217;s credit belongs to whoever re-built it in the open. Here that is Matt Stancliff.</p>
+    </section>
+
+    <section id="listpack">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The evolution to the listpack</h2>
+        <span class="ssrc">matt.sh &#183; Redis 7.0</span>
+      </div>
+      <div class="prose">
+        <p>Quicklist did not stop at ziplists. The node encoding evolved.</p>
+        <p>A ziplist was the original packed block &#8212; compact, but with a known sensitivity to cascading updates:
+        changing one entry&#8217;s size could ripple through the encoding of following entries. The
+        <strong>listpack</strong> was introduced to replace it, removing that cascade and simplifying the format. In
+        <strong>Redis 7.0</strong> the listpack became the node encoding for lists, so a modern quicklist is <em>a
+        doubly-linked list of listpacks</em>, not of ziplists.</p>
+        <p>The shape is unchanged &#8212; a linked list of packed nodes &#8212; but the packed node is now a listpack.
+        That is why this course says &#8220;ziplists/listpacks&#8221; when describing a quicklist node: the original is
+        the ziplist, today&#8217;s is the listpack, and the principle is identical. Small lists are stored as a single
+        packed node directly; only when a list grows past the node-size threshold does it become a multi-node
+        quicklist. Those thresholds &#8212; the subject of <a href="/redis-patterns/data-modeling/memory-optimization">R7.02</a>
+        &#8212; are what decide when a single listpack becomes a quicklist of many.</p>
+      </div>
+      <dl class="deflist">
+        <dt>ziplist</dt><dd>The original packed node. Compact, but a size change can cascade through following entries.</dd>
+        <dt>listpack</dt><dd>The replacement (Redis 7.0). No cascade; today&#8217;s quicklist node encoding.</dd>
+        <dt>quicklist</dt><dd>A doubly-linked list of those packed nodes &#8212; the shape is unchanged.</dd>
+      </dl>
+      <p class="take">The encoding kept its shape and changed its node: ziplist, then listpack. A small list is one
+      packed node; only crossing the size threshold makes it a quicklist of many.</p>
+    </section>
+
+    <section id="echo">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>The BCS echo &#8212; inherited for free</h2>
+        <span class="ssrc">echo_mq/lanes.ex</span>
+      </div>
+      <div class="prose">
+        <p>EchoMQ writes to Valkey lists, so it gets the modern encoding without asking. There is no setting to turn
+        quicklist on and no code that chooses it; it is the list encoding, and <strong>all Valkey lists are
+        quicklists</strong>. The lane ring and the wake list are native Redis lists:</p>
+      </div>
+      <figure class="frozen">
+        <figcaption>echo/apps/echo_mq/lib/echo_mq/lanes.ex &#183; native Redis lists<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd">-- the lane ring (a Redis list), rotated one step per claim</span>
+redis.call(<b>'RPUSH'</b>, KEYS[3], ARGV[3])
+redis.call(<b>'LMOVE'</b>, KEYS[1], KEYS[1], 'LEFT', 'RIGHT')
+
+<span class="fd">-- the wake list (a Redis list), held to 64 — one listpack node</span>
+redis.call(<b>'LPUSH'</b>, KEYS[7], '1')
+redis.call(<b>'LTRIM'</b>, KEYS[7], 0, 63)</pre>
+      </figure>
+      <div class="prose">
+        <p>Each of these runs on a quicklist whose nodes are listpacks. The wake list, capped at 64, is a single
+        listpack node; the ring holds the lanes serviceable right now and is short by construction. EchoMQ inherits, at
+        no cost, the encoding that Twitter&#8217;s scale drove into core Redis a decade ago.</p>
+      </div>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the pattern</span>
+          <p>A scale-driven technique (ziplists in a linked list), proven privately, became a core encoding
+          (quicklist, Redis 3.2; listpack nodes, 7.0) that every Redis and Valkey list now uses.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">its EchoMQ application</span>
+          <p>EchoMQ&#8217;s lists get that encoding automatically; the only choice the bus makes is to keep the wake
+          list short with <code>LTRIM &#8230; 0, 63</code>, so it stays one compact listpack node. The bus does not
+          select quicklist; it benefits because the encoding is universal.</p>
+        </div>
+      </div>
+
+      <div class="prose">
+        <p>The honest framing carries through to the end: the credit is Matt Stancliff&#8217;s, the motivation was a
+        problem Twitter and others had at scale, and EchoMQ&#8217;s gain is only that the primitive is in the
+        engine. The worked consumer, <strong>codemojex</strong>, never sees the encoding &#8212; it mints a branded
+        <code>JOB</code> with <code>EchoData.BrandedId.generate!(&#8220;JOB&#8221;)</code> and enqueues it onto a lane,
+        and the list it lands in is a quicklist because every Valkey list is.</p>
+      </div>
+
+      <div class="door">
+        <span class="dr">the application &#183; the encoding comes from the engine</span>
+        <h3>echo_mq does not choose quicklist</h3>
+        <p>Every Valkey list is a quicklist, so the bus inherits the encoding for free; its only lever is the cap that
+        keeps the wake list one node:</p>
+        <figure class="frozen">
+          <figcaption>echo/apps/echo_mq/lib/echo_mq/lanes.ex &#183; the only lever is the cap<span class="tag">frozen</span></figcaption>
+          <pre><span class="fd"># no encoding choice — all Valkey lists are quicklists</span>
+LPUSH wake '1'
+LTRIM wake 0 63        <span class="fd"># keep the wake list one listpack node</span></pre>
+        </figure>
+      </div>
+
+      <p class="vnote"><span class="vk">Notes on Valkey</span>Valkey inherited quicklist and the listpack node from
+      Redis: a list is a quicklist of listpack nodes, with <code>list-max-listpack-size</code> bounding a node by
+      entries or bytes. A system that writes lists gets this encoding with no configuration; the only lever is keeping
+      a list short enough to stay one node, which is what the wake list&#8217;s <code>LTRIM &#8230; 0, 63</code> does
+      &#8212; <a href="https://valkey.io/topics/data-types/" rel="noopener">valkey.io/topics/data-types</a>.</p>
+    </section>
+
+    <section id="recap">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>Recap &#8212; a technique, not a donation</h2>
+        <span class="ssrc">next &#8594; R8.05</span>
+      </div>
+      <div class="prose">
+        <p>Quicklist&#8217;s story is precise: the technique of packing ziplists into a linked list was used
+        internally at Twitter and never upstreamed; the core feature was written independently by Matt Stancliff and
+        shipped in Redis 3.2 (PR #2143); the node encoding later became the listpack in 7.0. A pattern proven privately
+        at scale became a primitive everyone ships. EchoMQ inherits it for free &#8212; all Valkey lists are
+        quicklists &#8212; and the only thing the bus controls is keeping the wake list short enough to stay one node.
+        The chapter continues to R8.05, where Uber&#8217;s resilience techniques meet the connector&#8217;s recovery
+        behaviour.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://matt.sh/redis-quicklist" rel="noopener">Matt Stancliff &mdash; <em>Redis Quicklist &mdash; From a More Civilized Age</em></a> &mdash; the encoding&#8217;s author, stating that Twitter used the technique internally but did not contribute its implementation, and describing the quicklist&#8217;s shape and memory saving.</li>
+            <li><a href="https://github.com/redis/redis/pull/2143" rel="noopener">redis/redis &mdash; <em>Quicklist (linked list + ziplist), PR #2143</em></a> &mdash; the pull request that brought quicklist into core Redis (shipped in 3.2), authored independently of Twitter&#8217;s internal code.</li>
+            <li><a href="https://valkey.io/topics/data-types/" rel="noopener">Valkey &mdash; <em>Data types</em></a> &mdash; the modern list as a quicklist of listpack nodes, and the <code>list-max-listpack-size</code> threshold that keeps a short list in one node.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/production-operations/twitter-internals">R8.04 &#183; Twitter/X: internals &amp; custom structures</a><span class="rs">the module hub</span></li>
+            <li><a href="/redis-patterns/production-operations/twitter-internals/quicklist-and-memory">R8.04.2 &#183; Quicklist &amp; memory</a><span class="rs">the previous dive &#8212; the memory figure</span></li>
+            <li><a href="/redis-patterns/production-operations/uber-resilience">R8.05 &#183; Uber: resilience &amp; staggered sharding</a><span class="rs">the next module &#8212; resilience under failure</span></li>
+            <li><a href="/redis-patterns/data-modeling/memory-optimization">R7.02 &#183; Memory optimization</a><span class="rs">the listpack node-size thresholds</span></li>
+            <li><a href="/echomq/queue">/echomq/queue</a><span class="rs">the Queue pillar &#8212; jobs, lanes, the lists behind the bus</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Page pager">
+      <a class="pgx" href="/redis-patterns/production-operations/twitter-internals/quicklist-and-memory"><span class="pk">previous</span>&#8592; R8.04.2 &#183; Quicklist &amp; memory</a>
+      <a class="pgx" href="/redis-patterns/production-operations/uber-resilience"><span class="pk">next</span>R8.05 &#183; Uber: resilience &amp; staggered sharding &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied — the Redis design patterns, taught applied and grounded in the
+        real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This module</p>
+        <a href="/redis-patterns/production-operations/twitter-internals/timeline-fan-out">R8.04.1 &#183; Timeline fan-out</a>
+        <a href="/redis-patterns/production-operations/twitter-internals/quicklist-and-memory">R8.04.2 &#183; Quicklist &amp; memory</a>
+        <a href="/redis-patterns/production-operations/twitter-internals/what-became-core">R8.04.3 &#183; What became core</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns — this course</a>
+        <a href="/echomq">EchoMQ — the protocol</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">TSK0Nb1VTbfnu4</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+
+  /* ---------- Interactive 1: the three eras (pure lookup over the fixed story) ---------- */
+  var ERA = {
+    'internal': 'internal at Twitter — the technique of storing lists as ziplists inside a linked list was used in private code to hold timelines affordably. Twitter “haven’t contributed their implementation back to the world.”',
+    'core':     'quicklist · Redis 3.2 — the core feature was written independently by Matt Stancliff (redis/redis PR #2143), from the idea, not from Twitter’s source. This is the implementation everyone ships.',
+    'listpack': 'listpack · Redis 7.0 — the node encoding evolved: the listpack replaced the ziplist, removing the cascading-update sensitivity. A modern quicklist is a doubly-linked list of listpacks.'
+  };
+  function describeEra(era) { return '<span class="rk">era &#183;</span> ' + ERA[era]; }
+  var cflow = document.getElementById('cflow');
+  var eraButtons = document.querySelectorAll('#eraSel button');
+  var eraOut = document.getElementById('eraOut');
+  function selectEra(era) {
+    eraButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-era') === era ? 'true' : 'false'); });
+    if (cflow) {
+      cflow.classList.toggle('focus', !!era);
+      cflow.querySelectorAll('.era').forEach(function (g) { g.classList.toggle('on', g.getAttribute('data-era') === era); });
+    }
+    if (eraOut) {
+      eraOut.innerHTML = era ? describeEra(era)
+        : '<span class="rk">readout &#183;</span> Select an era. A private technique &#8212; ziplists in a linked list &#8212; became core Redis as quicklist (3.2, by Matt Stancliff), then evolved to listpack nodes (7.0). Twitter&#8217;s own implementation was never contributed.';
+    }
+  }
+  eraButtons.forEach(function (b) {
+    b.addEventListener('click', function () { var e = b.getAttribute('data-era'); selectEra(b.getAttribute('aria-pressed') === 'true' ? null : e); });
+  });
+  if (cflow) {
+    cflow.querySelectorAll('.era').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectEra(g.getAttribute('data-era')); });
+      g.addEventListener('mouseleave', function () { selectEra(null); });
+    });
+  }
+
+  /* ---------- Interactive 2: verify the three attribution claims (pure lookup) ---------- */
+  var CLAIMS = {
+    'technique':   'internal technique — verified. The technique of ziplists in a linked list was used internally at Twitter and elsewhere to hold timelines; matt.sh is the source. This is the part that started at Twitter.',
+    'independent': 'independent author — verified. Quicklist was written from the idea by Matt Stancliff and shipped in Redis 3.2; redis/redis PR #2143 is the source. The core feature’s credit is the implementer’s.',
+    'notupstream': 'never upstreamed — verified. Twitter “haven’t contributed their implementation back to the world” (matt.sh); the code that ran Twitter’s timelines did not become the core feature.'
+  };
+  function describeClaim(c) { return '<span class="rk">claim &#183;</span> ' + CLAIMS[c]; }
+  var claims = document.getElementById('claims');
+  var clButtons = document.querySelectorAll('#clSel button');
+  var clOut = document.getElementById('clOut');
+  function selectClaim(c) {
+    clButtons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-claim') === c ? 'true' : 'false'); });
+    if (claims) {
+      claims.classList.toggle('focus', !!c);
+      claims.querySelectorAll('.claim').forEach(function (g) { g.classList.toggle('on', g.getAttribute('data-claim') === c); });
+    }
+    if (clOut) {
+      clOut.innerHTML = c ? describeClaim(c)
+        : '<span class="rk">readout &#183;</span> Select a claim. All three are verified: the technique was internal, the core feature was written independently by Matt Stancliff, and Twitter&#8217;s own implementation was never contributed &#8212; a technique became core, not a code donation.';
+    }
+  }
+  clButtons.forEach(function (b) {
+    b.addEventListener('click', function () { var c = b.getAttribute('data-claim'); selectClaim(b.getAttribute('aria-pressed') === 'true' ? null : c); });
+  });
+  if (claims) {
+    claims.querySelectorAll('.claim').forEach(function (g) {
+      g.addEventListener('mouseenter', function () { selectClaim(g.getAttribute('data-claim')); });
+      g.addEventListener('mouseleave', function () { selectClaim(null); });
+    });
+  }
+
+  /* ---------- Branded Snowflake decoder (the page's own stamp) ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') { ev.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>

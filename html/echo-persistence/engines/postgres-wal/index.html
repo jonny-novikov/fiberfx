@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Module 11 · Postgres WAL on the floor — Echo Persistence</title>
+<meta name="description" content="Module 11 of Echo Persistence (Chapter III — The engines), PROPOSED: bringing the Postgres ledger's WAL LSN onto the Graft+Tigris floor and the one cursor. Two LSN worlds, the create-if-not-exists fence reused for archive_command, and the unified cursor. An interactive dive.">
+<style>
+:root{--b-paper:#f6f3ec;--b-card:#fffefa;--b-ink:#22282b;--b-dim:#6b7163;--b-line:#d9d2bf;--b-ts:#20618e;--b-node:#2e7d5b;--b-seq:#7d4e8f;--b-ns:#b23b2e;--b-term-bg:#171c1e;--p-accent:#b06f12;--p-accent-h:#965d0c;--p-tint:#f4e7cd;--mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--rad:6px}
+*{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}a:hover{border-bottom-color:var(--b-ts)}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding:8px 22px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink)}.brand .bdot{color:var(--p-accent)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rcur{color:var(--p-accent);font-weight:700}.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}.topnav a:hover{color:var(--b-ink)}
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:#e4ebf1}
+.idrule i:nth-child(-n+3){background:var(--p-tint);box-shadow:inset 0 0 0 1px var(--p-accent)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+section{padding:40px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:22px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--p-accent);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem,1rem + 0.8vw,1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem,0.95rem + 0.5vw,1.2rem);max-width:66ch;color:var(--b-ink)}
+.prose{max-width:72ch}.prose p{margin-bottom:14px}.prose p b{font-weight:650}
+.hero{padding:52px 0 26px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--p-accent);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.8rem,1.3rem + 2.6vw,3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--p-accent)}.hero .lede{margin-bottom:8px}
+.note{background:var(--p-tint);border:1px solid var(--p-accent);border-radius:var(--rad);padding:12px 16px;margin:18px 0 6px;max-width:72ch;font-size:.95rem}
+.note b{color:var(--p-accent-h)}
+.fig{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:20px;margin:24px 0 6px}
+.fig figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:12px}.fig figcaption b{color:var(--b-ink)}
+.fig svg{width:100%;height:auto;display:block}
+.ctrls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 0}
+.ctrls button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.ctrls button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.4em;margin-top:12px}
+.readout .rk{color:var(--b-dim)}.readout b{color:var(--p-accent)}.readout code{background:#ecf0e9}.readout .nat{color:var(--b-ts)}.readout .rs{color:var(--b-ns)}
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{box-shadow:0 1px 0 var(--p-accent)}
+.door.soon{border-left-color:var(--b-line);opacity:.72}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--p-accent);font-weight:700}
+.door.soon .dr{color:var(--b-dim)}
+.door .soontag{font-family:var(--mono);font-size:11px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;float:right}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}.door p{font-size:.88rem;color:var(--b-dim)}
+.buildbox{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--p-accent);border-radius:var(--rad);padding:16px 18px;margin:12px 0;max-width:80ch}
+.buildbox .bk{font-family:var(--mono);font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--p-accent);font-weight:700;margin-bottom:6px}
+.lf-box{stroke-width:1.7;fill:var(--b-card);transition:opacity .15s}
+.lf-box.led{stroke:var(--b-ts)}.lf-box.floor{stroke:var(--b-node)}
+.lf-box.dim{opacity:.3}
+.lf-tx{font-family:var(--mono);font-size:11px;font-weight:700;pointer-events:none}
+.lf-tx.led{fill:var(--b-ts)}.lf-tx.floor{fill:var(--b-node)}
+.lf-sub{font-family:var(--mono);font-size:8.5px;fill:var(--b-dim);pointer-events:none}
+.lf-bucket{fill:#fbfdff;stroke:var(--b-ts);stroke-width:1.6;transition:opacity .15s}.lf-bucket.dim{opacity:.3}
+.lf-bucket-lbl{font-family:var(--mono);font-size:11px;font-weight:700;fill:var(--b-ts);pointer-events:none}
+.lf-key{font-family:var(--mono);font-size:9.5px;fill:var(--b-dim);pointer-events:none}
+.lf-key.wal{fill:var(--p-accent-h);font-weight:700}.lf-key.wal.dim{opacity:.3}
+.lf-feed{fill:var(--p-tint);stroke:var(--p-accent);stroke-width:1.5;transition:opacity .15s}.lf-feed.dim{opacity:.32}
+.lf-feed-lbl{font-family:var(--mono);font-size:10.5px;font-weight:700;fill:var(--p-accent-h);pointer-events:none}
+.lf-chip{stroke-width:1.3;transition:all .15s}
+.lf-chip.commit{fill:#e7f1eb;stroke:var(--b-node)}
+.lf-chip.wal{fill:#fbf3df;stroke:var(--p-accent)}
+.lf-chip.dim{opacity:.2}
+.lf-chip.on{stroke-width:2.4;filter:drop-shadow(0 0 4px rgba(176,111,18,.4))}
+.lf-chip-tx{font-family:var(--mono);font-size:9px;font-weight:700;pointer-events:none}
+.lf-conn{stroke:var(--b-line);stroke-width:1.8;fill:none;marker-end:url(#lfa);opacity:.5;transition:all .15s}
+.lf-conn.on{stroke:var(--p-accent);opacity:1;stroke-width:2.4;marker-end:url(#lfao)}
+.lf-conn.dim{opacity:.1}
+.lf-conn.archive.on{stroke:var(--b-ts)}
+.lf-conn-lbl{font-family:var(--mono);font-size:9px;fill:var(--b-dim);pointer-events:none}
+.refs{columns:2;column-gap:36px}.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem;list-style:none}
+.refs .rsrc{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:46px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager a.pgx:last-child{text-align:right}
+.site-foot{margin-top:42px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+@media (max-width:880px){.doors{grid-template-columns:1fr}}
+@media (max-width:600px){.refs{columns:1}.topnav{display:none}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none}}
+</style>
+</head>
+<body>
+<header class="top">
+<div class="wrap">
+<span class="brand">jonnify<span class="bdot">·</span>persistence</span>
+<span class="route-tag"><span class="rsep">/</span><a href="/echo-persistence">echo-persistence</a><span class="rsep">/</span><a href="/echo-persistence#map">engines</a><span class="rsep">/</span><span class="rcur">postgres-wal</span></span>
+<nav class="topnav" aria-label="Page sections">
+<a href="#gap">The gap</a>
+<a href="#dives">The dives</a>
+<a href="#status">Status</a>
+<a href="#refs">References</a>
+</nav>
+</div>
+</header>
+<main>
+<div class="wrap">
+<section class="hero">
+<p class="kicker">Module 11 &#183; Chapter III &#8212; The engines</p>
+<h1>Postgres WAL on the <span class="hns">floor</span>.</h1>
+<p class="lede">The engines chapter built one durable floor &#8212; Champ accepts, CubDB/Fjall holds, Graft commits one LSN to Tigris behind the fence. But that floor carries the <b>available-first</b> tier: the cache and the stream log. The money lives elsewhere &#8212; in Postgres, the <b>consistency-first</b> ledger &#8212; and its write-ahead log never reaches the floor. This module is the PROPOSED design for bringing the ledger's <b>WAL LSN</b> onto the same Tigris floor and the same one cursor.</p>
+<div class="note"><b>Forward-tense.</b> Unlike Modules 7&#8211;10, nothing here is shipped. The design is recorded and ruled (<code>graft.pg-wal-archive.design.md</code>, the fork ruled A&#8594;B); this page teaches the proposal, not as-built code.</div>
+<figure class="fig" aria-labelledby="lfCap">
+<figcaption id="lfCap"><b>The ledger joins the floor.</b> The consistency-first Postgres ledger (left) carries its own WAL LSN; the available-first Graft floor (right) commits its LSN to Tigris and rides the change-feed. Tap a step to see how the WAL would join.</figcaption>
+<svg viewBox="0 0 720 320" id="lf" role="img" aria-label="On the left, a Postgres ledger box with a WAL LSN. On the right, a Graft floor box with a commit LSN, writing to a Tigris bucket holding segments, logs, and a proposed wal keyspace. Beneath both runs a change-feed bar carrying a commit-LSN chip and, when unified, a WAL-LSN chip. Tapping 'two LSN worlds' shows the WAL off the feed and off Tigris; 'the fence' lights the archive path from the ledger to the wal keyspace under create-if-not-exists; 'the unified cursor' publishes the WAL LSN onto the feed beside the commit LSN.">
+<defs>
+<marker id="lfa" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--b-line)"></path></marker>
+<marker id="lfao" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 z" fill="var(--p-accent)"></path></marker>
+</defs>
+<!-- ledger -->
+<rect class="lf-box led" id="led" x="24" y="58" width="180" height="74" rx="8"></rect>
+<text class="lf-tx led" x="40" y="82">Postgres ledger</text>
+<text class="lf-sub" x="40" y="98">consistency-first &#183; the money</text>
+<text class="lf-sub" x="40" y="118" style="fill:var(--b-ts);font-weight:700">WAL LSN</text>
+<!-- floor -->
+<rect class="lf-box floor" id="floor" x="300" y="44" width="180" height="74" rx="8"></rect>
+<text class="lf-tx floor" x="316" y="68">Graft floor</text>
+<text class="lf-sub" x="316" y="84">available-first &#183; cache + log</text>
+<text class="lf-sub" x="316" y="104" style="fill:var(--b-node);font-weight:700">commit LSN</text>
+<!-- tigris -->
+<rect class="lf-bucket" id="bucket" x="516" y="40" width="180" height="124" rx="10"></rect>
+<text class="lf-bucket-lbl" x="532" y="62">Tigris</text>
+<text class="lf-key" x="532" y="84">/segments</text>
+<text class="lf-key" x="532" y="100">/logs/&#8230;/commits</text>
+<text class="lf-key wal" id="walKey" x="532" y="120">/wal (proposed)</text>
+<!-- feed -->
+<rect class="lf-feed" id="feed" x="24" y="252" width="672" height="46" rx="8"></rect>
+<text class="lf-feed-lbl" x="40" y="279">change-feed &#183; the one cursor</text>
+<rect class="lf-chip commit" id="chipC" x="320" y="262" width="120" height="26" rx="4"></rect>
+<text class="lf-chip-tx" x="380" y="279" text-anchor="middle" fill="var(--b-node)">commit LSN</text>
+<rect class="lf-chip wal" id="chipW" x="460" y="262" width="120" height="26" rx="4"></rect>
+<text class="lf-chip-tx" x="520" y="279" text-anchor="middle" fill="var(--p-accent-h)">WAL LSN</text>
+<!-- connectors -->
+<path class="lf-conn" id="connCommit" d="M480 86 L516 92"></path>
+<text class="lf-conn-lbl" x="486" y="80">commit</text>
+<path class="lf-conn archive" id="connArchive" d="M150 132 C150 200, 560 180, 600 164"></path>
+<text class="lf-conn-lbl" id="archLbl" x="300" y="196">archive_command &#183; create-if-not-exists</text>
+<path class="lf-conn" id="connFeedC" d="M390 118 L385 262"></path>
+<path class="lf-conn" id="connFeedW" d="M120 132 C120 220, 470 230, 510 262"></path>
+</svg>
+<div class="ctrls" id="lfSel" role="group" aria-label="Select a step">
+<button type="button" data-k="worlds" aria-pressed="false">two LSN worlds</button>
+<button type="button" data-k="fence" aria-pressed="false">the fence</button>
+<button type="button" data-k="cursor" aria-pressed="false">the unified cursor</button>
+<button type="button" id="lfClear">clear</button>
+</div>
+<div class="readout" id="lfOut" aria-live="polite"><span class="rk">readout &#183;</span> Tap a step. Today the <b>commit LSN</b> rides the feed and replicates to Tigris; the <span class="nat">WAL LSN</span> does not &#8212; the ledger's durability is off the floor.</div>
+</figure>
+</section>
+
+<div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<section id="gap">
+<div class="sech"><span class="sno">&#167;1</span><h2>Why the ledger isn't on the floor &#8212; yet</h2><span class="ssrc">graft.pg-wal-archive.design.md</span></div>
+<div class="prose">
+<p>The platform segments its CAP trade per surface, and durability follows the split. The <b>available-first</b> tier &#8212; the near-cache and the EchoMQ stream log &#8212; rides the floor this chapter built: its pages and its trimmed stream slices become Graft commits replicated to Tigris, and the commit LSN binds replica, consumer, and store on one cursor (Module 13). The <b>consistency-first</b> ledger is a different surface: balances and an append-only transaction ledger in Postgres, mutated all-or-nothing, where a committed payout must never be lost. Its durable record is its own <b>write-ahead log</b>, with its own LSN &#8212; a different log over different bytes. Graft replicating its commit LSN to Tigris does not archive Postgres's WAL; the two are disjoint, and the money's off-site recovery is, today, unsolved on the floor.</p>
+<p>That is the gap this module closes in design. Postgres point-in-time recovery and a streaming replica are the ledger's launch prerequisites (<code>codemojex.postgres.md</code>, &#8220;the work before real money&#8221;), and the question is whether to answer them with a parallel, off-platform backup tool or to bring the WAL onto the engine, the fence, the bucket, and the cursor the rest of the floor already shares. The design surfaces that as a four-arm fork and rules it; the dives walk the idea, the mechanism, and the decision.</p>
+</div>
+</section>
+
+<section id="dives">
+<div class="sech"><span class="sno">&#167;2</span><h2>The three dives</h2><span class="ssrc">module 11</span></div>
+<div class="doors">
+<a class="door" href="/echo-persistence/engines/postgres-wal/two-lsn-worlds">
+<span class="dr">Dive 11.1</span><h3>Two LSN worlds</h3>
+<p>The Graft commit LSN and the Postgres WAL LSN &#8212; why they are disjoint logs over disjoint data, and what the ledger's durability gap actually is.</p>
+</a>
+<a class="door" href="/echo-persistence/engines/postgres-wal/the-archive-command-fence">
+<span class="dr">Dive 11.2</span><h3>The archive_command is the fence</h3>
+<p>Postgres requires <code>archive_command</code> to be idempotent and never to clobber a same-named segment &#8212; exactly the create-if-not-exists the engine commits with (Module 9). One fence, reused; the WAL-archive manifest as the authoritative frontier.</p>
+</a>
+<a class="door" href="/echo-persistence/engines/postgres-wal/the-fork-a-then-b">
+<span class="dr">Dive 11.3</span><h3>A then B, forward-tense</h3>
+<p>The surfaced fork &#8212; four arms from off-the-shelf WAL-G to a Graft pageserver &#8212; the ruling A&#8594;B, and why borrowed restore correctness comes before engine elegance for money.</p>
+</a>
+</div>
+</section>
+
+<section id="status">
+<div class="sech"><span class="sno">&#167;3</span><h2>Status &amp; check</h2></div>
+<div class="buildbox"><div class="bk">Status &#183; PROPOSED</div>
+<p>The fork is recorded and ruled in <code>graft.pg-wal-archive.design.md</code>: <b>Arm A</b> (WAL-G/pgBackRest &#8594; Tigris) then <b>Arm B</b> (a read-only Graft WAL-frontier lane on the change-feed); Arm C (a Graft-native WAL-archive Volume) is deferred, Arm D (a Graft pageserver under a replica) is declined at present scale. No arm is built.</p>
+</div>
+<div class="buildbox"><div class="bk">Check</div>
+<p>Without code: why doesn't the Graft+Tigris floor already cover Postgres PITR, and what single object-store primitive lets the WAL ride the <em>same</em> fence as a Graft commit? &#8220;Two disjoint logs; create-if-not-exists&#8221; means you have the module.</p>
+</div>
+</section>
+
+<section id="refs">
+<div class="sech"><span class="sno">&#167;4</span><h2>References &amp; sources</h2></div>
+<ul class="refs">
+<li class="refgrp">Echo records</li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.pg-wal-archive.design.md">graft.pg-wal-archive.design.md</a><span class="rsrc">the surfaced fork (four arms), ruled A&#8594;B</span></li>
+<li><a href="/echo-persistence/platform/bus-and-persistence">bus-and-persistence</a><span class="rsrc">the commit LSN as the one cursor the WAL LSN would join</span></li>
+<li><a href="/echo-persistence/engines/tigris+fence/the-create-if-not-exists-fence">the create-if-not-exists fence</a><span class="rsrc">the fence reused for archive_command</span></li>
+<li><a href="https://github.com/jonny-novikov/fiberfx/blob/echo_mq/infra/codemojex/codemojex.postgres.md">codemojex.postgres.md</a><span class="rsrc">the ledger's PITR prerequisite, the archive_mode hazard</span></li>
+<li class="refgrp">External</li>
+<li><a href="https://www.postgresql.org/docs/current/continuous-archiving.html">PostgreSQL &#183; Continuous Archiving &amp; PITR</a><span class="rsrc">archive_command, recovery_target_lsn, timelines</span></li>
+<li><a href="https://github.com/wal-g/wal-g">WAL-G</a><span class="rsrc">WAL archiving + base backups to S3-compatible storage</span></li>
+<li><a href="https://pgbackrest.org/">pgBackRest</a><span class="rsrc">backup &amp; restore with validation</span></li>
+</ul>
+</section>
+
+<nav class="pager" aria-label="Module pager">
+<a class="pgx" href="/echo-persistence/engines/beam-rust-contract"><span class="pk">Prev &#183; Module 10</span>&#8592; The BEAM&#8596;Rust contract</a>
+<a class="pgx" href="/echo-persistence/engines/postgres-wal/two-lsn-worlds"><span class="pk">Dive 11.1</span>Two LSN worlds &#8594;</a>
+</nav>
+</div>
+</main>
+<footer class="site-foot"><div class="wrap"><div class="foot-bar">
+<span class="foot-cc">(&#1089;) jonnify &#183; echo-persistence &#183; module 11</span>
+<span class="foot-cc">proposed</span>
+</div></div></footer>
+<script>
+(function(){
+  var GROUPS={
+    worlds:{led:1,floor:1,bucket:1,feed:1,walKey:0,connCommit:1,connFeedC:1,connArchive:0,connFeedW:0,chipC:1,chipW:0,
+      txt:'<span class="rk">two LSN worlds &#183;</span> two logs over different bytes. The <span class="nat">Graft commit LSN</span> replicates to Tigris and rides the feed; the <span class="rs">Postgres WAL LSN</span> does neither &#8212; the ledger&#8217;s durability is off the floor.'},
+    fence:{led:1,floor:0,bucket:1,feed:0,walKey:1,connCommit:0,connFeedC:0,connArchive:1,connFeedW:0,chipC:0,chipW:0,
+      txt:'<span class="rk">the fence &#183;</span> <code>archive_command</code> writes each WAL segment to <code>/wal</code> with <b>create-if-not-exists</b> &#8212; the same conditional put the engine commits with (Module 9). Idempotent, never clobbers, the manifest is the frontier.'},
+    cursor:{led:1,floor:1,bucket:1,feed:1,walKey:1,connCommit:1,connFeedC:1,connArchive:1,connFeedW:1,chipC:1,chipW:1,
+      txt:'<span class="rk">the unified cursor &#183;</span> the <span class="rs">WAL LSN</span> is published onto the change-feed beside the <span class="nat">commit LSN</span> &#8212; the ledger&#8217;s durability becomes the next meaning of the one cursor.'}
+  };
+  function setEl(id,on,off){var e=document.getElementById(id);if(!e)return;e.classList.toggle('on',!!on);e.classList.toggle('dim',!on&&off);}
+  var sel=document.getElementById('lfSel'), out=document.getElementById('lfOut');
+  var conns=['connCommit','connFeedC','connArchive','connFeedW'];
+  var chips=['chipC','chipW'];
+  var boxes=['led','floor','bucket','feed'];
+  function clearAll(){
+    boxes.concat(['walKey']).forEach(function(id){var e=document.getElementById(id);if(e)e.classList.remove('dim');});
+    conns.forEach(function(id){var e=document.getElementById(id);if(e)e.classList.remove('on','dim');});
+    chips.forEach(function(id){var e=document.getElementById(id);if(e)e.classList.remove('on','dim');});
+  }
+  function show(k){
+    var g=GROUPS[k];
+    setEl('led',g.led,true);setEl('floor',g.floor,true);setEl('bucket',g.bucket,true);setEl('feed',g.feed,true);
+    setEl('walKey',g.walKey,true);
+    conns.forEach(function(id){setEl(id,g[id],true);});
+    chips.forEach(function(id){var e=document.getElementById(id);e.classList.toggle('on',!!g[id]);e.classList.toggle('dim',!g[id]);});
+    out.innerHTML=g.txt;
+  }
+  sel.addEventListener('click',function(e){var b=e.target.closest('button');if(!b||!b.getAttribute('data-k'))return;var k=b.getAttribute('data-k');[].forEach.call(sel.querySelectorAll('button[data-k]'),function(x){x.setAttribute('aria-pressed',x===b?'true':'false');});show(k);});
+  document.getElementById('lfClear').addEventListener('click',function(){clearAll();[].forEach.call(sel.querySelectorAll('button[data-k]'),function(x){x.setAttribute('aria-pressed','false');});out.innerHTML='<span class="rk">readout &#183;</span> Tap a step to see how the Postgres WAL would join the floor and the cursor.';});
+})();
+</script>
+</body>
+</html>

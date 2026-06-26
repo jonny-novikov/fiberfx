@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R7.07 — Data Modeling workshop · Redis Patterns Applied · jonnify</title>
+<meta name="description" content="The R7.07 chapter capstone: codemojex's read-model dashboard, built from three of R7's six modeling patterns. Codemojex.Board is the leaderboard — one ZADD/ZREVRANGE sorted set per game (cm:&lt;game&gt;:board). Codemojex.View.total_players/1 counts unique players with SCARD over the exact SET filled by Rooms.add_player (SADD cm:&lt;game&gt;:players). The live view is a projection pushed by CodemojexWeb.RoomChannel — no XADD stream, the simpler real choice. codemojex uses three of R7's six patterns; HyperLogLog, bitmaps, vectors, and geospatial are the roads not taken — domain and scale don't call for them. The chapter thesis: a real system uses a workload-chosen subset of the modeling family.">
+<style>
+/* ============ The redis contract sheet ============
+   The BCS identity (html/bcs/index.html) with the redis-red accent.
+   Light engineering-document aesthetic; monospace-forward; transcript
+   evidence blocks. Not the dark-editorial system this course shed. */
+:root{
+  --b-paper:#f6f3ec;
+  --b-card:#fffefa;
+  --b-ink:#22282b;
+  --b-dim:#68705f;
+  --b-line:#d9d2bf;
+  --b-ns:#b23b2e;
+  --b-ts:#20618e;
+  --b-node:#2e7d5b;
+  --b-seq:#7d4e8f;
+  --b-ns-tint:#f3e2de;
+  --b-pay-tint:#e4ebf1;
+  --b-term-bg:#171c1e;
+  --b-term-fg:#cfdacc;
+  --b-term-dim:#7e8c80;
+  --r-red:#d6584f;       /* the redis accent — the one deviation from B0 */
+  --r-red-tint:#f8e3e0;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--b-paper);color:var(--b-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--b-ts);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--b-ts)}
+a:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+header.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--b-line);background:var(--b-card)}
+[id]{scroll-margin-top:84px}
+header.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--b-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--r-red)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--b-dim);background:var(--b-paper);border:1px solid var(--b-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--b-dim)}
+.route-tag a:hover{color:var(--b-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--b-line);margin:0 1px}
+.route-tag .rcur{color:var(--r-red);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--b-ink)}
+
+/* ---------- the rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--b-pay-tint)}
+.idrule i:nth-child(-n+3){background:var(--r-red-tint);box-shadow:inset 0 0 0 1px var(--r-red)}
+.idrule i:nth-child(n+4){box-shadow:inset 0 0 0 1px var(--b-ts)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--b-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--r-red);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--b-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:64ch;color:var(--b-ink)}
+.prose{max-width:72ch}
+.prose p{margin-bottom:14px}
+.prose p b,.prose p strong{font-weight:650}
+.prose ul{margin:0 0 14px 1.2rem}
+.prose li{margin-bottom:7px}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--r-red);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--r-red)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--b-dim);max-width:74ch;margin-bottom:18px}
+
+/* ---------- the interactive figure ---------- */
+.anatomy{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:22px;margin:26px 0 6px}
+.anatomy figcaption{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);margin-bottom:14px}
+.anatomy figcaption b{color:var(--b-ink)}
+.segbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 12px}
+.segbar button{font-family:var(--mono);font-size:13px;padding:6px 12px;border-radius:var(--rad);border:1px solid var(--b-line);background:var(--b-paper);color:var(--b-ink);cursor:pointer}
+.segbar button:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.segbar button[aria-pressed="true"]{border-color:var(--b-ink);background:var(--b-ink);color:var(--b-paper)}
+.readout{font-family:var(--mono);font-size:13.5px;line-height:1.6;color:var(--b-ink);background:var(--b-paper);border:1px dashed var(--b-line);border-radius:var(--rad);padding:12px 14px;min-height:3.2em}
+.readout .rk{color:var(--b-dim)}
+.readout b{color:var(--r-red)}
+.take{margin-top:16px;font-family:var(--mono);font-size:13.5px;line-height:1.55;color:var(--b-ink);border-left:3px solid var(--r-red);padding-left:14px;max-width:78ch}
+.booknote{margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--b-dim);max-width:82ch;line-height:1.55}
+
+/* ---------- the read-model SVG figure ---------- */
+.rmfig{width:100%;height:auto;display:block;margin-top:4px}
+.rmfig .rm{cursor:pointer;transition:opacity .18s ease}
+.rmfig .rm rect{fill:var(--b-card);stroke:var(--b-ts);stroke-width:1.5;transition:fill .16s ease,stroke .16s ease}
+.rmfig .rm .rt{font:12px var(--mono);font-weight:700;fill:var(--b-ink);text-anchor:middle}
+.rmfig .rm .rs{font:10px var(--mono);fill:var(--b-dim);text-anchor:middle}
+.rmfig .rm .rk{font:10.5px var(--mono);fill:var(--b-ts);text-anchor:middle}
+.rmfig .rm.on rect{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2.4}
+.rmfig .rm.on .rt{fill:var(--r-red)}
+.rmfig.focus .rm{opacity:.3;transition:opacity .18s ease}
+.rmfig.focus .rm.on{opacity:1}
+
+/* ---------- the matrix SVG figure ---------- */
+.matfig{width:100%;height:auto;display:block;margin-top:4px}
+.matfig .mrow{cursor:pointer;transition:opacity .18s ease}
+.matfig .mrow rect.bg{fill:var(--b-card);stroke:var(--b-line);stroke-width:1.2;transition:fill .16s ease,stroke .16s ease}
+.matfig .mrow.used rect.bg{fill:var(--b-pay-tint);stroke:var(--b-ts)}
+.matfig .mrow.notused rect.bg{fill:var(--b-paper);stroke:var(--b-line)}
+.matfig .mrow.on rect.bg{fill:var(--r-red-tint);stroke:var(--r-red);stroke-width:2}
+.matfig .ml{font:11.5px var(--mono);font-weight:700;fill:var(--b-ink)}
+.matfig .ms{font:10px var(--mono);fill:var(--b-dim)}
+.matfig .mv{font:11.5px var(--mono);font-weight:700;fill:var(--b-node)}
+.matfig .mn{font:11.5px var(--mono);fill:var(--b-dim)}
+.matfig .mh{font:10px var(--mono);fill:var(--b-dim);text-transform:uppercase;letter-spacing:.08em}
+.matfig.focus .mrow{opacity:.3}
+.matfig.focus .mrow.on{opacity:1}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--b-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--b-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--b-term-bg);background:var(--b-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-term-fg)}
+.frozen pre b{color:#9fd6a8;font-weight:700}
+.frozen pre .fd{color:var(--b-term-dim)}
+
+/* ---------- code ---------- */
+pre.code{background:#ecf0e9;border:1px solid var(--b-line);border-radius:var(--rad);padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--b-ink);margin:0 0 18px}
+pre.code b{color:var(--r-red)}
+pre.code .cmt{color:var(--b-dim)}
+
+/* ---------- bridge ---------- */
+.bridge{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;margin:22px 0 6px}
+.bridge .cell{background:var(--b-card);border:1px solid var(--b-line);border-radius:var(--rad);padding:16px 18px}
+.bridge .cell .lbl{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--b-dim);margin-bottom:8px}
+.bridge .cell.idea{border-left:3px solid var(--r-red)}
+.bridge .cell.idea .lbl{color:var(--r-red)}
+.bridge .cell.elix{border-left:3px solid var(--b-ts)}
+.bridge .cell.elix .lbl{color:var(--b-ts)}
+.bridge .cell p{font-size:.92rem;color:var(--b-ink)}
+.bridge .arrow{align-self:center;font-family:var(--mono);font-size:1.3rem;color:var(--b-dim)}
+
+/* ---------- vnote ---------- */
+.vnote{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--b-ink);background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-node);border-radius:var(--rad);padding:11px 14px;margin:18px 0 6px;max-width:80ch}
+.vnote .vk{color:var(--b-node);font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:11.5px;margin-right:8px}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:24px}
+.door{background:var(--b-card);border:1px solid var(--b-line);border-left:3px solid var(--b-ts);border-radius:var(--rad);padding:18px;color:var(--b-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--b-ts)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--b-ts);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--b-dim)}
+a.door{color:var(--b-ink)}
+a.door .dr{color:var(--r-red)}
+.door.full{grid-column:1/-1;border-left:3px solid var(--r-red)}
+.door.full .dr{color:var(--r-red)}
+div.door:hover{box-shadow:none}
+
+/* ---------- references ---------- */
+.refs{display:grid;grid-template-columns:1fr 1fr;gap:1.4rem 2.4rem}
+.refs li{margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--b-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+.refgrp:first-child{margin-top:0}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--b-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--b-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--b-line);background:var(--b-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--b-ink);font-size:15px}
+.foot-logo .bdot{color:var(--r-red)}
+.foot-tag{font-size:.86rem;color:var(--b-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--b-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--b-ink);padding:2px 0}
+.foot-links span{color:var(--b-dim)}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--b-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--b-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--b-dim);cursor:pointer;border:1px dashed var(--b-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--b-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--r-red)}
+.stamp:focus-visible{outline:2px solid var(--b-ts);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--b-term-bg);color:var(--b-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--b-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:680px){
+  .refs{grid-template-columns:1fr}
+  .bridge{grid-template-columns:1fr}
+  .bridge .arrow{justify-self:center;transform:rotate(90deg)}
+}
+@media (max-width:600px){
+  .doors{grid-template-columns:1fr}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main" style="position:absolute;left:-9999px;top:0;background:var(--r-red);color:var(--b-card);padding:.6rem 1rem;border-radius:0 0 var(--rad) 0;font-family:var(--mono);font-weight:700;z-index:50">Skip to the module</a>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">·</span>redis</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/redis-patterns">redis-patterns</a><span class="rsep">/</span><a href="/redis-patterns/data-modeling">data-modeling</a><span class="rsep">/</span><span class="rcur">workshop</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#readmodels">Read-models</a>
+      <a href="#leaderboard">Leaderboard</a>
+      <a href="#uniques">Uniques</a>
+      <a href="#view">Live view</a>
+      <a href="#thesis">Thesis</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">R7.07 &#183; Data Modeling &amp; Memory &#8212; the chapter workshop</p>
+      <h1>Three patterns, one <span class="hns">dashboard</span>.</h1>
+      <p class="lede">The chapter capstone: <b>which of R7&rsquo;s six modeling patterns did codemojex actually
+      reach for?</b> The workshop folds the whole chapter through the game&rsquo;s real dashboard read-models,
+      each verified on disk, and names the ones the game left on the shelf.</p>
+      <p class="heronote">Grounding: echo/apps/codemojex &mdash; Codemojex.Board (ZADD/ZREVRANGE cm:&lt;game&gt;:board),
+      Codemojex.View.total_players/1 (SCARD cm:&lt;game&gt;:players), Codemojex.Rooms.add_player/2 (SADD),
+      CodemojexWeb.RoomChannel (Phoenix Channels broadcast). Every surface verified on disk. Engine: Valkey.
+      Keyspace: unbraced cm:&lt;game&gt;:&hellip; (not emq:{q}:).</p>
+
+      <figure class="anatomy" aria-labelledby="rmCap">
+        <figcaption id="rmCap"><b>The three read-models.</b> Select a read-model to see its key,
+        its Valkey command pair, and the R7 pattern it applies. Hover or click.</figcaption>
+        <div class="segbar" id="rmSel" role="group" aria-label="Select a read-model">
+          <button type="button" data-rm="board" aria-pressed="false">leaderboard ZSET</button>
+          <button type="button" data-rm="players" aria-pressed="false">unique players SET</button>
+          <button type="button" data-rm="view" aria-pressed="false">live view</button>
+        </div>
+        <svg class="rmfig" id="rmfig" viewBox="0 0 480 130" role="img"
+          aria-label="Three read-models as cards. Leaderboard ZSET: key cm:game:board, commands ZADD and ZREVRANGE WITHSCORES, R7.02 compact ZSET. Unique players SET: key cm:game:players, commands SADD and SCARD, R7.03 exact SET baseline. Live view: Codemojex.View game-view folded by the room channel, no XADD stream. Selecting a card highlights it and shows detail in the readout.">
+          <!-- leaderboard card -->
+          <g class="rm" data-rm="board">
+            <rect x="8" y="14" width="138" height="100" rx="8"></rect>
+            <text class="rt" x="77" y="38">leaderboard</text>
+            <text class="rs" x="77" y="53">Codemojex.Board</text>
+            <text class="rk" x="77" y="70">cm:&lt;game&gt;:board</text>
+            <text class="rs" x="77" y="86">ZADD / ZREVRANGE</text>
+            <text class="rs" x="77" y="100">R7.02 compact ZSET</text>
+          </g>
+          <!-- arrow 1 -->
+          <line x1="148" y1="64" x2="168" y2="64" stroke="var(--b-line)" stroke-width="1.5" marker-end="url(#arr)"></line>
+          <!-- uniques card -->
+          <g class="rm" data-rm="players">
+            <rect x="170" y="14" width="138" height="100" rx="8"></rect>
+            <text class="rt" x="239" y="38">unique players</text>
+            <text class="rs" x="239" y="53">Codemojex.View</text>
+            <text class="rk" x="239" y="70">cm:&lt;game&gt;:players</text>
+            <text class="rs" x="239" y="86">SADD / SCARD</text>
+            <text class="rs" x="239" y="100">R7.03 exact SET</text>
+          </g>
+          <!-- arrow 2 -->
+          <line x1="310" y1="64" x2="330" y2="64" stroke="var(--b-line)" stroke-width="1.5" marker-end="url(#arr)"></line>
+          <!-- live view card -->
+          <g class="rm" data-rm="view">
+            <rect x="332" y="14" width="138" height="100" rx="8"></rect>
+            <text class="rt" x="401" y="38">live view</text>
+            <text class="rs" x="401" y="53">Codemojex.View</text>
+            <text class="rk" x="401" y="70">Phoenix Channels</text>
+            <text class="rs" x="401" y="86">no XADD stream</text>
+            <text class="rs" x="401" y="100">projection + push</text>
+          </g>
+          <defs>
+            <marker id="arr" markerWidth="7" markerHeight="7" refX="5" refY="3" orient="auto">
+              <path d="M0 0 L6 3 L0 6 z" fill="var(--b-dim)"></path>
+            </marker>
+          </defs>
+        </svg>
+        <div class="readout" id="rmOut" aria-live="polite"><span class="rk">readout &#183;</span> Select a
+        read-model. Each card names its Valkey key, the command pair that writes and reads it, and the R7
+        pattern it applies. The three together are codemojex&rsquo;s entire Valkey read layer.</div>
+      </figure>
+      <p class="take">R7 taught six modeling patterns; codemojex uses three. The other three are the roads
+      not taken &mdash; domain and scale don&rsquo;t call for them, and that gap is the chapter&rsquo;s
+      teaching.</p>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="readmodels">
+      <div class="sech">
+        <span class="sno">&#167;1</span>
+        <h2>The premise &#8212; six patterns, three in play</h2>
+        <span class="ssrc">data-modeling &middot; the chapter</span>
+      </div>
+      <div class="prose">
+        <p>R7 taught six data-modeling patterns. A workshop is not a new pattern; it is the chapter&rsquo;s
+        techniques applied to one real consumer. The most useful question the assembly can ask is: <strong>which
+        did codemojex actually reach for?</strong></p>
+        <p>The answer is honest and narrow. codemojex builds three Valkey read-models for its dashboard.
+        Each one applies a pattern from R7. The other three patterns are the honest absences &mdash; the game&rsquo;s
+        scale and domain don&rsquo;t call for them. The chapter&rsquo;s thesis closes on that gap.</p>
+      </div>
+      <pre class="code"><span class="cmt"># the six R7 patterns and codemojex's verdict</span>
+R7.01  Redis as a primary database  <b>&#10003;</b>  the bus&rsquo;s job HASH (emq:{q}:job:&lt;JOB&gt;, noeviction + AOF)
+R7.02  Memory optimization          <b>&#10003;</b>  the Board ZSET is compact, ordered, a clean read-model
+R7.03  Probabilistic data structures  <b>&#10003;</b>  &mdash; exact SET for uniques (HLL is the road not taken)
+R7.04  Bitmaps                      <span class="cmt">&#10007;</span>  <span class="cmt">no large-cardinality boolean flag; cm-bitmapist is planned, not live</span>
+R7.05  Vectors                      <span class="cmt">&#10007;</span>  <span class="cmt">no recommendation surface; no spike; domain doesn&rsquo;t call for it</span>
+R7.06  Geospatial                   <span class="cmt">&#10007;</span>  <span class="cmt">a location-agnostic emoji game &mdash; nothing placed in space</span></pre>
+    </section>
+
+    <section id="leaderboard">
+      <div class="sech">
+        <span class="sno">&#167;2</span>
+        <h2>The leaderboard &#8212; a compact sorted set</h2>
+        <span class="ssrc">codemojex/board.ex &#183; R7.02</span>
+      </div>
+      <div class="prose">
+        <p><code>Codemojex.Board</code>&rsquo;s moduledoc states: <em>&ldquo;The leaderboard is one sorted set
+        per game &hellip; writes it straight to the board &mdash; no tier ladder, no first-mover bonus: the raw
+        linear score is the sole rank. Server-side, with no read-modify-write beyond the best-of fold.&rdquo;</em>
+        The key is <code>cm:&lt;game&gt;:board</code> &mdash; <strong>unbraced</strong>, unlike EchoMQ&rsquo;s
+        <code>emq:{q}:…</code>. The <code>&lt;game&gt;</code> segment is a branded <code>GAM</code> id minted
+        at game start.</p>
+        <p>Two operations keep it current: <code>record/3</code> writes a scored guess; <code>top/2</code>
+        reads the top-N for the dashboard or the leaderboard endpoint.</p>
+      </div>
+      <figure class="frozen" aria-label="Codemojex.Board — the leaderboard ZSET">
+        <figcaption>echo/apps/codemojex/lib/codemojex/board.ex<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># key builder — UNBRACED: "cm:" &lt;&gt; game &lt;&gt; ":" &lt;&gt; suffix</span>
+defp k(game, suffix), do: <b>"cm:" &lt;&gt; game &lt;&gt; ":" &lt;&gt; suffix</b>
+
+<span class="fd"># record a scored guess (R7.02 — ZADD is one write, no lock)</span>
+def record(game, player, base) do
+  Cmd.<b>zadd</b>(k(game, "board")) |&gt; Cmd.score(new_base, player) |&gt; Wire.run(conn)
+end
+
+<span class="fd"># top n, highest first: ZREVRANGE cm:&lt;game&gt;:board 0 n-1 WITHSCORES</span>
+def top(game, n \\ 10) do
+  Cmd.<b>zrevrange</b>(k(game, "board"), 0, n - 1) |&gt; Cmd.withscores() |&gt; Wire.run(Bus.conn())
+end</pre>
+      </figure>
+      <div class="prose">
+        <p>The sorted set is the right read-model here: one <code>ZADD</code> updates the rank, one
+        <code>ZREVRANGE &hellip; WITHSCORES</code> reads the top-N for every leaderboard render. The ZSET
+        keeps no history and wastes no memory on old scores &mdash; only the player&rsquo;s best stands.
+        It is exposed at <code>GET /games/:id/leaderboard</code> (the REST endpoint) and broadcast by
+        the room channel on every scored guess.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>ZADD</code> with an existing member
+      updates the score in place (no duplicate entry). <code>ZREVRANGE &hellip; WITHSCORES</code> returns
+      members and scores in descending order in a single round-trip. Both are core Valkey commands &mdash;
+      <a href="https://valkey.io/commands/zadd/" rel="noopener">valkey.io/commands/zadd</a> &middot;
+      <a href="https://valkey.io/commands/zrevrange/" rel="noopener">valkey.io/commands/zrevrange</a>.</p>
+      <p class="take">The leaderboard is a sorted set: one write per guess, one read per render,
+      no separate index to maintain. Compact, ordered, and single-key &mdash; the R7.02 discipline
+      made concrete as a read-model.</p>
+    </section>
+
+    <section id="uniques">
+      <div class="sech">
+        <span class="sno">&#167;3</span>
+        <h2>Unique players &#8212; an exact set</h2>
+        <span class="ssrc">codemojex/rooms.ex &#183; codemojex/view.ex &#183; R7.03</span>
+      </div>
+      <div class="prose">
+        <p>A second Valkey key tracks which players joined a game: <code>cm:&lt;game&gt;:players</code>,
+        a plain SET. <code>Codemojex.Rooms.add_player/2</code> adds each player on join:</p>
+      </div>
+      <pre class="code"><span class="cmt"># rooms.ex — SADD fills the players set on join</span>
+defp add_player(game, player),
+  do: Cmd.<b>sadd</b>(<b>"cm:" &lt;&gt; game &lt;&gt; ":players"</b>, player) |&gt; Wire.run(Bus.conn())</pre>
+      <div class="prose">
+        <p><code>Codemojex.View.total_players/1</code> counts it with <code>SCARD</code>:</p>
+      </div>
+      <pre class="code"><span class="cmt"># view.ex line 117 — SCARD returns the exact count</span>
+def total_players(game), do: scard(<b>"cm:" &lt;&gt; game &lt;&gt; ":players"</b>)</pre>
+      <div class="prose">
+        <p>This is the R7.03 honest contrast. <strong>HyperLogLog</strong> is the pattern R7.03 taught for
+        large-cardinality uniques: 12 KB fixed memory, ~0.81% error, <code>PFADD</code>/<code>PFCOUNT</code>.
+        codemojex does not use it here. A game&rsquo;s player count is <em>small</em> &mdash; an exact SET
+        costs a few bytes per player id, and the count is exact. HLL is the right move only when the
+        cardinality is so large that storing every id exactly is too expensive <em>and</em> a bounded error
+        rate is acceptable. This game&rsquo;s scale doesn&rsquo;t meet that bar.</p>
+        <p>State the trade both ways: exact SET at small cardinality &mdash; zero error, small memory.
+        HyperLogLog at billion-scale &mdash; ~0.81% error, 12 KB regardless of cardinality. codemojex
+        chooses the former; the pattern the chapter named is not discarded &mdash; it doesn&rsquo;t fit
+        the workload.</p>
+      </div>
+      <p class="vnote"><span class="vk">Notes on Valkey</span><code>SADD key member [member ...]</code>
+      adds members to a set; a member already present is silently a no-op. <code>SCARD key</code> returns
+      the exact cardinality in O(1). Both are core Valkey commands &mdash;
+      <a href="https://valkey.io/commands/sadd/" rel="noopener">valkey.io/commands/sadd</a> &middot;
+      <a href="https://valkey.io/commands/scard/" rel="noopener">valkey.io/commands/scard</a>.</p>
+      <p class="take">The exact SET at small cardinality is the right tool. HLL (R7.03) is not wrong
+      &mdash; it is the right tool at a scale the game doesn&rsquo;t have. The chapter teaches when each fits;
+      this consumer makes the workload argument concrete.</p>
+    </section>
+
+    <section id="view">
+      <div class="sech">
+        <span class="sno">&#167;4</span>
+        <h2>The live view &#8212; a projection, not a stream</h2>
+        <span class="ssrc">codemojex/view.ex &#183; room_channel.ex &#183; R5 road not taken</span>
+      </div>
+      <div class="prose">
+        <p><code>Codemojex.View.game_view/1</code> folds the Valkey operational state &mdash; the board,
+        the player count, the privacy-gated game state &mdash; into the player-facing dashboard view.
+        <code>CodemojexWeb.RoomChannel</code>&rsquo;s moduledoc states: <em>&ldquo;leaderboard updates
+        without any per-game process &hellip; a <code>refresh</code> re-reads the view and the
+        leaderboard.&rdquo;</em></p>
+        <p>The room channel pushes the view to clients over Phoenix Channels whenever a guess is scored
+        (a <code>:scored</code> broadcast) or on a client <code>refresh</code> request. The channel joins
+        the <code>game:&lt;id&gt;</code> PubSub topic at join and receives every scored event for that game
+        without maintaining any per-game server process.</p>
+        <p>There is <strong>no <code>XADD</code> activity stream</strong> in codemojex. This is the R5
+        road not taken: an event-sourced activity feed (<code>XADD</code> to an append-only log, consumers
+        reading from an offset) is the R5 pattern. codemojex pushes a re-read Valkey projection over
+        Phoenix Channels instead &mdash; simpler, sufficient for the game&rsquo;s real-time needs,
+        no log to maintain.</p>
+      </div>
+      <figure class="frozen" aria-label="CodemojexWeb.RoomChannel — live projection, no stream">
+        <figcaption>echo/apps/codemojex/lib/codemojex_web/channels/room_channel.ex<span class="tag">frozen</span></figcaption>
+        <pre><span class="fd"># the channel join — game_view/1 is a Valkey read, not a stream replay</span>
+def join("game:" &lt;&gt; game, _params, socket) do
+  {:ok, %{view: <b>Codemojex.game_view(game)</b>}, assign(socket, :game, game)}
+end
+
+<span class="fd"># a scored guess arrives from the PubSub topic — push to the client</span>
+def handle_info({:scored, payload}, socket) do
+  push(socket, "scored", payload)
+  {:noreply, socket}
+end
+
+<span class="fd"># a client refresh re-reads the Valkey view + the leaderboard; no log seek</span>
+def handle_in("refresh", _params, socket) do
+  game = socket.assigns.game
+  reply = %{view: <b>Codemojex.game_view(game)</b>,
+            leaderboard: Enum.map(<b>Codemojex.leaderboard(game, 20)</b>, ...)}
+  {:reply, {:ok, reply}, socket}
+end</pre>
+      </figure>
+      <p class="take">The live view is a projection, not a log replay. Phoenix Channels carry the update;
+      a client <code>refresh</code> re-reads from Valkey. No <code>XADD</code>; no consumer offset; no
+      stream lag. The simpler real choice.</p>
+    </section>
+
+    <section id="thesis">
+      <div class="sech">
+        <span class="sno">&#167;5</span>
+        <h2>The honest subset &#8212; the chapter thesis</h2>
+        <span class="ssrc">the six patterns &#183; three used &#183; three not taken</span>
+      </div>
+      <div class="prose">
+        <p>The chapter&rsquo;s instruction was &ldquo;know which pattern fits which workload.&rdquo; The workshop
+        makes it concrete. codemojex uses three of R7&rsquo;s six patterns. The other three are absent because
+        the game&rsquo;s scale and domain don&rsquo;t reach for them &mdash; not because they are bad patterns.
+        Every absent pattern is the right tool for a different workload.</p>
+      </div>
+
+      <figure class="anatomy" aria-labelledby="matCap">
+        <figcaption id="matCap"><b>R7 patterns &#215; codemojex verdict.</b> Select a row to read
+        what the pattern offers and why codemojex does or does not use it. The six rows span the chapter;
+        the three green rows are the real read-models above.</figcaption>
+        <div class="segbar" id="matSel" role="group" aria-label="Select a pattern row">
+          <button type="button" data-row="hash" aria-pressed="false">R7.01 job HASH</button>
+          <button type="button" data-row="zset" aria-pressed="false">R7.02 ZSET</button>
+          <button type="button" data-row="set" aria-pressed="false">R7.03 exact SET</button>
+          <button type="button" data-row="hll" aria-pressed="false">R7.03 HLL</button>
+          <button type="button" data-row="bmp" aria-pressed="false">R7.04 bitmaps</button>
+          <button type="button" data-row="vec" aria-pressed="false">R7.05 vectors</button>
+          <button type="button" data-row="geo" aria-pressed="false">R7.06 geo</button>
+        </div>
+        <svg class="matfig" id="matfig" viewBox="0 0 480 290" role="img"
+          aria-label="Seven rows for R7 patterns. Row 1: R7.01 job HASH — used — the bus record of truth emq:{q}:job:JOB, noeviction plus AOF. Row 2: R7.02 compact ZSET — used — the Board ZADD/ZREVRANGE cm:game:board. Row 3: R7.03 exact SET — used — SADD/SCARD cm:game:players, player count is small. Row 4: R7.03 HyperLogLog — not used — player count is small, exact SET is correct. Row 5: R7.04 bitmaps — not used — no large-cardinality boolean flag; cm-bitmapist is planned, not live. Row 6: R7.05 vectors — not used — no recommendation surface, no infra spike. Row 7: R7.06 geospatial — not used — a location-agnostic emoji game. Select a row to read detail.">
+          <!-- column headers -->
+          <text class="mh" x="8" y="12">pattern</text>
+          <text class="mh" x="280" y="12">verdict</text>
+          <text class="mh" x="360" y="12">why</text>
+          <!-- row 1: R7.01 job HASH — used -->
+          <g class="mrow used" data-row="hash">
+            <rect class="bg" x="4" y="18" width="472" height="34" rx="5"></rect>
+            <text class="ml" x="14" y="38">R7.01 &#183; job HASH</text>
+            <text class="mv" x="288" y="38">&#10003; used</text>
+            <text class="ms" x="368" y="38">the bus&rsquo;s record of truth</text>
+          </g>
+          <!-- row 2: R7.02 ZSET — used -->
+          <g class="mrow used" data-row="zset">
+            <rect class="bg" x="4" y="57" width="472" height="34" rx="5"></rect>
+            <text class="ml" x="14" y="77">R7.02 &#183; compact ZSET</text>
+            <text class="mv" x="288" y="77">&#10003; used</text>
+            <text class="ms" x="368" y="77">Board ZADD/ZREVRANGE</text>
+          </g>
+          <!-- row 3: R7.03 exact SET — used -->
+          <g class="mrow used" data-row="set">
+            <rect class="bg" x="4" y="96" width="472" height="34" rx="5"></rect>
+            <text class="ml" x="14" y="116">R7.03 &#183; exact SET</text>
+            <text class="mv" x="288" y="116">&#10003; used</text>
+            <text class="ms" x="368" y="116">SADD/SCARD &mdash; count is small</text>
+          </g>
+          <!-- row 4: R7.03 HLL — not used -->
+          <g class="mrow notused" data-row="hll">
+            <rect class="bg" x="4" y="135" width="472" height="34" rx="5"></rect>
+            <text class="ml" x="14" y="155">R7.03 &#183; HyperLogLog</text>
+            <text class="mn" x="288" y="155">&#10007; not used</text>
+            <text class="ms" x="368" y="155">scale too small; exact is correct</text>
+          </g>
+          <!-- row 5: R7.04 bitmaps — not used -->
+          <g class="mrow notused" data-row="bmp">
+            <rect class="bg" x="4" y="174" width="472" height="34" rx="5"></rect>
+            <text class="ml" x="14" y="194">R7.04 &#183; bitmaps</text>
+            <text class="mn" x="288" y="194">&#10007; not used</text>
+            <text class="ms" x="368" y="194">no dense boolean flag today</text>
+          </g>
+          <!-- row 6: R7.05 vectors — not used -->
+          <g class="mrow notused" data-row="vec">
+            <rect class="bg" x="4" y="213" width="472" height="34" rx="5"></rect>
+            <text class="ml" x="14" y="233">R7.05 &#183; vector sets</text>
+            <text class="mn" x="288" y="233">&#10007; not used</text>
+            <text class="ms" x="368" y="233">no recommendation surface</text>
+          </g>
+          <!-- row 7: R7.06 geo — not used -->
+          <g class="mrow notused" data-row="geo">
+            <rect class="bg" x="4" y="252" width="472" height="34" rx="5"></rect>
+            <text class="ml" x="14" y="272">R7.06 &#183; geospatial</text>
+            <text class="mn" x="288" y="272">&#10007; not used</text>
+            <text class="ms" x="368" y="272">location-agnostic emoji game</text>
+          </g>
+        </svg>
+        <div class="readout" id="matOut" aria-live="polite"><span class="rk">readout &#183;</span> Select
+        a row. Three patterns are the real read-models above (HASH, ZSET, exact SET). Four are the roads
+        not taken &mdash; each is right for a different workload.</div>
+        <p class="booknote">Static verdicts &mdash; job HASH &#10003; &middot; Board ZSET &#10003; &middot;
+        exact SET &#10003; / HLL &#10007; small scale &middot; bitmaps &#10007; no dense flag &middot;
+        vectors &#10007; no recommender &middot; geo &#10007; no location dimension.</p>
+      </figure>
+
+      <div class="bridge">
+        <div class="cell idea">
+          <span class="lbl">the chapter</span>
+          <p>Six data-modeling patterns: Redis as a primary database (R7.01), compact encodings (R7.02),
+          probabilistic structures (R7.03), bitmaps (R7.04), vector sets (R7.05), geospatial (R7.06).
+          Each trades memory, accuracy, or speed for a different workload shape.</p>
+        </div>
+        <div class="arrow" aria-hidden="true">&#8594;</div>
+        <div class="cell elix">
+          <span class="lbl">codemojex&rsquo;s dashboard</span>
+          <p><code>Codemojex.Board</code> &mdash; <code>ZADD</code>/<code>ZREVRANGE</code>
+          <code>cm:&lt;game&gt;:board</code> (R7.02 compact ZSET). <code>View.total_players/1</code> &mdash;
+          <code>SCARD cm:&lt;game&gt;:players</code> filled by <code>Rooms.add_player</code> &mdash;
+          <code>SADD</code> (R7.03 exact SET, small scale). The live view is a Valkey projection pushed
+          by <code>CodemojexWeb.RoomChannel</code> &mdash; no <code>XADD</code> stream.</p>
+        </div>
+      </div>
+
+      <p class="take">A real system uses a small, workload-chosen subset of the modeling family. codemojex
+      reaches for three patterns; the other three are absent because the scale and domain don&rsquo;t call
+      for them. &ldquo;Know which pattern fits which workload&rdquo; &mdash; made concrete by what one
+      consumer built and left on the shelf.</p>
+
+      <div class="doors">
+        <a class="door" href="/redis-patterns/data-modeling/primary-database">
+          <span class="dr">R7.01 &middot; in this course</span>
+          <h3>Redis as a primary database</h3>
+          <p>The job HASH as the record of truth: <code>emq:{q}:job:&lt;JOB&gt;</code>, <code>noeviction</code>,
+          AOF <code>everysec</code>. The bus&rsquo;s R7.01 applied form.</p>
+        </a>
+        <a class="door" href="/redis-patterns/data-modeling/memory-optimization">
+          <span class="dr">R7.02 &middot; in this course</span>
+          <h3>Memory optimization</h3>
+          <p>Compact encodings, short fields, capped structures. The Board ZSET applies these: minimal fields,
+          one write per guess, one read per render.</p>
+        </a>
+        <a class="door" href="/redis-patterns/data-modeling/probabilistic-data-structures">
+          <span class="dr">R7.03 &middot; in this course</span>
+          <h3>Probabilistic data structures</h3>
+          <p>HLL vs exact SET: when the cardinality is small, an exact SET is the right call. The contrast
+          that R7.03 set up, landed here.</p>
+        </a>
+        <a class="door" href="/redis-patterns/data-modeling/bitmap-patterns">
+          <span class="dr">R7.04 &middot; in this course</span>
+          <h3>Bitmaps</h3>
+          <p>Boolean flags at 1 bit per entity. codemojex has no live bitmap surface; a planned analytics
+          spike would use the player&rsquo;s branded-id placement hash as the bit offset.</p>
+        </a>
+        <a class="door" href="/redis-patterns/data-modeling/vector-sets">
+          <span class="dr">R7.05 &middot; in this course</span>
+          <h3>Vector sets</h3>
+          <p>HNSW similarity search. No recommendation surface in codemojex today and no infra spike.</p>
+        </a>
+        <a class="door" href="/redis-patterns/data-modeling/geospatial">
+          <span class="dr">R7.06 &middot; in this course</span>
+          <h3>Geospatial</h3>
+          <p>GEOADD/GEOSEARCH over a geohash sorted set. A location-agnostic emoji game has no location
+          dimension to model.</p>
+        </a>
+        <a class="door full" href="/bcs">
+          <span class="dr">/bcs &middot; B7 &#183; codemojex</span>
+          <h3>The codemojex manuscript chapter</h3>
+          <p>The worked consumer as the BCS manuscript tells it: the game on the BCS stack, its entities
+          branded, its guesses jobs on per-player lanes, its competitive state in Valkey. The workshop&rsquo;s
+          read-models are the manuscript&rsquo;s chapter on the operational data layer.</p>
+        </a>
+        <a class="door" href="/bcs/overview">
+          <span class="dr">/bcs/overview</span>
+          <h3>BCS overview &#8212; B0</h3>
+          <p>The branded-id contract and the identity that ties the job HASH, the Board ZSET, and the
+          player SET together: one <code>GAM</code> id, one <code>PLR</code> id, every key.</p>
+        </a>
+        <a class="door" href="/redis-patterns/data-modeling">
+          <span class="dr">R7 &middot; chapter landing</span>
+          <h3>Data Modeling &amp; Memory</h3>
+          <p>The chapter that the workshop closes: six patterns, the modeling family, the thesis made
+          concrete.</p>
+        </a>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech">
+        <span class="sno">&#167;6</span>
+        <h2>References</h2>
+        <span class="ssrc">sources &#183; related</span>
+      </div>
+      <div class="refs">
+        <div>
+          <h3 class="refgrp">Sources</h3>
+          <ul>
+            <li><a href="https://valkey.io/commands/zadd/" rel="noopener">Valkey &mdash; <em>ZADD</em></a> &mdash; add or update a member with a score in a sorted set; the write half of the Board ZSET.</li>
+            <li><a href="https://valkey.io/commands/zrevrange/" rel="noopener">Valkey &mdash; <em>ZREVRANGE</em></a> &mdash; return a range in descending order with optional scores; the leaderboard read.</li>
+            <li><a href="https://valkey.io/commands/sadd/" rel="noopener">Valkey &mdash; <em>SADD</em></a> &mdash; add members to a set; no-op if already present; fills <code>cm:&lt;game&gt;:players</code> on join.</li>
+            <li><a href="https://valkey.io/commands/scard/" rel="noopener">Valkey &mdash; <em>SCARD</em></a> &mdash; return the exact cardinality of a set in O(1); <code>View.total_players/1</code>.</li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="refgrp">Related in this course</h3>
+          <ul>
+            <li><a href="/redis-patterns/data-modeling">R7 &middot; Data Modeling &amp; Memory</a><span class="rs">the chapter the workshop closes</span></li>
+            <li><a href="/redis-patterns/data-modeling/primary-database">R7.01 &middot; Redis as a primary database</a><span class="rs">the job HASH as the record of truth</span></li>
+            <li><a href="/redis-patterns/data-modeling/memory-optimization">R7.02 &middot; Memory optimization</a><span class="rs">compact encodings and capped structures</span></li>
+            <li><a href="/redis-patterns/data-modeling/probabilistic-data-structures">R7.03 &middot; Probabilistic data structures</a><span class="rs">HLL vs exact SET — the contrast this page lands</span></li>
+            <li><a href="/redis-patterns/data-modeling/bitmap-patterns">R7.04 &middot; Bitmaps</a><span class="rs">boolean flags at 1 bit per entity</span></li>
+            <li><a href="/redis-patterns/data-modeling/vector-sets">R7.05 &middot; Vectors &amp; similarity search</a><span class="rs">HNSW; the absent road</span></li>
+            <li><a href="/redis-patterns/data-modeling/geospatial">R7.06 &middot; Geospatial</a><span class="rs">geohash sorted set; the absent road</span></li>
+            <li><a href="/bcs">BCS &middot; B7 codemojex</a><span class="rs">the manuscript chapter for the consumer</span></li>
+            <li><a href="/bcs/overview">BCS &middot; overview</a><span class="rs">the branded-id contract that ties the keys</span></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Module pager">
+      <a class="pgx" href="/redis-patterns/data-modeling/geospatial"><span class="pk">prev</span>&#8592; R7.06 &middot; Geospatial</a>
+      <a class="pgx" href="/redis-patterns/data-modeling"><span class="pk">up</span>R7 &middot; Data Modeling &amp; Memory &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Redis Patterns Applied — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">·</span>redis</span>
+        <p class="foot-tag">Redis Patterns Applied &mdash; the Redis design patterns, taught applied and grounded in the
+          real echo data layer: EchoMQ backed by Valkey, EchoStore in front.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">This chapter</p>
+        <a href="/redis-patterns/data-modeling/primary-database">R7.01 &middot; Redis as a primary database</a>
+        <a href="/redis-patterns/data-modeling/memory-optimization">R7.02 &middot; Memory optimization</a>
+        <a href="/redis-patterns/data-modeling/probabilistic-data-structures">R7.03 &middot; Probabilistic</a>
+        <a href="/redis-patterns/data-modeling/bitmap-patterns">R7.04 &middot; Bitmaps</a>
+        <a href="/redis-patterns/data-modeling/vector-sets">R7.05 &middot; Vectors</a>
+        <a href="/redis-patterns/data-modeling/geospatial">R7.06 &middot; Geospatial</a>
+        <a href="/redis-patterns/data-modeling/workshop">R7.07 &middot; Workshop</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/redis-patterns">Redis Patterns &mdash; this course</a>
+        <a href="/bcs/overview">The Branded Component System &mdash; overview</a>
+        <a href="/bcs">The Branded Component System</a>
+        <a href="/elixir">Functional Programming in Elixir</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp &mdash; activate to decode">
+        build <span class="id" id="stampId">TSK0OHKMCTaOWn</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- interactive 1: the three read-models (hover-select) ----------
+   * Pure lookup table: read-model key → description text.
+   * No side effects beyond toggling .on/.focus and writing the readout.
+   * Hover shows; click locks; second click on the same button releases.
+   * Degrades: controls + SVG present statically, JS only enhances.
+   */
+  var RM = {
+    board: {
+      text: '<b>Leaderboard ZSET</b> &mdash; <code>Codemojex.Board</code>. Key: <code>cm:&lt;game&gt;:board</code> (unbraced). Write: <code>ZADD cm:&lt;game&gt;:board &lt;score&gt; &lt;PLR&gt;</code> &mdash; one per scored guess. Read: <code>ZREVRANGE cm:&lt;game&gt;:board 0 n-1 WITHSCORES</code> &mdash; the top-N in descending order. <b>R7 pattern: R7.02</b> &mdash; a compact, ordered ZSET read-model; one write per guess, one read per render.'
+    },
+    players: {
+      text: '<b>Unique players SET</b> &mdash; <code>Codemojex.View</code> + <code>Codemojex.Rooms</code>. Key: <code>cm:&lt;game&gt;:players</code>. Write: <code>SADD cm:&lt;game&gt;:players &lt;PLR&gt;</code> (Rooms.add_player/2, on join). Read: <code>SCARD cm:&lt;game&gt;:players</code> (View.total_players/1). <b>R7 pattern: R7.03 exact SET</b> &mdash; NOT HyperLogLog. A game\'s player count is small; exact is the correct choice here. HLL is the road-not-taken for large cardinality.'
+    },
+    view: {
+      text: '<b>Live view</b> &mdash; <code>Codemojex.View.game_view/1</code> projected by <code>CodemojexWeb.RoomChannel</code>. Folds the board + player count + privacy-gated game state into the player-facing view. Pushed over Phoenix Channels on each <code>:scored</code> PubSub event; re-read on a client <code>refresh</code>. <b>No <code>XADD</code> activity stream</b> &mdash; this is the R5 road not taken. A projection re-read from Valkey is simpler and sufficient.'
+    }
+  };
+
+  var rmfig = document.getElementById('rmfig');
+  var rmButtons = document.querySelectorAll('#rmSel button');
+  var rmOut = document.getElementById('rmOut');
+  var rmLocked = null;
+
+  function selectRM(key) {
+    rmButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-rm') === key ? 'true' : 'false');
+    });
+    if (rmfig) {
+      rmfig.classList.toggle('focus', !!key);
+      rmfig.querySelectorAll('.rm').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-rm') === key);
+      });
+    }
+    if (key && RM[key]) {
+      rmOut.innerHTML = '<span class="rk">readout &#183;</span> ' + RM[key].text;
+    } else {
+      rmOut.innerHTML = '<span class="rk">readout &#183;</span> Select a read-model. Each card names its Valkey key, the command pair that writes and reads it, and the R7 pattern it applies. The three together are codemojex\'s entire Valkey read layer.';
+    }
+  }
+
+  rmButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-rm');
+      if (rmLocked === key) {
+        rmLocked = null;
+        selectRM(null);
+      } else {
+        rmLocked = key;
+        selectRM(key);
+      }
+    });
+    b.addEventListener('mouseenter', function () {
+      selectRM(b.getAttribute('data-rm'));
+    });
+    b.addEventListener('mouseleave', function () {
+      selectRM(rmLocked);
+    });
+  });
+
+  /* ---------- interactive 2: the R7 pattern matrix (hover-select) ----------
+   * Pure lookup: row key → verdict + explanation.
+   * Hover shows; click locks; second click releases.
+   */
+  var ROWS = {
+    hash: {
+      text: '<b>R7.01 &middot; job HASH &mdash; &#10003; used.</b> The EchoMQ bus stores each job as a HASH at <code>emq:{q}:job:&lt;JOB&gt;</code> with three fields: <code>state</code> / <code>attempts</code> / <code>payload</code>. The HASH is the record of truth; <code>noeviction</code> + AOF <code>everysec</code> keep it durable. This is R7.01\'s primary-database pattern applied directly to the bus codemojex runs on.'
+    },
+    zset: {
+      text: '<b>R7.02 &middot; compact ZSET &mdash; &#10003; used.</b> <code>Codemojex.Board</code> keeps one sorted set per game at <code>cm:&lt;game&gt;:board</code>. A <code>ZADD</code> per scored guess writes the player\'s best score; <code>ZREVRANGE &hellip; WITHSCORES</code> reads the top-N. The ZSET stays compact (one entry per player, one score per player) and ordered by construction &mdash; no separate sort, no index.'
+    },
+    set: {
+      text: '<b>R7.03 &middot; exact SET &mdash; &#10003; used.</b> <code>Codemojex.Rooms.add_player/2</code> does a <code>SADD</code> to <code>cm:&lt;game&gt;:players</code> when each player joins. <code>View.total_players/1</code> calls <code>SCARD</code> for the exact count. The player set is small; an exact SET is correct. Zero error, a few bytes per player id.'
+    },
+    hll: {
+      text: '<b>R7.03 &middot; HyperLogLog &mdash; &#10007; not used.</b> HLL (<code>PFADD</code>/<code>PFCOUNT</code>) is the right tool when cardinality is so large that storing every id exactly is too expensive and a ~0.81% error rate is acceptable. A game\'s player count is small &mdash; tens to hundreds, not billions. The exact SET is cheaper and correct. HLL is the road-not-taken at this scale.'
+    },
+    bmp: {
+      text: '<b>R7.04 &middot; bitmaps &mdash; &#10007; not used.</b> Bitmaps excel at dense boolean flags over a large integer id space (<code>SETBIT</code>/<code>BITCOUNT</code>/<code>BITOP</code>). codemojex has no live bitmap surface. A planned analytics spike (<code>cm-bitmapist</code>, using roaring bitmaps at the player branded-id placement hash as the bit offset) is specced but not shipped.'
+    },
+    vec: {
+      text: '<b>R7.05 &middot; vector sets &mdash; &#10007; not used.</b> Vector sets (Redis 8 <code>VADD</code>/<code>VSIM</code>; Valkey via the <code>valkey-search</code> module) answer "what is <em>like</em> this?" &mdash; semantic search, recommendations, RAG. codemojex has no recommendation surface and no infra spike. A "rooms you might like" recommender is a plausible future use, but ships nothing today.'
+    },
+    geo: {
+      text: '<b>R7.06 &middot; geospatial &mdash; &#10007; not used.</b> <code>GEOADD</code>/<code>GEOSEARCH</code> encode coordinates into a geohash sorted set for radius and box queries. codemojex is a location-agnostic Telegram emoji-guessing game &mdash; players guess emoji; the bus rotates service across players; nothing is placed in space. The honest absence: geospatial does not map onto this domain.'
+    }
+  };
+
+  var matfig = document.getElementById('matfig');
+  var matButtons = document.querySelectorAll('#matSel button');
+  var matOut = document.getElementById('matOut');
+  var matLocked = null;
+
+  function selectRow(key) {
+    matButtons.forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-row') === key ? 'true' : 'false');
+    });
+    if (matfig) {
+      matfig.classList.toggle('focus', !!key);
+      matfig.querySelectorAll('.mrow').forEach(function (g) {
+        g.classList.toggle('on', g.getAttribute('data-row') === key);
+      });
+    }
+    if (key && ROWS[key]) {
+      matOut.innerHTML = '<span class="rk">readout &#183;</span> ' + ROWS[key].text;
+    } else {
+      matOut.innerHTML = '<span class="rk">readout &#183;</span> Select a row. Three patterns are the real read-models above (HASH, ZSET, exact SET). Four are the roads not taken &mdash; each is right for a different workload.';
+    }
+  }
+
+  matButtons.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-row');
+      if (matLocked === key) {
+        matLocked = null;
+        selectRow(null);
+      } else {
+        matLocked = key;
+        selectRow(key);
+      }
+    });
+    b.addEventListener('mouseenter', function () { selectRow(b.getAttribute('data-row')); });
+    b.addEventListener('mouseleave', function () { selectRow(matLocked); });
+  });
+
+  matfig && matfig.querySelectorAll('.mrow').forEach(function (g) {
+    g.addEventListener('mouseenter', function () { selectRow(g.getAttribute('data-row')); });
+    g.addEventListener('mouseleave', function () { selectRow(matLocked); });
+  });
+
+  /* ---------- Branded Snowflake decoder ---------- */
+  var B62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  var EPOCH_MS = 1704067200000;
+  function b62decode(s) { var n = 0n; for (var i = 0; i < s.length; i++) { var d = B62.indexOf(s.charAt(i)); if (d < 0) return null; n = n * 62n + BigInt(d); } return n; }
+  function pad2(x) { return (x < 10 ? '0' : '') + x; }
+  function decodeBranded(id) {
+    if (!id || id.length !== 14) return null;
+    var ns = id.slice(0, 3), snow = b62decode(id.slice(3));
+    if (snow === null) return null;
+    var ts = snow >> 22n, node = (snow >> 12n) & 0x3FFn, seq = snow & 0xFFFn;
+    var d = new Date(Number(ts) + EPOCH_MS);
+    var tstr = d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate()) + ' ' + pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()) + ':' + pad2(d.getUTCSeconds()) + ' UTC';
+    return { ns: ns, snow: snow.toString(), node: node.toString(), seq: seq.toString(), ts: tstr };
+  }
+  var stamp = document.getElementById('stamp'), idEl = document.getElementById('stampId');
+  if (stamp && idEl) {
+    var info = decodeBranded(idEl.textContent.trim());
+    if (info) { var put = function (id, t) { var el = document.getElementById(id); if (el) el.textContent = t; };
+      put('st-ns', info.ns); put('st-snow', info.snow); put('st-node', info.node); put('st-seq', info.seq); put('st-ts', info.ts); }
+    var toggle = function () { var open = stamp.classList.toggle('open'); stamp.setAttribute('aria-expanded', open ? 'true' : 'false'); };
+    stamp.addEventListener('click', toggle);
+    stamp.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); toggle(); } });
+  }
+})();
+</script>
+
+</body>
+</html>
