@@ -15,16 +15,19 @@ export type Route =
   | "foundations/type"
   | "foundations/spacing"
   | "components/button"
+  | "components/link"
   | "components/input"
   | "components/selection"
   | "components/chip"
   | "components/avatar"
   | "components/alert"
   | "components/progress"
+  | "components/divider"
   | "components/tabs"
   | "components/modal"
   | "components/table"
   | "patterns/forms"
+  | "patterns/auth"
   | "patterns/dashboard";
 
 const ROUTE_KEY = "mercury-showcase-route";

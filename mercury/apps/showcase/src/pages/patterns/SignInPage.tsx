@@ -1,4 +1,4 @@
-import { Button, Card, Checkbox, Icon, Input } from "@mercury/ui";
+import { Button, Card, Checkbox, Divider, Icon, Input, Link } from "@mercury/ui";
 import { createForm, toast } from "@mercury/effector";
 import { useState } from "react";
 import { Page, PageHead } from "../../chrome/Page";
@@ -43,10 +43,7 @@ export function SignInPage() {
               Sign in to Mercury
             </h2>
             <p style={{ font: "400 14px/20px var(--font-primary)", color: "rgb(var(--fg-secondary))", margin: 0 }}>
-              New here?{" "}
-              <a href="#" style={{ color: "rgb(var(--fg-link))", textDecoration: "none", fontWeight: 600 }}>
-                Create an account
-              </a>
+              New here? <Link size="sm">Create an account</Link>
             </p>
           </div>
 
@@ -72,12 +69,7 @@ export function SignInPage() {
             />
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <Checkbox checked={remember} onChange={setRemember} label="Remember me" />
-              <a
-                href="#"
-                style={{ font: "500 13px/1 var(--font-primary)", color: "rgb(var(--fg-link))", textDecoration: "none" }}
-              >
-                Forgot password?
-              </a>
+              <Link size="sm">Forgot password?</Link>
             </div>
           </div>
 
@@ -85,19 +77,8 @@ export function SignInPage() {
             Sign in
           </Button>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "20px 0" }}>
-            <div style={{ flex: 1, height: 1, background: "rgb(var(--border-secondary))" }} />
-            <span
-              style={{
-                font: "500 11px/1 var(--font-primary)",
-                color: "rgb(var(--fg-tertiary))",
-                letterSpacing: 1.5,
-                textTransform: "uppercase",
-              }}
-            >
-              or
-            </span>
-            <div style={{ flex: 1, height: 1, background: "rgb(var(--border-secondary))" }} />
+          <div style={{ margin: "20px 0" }}>
+            <Divider label="or" />
           </div>
 
           <Button variant="secondary" fullWidth size="lg">

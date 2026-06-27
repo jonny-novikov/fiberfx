@@ -8,16 +8,19 @@ import { Colors } from "./pages/foundations/Colors";
 import { Typography } from "./pages/foundations/Typography";
 import { Spacing } from "./pages/foundations/Spacing";
 import { ButtonPage } from "./pages/components/ButtonPage";
+import { LinkPage } from "./pages/components/LinkPage";
 import { InputPage } from "./pages/components/InputPage";
 import { SelectionPage } from "./pages/components/SelectionPage";
 import { ChipBadgePage } from "./pages/components/ChipBadgePage";
 import { AvatarPage } from "./pages/components/AvatarPage";
 import { AlertPage } from "./pages/components/AlertPage";
 import { ProgressPage } from "./pages/components/ProgressPage";
+import { DividerPage } from "./pages/components/DividerPage";
 import { TabsPage } from "./pages/components/TabsPage";
 import { ModalPage } from "./pages/components/ModalPage";
 import { TablePage } from "./pages/components/TablePage";
 import { SignInPage } from "./pages/patterns/SignInPage";
+import { AuthFlowPage } from "./pages/patterns/AuthFlowPage";
 import { DashboardPage } from "./pages/patterns/DashboardPage";
 
 const PAGES: Record<Route, ComponentType> = {
@@ -26,16 +29,19 @@ const PAGES: Record<Route, ComponentType> = {
   "foundations/type": Typography,
   "foundations/spacing": Spacing,
   "components/button": ButtonPage,
+  "components/link": LinkPage,
   "components/input": InputPage,
   "components/selection": SelectionPage,
   "components/chip": ChipBadgePage,
   "components/avatar": AvatarPage,
   "components/alert": AlertPage,
   "components/progress": ProgressPage,
+  "components/divider": DividerPage,
   "components/tabs": TabsPage,
   "components/modal": ModalPage,
   "components/table": TablePage,
   "patterns/forms": SignInPage,
+  "patterns/auth": AuthFlowPage,
   "patterns/dashboard": DashboardPage,
 };
 
