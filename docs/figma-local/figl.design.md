@@ -225,6 +225,62 @@ throw, `:423`).
 **CHOSEN-AGAINST:** a dedicated async-only rung (Venus-A's `figl.2`) is correct but spends a
 deploy on a change with no user-visible effect; folding it into `figl.5` pays the deploy once.
 
+## 5b. The export + embed extension — ADRs (`figl.6`–`figl.8` · 2026-06-27)
+
+The 2026-06-27 Operator ask — high-fidelity + React-suitable export, then a context-embeddable
+payload "for efficient LLMs token usage" — extends the program past extraction. The export-direction
+fork (a structured **Bundle IR** vs. ready-to-render **Codegen**) was argued in full via the
+two-architect method in
+[export.design.md](../codemojex-tma/kb/figma-livesync/export.design.md) and **ruled Bundle (staged)**.
+These four ADRs record that ruling and the three additive decisions the new rungs turn on; the rungs
+are in [figl.roadmap.md](figl.roadmap.md).
+
+### ADR-9 — export is a structured FigureBundle IR; codegen deferred
+**RULED (Bundle, staged — Operator 2026-06-27).** `export-figure` returns a thin **FigureBundle**:
+resolved geometry + CSS-style props + text runs + token *references* (`{token, value}`) + asset *refs*
+— a data contract a renderer or agent turns into React. Token-by-reference is *why* Bundle won: the
+plugin emits the variable *name* and the consumer's `@theme` map decides the class; codegen would have
+to guess it.
+**CHOSEN-AGAINST:** Codegen (emit `.tsx` directly) is closest to drop-in but freezes a styling-target
+guess (inline / CSS-module / Tailwind) onto a no-CI plugin surface and carries a codegen-maintenance
+liability. Deferred behind a **named seam** — a Mac-side `export-react` scaffold reads the FigureBundle
+and emits `.tsx`, additive on top, no rework — revisited when a second consumer proves the Tailwind
+target stable. Full case: export.design.md.
+
+### ADR-10 — figure assets are humanized, stable, and by-reference (SVG to disk, not inline)
+**RULED-pending (recommend).** Both vectors and rasters write to a **stable, humanized** path
+(`<ASSET_ROOT>/<screen-slug>/<layer-slug>[-<shortId>].<ext>`); the bundle carries lightweight metadata
+only (`{id, node, name, type, w, h, scale, byteLen, path}`). This extends ADR-1 (bytes never in the
+result) with the two properties reuse needs: **stable** names (not the timestamped ephemeral render
+filename, `mcp.js:99` — a path you can re-reference) and **humanized** names (the Figma layer slug, not
+`94_2974`). A separate `assets/` subdir keeps reusable assets — `cleanup-renders` already lists only
+top-level files (`mcp.js:305`), so the subdir is unswept for free.
+**CHOSEN-AGAINST:** inline SVG in the bundle (attractive for tiny icons, but bloats the result the
+*context* pays for and is not independently reusable — counter to "save locally for future use"); the
+timestamped `RENDER_ROOT` name (cleanup-friendly but not a stable reference). The `svg:'inline'`
+toggle preserves the inline option for the small-icon case.
+
+### ADR-11 — the screen registry is Mac-side and read-only (no Figma mutation)
+**RULED-pending (recommend).** Naming overrides live in a Mac-side `screens.json`
+(`{type, name, figure, slug, updatedAt}`), assigned via `name-screen` (selection-default) and read via
+`list-screens`. Naming **never mutates the Figma document** — it maps a human name onto a node id on
+the Mac. This keeps the whole program read-only against the live design and needs **no new plugin
+*write* capability** (the highest-liability class on a no-CI box).
+**CHOSEN-AGAINST:** writing the name back into the Figma layer (a plugin mutation — deferred to S-7,
+gated behind the no-auth seam S-1); Figma `clientStorage` (couples the registry to one machine's plugin
+state and is not version-controllable). The selection-driven batch is a **mode** of the existing
+`get-selection` + `export-figure`, not a new tool — holding tool-count liability flat.
+
+### ADR-12 — `llms.txt` is an index plus an embedded payload; bytes by-reference
+**RULED-pending (recommend).** `export-llms` emits the llmstxt.org-format **`llms.txt`** index *and* a
+**payload** (`llms-full.txt`) that inlines the compact structural skeleton + the token table + the
+asset manifest (paths only). The split mirrors the convention's `llms.txt` / `llms-full.txt` pair: the
+index for cheap discovery, the payload for one-read context embedding. Heavy bytes stay by-reference
+(ADR-1 carried forward) — the payload is the *map*, the humanized assets are the *territory*.
+**CHOSEN-AGAINST:** index-only (forces an agent to chase N links before it can reason — defeats
+"efficient context embedding"); a payload that inlines bytes (re-introduces the ~1M-token egress ADR-1
+exists to prevent). Embed depth is a knob (S-8); default skeleton + tokens + manifest.
+
 ## 6. References
 
 - The method: [aaw.architect-approach.md](../aaw/aaw.architect-approach.md) (four-part arms, the

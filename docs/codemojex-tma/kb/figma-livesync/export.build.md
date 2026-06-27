@@ -29,22 +29,25 @@ A **projector over shipped reads** — adds no new `figma.*` capability beyond t
   + per-leaf `exportAsync({format:'SVG_STRING'})` for vectors / scaled raster for rasters; bounded by the
   existing `maxNodes`/`truncated` cap (`code.ts:188-211`). Add `'export-figure'` to `BACKED_ACTIONS`.
 - **MCP (`mcp.js`):** add `'export-figure'` to `ADVERTISED_ACTIONS`; `registerTool("export-figure", …)`
-  with Zod `{ nodeId?, depth?, scale?, svg? }`; raster assets → `RENDER_ROOT` via the existing
-  `renderFilename`/`writeFileSync`; **result = FigureBundle JSON with `{path,…}` asset refs + inline
-  `svg` strings, NEVER raw bytes** (ADR-1).
+  with Zod `{ nodeId?, depth?, scale?, svg? }` (`nodeId` omitted ⇒ the live selection; multi-select ⇒
+  batch). **Both** vector (`.svg`) and raster (`.png`/`.jpg`) assets write to a **stable, humanized**
+  path `<ASSET_ROOT>/<screen-slug>/<layer-slug>[-<shortId>].<ext>` (ADR-10) — NOT the timestamped
+  `RENDER_ROOT`; `cleanup-renders` already skips it (lists only top-level files, `mcp.js:305`).
+  **Result = FigureBundle JSON with lightweight asset metadata + `{path,…}` refs, NEVER raw bytes**
+  (ADR-1); inline `svg` only when `svg:'inline'`.
 
 ## The FigureBundle schema (the frozen contract — design with care; additive-minor thereafter)
 
 ```
 FigureBundle { root: FigureNode, truncated?: boolean, assets: Asset[] }
-Asset        { id, path, scale, w, h, byteLen }                    // rasters only
+Asset        { id, node, name, type:'svg'|'png'|'jpg', path, scale, w, h, byteLen }  // humanized + stable (ADR-10)
 FigureNode   {
   id, name, type,
   layout: { x, y, w, h, display?: 'flex', flexDirection?, gap?, padding?, … },  // auto-layout → flex
   style:  { background?: { token?, value }, border?, borderRadius?, boxShadow?, opacity? },
   text?:  { characters, runs? },
-  svg?:   string,        // inline SVG_STRING for a vector leaf
-  assetRef?: string,     // → assets[].id for a raster leaf
+  assetRef?: string,     // → assets[].id for a vector (.svg) OR raster (.png/.jpg) leaf — both to disk
+  svg?:   string,        // OPTIONAL inline SVG_STRING, only when called with svg:'inline'
   children?: FigureNode[]
 }
 ```
@@ -54,6 +57,9 @@ FigureNode   {
   the class. Do **not** bake a hex when a token name exists. This is why Bundle won the fork.
 - **Style-prop mapping:** harvest/invert the vocabulary from `mcp/react-figma/src/styleTransformers/`
   (RGB→hex, fills→background) — **read, never run** (react-figma is the inverse direction, not git-tracked).
+- **Downstream (new rungs):** the humanized assets + the FigureBundle feed `figl.7` (screen registry +
+  naming overrides + selection batch) and `figl.8` (`llms.txt` context-embedding payload) — the
+  2026-06-27 extension in [figl.roadmap.md](../../../figma-local/figl.roadmap.md).
 
 ## 3-site coherence checklist (`mcp/CLAUDE.md:46-54`)
 
