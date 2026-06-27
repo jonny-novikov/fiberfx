@@ -21,9 +21,9 @@ export default meta;
 
 type Story = StoryObj<typeof RoomCard>;
 
-// Args track the Figma master rooms (Простой сейф / Золотая комната / Стальной ящик).
+// Args track the Figma master rooms (Бокс для разминки / Золотая комната / Стальной ящик).
 export const Free: Story = {
-  args: { name: 'Простой сейф', prize: 52, stars: 1, emojiCount: 80, cells: 6, ctaLabel: 'Открыть 🔑 бесплатно' },
+  args: { name: 'Бокс для разминки', prize: 52, stars: 1, emojiCount: 80, cells: 6, ctaLabel: 'Открыть 🔑 бесплатно' },
 };
 export const Golden: Story = {
   name: 'Golden room',

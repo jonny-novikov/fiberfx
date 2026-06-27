@@ -36,7 +36,7 @@ import { CharacterFooter } from './CharacterFooter';
 
 // The room list — names/prizes/meta/CTAs verbatim from the Figma master.
 export const LOBBY_ROOMS = [
-  { name: 'Простой сейф', prize: 52, stars: 1, emojiCount: 80, cells: 6, ctaLabel: 'Открыть 🔑 бесплатно' },
+  { name: 'Бокс для разминки', prize: 52, stars: 1, emojiCount: 80, cells: 6, ctaLabel: 'Открыть 🔑 бесплатно' },
   { name: 'Золотая комната', prize: 10, stars: 1, emojiCount: 80, cells: 6, ctaLabel: 'Открыть сейф 🔑 1', golden: true },
   { name: 'Стальной ящик', prize: 1352, stars: 2, emojiCount: 140, cells: 6, bestPercent: 24.32, ctaLabel: 'Открыть 🔑 сейф' },
 ];
@@ -51,7 +51,7 @@ export const LOBBY_GOLDEN_ARCHIVE = [
 export const LOBBY_ARCHIVE = [
   { name: 'Хардкор', prize: 23, code: ['😀', '🐱', '🔥', '🎮', '💎', '🚀'], gameId: '271597758257029120', timeAgo: '1ч 34м назад', winner: '@jonnynovikov' },
   { name: 'Хардкор', prize: 23, code: ['🍀', '🎲', '🪙', '🔑', '⭐', '🧩'], gameId: '410812780257029121', timeAgo: '2ч 10м назад', winner: 'tgid 410812780' },
-  { name: 'Простой сейф', prize: 52, code: ['🌟', '🍎', '🐙', '🎯', '💫', '🥇'], gameId: '271597758257020999', timeAgo: '5ч назад', winner: '@mara' },
+  { name: 'Бокс для разминки', prize: 52, code: ['🌟', '🍎', '🐙', '🎯', '💫', '🥇'], gameId: '271597758257020999', timeAgo: '5ч назад', winner: '@mara' },
 ];
 
 // The board's "All Screen Fill" gradient (Figma 94:2974 fill) — top-light to

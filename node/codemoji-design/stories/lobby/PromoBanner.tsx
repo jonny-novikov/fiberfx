@@ -18,7 +18,7 @@ export interface PromoBannerProps {
 export function PromoBanner({ totalEarned = 25693, onBuy, className }: PromoBannerProps) {
   return (
     <BoardCard className={cn('text-center', className)}>
-      <h2 className="text-h3 font-bold leading-tight text-card-foreground">
+      <h2 className="text-h1 font-bold leading-tight text-card-foreground">
         Игроки нашли ${totalEarned} в сейфах за всё время игры
       </h2>
       <p className="mt-3 text-h5 text-card-foreground-secondary">
