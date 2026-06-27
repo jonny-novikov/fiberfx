@@ -21,10 +21,10 @@ a reader never mistakes a planned rung for a shipped one.
 `@codemoji/design` is three things in one package:
 
 1. **A token pipeline.** `tokens/tokens.mjs` → `src/theme.mjs` → `dist/theme.css` — a Tailwind v4
-   `@theme` block with drop-in variable names (`--accent`, `--gradient-gold`, `--gold-texture`, the
+   `@theme` block with drop-in variable names (`--accent`, `--gold-texture`, the `--gold-*` family, the
    semantic `--primary`/`--enter` controls). A single themeable `--accent` drives the accent themes
-   (orange/blue/green via `[data-theme]`); the gold treatment is formalized as `--gradient-gold` /
-   `--gold-texture` (the app's `gold.png`). The app consumes the built `theme.css`; the wiring is the
+   (orange/blue/green via `[data-theme]`); the gold treatment is formalized as `--gold-texture` (the
+   app's `gold.png`, painted by the `bg-gold-texture` utility) plus the `--gold-*` family. The app consumes the built `theme.css`; the wiring is the
    subject of [`../../../node/codemoji-design/THEMING.md`](../../../node/codemoji-design/THEMING.md).
 
 2. **A Storybook component catalogue.** Each game screen is catalogued as a **live re-expression
@@ -108,7 +108,7 @@ forward-tense.
 
 - **Deliberate role-drift is preserved and recorded** — never silently reverted toward the master.
   The recorded overrides to date: the blue `enter` control (`--color-enter` `#0050FF`); the gold
-  treatment (`--gradient-gold` / `--gold-texture`) on the hero / answer-reveal / standings; the
+  treatment (`--gold-texture`, the `bg-gold-texture` utility) on the hero / answer-reveal / standings; the
   Main-Blue points bar in the leaderboard; the board gradient (`#E8F3F7 → #AFC7D6`) painted by the
   screen component itself.
 - **Tokens are single-source** — a colour/treatment is a token in the pipeline, never a literal in a
