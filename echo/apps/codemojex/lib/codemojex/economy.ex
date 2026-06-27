@@ -52,6 +52,23 @@ defmodule Codemojex.Economy do
     do: 0
 
   @doc """
+  The pool-credit portion in **keys** for a Golden Room buy-in (cm.6 D-2). The keys
+  counterpart of `entry_fee_split/5`: the same floor `div(entry_fee_keys ×
+  (100 − revenue_pct), 100)`, BEFORE the ×10 keys→💎 conversion. Both the house cut
+  (`entry_fee_keys − this`) and the pool 💎 (`this × @diamonds_per_key`) derive from
+  this **one** floor, so they partition the fee exactly in keys with zero residue
+  (`house_keys + pool_keys == entry_fee_keys`). 0 outside the first-mover band, where
+  `entry_fee_split/5` is also 0. Pure: the same inputs always yield the same portion.
+  """
+  def entry_fee_split_keys(ordinal, start_threshold, first_movers, revenue_pct, entry_fee_keys)
+      when ordinal > start_threshold and ordinal <= start_threshold + first_movers do
+    div(entry_fee_keys * (100 - revenue_pct), 100)
+  end
+
+  def entry_fee_split_keys(_ordinal, _start_threshold, _first_movers, _revenue_pct, _entry_fee_keys),
+    do: 0
+
+  @doc """
   Winner-take-all payout — the room-close rule: the whole `pool` (diamonds) goes
   to the max-score player(s), split evenly on a tie. `board` is `[{player, score}]`
   highest first. Returns `[{player, diamonds}]`.

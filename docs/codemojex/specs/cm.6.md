@@ -188,10 +188,15 @@ multi-currency** so the cm.7 KeyShop's Stars purchases book into the *same* ledg
 - **S-ATOMIC-DOUBLE-ENTRY.** **Given** a buy-in, **When** the transaction commits, **Then** the player debit AND
   the house `revenue_ledger` credit AND the pool increment are **all present or all absent** (a crash leaves no
   half-entry — one `Repo.transaction` under the games-row lock; no new lock, no new race). The buy-in now mints
-  **two** ids per call (the `TXN` `delta:0` marker + the `RVL` revenue row, PF-6) → the ≥100 determinism loop
-  is the guard for the new same-ms contention.
+  **two** ids per call (the `TXN` `delta:0` marker + the `RVL` revenue row, PF-6). **Posture (VERIFIED, cm-6
+  `D-9` / Apollo): the mint is COLLISION-FREE** — `EchoData.Snowflake`'s atomics-CAS generator is strictly
+  monotonic, so the dual mint is no same-ms contention hazard (re-proven: a 200k-mint `TXN`+`RVL` burst → 0
+  collisions). The ≥100 determinism loop CONFIRMS this; its only residual catch is the pre-existing **L-5**
+  no-`Sandbox` cross-run accumulation (a test-hygiene debt, named forward — never a cm.6 mint hazard, no
+  in-boundary retry needed).
 - **S-RECONCILE — explicit equals implicit.** **Given** a closed Golden Room, **When** finance reads the
-  reconciliation query (`Wallet.house_balance(game)`, grouped by reason), **Then** the house balance for the
+  per-game reconciliation query (as-built: `Wallet.revenue_breakdown(game)`, grouped by reason — NOT
+  `house_balance(game)`; the `/1` arg of `house_balance` is an account, see the Build brief seam), **Then** the house balance for the
   game equals the five-way breakdown `seed_debit + deposit-recovery + first-mover-revenue + full-revenue +
   reclaim`, and **matches the conservation figure cm.5 derives implicitly** (`Σ fee_i − Σ pool_💎_i / 10`) —
   the same number, now a row; proven by a property test against a **cm.5-only computation** (the player debits
@@ -370,9 +375,12 @@ the 💎 fn at `economy.ex:45-52`, stays byte-unchanged).
   the games-row seed write + the house debit into one `Repo.transaction`; state the determinism posture for
   the pool field (do **not** claim ACID across the two stores). Build-time: spot-read `Store.put_game`'s
   Postgres composition to confirm the wrap point.
-- **PF-6 · two id mints per buy-in now** (the `TXN` `delta:0` marker `wallet.ex:348` + the `RVL` revenue row)
-  → the new same-ms contention surface; the **≥100 determinism loop is mandatory** and its posture statement
-  must name this.
+- **PF-6 · two id mints per buy-in now** (the `TXN` `delta:0` marker `wallet.ex:348` + the `RVL` revenue row).
+  **DISPOSED (VERIFIED, `D-9`): the mint is collision-free** — `EchoData.Snowflake`'s atomics-CAS generator is
+  strictly monotonic (a 200k-mint `TXN`+`RVL` burst → 0 collisions), so this is **not** a same-ms contention
+  surface. The ≥100 determinism loop confirmed it; the loop's only residual catch is the pre-existing **L-5**
+  no-`Sandbox` cross-run accumulation (a test-hygiene debt, named forward — no `house_post` retry, which would
+  be dead code).
 - **PF-7 · the reconciliation read is a pure `SUM`** — `SUM(delta) FROM revenue_ledger WHERE account=house
   [AND ref=game] GROUP BY currency[, reason]`, reusing the `from t in …` shape of `buy_in_count`
   (`wallet.ex:330`); no schema, no cross-store read.
@@ -382,8 +390,13 @@ the 💎 fn at `economy.ex:45-52`, stays byte-unchanged).
 - `Wallet.house_post(account, currency, delta_keys, reason, ref)` — the single house signed-row primitive;
   reachable from the buy-in sites (inside `Wallet`) and from `Rooms` (SEAM-1/SEAM-2, via a public
   `Wallet.book_house` boundary fn — keeps the primitive single, behind `Wallet`).
-- `Wallet.house_balance/0..1` — the reconciliation read (`house_balance()` → per-currency total;
-  `house_balance(game)` → per-game, grouped by reason).
+- The reconciliation read — **as-built (Apollo sync): two distinct fns**, not one overloaded `house_balance`.
+  `Wallet.house_balance/0..1` takes an **`account`** (default `"platform"`) and returns the per-**currency**
+  total `%{"keys" => Σ}` (`SUM(delta) WHERE account=… GROUP BY currency`, `wallet.ex:325`). The **per-game**
+  breakdown grouped by **reason** is the separate `Wallet.revenue_breakdown/1` (`SUM(delta) WHERE ref=game
+  GROUP BY reason`, `wallet.ex:351`). The `/1` arg of `house_balance` is an account, NOT a game — calling
+  `house_balance(game_id)` returns `%{}`. The BNK bank binds the account balance to `house_balance/0..1` and
+  the per-game read to `revenue_breakdown/1`.
 - `Economy.entry_fee_split_keys/5` — the pure keys-pool-portion fn.
 - The house account constant (`account="platform"`); confirm the `revenue_ledger` schema + the `RVL` mint
   shape against `EchoData.BrandedId` (a fixed-shape `generate!("RVL")`, mirroring the existing

@@ -10,7 +10,7 @@ defmodule Codemojex.Rooms do
   The room then returns to waiting for the next game.
   """
   alias EchoWire.Cmd
-  alias Codemojex.{Bus, Store, Cache, EmojiSet, Wallet, Economy, Board, Notifier, Wire}
+  alias Codemojex.{Bus, Store, Cache, EmojiSet, Wallet, Economy, Board, Notifier, Wire, Repo}
 
   # The record separator joining the six secret codes before the nonce, in the
   # commit-reveal hash (V-14). Pinned so a client recomputes the commitment
@@ -133,7 +133,32 @@ defmodule Codemojex.Rooms do
           |> Map.merge(formation(room, now, golden))
           |> seal_commitment(type, secret)
 
-        :ok = Store.put_game(gid, game)
+        # SEAM-1 (cm.6 D-4) — the golden seed is a real platform outlay. The seed
+        # write was a bare Store.put_game (PF-5: a single Repo.insert, NOT a txn); wrap
+        # it + the deposit_seed debit in ONE Repo.transaction so the games row and the
+        # house debit are atomic (S-SEED). A non-golden game has no virtual_deposit ⇒
+        # posts nothing (a no-op txn over the same write). The debit is −div(V,10) keys
+        # (the pool's V💎 ÷10), so the house holds a NEGATIVE balance until recoveries
+        # land — the revenue_ledger admits it (no non-negative CHECK, D-1). Cross-store
+        # note: the Valkey pool field is NOT in this txn — atomicity is the Postgres
+        # games row + the house row, not ACID across stores (PF-5).
+        {:ok, :ok} =
+          Repo.transaction(fn ->
+            :ok = Store.put_game(gid, game)
+
+            if golden and is_integer(game[:virtual_deposit]) do
+              Wallet.book_house(
+                Wallet.house_account(),
+                "keys",
+                -div(game[:virtual_deposit], 10),
+                "deposit_seed",
+                gid
+              )
+            end
+
+            :ok
+          end)
+
         :ok = Cache.put_game(gid, game)
         :ok = Store.put_room(room_id, %{room | status: :active, game: gid})
         # the joining player is the FIRST member: for a Golden Room this is the
@@ -462,7 +487,31 @@ defmodule Codemojex.Rooms do
   defp close_void(game, r) do
     case Cmd.set("cm:" <> game <> ":closed") |> Cmd.value("1") |> Cmd.nx() |> Wire.run(Bus.conn()) do
       {:ok, "OK"} ->
-        :ok = Store.put_game(game, Map.put(r, :status, :voided))
+        # SEAM-2 (cm.6 D-4) — the void reclaim, the seed-cancelling credit ONLY. The
+        # status write + the reclaim join ONE Repo.transaction (atomic); the NX close
+        # lock above is the exactly-once guard, so a second tick books no further row
+        # (idempotent — it never re-enters this branch). The credit is +div(V,10) keys
+        # (cancelling the deposit_seed debit), NOT Σ kept fees + seed — the kept fees
+        # are already booked at each buy-in, so Σ fees + seed would double-count
+        # (PF-4, money-critical). After the void the house net = Σ kept fees. No player
+        # is refunded (cm.5 D-7). reset_room stays OUT (a Valkey/room write, not money).
+        {:ok, :ok} =
+          Repo.transaction(fn ->
+            :ok = Store.put_game(game, Map.put(r, :status, :voided))
+
+            if Map.get(r, :golden, false) and is_integer(r[:virtual_deposit]) do
+              Wallet.book_house(
+                Wallet.house_account(),
+                "keys",
+                div(r[:virtual_deposit], 10),
+                "deposit_reclaim",
+                game
+              )
+            end
+
+            :ok
+          end)
+
         reset_room(r)
         {:ok, :voided}
 

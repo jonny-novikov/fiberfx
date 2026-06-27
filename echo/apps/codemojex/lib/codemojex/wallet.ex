@@ -11,10 +11,15 @@ defmodule Codemojex.Wallet do
   """
   import Ecto.Query
   alias Codemojex.Repo
-  alias Codemojex.Schemas.{Player, Transaction, Game}
+  alias Codemojex.Schemas.{Player, Transaction, Game, RevenueLedger}
   alias Codemojex.Economy
 
   @empty %{keys: 0, clips: 0, diamonds: 0, bonus_diamonds: 0, locked_diamonds: 0}
+
+  # The platform/house account — the credit counterparty for every platform cut, the
+  # sole `account` value this rung (cm.6 D-1). The five credit sites + the
+  # reconciliation read bind to this, so the representation is reversible behind it.
+  @house "platform"
 
   @doc "Create a player (`PLR`) with an opening balance (`:keys`, `:clips`, `:diamonds`)."
   def create(name, opts \\ []) do
@@ -225,6 +230,7 @@ defmodule Codemojex.Wallet do
               if p.keys < fee, do: Repo.rollback(:insufficient)
               if fee > 0, do: update!(p, %{keys: p.keys - fee})
 
+              # The pool 💎 (cm.5, byte-unchanged) — the tiered pool portion in diamonds.
               pool =
                 Economy.entry_fee_split(
                   ordinal,
@@ -235,6 +241,34 @@ defmodule Codemojex.Wallet do
                 )
 
               if pool > 0, do: inc_pool!(game, pool)
+
+              # The house keys cut + the pool 💎 derive from the ONE floor (cm.6 D-7/PF-3):
+              # pool_keys is the keys pool portion `entry_fee_split_keys/5` (economy.ex:63),
+              # and the pool 💎 above is that SAME floor × @diamonds_per_key
+              # (`entry_fee_split/5` = `entry_fee_split_keys/5` × 10, by construction). So
+              # the cut is the exact-integer keys complement `fee − pool_keys` — computed
+              # from the keys floor DIRECTLY, never re-divided from the 💎 (no div(pool, 10),
+              # the one-floor source D-7 mandates; PF-3).
+              pool_keys =
+                Economy.entry_fee_split_keys(
+                  ordinal,
+                  g.start_threshold || 0,
+                  g.first_movers || 0,
+                  g.entry_fee_revenue_percentage || 0,
+                  fee
+                )
+
+              # cm.6 (D-1/D-3) — the paired house credit, the additive overlay leg.
+              # The cm.5 player debit + the pool `+` above stay byte-for-byte; this
+              # ADDS one signed revenue_ledger row in the SAME transaction (atomic
+              # double-entry, S-ATOMIC-DOUBLE-ENTRY), riding the games-row lock — no
+              # new transaction, no new lock. pool_keys = 0 outside the first-mover band
+              # ⇒ the full fee (deposit-recovery + full-revenue); in the band ⇒ the
+              # complement of the keys pool portion, so house_keys + pool_keys == fee
+              # exactly (D-2). Recovery rows (ord ≤ threshold, which net the seed) carry
+              # "deposit_recovery"; the profit rows carry "revenue".
+              reason = if ordinal <= (g.start_threshold || 0), do: "deposit_recovery", else: "revenue"
+              house_post(@house, "keys", fee - pool_keys, reason, game)
               :member
           end
       end
@@ -279,6 +313,65 @@ defmodule Codemojex.Wallet do
         |> Map.drop([:__meta__])
         |> Map.merge(%{available_keys: p.keys, available_diamonds: p.diamonds - p.locked_diamonds})
     end
+  end
+
+  @doc "The platform/house account name — the source value the five credit sites + the reconciliation read bind to (cm.6 D-1)."
+  def house_account, do: @house
+
+  @doc """
+  Book one signed platform-revenue row (cm.6 D-1/D-7) — the public boundary verb for
+  `Rooms` (the seed debit, SEAM-1; the void reclaim, SEAM-2). A thin alias over the
+  single `house_post/5` primitive, so every platform movement funnels through one
+  signed-row insert. Call INSIDE the caller's `Repo.transaction` for atomicity with
+  the paired games-row write; returns the minted `RVL` id.
+  """
+  def book_house(account, currency, delta_keys, reason, ref),
+    do: house_post(account, currency, delta_keys, reason, ref)
+
+  @doc """
+  The platform-revenue balance, per currency (cm.6 D-1/D-2). `account` defaults to the
+  house. A pure `SUM(delta) GROUP BY currency` over a table holding ONLY platform
+  movements — no sentinel to exclude from player space (the dedicated-table payoff).
+  Returns `%{"keys" => Σ}` this rung; `%{"keys" => …, "stars" => …}` once cm.7 books
+  purchase rows, with NO read change (the multi-currency seam, D-5). For finance the
+  💎/¢ figure is a read-time conversion (`Economy.diamonds_for_keys` / `to_cents`),
+  never a stored row.
+  """
+  def house_balance(account \\ @house) do
+    Repo.all(
+      from r in RevenueLedger,
+        where: r.account == ^account,
+        group_by: r.currency,
+        # cast the :bigint SUM to :integer — Postgres numeric maps to Decimal
+        # otherwise; keys is integer-exact (D-2), so finance + the property tests read
+        # a plain integer, never a Decimal.
+        select: {r.currency, type(sum(r.delta), :integer)}
+    )
+    |> Map.new()
+  end
+
+  @doc """
+  A game's whole revenue story, grouped by reason (cm.6 Scope-In 5) — the per-game
+  reconciliation read, queried rather than re-derived. `%{"deposit_seed" => -s,
+  "deposit_recovery" => …, "revenue" => …, "deposit_reclaim" => …}` for a closed
+  Golden Room.
+
+  NOTE (the conservation framing, D-3): this sums the `revenue_ledger` rows for a
+  game. The full balance identity is `Σ player_key_debits == Σ house_key_credits +
+  Σ pool_key_portions` — over THREE observable columns (the `players.keys` deltas,
+  these revenue rows, `games.prize_pool` 💎 ÷ 10) — NOT `Σ all-ledger-rows = 0`: the
+  player debit is a bare `keys` column move and the pool is a `games` column, so a
+  naive single-table row-sum does not balance and must not be read as the system total.
+  """
+  def revenue_breakdown(game) do
+    Repo.all(
+      from r in RevenueLedger,
+        where: r.ref == ^game,
+        group_by: r.reason,
+        # the :bigint SUM cast to :integer (keys is integer-exact, D-2) — see house_balance/1.
+        select: {r.reason, type(sum(r.delta), :integer)}
+    )
+    |> Map.new()
   end
 
   # --- internals (each runs in one DB transaction) ----------------------
@@ -393,5 +486,29 @@ defmodule Codemojex.Wallet do
       |> Repo.insert()
 
     tid
+  end
+
+  # A signed platform-revenue row (cm.6 D-1/D-6). Mirrors txn! structurally but
+  # targets revenue_ledger, mints "RVL" (the type-distinguishable brand), and touches
+  # NO balance column — so it never hits players_non_negative and needs no player lock
+  # (unlike credit/5, which update!s a players row, PF-1). The balance is the SUM of
+  # these rows (house_balance/0..1). Public so Rooms reaches it for SEAM-1/SEAM-2 (via
+  # book_house); called inside the caller's Repo.transaction for atomicity.
+  def house_post(account, currency, delta, reason, ref) do
+    rid = EchoData.BrandedId.generate!("RVL")
+
+    {:ok, _} =
+      %RevenueLedger{}
+      |> RevenueLedger.changeset(%{
+        id: rid,
+        account: account,
+        currency: to_string(currency),
+        delta: delta,
+        reason: reason,
+        ref: ref
+      })
+      |> Repo.insert()
+
+    rid
   end
 end
