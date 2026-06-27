@@ -32,7 +32,15 @@ config :codemojex,
 config :codemojex, CodemojexWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
-  render_errors: [formats: [json: CodemojexWeb.ErrorJSON], layout: false],
+  # The JSON API renders errors as JSON; the LiveView/browser tier needs an :html
+  # format too, or render_errors raises on a browser-tier error.
+  render_errors: [
+    formats: [html: CodemojexWeb.ErrorHTML, json: CodemojexWeb.ErrorJSON],
+    layout: false
+  ],
+  # The LiveView socket signs its session payload with this salt (separate from the
+  # cookie session signing_salt in CodemojexWeb.Endpoint's @session_options).
+  live_view: [signing_salt: "cmjxLV01"],
   pubsub_server: Codemojex.PubSub
 
 config :phoenix, :json_library, Jason

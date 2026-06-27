@@ -54,6 +54,11 @@ defmodule Codemojex.MixProject do
       # the web surface for the Telegram Mini App
       {:phoenix, "~> 1.7"},
       {:phoenix_pubsub, "~> 2.1"},
+      # the three-tier render surface (added): the LiveView lobby + the LiveReact
+      # board bridge. live_react brings the React<->LiveView props/pushEvent pattern;
+      # the board bundle itself is edge-sourced (Codemojex.Edge), not vite-baked here.
+      {:phoenix_live_view, "~> 1.0"},
+      {:live_react, "~> 1.1"},
       {:bandit, "~> 1.5"},
       {:jason, "~> 1.4"}
     ]

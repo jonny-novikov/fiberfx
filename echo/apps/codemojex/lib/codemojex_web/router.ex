@@ -1,46 +1,61 @@
 defmodule CodemojexWeb.Router do
   use CodemojexWeb, :router
 
+  # --- JSON API (unchanged from the original surface) ---
   pipeline :api do
     plug :accepts, ["json"]
   end
 
-  # cm.4: the read-side trust point. Resolves a Bearer <SES> to conn.assigns.player
-  # or halts 401. The player-acting routes pipe through it; the handshake does not
-  # (it issues the bearer).
+  # cm.4: the read-side trust point for the JSON API. Bearer <SES> -> conn.assigns.player.
   pipeline :auth do
     plug CodemojexWeb.Auth
   end
 
-  # The web home page — the Codemoji logo on a neutral-grey field (HTML, not the JSON API).
+  # --- the LiveView surface (added) ---
+  # The browser pipeline carries the signed session the live socket inherits, and
+  # MiniAppAuth lands the SES there (the same handshake the JSON API does over a
+  # bearer). put_root_layout wires the LiveView client; the React island is loaded
+  # lazily by LiveReact, not here.
+  pipeline :browser do
+    plug :accepts, ["html"]
+    plug :fetch_session
+    plug :fetch_live_flash
+    plug :put_root_layout, html: {CodemojexWeb.Layouts, :root}
+    plug :protect_from_forgery
+    plug :put_secure_browser_headers
+    plug CodemojexWeb.MiniAppAuth
+  end
+
+  # The welcome (HTML, not the JSON API). The static asset bytes load from
+  # static.codemoji.games; only the shell route lives here.
   scope "/", CodemojexWeb do
     get "/", PageController, :home
   end
 
-  # Open routes — trust no caller-supplied identity. The handshake is open because
-  # it ISSUES the bearer (it verifies initData, not a SES).
+  # Tier 2/3: the lobby and the board, both LiveViews. join_room returns a GAM, so
+  # the board is keyed by the game id.
+  scope "/", CodemojexWeb do
+    pipe_through :browser
+
+    live_session :app, session: %{} do
+      live "/lobby", LobbyLive, :index
+      live "/game/:gam", GameLive, :show
+    end
+  end
+
+  # Open JSON routes — trust no caller-supplied identity.
   scope "/api", CodemojexWeb do
     pipe_through :api
 
     get "/health", GameController, :health
-
-    # cm.4: the SOLE SES mint. Verifies Telegram initData → resolves the PLR → mints
-    # the SES. POST /api/players is RETIRED (G3) — minting a player now requires a
-    # verified handshake.
     post "/auth/:platform", AuthController, :handshake
-
-    # cm.5: the inbound Telegram webhook (the production inbound transport). Open route —
-    # authenticated by Telegram's secret-token HEADER in the controller, not a player SES.
-    # Inert until CODEMOJI_WEBHOOK_SECRET is set (the controller fails closed). Telegram
-    # registers it via setWebhook(url: ".../api/telegram/webhook", secret_token: <secret>).
     post "/telegram/webhook", TelegramController, :webhook
-
     get "/rooms", GameController, :rooms
     get "/games/:id", GameController, :game
     get "/games/:id/leaderboard", GameController, :leaderboard
   end
 
-  # Player-acting routes — gated by the :auth plug, which assigns conn.assigns.player.
+  # Player-acting JSON routes — gated by the :auth plug.
   scope "/api", CodemojexWeb do
     pipe_through [:api, :auth]
 
