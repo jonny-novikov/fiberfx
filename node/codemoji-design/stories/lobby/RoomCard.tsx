@@ -66,18 +66,20 @@ export function RoomCard({
         </p>
       </div>
 
-      {/* best-guess progress so far (the room's current top score) */}
+      {/* best-guess progress so far (the room's current top score) — Figma 121:2056
+          lays the bar out on one row with the percent inline to its right, not the
+          percent stacked above a full-width bar. */}
       {bestPercent != null && (
-        <div>
-          <div className="mb-1 text-right text-[13px] font-medium text-dark-muted">
-            {bestPercent}%
-          </div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-slot">
+        <div className="flex items-center gap-3">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slot">
             <div
               className="h-full rounded-full bg-accent"
               style={{ width: `${Math.min(bestPercent, 100)}%` }}
             />
           </div>
+          <span className="shrink-0 text-[13px] font-medium text-dark-muted">
+            {bestPercent}%
+          </span>
         </div>
       )}
 

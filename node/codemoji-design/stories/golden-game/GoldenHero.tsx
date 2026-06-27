@@ -40,7 +40,8 @@ export function GoldenHero({
       <div className="grid grid-cols-2 gap-3 bg-gold-texture p-4 text-primary">
         <div className="text-center">
           <div className="text-2xl font-bold leading-none">{timeLeft}</div>
-          <div className="mt-1 text-2xs font-medium">{t('golden.roundTime')}</div>
+          {/* "Конец раунда" — the master + the board's RoundInfo use board.roundEnds */}
+          <div className="mt-1 text-2xs font-medium">{t('board.roundEnds')}</div>
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold leading-none">{prizePool.toLocaleString()} 💎</div>

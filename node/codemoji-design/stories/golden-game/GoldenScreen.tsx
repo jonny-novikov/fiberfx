@@ -64,7 +64,9 @@ export function GoldenInProgressScreen() {
           <GuessActions keyCost={5} />
         </div>
       </BoardCard>
-      <Button variant="golden">{t('golden.viewWinners')}</Button>
+      {/* the master's in-room CTA (1089:19410) is the dark default button, not
+          gilded — the gold treatment is the hero/answer/leaderboard, not the action */}
+      <Button variant="default">{t('golden.viewWinners')}</Button>
       <BoardCard>
         <EmojiKeyboard />
       </BoardCard>
@@ -83,7 +85,8 @@ export function GoldenFinishedScreen() {
       <StatusBar username="@player" diamonds={52352} clips={4} keys={147} />
       <GoldenHero timeLeft="00:00:00" prizePool={2352} boost={3} />
       <GoldenAnswerReveal code={GOLDEN_ANSWER} />
-      <Button variant="golden">{t('gameOverDialog.playAgain')}</Button>
+      {/* dark default CTA (master 1108:27589), matching the in-progress screen */}
+      <Button variant="default">{t('gameOverDialog.playAgain')}</Button>
       <StandingsCard />
       <GameRules />
       <ShareKeys />

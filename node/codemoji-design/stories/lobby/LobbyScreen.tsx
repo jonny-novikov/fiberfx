@@ -71,7 +71,9 @@ export function LobbyScreen() {
         <div className="flex flex-col gap-2 px-2 pt-2">
           <StatusBar username="@vitalysacred" diamonds={3584} clips={58} keys={34} />
           <PromoBanner totalEarned={25693} />
-          <SubscriptionBanner />
+          {/* the Figma hero (Тысяча) carries a close ✕ top-right — render it (no-op
+              dismiss in the catalog, like the other presentational callbacks). */}
+          <SubscriptionBanner onClose={() => {}} />
         </div>
         {/* LOWER band — the rounded "rooms" sheet (Figma Frame 139): a full-bleed
             #D8E4EB (--color-background) panel with rounded top corners (r≈26) that
