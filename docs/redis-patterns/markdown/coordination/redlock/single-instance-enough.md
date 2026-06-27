@@ -144,5 +144,5 @@ recoverable retry needs less. EchoMQ reads the recoverable cell — `@claim` on 
   the contrast: one `SET … NX PX`, one Valkey, reclaimed by lease recovery.
 - [R2 · Coordination & Consistency](/redis-patterns/coordination) — the chapter: atomic moves, leases, and the
   Redlock contrast.
-- [/echomq](/echomq) — the EchoMQ protocol the claim lease lives in.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol the claim lease lives in.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the functional-Elixir & OTP craft behind the echo umbrella.

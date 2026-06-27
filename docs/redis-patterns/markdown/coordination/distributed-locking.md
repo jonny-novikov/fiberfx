@@ -186,5 +186,5 @@ EchoMQ course. This module cites the claim lease as proof the pattern is real an
   in one step.
 - [R2.03 · Redlock](/redis-patterns/coordination/redlock) — the multi-instance contrast EchoMQ deliberately did not
   build.
-- [/echomq](/echomq) — the EchoMQ protocol, where the worker-side lock-subkey plane is taught in full.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol, where the worker-side lock-subkey plane is taught in full.
 - [/elixir · State](/elixir/pragmatic/state) — the functional-Elixir craft behind the consumer loop.

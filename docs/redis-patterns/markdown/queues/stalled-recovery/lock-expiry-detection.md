@@ -1,82 +1,72 @@
 # Lock-expiry detection — the lease as the death signal
 
-> Route: `/redis-patterns/queues/stalled-recovery/lock-expiry-detection` · Dive R3.03.1 · Module R3.03 Stalled recovery.
-> · Grounding: the lock lease `EchoMQ.Keys.lock/2` → `emq:{queue}:<id>:lock`, a `PX`-expiry key set when a worker takes
-> a job and renewed on a heartbeat by `EchoMQ.LockManager` (one timer batch-extends all tracked leases). A lock that is
-> gone is a worker that died. All real in `echo/apps/echomq`.
+> **Route:** `/redis-patterns/queues/stalled-recovery/lock-expiry-detection` · **Dive:** R3.03.1
+> **Grounding:** `echo/apps/echo_mq/lib/echo_mq/jobs.ex` — `EchoMQ.Jobs.claim/3` (the `@claim` lease mint), the `active` ZSET scored by `now + lease_ms`, the server clock (`TIME`); `EchoMQ.Jobs.reap/2` (`@reap`, the expired-lease scan).
 
-One question must be resolved before the recovery sweep does anything: which in-flight job no longer has a live worker?
-The source pattern resolves it with a timeout — a message in the processing list longer than ten minutes is assumed
-stalled. EchoMQ resolves it with a lease tied to the worker directly. The lease is the heartbeat of the job: while it is
-renewed, a worker is alive; when it lapses, the worker is gone.
+The reaper has to answer one question before it can recover anything: which in-flight job has no live worker? The source's monitor answers it with age — a message older than a timeout is assumed dead. EchoMQ answers it with a **lease**: a deadline a live worker keeps in the future and a dead worker lets pass. Lease in the future ⇒ a live worker holds it. Lease in the past ⇒ recover.
 
-## The timeout, re-cast as a lease
+## The lease, minted at claim
 
-The source's reaper scans the processing queue and, for each message older than a timeout, treats the worker as dead and
-moves the message back. The timeout is a proxy. It misfires in both directions: a job that legitimately runs longer than
-the timeout is reclaimed while its worker is still working, and a worker that dies one second into a ten-minute timeout
-holds a job hostage for the rest of it.
+When `EchoMQ.Jobs.claim/3` pops the oldest pending job, it does more than hand the worker a payload — it stamps a deadline. The `@claim` script reads the server clock once (`local t = redis.call('TIME')`), computes `now`, and scores the id on the `active` set at `now + lease_ms` (the consumer's default `:lease_ms` is `30_000`). The same `HINCRBY attempts 1` that fences the job is the worker's proof it holds the lease.
 
-The lease removes the proxy. When a worker takes a job, it sets a lock key with a short `PX` expiry. A live worker renews
-that lease on a heartbeat — a periodic `SET … PX` that pushes the expiry forward — well before it can lapse. The lock is
-present exactly while a worker is alive and renewing. The reclaim question becomes a key lookup: for each job in
-`active`, is its lock key still present? A present lock is a live worker; a missing lock is a stalled job.
+    local popped = redis.call('ZPOPMIN', KEYS[1])     -- pending: oldest first
+    if #popped == 0 then return {} end
+    local id = popped[1]
+    local jk = ARGV[1] .. id
+    local att = redis.call('HINCRBY', jk, 'attempts', 1)   -- the fencing token
+    redis.call('HSET', jk, 'state', 'active')
+    local t = redis.call('TIME')                            -- the server clock
+    local now = t[1] * 1000 + math.floor(t[2] / 1000)
+    redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), id)  -- active, scored by lease deadline
+    return {id, redis.call('HGET', jk, 'payload'), att}
 
-```
-# the lease: set when a worker takes the job
-SET emq:{queue}:<id>:lock <token> PX 30000     # a 30s lease
+The score is the death signal. A worker that finishes calls `complete` and the id leaves `active`. A worker still working extends its lease (it re-claims or re-scores the deadline forward). A worker that dies does neither — and its score stays a fixed instant that the clock walks past.
 
-# the heartbeat: a live worker renews before the lease lapses
-SET emq:{queue}:<id>:lock <token> PX 30000     # pushes the expiry forward, every ~half-lease
+## Detect by reading the clock, not the lock
 
-# the death signal: no renewal -> the TTL runs to 0 -> Redis evicts the key
-EXISTS emq:{queue}:<id>:lock                    # 0 means the worker died -> stalled
-```
+Because the deadline lives in the score, detection is one range read: `ZRANGEBYSCORE active -inf now`, every member at or below the current server clock. There is no per-job key to probe, no `EXISTS` round trip per id — the in-flight set is already a min-heap on the deadline, so the expired members are the cheap prefix. `EchoMQ.Jobs.reap/2` does exactly this and returns each expired id to `pending` once:
 
-The lease length and the heartbeat interval are a pair: the heartbeat must run several times within one lease so a single
-missed tick does not lapse it, and the lease must be short enough that a dead worker is detected promptly. A lease of
-thirty seconds renewed every ten is the usual shape: two missed renewals still leave the lock alive, three lapse it.
+    local t = redis.call('TIME')
+    local now = t[1] * 1000 + math.floor(t[2] / 1000)
+    local exp = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now, 'LIMIT', 0, 100)
+    for _, id in ipairs(exp) do
+      redis.call('ZREM', KEYS[1], id)
+      redis.call('ZADD', KEYS[2], 0, id)        -- back to pending
+      redis.call('HSET', ARGV[1] .. 'job:' .. id, 'state', 'pending')
+    end
 
-## Paused is not dead
+The clock is the server's, read inside the script. A caller's clock could be skewed, and a lease that expired on a fast client but not on the server would redeliver a job whose worker is still alive. Reading `TIME` inside the eval means the deadline that was written and the clock that reads it are the same clock — the master invariant for every leased transition on the bus.
 
-The lease distinguishes a worker that paused from a worker that died — a distinction a timeout cannot make. A paused
-worker that is still running its event loop keeps renewing the lease, so its lock stays present and the sweep leaves its
-job alone, even if the job has run for an hour. A dead worker stops renewing, its lock lapses within one lease, and the
-sweep reclaims its job. The test is the lock, not the clock: a long-running job under a live heartbeat is safe; a short
-job under a dead worker is reclaimed.
+## Live, slow, dead — three scores
 
-This is why the lease is more precise than the timeout it replaces. The timeout's test is *how long has this job been
-running?*, and it reclaims on a number. The lease's test is *is a worker still renewing this lock?*, and it reclaims on the worker. A
-job that runs longer than any fixed timeout but holds a live heartbeat is exactly the case the timeout gets wrong and the
-lease gets right.
+The lease distinguishes the three states a worker can be in without a separate health channel:
 
-## The pattern, applied
+- **Live and fast** — completes before the deadline; the id leaves `active`, never seen by a sweep.
+- **Live but slow** — extends the lease before it lapses; the deadline moves forward, so the slow worker is never reclaimed out from under itself.
+- **Dead** — neither completes nor extends; the deadline passes, and the next sweep returns the job to `pending`.
 
-In EchoMQ the lease is `EchoMQ.Keys.lock/2`, which builds `emq:{queue}:<id>:lock` for a job id. It is set with a `PX`
-expiry when the worker takes the job and renewed on the worker's heartbeat. The renewals do not run one timer per job:
-`EchoMQ.LockManager` keeps a single timer that extends all tracked leases in one batch, so a pool of workers renews a
-pool of leases without a timer storm. The recovery sweep — `moveStalledJobsToWait-8.lua` — tests the lock for each job in
-`emq:{queue}:active`; a job whose lock has lapsed is the one with no live worker.
+The lease length is the only tuning knob: too short and a slow-but-alive worker is reclaimed mid-job (a needless redelivery); too long and a dead worker's job waits the full lease before recovery. The default `30_000` ms is the consumer's; a workload with long handlers raises it, and a workload that needs fast recovery lowers it and extends the lease on a heartbeat.
 
-The full heartbeat manager — the lease length, the renew cadence, the batch-extend timer, and the pool-wide coordination
-— is the dedicated EchoMQ course. This dive teaches the lease as a death signal; that course teaches the manager that
-keeps it.
+## The bridge
+
+- **The pattern:** a separate reaper finds a stalled job by asking whether its worker is still alive — the source measures that as "older than a timeout."
+- **Its EchoMQ application:** the answer is a lease deadline on the `active` ZSET, scored by `now + lease_ms` from the server clock; `ZRANGEBYSCORE active -inf now` reads every member whose lease lapsed — no per-job probe, one range read.
+
+The take: detection is not a health check on each worker; it is one range read over a set already sorted by death time.
 
 ## References
 
 ### Sources
-- [Redis — SET](https://redis.io/commands/set/) — the `PX` expiry behind the lock lease and the `SET … PX` heartbeat
-  renewal.
-- [Redis — EXPIRE](https://redis.io/commands/expire/) — TTL semantics: how a key with a `PX` expiry is evicted when its
-  time runs out.
-- [Redis — EXISTS](https://redis.io/commands/exists/) — the lock lookup the sweep runs: a missing lock is a stalled job.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the lock-renewal worker path EchoMQ ports.
+
+- [Valkey — *Sorted Sets*](https://valkey.io/topics/sorted-sets/) — the `active` set is a ZSET scored by lease deadline; `ZRANGEBYSCORE -inf now` is the expired prefix.
+- [Valkey — *ZRANGEBYSCORE*](https://valkey.io/commands/zrangebyscore/) — read every member whose score is at or below the server clock.
+- [Valkey — *SET*](https://valkey.io/commands/set/) — `SET key value PX <ms>`, the expiry primitive a per-job lock would use; the lease puts the same idea in a score.
+- [Redis — *EVAL / scripting*](https://redis.io/commands/eval/) — reading `TIME` inside the script binds the deadline and the clock that reads it.
 
 ### Related in this course
-- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery) — the module: the recovery sweep in full.
-- [R3.03.2 · Two-phase mark/recover](/redis-patterns/queues/stalled-recovery/two-phase-mark-recover) — the next dive:
-  mark once, recover on the next sweep.
-- [R3.03.3 · Atomic vs non-atomic](/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic) — the atomic sweep that
-  acts on this lock check.
-- [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue) — the family in one place: the three guarantees.
-- [E6 · The job lifecycle](/echomq/lifecycle) — the dedicated EchoMQ course: the heartbeat manager that renews the lease.
+
+- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery) — the module hub.
+- [R3.03.2 · Two-phase mark/recover](/redis-patterns/queues/stalled-recovery/two-phase-mark-recover) — the stall count, once a job is detected.
+- [R3.03.3 · Atomic vs non-atomic](/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic) — why the detect-and-move is one step.
+- [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the sorted set as a clock, the same structure the lease uses.
+- [/echomq/queue](/echomq/queue) — the EchoMQ Queue pillar: the lease and the worker fetch loop in depth.

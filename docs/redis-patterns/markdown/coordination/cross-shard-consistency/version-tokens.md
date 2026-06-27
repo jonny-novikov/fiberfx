@@ -6,7 +6,7 @@
 > · Grounding: EchoMQ's applied version token is `attempts` — a monotone counter advanced by `HINCRBY <jobkey>
 > attempts 1` in the `@claim` script (`echo/apps/echo_mq/lib/echo_mq/jobs.ex:131`). A worker holding a stale
 > `attempts` is refused at `EchoMQ.Jobs.complete/4` / `retry/7` with `EMQSTALE … token mismatch`
-> (jobs.ex:143, jobs.ex:177). The protocol version fence is a separate concern — `{emq}:version` → `echomq:2.0.0`,
+> (jobs.ex:143, jobs.ex:177). The protocol version fence is a separate concern — `{emq}:version` → `echomq:3.0.0`,
 > claimed by `EchoMQ.Connector` (`echo/apps/echo_wire/lib/echo_mq/connector.ex:33`).
 
 A bare shared token catches a tear but cannot say which side is newer. Pattern 2 stamps each value with a version, so
@@ -109,12 +109,12 @@ guards `@retry`, jobs.ex:177). That is "detect-and-order" applied to a queue: th
 holder, the lower one is the stale writer, and the engine resolves the conflict by rejecting the stale side rather
 than silently overwriting.
 
-The protocol's own version fence is a different number on a different key: `{emq}:version` → `echomq:2.0.0`, claimed
+The protocol's own version fence is a different number on a different key: `{emq}:version` → `echomq:3.0.0`, claimed
 or verified by `EchoMQ.Connector` before the first command (`connector.ex:33`). It guards the protocol, not a single
 job; the in-depth treatment of both belongs to the dedicated EchoMQ course.
 
 Where the application-level version stamp from this dive earns its place is the write that colocation cannot cover: a
-single logical update that spans two systems — a Valkey read-model and the Exchange Platform's database of record.
+single logical update that spans two systems — a Valkey read-model and codemojex's database of record.
 Those keys live in different stores by definition, so no hash tag can put them on one slot, and a crash between the
 two writes leaves them disagreeing. A version field on each side turns that into accept-newest.
 
@@ -136,6 +136,6 @@ two writes leaves them disagreeing. A version field on each side turns that into
   bare shared token this version field upgrades.
 - [R2.04.3 · Commit markers](/redis-patterns/coordination/cross-shard-consistency/commit-markers) — the next dive: the
   visibility gate, which composes with a version field.
-- [/echomq](/echomq) — the dedicated EchoMQ course: the `attempts` fence and the version fence in depth.
+- [/echomq/protocol](/echomq/protocol) — the dedicated EchoMQ course: the `attempts` fence and the version fence in depth.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the single-writer engine that serializes a read-model against the
   database of record.

@@ -4,7 +4,7 @@
 > `content/fundamental/client-side-caching.md.txt` (the cache-then-invalidate shape) · Grounding: EchoMQ's real
 > `EchoMQ.Script.new/2` (a script with its SHA1 precomputed, EVALSHA-first with a load-on-NOSCRIPT fallback,
 > `echo/apps/echo_wire/lib/echo_mq/script.ex:13`) and the worked example `@drop = Script.new(:coherence_drop, …)`
-> (`echo/apps/echo_cache/lib/echo_cache/coherence.ex:54`) — shown as a **parallel**, not a door into the queue
+> (`echo/apps/echo_store/lib/echo_store/coherence.ex:54`) — shown as a **parallel**, not a door into the queue
 > protocol.
 
 Run a Lua script by its hash, not its source — and on a cache-miss reply, send the source once. The same
@@ -51,11 +51,11 @@ defmodule EchoMQ.Script do
 end
 ```
 
-The worked example sits in EchoCache itself: the version-safe L2 drop is a module attribute, defined once with its SHA1
+The worked example sits in EchoStore itself: the version-safe L2 drop is a module attribute, defined once with its SHA1
 already computed, then dispatched by hash:
 
 ```elixir
-# echo/apps/echo_cache/lib/echo_cache/coherence.ex — the cache key minted once
+# echo/apps/echo_store/lib/echo_store/coherence.ex — the cache key minted once
 @drop Script.new(:coherence_drop, """
       local cur = redis.call('GET', KEYS[1])
       if not cur then return 0 end
@@ -70,7 +70,7 @@ end
 This is the whole parallel: cache a derived handle (the SHA1) near the work, run by the handle with `eval`, and let the
 connector resend the source only when the server answers `NOSCRIPT`. The deeper EchoMQ story — the full Lua bundle, the
 version fence, the protocol governance — is the subject of the dedicated EchoMQ course, not this dive. The cited code
-is real and verified in `echo/apps/echo_wire` and `echo/apps/echo_cache`; it is shown as a parallel to client-side
+is real and verified in `echo/apps/echo_wire` and `echo/apps/echo_store`; it is shown as a parallel to client-side
 caching, not as a queue feature.
 
 ## References
@@ -84,5 +84,5 @@ caching, not as a queue feature.
 - [R1.04 · Client-side caching](/redis-patterns/caching/client-side-caching) — the module hub.
 - [R1.04.2 · The invalidation push](/redis-patterns/caching/client-side-caching/invalidation-push) — the near-cache half of the parallel.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform, and the door to the EchoMQ course.
-- [/echomq](/echomq) — the EVALSHA-first connector and the full script bundle, in depth.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex, and the door to the EchoMQ course.
+- [/echomq/cache](/echomq/cache) — the EchoStore coherence Lua, loaded once, in depth.

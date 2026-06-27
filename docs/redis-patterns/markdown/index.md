@@ -1,12 +1,12 @@
 # Redis Patterns, Applied
 
 > Route: `/redis-patterns` (course home — the map) · The full chapter→module directory · Grounding: the BCS build
-> (EchoMQ backed by Valkey, EchoCache in front) — real keys, commands, and atomic Lua scripts quoted verbatim
+> (EchoMQ backed by Valkey, EchoStore in front) — real keys, commands, and atomic Lua scripts quoted verbatim
 > from committed records. Reframed under [`specs/reframe-echomq/`](../specs/reframe-echomq/reframe-echomq.md).
 
 The judgement layer above the command reference — every pattern shown working in a real system. Thirty Redis
 design patterns, taught as problem → solution → trade-off → when-to-use, then shown where the **BCS architecture**
-applies them: **EchoMQ** backed by **Valkey**, Valkey under the hood, **EchoCache** in front. Nine chapters; each
+applies them: **EchoMQ** backed by **Valkey**, Valkey under the hood, **EchoStore** in front. Nine chapters; each
 closes by building one slice of the BCS Redis tier.
 
 ## How to read this
@@ -18,12 +18,12 @@ lock" a failover silently breaks, or a fixed-window rate limiter with a boundary
 every pattern is shown applied in a real system, so the worked example is verifiable.
 
 The running system is the **BCS build**. **EchoMQ** is the bus between systems, and it owns its protocol: the
-braced `emq:{q}:` keyspace, every Lua key declared or root-derived, the wire version `echomq:2.0.0` behind a
+braced `emq:{q}:` keyspace, every Lua key declared or root-derived, the wire version `echomq:3.0.0` behind a
 two-way typed boot fence — **backed by Valkey** (the current stable line, an enforced conformance gate). The
-atomic Lua scripts *are* the protocol — a corpus of Redis patterns made owned, declared code. **EchoCache** is
+atomic Lua scripts *are* the protocol — a corpus of Redis patterns made owned, declared code. **EchoStore** is
 the near-cache in front: branded keys, an L1 of ETS tables over the shared L2 Valkey, coherence by mint time.
-The worked consumer of both is the **Exchange Platform** — the trading system these patterns are applied inside
-(`echo/apps/exchange`). Where a chapter's deeper implementation belongs to the protocol itself, it doors forward
+The worked consumer of both is the **codemojex** — the trading system these patterns are applied inside
+(`echo/apps/codemojex`). Where a chapter's deeper implementation belongs to the protocol itself, it doors forward
 to the dedicated [EchoMQ course](/echomq).
 
 A scope note: the engine is **Valkey** — the current stable line, the substrate the EchoMQ connector is gated
@@ -71,14 +71,14 @@ Running the tier at scale — case studies and operational discipline; the capst
 ## The evidence ethic
 
 Every claim is backed by a committed record. The connector gate, against live Valkey: `fence claimed
-echomq:2.0.0`, sequential INCR `29456 ops/s`, pipelined SET `454483 ops/s`, pipelined EVALSHA `161192 ops/s`,
+echomq:3.0.0`, sequential INCR `29456 ops/s`, pipelined SET `454483 ops/s`, pipelined EVALSHA `161192 ops/s`,
 `script_loads 1`, `PASS 8/8` (`docs/echo/bcs/content/bcsA.md`).
 
 ## The doors
 
 - **/echomq** — the EchoMQ protocol in depth: the `emq:{q}:` keyspace, the Lua inventory, conformance on Valkey.
-- **/bcs** — the Branded Component System: the architecture EchoMQ and EchoCache are built inside.
-- **/elixir** — the functional-Elixir and OTP craft behind the echo umbrella — where EchoMQ, EchoCache, and the Exchange Platform are built.
+- **/bcs** — the Branded Component System: the architecture EchoMQ and EchoStore are built inside.
+- **/elixir** — the functional-Elixir and OTP craft behind the echo umbrella — where EchoMQ, EchoStore, and codemojex are built.
 
 ## References
 

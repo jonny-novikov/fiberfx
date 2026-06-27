@@ -1,15 +1,16 @@
 # ZRANGEBYSCORE promotion
 
-> R4.01.2 · dive 2. The due-sweep: range the delayed set from `0` to the current clock, claim each member with
-> `ZREM`, and move it to the wait list. EchoMQ runs this as an included `promoteDelayedJobs` function inside the
-> worker scripts, not a standalone poll.
+> R4.01.2 · dive 2. The due-sweep: range the schedule set from `-inf` to the current server clock, `ZREM` each due
+> member, and `ZADD` it onto the pending set. EchoMQ runs this as one inline `@promote` script on the server clock,
+> driven by `EchoMQ.Jobs.promote/3`.
 
 **Route:** `/redis-patterns/time-delay-priority/delayed-queue/zrangebyscore-promotion`
 
-A delayed job scored by its fire-time sits in the set until its time comes. Something has to notice it is due and move
-it to where workers fetch. That move is the sweep: a range query for everything at or below the current clock, an
-atomic claim of each due member, and a push to the wait list. The textbook runs it as a poll loop. EchoMQ folds the
-same range-then-claim into the scripts the workers already run, so the sweep happens on the path of normal work.
+A delayed job scored by its run-at time sits in the schedule set until its moment comes. Something has to notice it is
+due and move it to where workers fetch. That move is the sweep: a range query for everything at or below the current
+clock, an atomic claim of each due member, and a push to the queue workers drain. The textbook runs it as a poll loop.
+EchoMQ runs it as one server-side script, on the server's own clock, so the range, the claim, and the move are a
+single atomic step.
 
 ## The due-range read
 
@@ -21,7 +22,7 @@ ZRANGEBYSCORE delayed_queue -inf <now> LIMIT 0 10
 
 `-inf` is "no floor" — start from the lowest score. The upper bound is the current time. `LIMIT 0 10` caps the batch
 to ten so one sweep claims a bounded slice and a backlog drains over several sweeps rather than one giant move. The
-result is the due head: the members whose fire-time has passed, earliest first.
+result is the due head: the members whose run-at time has passed, earliest first.
 
 The range is a read only. It names the due jobs; it does not remove them. Between the read and the removal another
 worker can read the same members, which is why the claim must be atomic and separate.
@@ -39,13 +40,13 @@ removed it. A worker proceeds with a task only when its `ZREM` returns `1`. With
 the range may hand the same member to several of them, but only one `ZREM` returns `1`; the rest get `0` and drop it.
 The removal establishes the owner, atomically, with no extra lock.
 
-**The hero interactive — step the clock, sweep the due head.** A fixed set of six jobs with fire-times. A control
-steps the clock forward in stages. On each step it computes the due range (`ZRANGEBYSCORE 0 → now`), the members it
-returns, and the `ZREM` that claims and removes each. The readout names the promoted job ids and the count, and shows
-the set shrinking as the swept jobs leave.
+**The hero interactive — step the clock, sweep the due head.** A fixed set of six jobs with run-at scores. A control
+steps the clock forward in stages. On each step it computes the due range (`ZRANGEBYSCORE schedule -inf now`), the
+members it returns, and the move that claims each. The readout names the promoted job ids and the count, and shows
+the schedule set shrinking as the swept jobs move to the pending set.
 
 > Range the set from the start to the current clock to read the due head, then `ZREM` each member to claim it; the
-> removal is the claim, so only one worker promotes each due job.
+> removal is the claim, so only one sweep promotes each due job.
 
 ## Folding it into one script
 
@@ -61,48 +62,49 @@ return tasks
 ```
 
 The script reads the due head and removes every member in one round trip; no other worker can claim a job between the
-range and the `ZREM`. This is the shape EchoMQ's sweep takes — a range, a `ZREM`, and a move to the target list, all
-inside one script, on the worker path.
+range and the `ZREM`. This is the shape EchoMQ's promote takes — a range, a `ZREM` per due id, and a move to the
+pending set, all inside one script, on the server clock.
 
-## EchoMQ's promoteDelayedJobs sweep
+## EchoMQ's promote sweep
 
-In EchoMQ the sweep is `promoteDelayedJobs`, an included function — an identical copy compiled into
-`moveToActive-11.lua`, `retryJob-11.lua`, and `moveToFinished-14.lua`. It is not a standalone script and is never
-called as one; it runs as part of the scripts the workers already execute, so a due delayed job is promoted on the
-path of normal work, not by a separate poller. Its body is the range-then-claim, with the shifted upper bound the
-fire-time score requires:
+In EchoMQ the sweep is the `@promote` script in `echo/apps/echo_mq/lib/echo_mq/jobs.ex`, driven by
+`EchoMQ.Jobs.promote/3`. It reads the due range against the server's own clock, then moves each due id from the
+schedule set onto the pending set, all in one atomic `EVAL`:
 
 ```
--- promoteDelayedJobs (included in moveToActive-11 / retryJob-11 / moveToFinished-14) — the due-sweep (real)
-local jobs = rcall("ZRANGEBYSCORE", delayedKey, 0, (timestamp + 1) * 0x1000 - 1, "LIMIT", 0, 1000)
-if #jobs > 0 then
-  rcall("ZREM", delayedKey, unpack(jobs))            -- claim the whole due head atomically
-  for _, jobId in ipairs(jobs) do
-    -- priority 0 → LPUSH onto the wait list; priority > 0 → ZADD onto the prioritized set
-  end
+-- @promote (jobs.ex) — the due-sweep on the server clock (real)
+local t = redis.call('TIME')
+local now = t[1] * 1000 + math.floor(t[2] / 1000)             -- the server clock, in ms
+local due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now, 'LIMIT', 0, tonumber(ARGV[2]))
+for _, id in ipairs(due) do
+  redis.call('ZREM', KEYS[1], id)                             -- claim: remove from schedule
+  -- (a grouped job goes to its lane; a flat job goes to pending below)
+  redis.call('ZADD', KEYS[2], 0, id)                          -- pending, score 0 (mint-ordered)
+  redis.call('HSET', p .. 'job:' .. id, 'state', 'pending')
 end
+return #due
 ```
 
-The upper bound is `(timestamp + 1) × 0x1000 - 1`, not `timestamp`, because the score is the fire-time shifted twelve
-bits: that bound is the top of the current millisecond's band, so the range catches every job due in this millisecond
-including its within-millisecond tie-breaks. The `LIMIT 0 1000` caps each sweep at a thousand jobs. Each promoted job
-goes to the wait list when its priority is `0`, or onto the prioritized set when it carries a priority — the priority
-reading the chapter takes up in a later module.
+`KEYS[1]` is the schedule set, `KEYS[2]` the pending set — both declared, both braced `emq:{<queue>}:` keys on one
+slot. The upper bound of the range is the server's `now`, not a value the caller passed: the sweep promotes exactly
+the jobs whose run-at score is at or below the server clock the schedule was priced against. The `LIMIT 0 <batch>`
+caps each sweep — `EchoMQ.Jobs.promote/3` passes the batch size — so a large schedule drains over several beats. Each
+promoted job lands on the pending set at score `0`, where its branded `JOB` id is the sort key, and its row moves to
+`state = pending`. The script returns the count of jobs it promoted.
 
-A distinct script promotes a single named job on demand: `EchoMQ.Scripts.promote/3` runs `promote-9.lua`, which
-`ZREM`s one job from the delayed set (`KEYS[1]`) and moves it to the wait list (`KEYS[2]`). The bulk
-`promoteDelayedJobs` sweeps the whole due head by score; `promote-9.lua` promotes one job by name, now. Two moves, one
-shape.
+`EchoMQ.Metronome` calls `promote/3` once per beat per queue, so promotion runs on the bus's own pump rather than
+from each worker — a due job is released by the metronome, not by a separate poller per consumer.
 
 > **The pattern:** sweep the delayed set by reading the due head with a range query and claiming each member with an
 > atomic `ZREM`, then move it to the queue workers fetch from.
 >
-> **→ In EchoMQ:** `promoteDelayedJobs` is an included function in `moveToActive-11.lua`, `retryJob-11.lua`, and
-> `moveToFinished-14.lua` — it runs `ZRANGEBYSCORE delayedKey 0 (timestamp + 1) × 0x1000 - 1 LIMIT 0 1000`, `ZREM`s the
-> due head, and moves each to the wait or prioritized set; `EchoMQ.Scripts.promote/3` promotes one named job on demand.
+> **→ In EchoMQ:** `EchoMQ.Jobs.promote/3` runs the `@promote` script — `ZRANGEBYSCORE schedule -inf now LIMIT 0
+> <batch>` on the server clock, `ZREM` each due id, `ZADD pending 0 id`, `HSET state pending` — in one atomic `EVAL`,
+> and the metronome drives it once per beat per queue.
 
-The take: the due-sweep is a range to read the head and a `ZREM` to claim it; EchoMQ folds it into the worker scripts
-as `promoteDelayedJobs`, so a delayed job is promoted on the path of normal work, never by a separate poller.
+The take: the due-sweep is a range to read the head and a `ZREM` to claim it; EchoMQ runs it as one inline `@promote`
+script on the server clock, so a due job moves from the schedule set onto the pending set atomically, on the bus's
+own pump.
 
 ## References
 
@@ -112,18 +114,19 @@ as `promoteDelayedJobs`, so a delayed job is promoted on the path of normal work
   start of the set up to the current clock.
 - [Redis — *ZREM*](https://redis.io/commands/zrem/) — the atomic claim: `1` means this caller promoted the job, `0`
   means another already did.
+- [Valkey — *TIME*](https://valkey.io/commands/time/) — the server clock the sweep bounds the due range by, the same
+  clock the schedule was priced against.
 - [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — the data type the sweep
-  ranges over, ordered by fire-time score.
-- [BullMQ — *the queue protocol*](https://bullmq.io/) — the delayed-promotion sweep EchoMQ ports, where the Lua
-  scripts are the protocol.
+  ranges over, ordered by run-at score.
 
 ### Related in this course
 
 - [R4.01 · The delayed queue](/redis-patterns/time-delay-priority/delayed-queue) — the module hub.
 - [R4.01.1 · The score is the fire-time](/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time) — the
-  fire-time score the sweep ranges over.
-- [R4.01.3 · The next wake](/redis-patterns/time-delay-priority/delayed-queue/the-next-wake) — the next dive: not
-  sweeping an empty set, waking on the marker instead.
-- [R3.01 · The processing list](/redis-patterns/queues/processing-list) — the wait/active lists the swept job lands in.
+  run-at score the sweep ranges over.
+- [R4.01.3 · The next wake](/redis-patterns/time-delay-priority/delayed-queue/the-next-wake) — the next dive: the
+  metronome beat that drives this sweep, not a busy tick.
+- [R3.01 · The processing list](/redis-patterns/queues/processing-list) — the pending and active sets the promoted job
+  lands in.
 - [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter.
-- [E6 · Lifecycle controls](/echomq/lifecycle) — the dedicated EchoMQ course: the promote and retry scheduler in depth.
+- [/echomq · Queue](/echomq/queue) — the dedicated EchoMQ course: the promote pump and lifecycle controls in depth.

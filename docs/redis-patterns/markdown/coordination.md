@@ -8,7 +8,7 @@
 The foundation every later chapter builds on: a reliable queue is made of atomic moves and a lock lease. Five
 patterns for getting concurrent access right — atomic read-modify-write, distributed locking, the Redlock contrast,
 cross-shard consistency, and hash-tag co-location — grounded in EchoMQ's real code, closing by making an Exchange
-Platform order placement atomic across runtimes.
+Platform guess submission atomic across runtimes.
 
 ## Why & when
 
@@ -31,7 +31,7 @@ one holder, or a key layout that keeps related data together.
 | R2.03 The Redlock algorithm | `redlock` *(contrast)* | a majority-of-N lock vs EchoMQ's single-Valkey lease |
 | R2.04 Cross-shard consistency | `cross-shard-consistency` | a multi-key Lua EVAL requires one slot; `attempts` the monotone version token |
 | R2.05 Hash-tag co-location | `hash-tag-colocation` | `EchoMQ.Keyspace.queue_key` → `emq:{q}:*`; `slot/1` = CRC16 mod 16384 (vector `12739`) |
-| R2.06 Workshop | — | make an Exchange Platform order placement atomic across runtimes |
+| R2.06 Workshop | — | make an codemojex guess submission atomic across runtimes |
 
 ## How to apply
 
@@ -45,7 +45,7 @@ Match the coordination primitive to the failure you are guarding against:
 
 ## The workshop
 
-R2.06 makes an Exchange Platform order placement atomic across runtimes: `Exchange.Gateway.parse_place/1` turns an
+R2.06 makes an codemojex guess submission atomic across runtimes: `Codemojex.Guesses.submit/3` turns an
 untrusted request into a typed place command, minting a branded `ORD` id at acceptance; the order is then admitted
 onto the `{orders}` queue as one inline Lua script — a kind check, a duplicate refusal, the row write, and the
 pending insertion happening on the server in one atomic step. It is idempotent on retry, never a torn write, and
@@ -65,6 +65,6 @@ dedicated EchoMQ course this chapter opens the door to.
 
 ### Related in this course
 - [R1 · Caching](/redis-patterns/caching) — the previous chapter.
-- [R0.2 · Valkey under the Exchange Platform](/redis-patterns/overview/redis-under-portal) — the EchoMQ bus these patterns ground in.
-- [EchoMQ — the protocol](/echomq) — the atomic-Lua transaction model, taught in depth.
+- [R0.2 · Valkey under codemojex](/redis-patterns/overview/redis-under-game) — the EchoMQ bus these patterns ground in.
+- [EchoMQ — the protocol](/echomq/protocol) — the atomic-Lua transaction model, taught in depth.
 - [The Branded Component System](/bcs) — Part III builds the branded EchoMQ bus these patterns apply.

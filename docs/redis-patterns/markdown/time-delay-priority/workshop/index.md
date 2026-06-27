@@ -2,90 +2,97 @@
 
 > Route: `/redis-patterns/time-delay-priority/workshop` · chapter workshop (capstone) · chapter R4 · Time, Delay & Priority · no dives
 
-Fold the five R4 patterns into one worked scenario: EchoMQ schedules a Portal LMS's notification and digest jobs — a lesson reminder, a weekly digest, a password-reset email, a failed send that retries, and the ranking the digest carries. Every move is one sorted set read a different way.
+Fold the five R4 patterns into one worked scenario: EchoMQ schedules codemojex's notification and digest jobs — a round-start reminder, a daily standings digest, a fairness-deferred send, a failed send that retries, and the ranking the digest carries. Every move is one sorted set read a different way.
 
-The chapter taught five patterns over the sorted set: the delayed queue (R4.01), the scheduler registry (R4.02), the composite priority score (R4.03), backoff-and-retry (R4.04), and the leaderboard ranking (R4.05). This capstone is the one scenario that uses all five at once. Picture a Portal LMS — courses, lessons, learners — and the notifications it would send. EchoMQ *would* schedule those jobs; Portal does not ship a built notification system, so the scenario is a worked application of the chapter's machinery, not a claim about a Portal feature. The reminder is a one-shot delayed job; the digest is a repeatable job; the reset email is a priority job; the failed send is a backed-off retry; and the digest carries a ranking. Three sorted sets — `:delayed`, `:repeat`, `:prioritized` — drive one worker, all on the same `ZADD` / range / pop machinery.
+The chapter taught five patterns over the sorted set: the delayed queue (R4.01), the scheduler registry (R4.02), the composite priority score (R4.03), backoff-and-retry (R4.04), and the leaderboard ranking (R4.05). This capstone is the one scenario that uses all five at once. codemojex is a live Telegram emoji-guessing game on the EchoMQ + EchoStore + Postgres stack; `Codemojex.NotificationWorker` already drains a notify queue and delivers each notice through the bot under fairness, rate, and delivery control. EchoMQ schedules those jobs, so the scenario is a worked application of the chapter's machinery on a real surface, not a counterfactual. The reminder is a one-shot scheduled job; the digest is a repeatable registration; the over-budget send is deferred, not dropped; the failed send is a backed-off retry; and the digest carries a ranking. One schedule set, one repeat registry, and one ranking set drive the worker, all on the same `ZADD` / range / pop machinery.
 
-## The scenario — five jobs about Portal entities
+## The consumer — codemojex's notification worker
 
-Portal models the entities the jobs are about, and each carries its own branded namespace (cite, do not invent):
+The five jobs in this scenario are all about codemojex entities, and each carries its own branded namespace (cite, do not invent):
 
-- `Portal.Accounts.User` — a learner account, namespace `USR`, the struct `[:id, :email, :name]`.
-- `Portal.Catalog.Lesson` — a lesson within a course, namespace `LSN`, the struct `[:id, :course_id, :title]`.
-- `Portal.Enrollment.Progress` — a learner's progress through a lesson, namespace `PRG`, the struct `[:id, :enrollment_id, :lesson_id, :percent]` with `percent :: 0..100`.
+- `USR` — a player account.
+- `RMM` — a room (a chat where a game runs).
+- `RND` — a round (one secret to guess).
+- `NOT` — a notification job. `Codemojex.NotificationWorker` mints a `NOT` id with `EchoData.BrandedId.generate!("NOT")` for each re-enqueued occurrence.
 
-The five jobs are scheduled *about* these entities. None of them assert Portal runs a scheduler; they are the chapter's patterns applied to Portal's data.
+`Codemojex.NotificationWorker` is the real worker. An `EchoMQ.Consumer` drains the `cm.notify` queue and `handle/1` delivers each notice through the bot, under three layers of control: fairness (a fair lane per chat via `Codemojex.Notifier`, so one chat's burst cannot starve others), rate (a token from `Codemojex.RateLimiter` before each send — global ~30/s, per-chat ~1/s), and delivery (`EchoBot.deliver/3` classifies the Telegram result: success acks, a transient failure re-enqueues with capped exponential backoff up to `@max_attempts` 6, a permanent failure acks-and-drops). The payload is JSON `{chat, text, opts, id, attempt}`. The five readings below are the chapter's patterns assembled on top of that worker.
 
-## The lesson reminder — a one-shot delayed job (R4.01)
+## The round-start reminder — a one-shot scheduled job (R4.01)
 
-A learner enrols in a lesson that starts tomorrow. EchoMQ schedules a reminder twenty-four hours out — a one-shot job that runs once and is gone. The job lands in the delayed sorted set scored by its fire-time. EchoMQ builds the key with `EchoMQ.Keys.delayed/1`, which returns `"#{base}:delayed"` → `emq:{queue}:delayed`, and scores the member with `getDelayedScore` in `addDelayedJob-6.lua`: `score = delayedTimestamp × 0x1000`, so the low twelve bits discriminate jobs due in the same millisecond. When the clock reaches the score, the included `promoteDelayedJobs` sweep — `ZRANGEBYSCORE delayedKey 0 (timestamp + 1) × 0x1000 - 1 LIMIT 0 1000`, then `ZREM` the due head — moves the reminder to the wait list and a worker delivers it.
+A room schedules the next round to begin at a fixed time; a reminder fires when it does. EchoMQ schedules that reminder for an absolute due time with `EchoMQ.Jobs.enqueue_at(conn, queue, job_id, payload, run_at_ms)`. The job's row is written `state = scheduled` and the branded `JOB` id is parked on the schedule set `emq:{cm.notify}:schedule`, scored by the run-at millisecond. The `@schedule` Lua declares both keys — `KEYS[1]` the job row, `KEYS[2]` the schedule set — guards the id with `if string.sub(ARGV[1], 1, 3) ~= 'JOB'`, and writes `ZADD KEYS[2] score ARGV[1]`.
 
-The takeaway: the reminder is one member in `:delayed`, scored by when it should fire; the sweep promotes it when due, and the shift by `0x1000` keeps a millisecond able to hold more than one ordered job.
+When the clock reaches the score, `EchoMQ.Jobs.promote(conn, queue, batch)` sweeps the due head with `ZRANGEBYSCORE KEYS[1] -inf now LIMIT 0 batch` — `now` read from the server clock (`redis.call('TIME')`) — then `ZREM`s each due id and moves it to the pending set `emq:{cm.notify}:pending`. The mint-ordered id stays the sort key once promoted, so a job minted earlier but scheduled later sorts, after promotion, by its mint instant.
 
-## The weekly digest — a repeatable job, upserted (R4.02)
+The takeaway: the reminder is one member on `emq:{cm.notify}:schedule`, scored by its run-at; `enqueue_at/6` writes the score, `promote/3` reads the due range on the server clock, and the visibility fence — not a second queue — is one sorted set.
 
-Every Monday at 09:00 each learner gets a progress digest. That is a recurring schedule, not a one-shot, so it lives in the repeat registry: a sorted set scored by the *next* run time, one entry per scheduler. EchoMQ builds the key with `EchoMQ.Keys.repeat/1` → `"#{base}:repeat"` → `emq:{queue}:repeat`. Registering the schedule runs `storeRepeatableJob` in `addRepeatableJob-2.lua`: `ZADD repeatKey nextMillis customKey`, guarded by a `ZSCORE repeatKey customKey` probe above it. The probe is what makes a reboot safe — a service that boots re-registers all its schedules, and re-adding the same member rewrites its score rather than appending a second row. One schedule key, one registry entry, across any number of boots; no duplicate digest on restart.
+## The daily standings digest — a repeatable registration (R4.02)
 
-The takeaway: the digest is one entry in `:repeat`, scored by its next run and rewritten each fire; the `ZSCORE`-then-`ZADD` upsert keeps the registry at one row per scheduler, so a boot adds no duplicate.
+Every day a room gets a standings digest. That is a recurring schedule, not a one-shot, so it is a registration the bus sweeps: `EchoMQ.Repeat.register(conn, queue, name, every_ms, template, first_in_ms)`. The `@register` Lua declares two `{q}`-hashtagged keys — `KEYS[1]` the registry set `emq:{cm.notify}:repeat`, scored by next-run millisecond, and `KEYS[2]` the record hash `emq:{cm.notify}:repeat:<name>`, carrying `every_ms` and the payload `template`. It guards with `if redis.call('EXISTS', KEYS[2]) == 1 then return 0`, so a second register of a live name answers `:exists` and changes nothing.
 
-## The password-reset email — a priority job (R4.03)
+That EXISTS guard is what makes a reboot safe: a service that boots re-registers all its schedules, and a live name is a no-op rather than a second row. The pump reads due names with `EchoMQ.Repeat.due/3` (`ZRANGEBYSCORE emq:{cm.notify}:repeat -inf now`), mints a fresh `JOB` id per occurrence — never a reused row — and calls `EchoMQ.Repeat.advance/4` to re-score the name to now plus `every_ms`. The `EchoMQ.Metronome` per-queue beat drives that sweep.
 
-A learner requests a password reset. That email cannot wait behind a backlog of bulk marketing mail — it jumps ahead. EchoMQ enqueues it on the prioritized sorted set, built with `EchoMQ.Keys.prioritized/1` → `"#{base}:prioritized"` → `emq:{queue}:prioritized`, and scores it with `getPriorityScore` in `addPrioritizedJob-9.lua`: `priority × 0x100000000 + (INCR pc)`. `0x100000000` is `2^32`, so the priority tier sits in the high thirty-two bits and the arrival counter in the low thirty-two. The counter is the value of `INCR` on the priority-counter key — `EchoMQ.Keys.pc/1` → `"#{base}:pc"` — taken when the job is added, so two jobs in the same tier order by arrival. A worker pops the next job with `ZPOPMIN` in `moveToActive-11.lua`: the smallest score is the highest-precedence tier and, within it, the earliest arrival. A *lower* priority number wins, because the formula makes a higher-precedence job a smaller number and `ZPOPMIN` always returns the smallest first.
+The takeaway: the digest is one member on `emq:{cm.notify}:repeat`, scored by its next run and advanced each fire; the `EXISTS`-guarded register keeps the registry at one row per scheduler, so any number of boots adds no duplicate.
 
-The takeaway: the reset email is one member in `:prioritized`, scored by `priority × 0x100000000 + (INCR pc)`; one `ZPOPMIN` returns the right job — tier first, arrival second — so it pops ahead of the bulk mail.
+## The over-budget send — fairness and a deferred re-enqueue (R4.03)
+
+The chapter packed a priority tier and an arrival counter into one score so a high-precedence job pops ahead. codemojex makes the same "do not let a flood starve the rest" guarantee, but it does it with **fairness plus rate**, not a packed priority score — the honest applied move. `Codemojex.Notifier` enqueues each notice on a fair lane per chat, so one chat's burst rides its own lane; before each send `handle/1` takes a token from `Codemojex.RateLimiter`. When the bucket is empty, `RateLimiter.take(chat)` returns `{:wait, ms}` and the worker does not block the consumer: it re-enqueues the exact notification after the bucket's reported wait with `EchoMQ.Jobs.enqueue_in(conn, queue, job_id, payload, delay_ms)`, and acks. The notice stays durable on the bus, deferred, not dropped.
+
+`enqueue_in/6` is `enqueue_at/6`'s relative twin: the run-at score is computed wire-side from the server clock (`local t = redis.call('TIME')`), so the delay is measured on the same clock `promote/3` and `reap/2` read — never the caller's. The composite-priority score (`priority × 2^32 + arrival`) is the alternative reading of the schedule set; the codemojex design is built on fair lanes and a token bucket instead, and the schedule set carries the deferral.
+
+The takeaway: an over-budget send is re-scheduled with `enqueue_in/6` on the same `emq:{cm.notify}:schedule` set the reminder rides; fairness comes from the per-chat lane and rate from the token bucket, the chapter's priority-score being the contrast reading of the same structure.
 
 ## The failed send — a backed-off retry (R4.04)
 
-A digest email fails: the mail provider returns a transient error. The worker does not drop the job and does not loop on it. It re-schedules the job to run again later, with a delay that grows on each attempt, so a struggling provider is not hammered. The delay is sized by `EchoMQ.Backoff.calculate/4` in Elixir — the `:exponential` clause computes `delay = trunc(:math.pow(2, attempt - 1) × base_delay)`, then `apply_jitter(delay, jitter)`. The doc example is exact: `calculate(:exponential, 3, 1000, jitter: 0.2)` returns about `4000`. Jitter widens each delay into a band — `[3200, 4800]` for that example — and draws an independent point per job, so a batch that failed together does not re-fire in one synchronized spike. The reschedule itself adds no new structure: `retryJob-11.lua` re-adds the failed job to `emq:{queue}:delayed` at the backoff fire-time, and the included `promoteDelayedJobs` — R4.01's sweep — brings it back when due. The formula chooses the delay; the Lua never computes `2^(n-1)`.
+A delivery fails: Telegram returns a transient 429 or 5xx. `EchoBot.deliver/3` classifies it `{:retry, reason}`, and while `attempt < @max_attempts` the worker re-enqueues the same notice with a growing delay so a struggling endpoint is not hammered. The reschedule re-uses the schedule set: `enqueue_in/6` parks the job on `emq:{cm.notify}:schedule` at the backoff fire-time, and the same `promote/3` sweep brings it back when due. No new structure — the retry is a delayed job whose fire-time is a backoff delay.
 
-The takeaway: the failed send is a delayed job whose fire-time is a backoff delay; `EchoMQ.Backoff.calculate/4` sizes it, the same `:delayed` set holds it, and the same sweep promotes it — one structure, two uses.
+The delay curve is `EchoMQ.Backoff.delay_ms(policy, attempts)`, a pure function above the wire: `{:exponential, base, cap}` returns `min(base × 2^(attempts-1), cap)`, clamped at the ceiling. The module's doc vectors are exact — `delay_ms({:exponential, 100, 10_000}, 1) = 100`, `delay_ms({:exponential, 100, 10_000}, 3) = 400`, `delay_ms({:exponential, 100, 10_000}, 20) = 10000` — and `{:jitter, inner}` wraps any inner policy with a uniform draw in `0..inner_delay`, the full-jitter form that spreads a retry storm so a batch that failed together does not re-fire in one synchronized spike. The host computes the literal delay; the wire takes a literal `delay_ms` and never computes a curve.
+
+The takeaway: the failed send is a delayed job whose fire-time is a backoff delay; `EchoMQ.Backoff.delay_ms/2` sizes it, the same `emq:{cm.notify}:schedule` set holds it, and the same `promote/3` sweep returns it — one structure, two uses.
 
 ## The ranking the digest carries — a sorted-set ranking (R4.05)
 
-The digest's content names the week's top learners. That is a ranking: order learners by their progress, read the top-N. Portal records a learner's progress through a lesson as a percent — the `Portal.Enrollment.Progress` struct, the field `percent :: 0..100`, the namespace `PRG`, held as a row in an in-memory, namespace-partitioned store. **Portal runs no Redis sorted set and has no progress ranking; the percent is a plain stored value.** A leaderboard that ranks learners by progress is exactly this pattern applied to that data: score each learner by their percent — `ZADD board <percent> <learner>` — and the top-N learners are a `ZREVRANGE`, a learner's standing is a `ZREVRANK`, and an around-me view is a rank-range read. The rank is computed on read in `O(log N)`, never stored. Stated plainly and counterfactually: Portal stores progress as a percent today, and the sorted-set ranking is the ordinary structure to reach for when a ranked view of that percent is wanted.
+The digest's content names the room's top players. That is a ranking: order players by their round score, read the top-N. `Codemojex.Scoring` computes a player's score from their guess — `points = 100 - 20*d` for each guessed emoji at distance `d` from its secret position, totalled over six positions out of `@max` 600, the percentage `round(total / 600 * 100)` computed never stored. A leaderboard that ranks players by that percentage is exactly this pattern applied to the score: `ZADD board <percentage> <player>`, and the top-N players are a `ZREVRANGE board 0 N-1`, a player's standing a `ZREVRANK`, an around-me view a rank-range read. The rank is computed on read in `O(log N)`, never stored.
 
-The takeaway: the ranking is the leaderboard pattern over the progress percent Portal already records; Portal stores the percent and the ranked view over it is one sorted set away — no rank is stored, the order is the rank.
+The takeaway: the ranking is the leaderboard pattern over the percentage `Codemojex.Scoring` already computes; the score is the data, the ranked view over it is one sorted set away, and the rank is the order, never a stored field.
 
-## The bridge — five patterns, one sorted set
+## Five patterns, one sorted set
 
-- **The chapter.** Five patterns: the delayed queue (R4.01), the scheduler (R4.02), the composite priority score (R4.03), backoff-and-retry (R4.04), and the leaderboard (R4.05) — each a different reading of one structure.
-- **This workshop.** One Portal LMS scenario reads the sorted set five ways: a fire-time clock (`:delayed`), a recurrence registry (`:repeat`), a priority ladder (`:prioritized`), a retry timer (`:delayed` reused), and a ranking — all the same `ZADD` / range / pop machinery, scored by a number whose meaning the pattern chooses.
+Read back through the five moves and one structure stands behind all of them. The reminder scores by a run-at, the digest by a next-run, the deferral by a wait, the retry by a backoff delay, and the ranking by a percentage — five different numbers, one sorted set. The `ZADD` that writes the score, the range read that takes the due head, and the rank read are the same operations every time.
 
-The takeaway: the chapter's five patterns are one sorted set read five times. The score is a fire-time, a next-run, a packed priority, a backoff delay, or a player's points — and the structure never changes, only the meaning poured into the score.
+| Move | Set | The score means | The read |
+|---|---|---|---|
+| Reminder (R4.01) | `emq:{cm.notify}:schedule` | the run-at millisecond | `ZRANGEBYSCORE -inf now` (promote) |
+| Digest (R4.02) | `emq:{cm.notify}:repeat` | the next run | `EXISTS` guard + `ZADD` register |
+| Deferral (R4.03) | `emq:{cm.notify}:schedule` | now + the bucket's wait | the same promote sweep |
+| Retry (R4.04) | `emq:{cm.notify}:schedule` | a backoff delay | the same promote sweep |
+| Ranking (R4.05) | a ranking set | a player's percentage | `ZREVRANGE` / `ZREVRANK` |
 
-## Where this is heading — EchoMQ 2.0
+The pattern lands twice — the chapter's five readings of one sorted set, and codemojex's notification worker assembling them on the real `emq:{q}:` keyspace: a run-at clock, a recurrence registry, a deferral fence, a retry timer, and a ranking. The structure never changes, only the meaning poured into the score.
 
-Today every job in this scenario rides the v1.x BullMQ-compatible wire: the reminder and the retry on `emq:{queue}:delayed`, the digest on `emq:{queue}:repeat`, the reset email on `emq:{queue}:prioritized`. The settled **EchoMQ 2.0** design — the protocol break on the first EMQ rung, `emq.1` — drops BullMQ compatibility (the v1 line freezes at `1.3.0`), renames the whole keyspace to the native `emq:` prefix (`emq:{queue}:delayed`, `emq:{queue}:repeat`, `emq:{queue}:prioritized`; the `{queue}` hashtag applied transparently in the core, the braced `{emq}:` base reserved for the core's own keys), declares every Lua key in `KEYS[]` — the inherited undeclared-keys flaw resolved at the root — and bumps `meta.version` from `bullmq:5.65.1` to `echomq:2.0.0` behind a two-way typed boot fence, DragonflyDB-native. The whole scenario is unchanged by the break. The fire-time score, the upsert, the composite priority score, the backoff delay, and the ranking are each a property of the sorted set — the score, the sweep, the pop, the rank — not of the prefix it rides on. The break renames the keyspace and declares the keys; every pattern in this workshop carries over byte-for-byte. That is why the chapter is safe to teach before EchoMQ 2.0 ships: it teaches the sorted set, and the prefix it rides on is the part that changes.
+## Where the durable floor takes over
 
-## Grounded in EchoMQ's real scheduler
+Every job in this scenario is durable while it waits: a scheduled notice, a deferred send, a backed-off retry all sit on `emq:{cm.notify}:schedule` in Valkey, surviving a worker crash and returned by the `promote/3` sweep on recovery. Past the bus, the persistence floor takes the load that must outlive the volatile tiers: a notification archive or an audit of every notice sent is a fold from the bus into the durable page tier — `EchoStore`'s native engine on CubDB, replicated off-box to Tigris behind a create-only commit fence. Durability is a dial the system turns; the enqueue hot path touches only the bus, never a database on the path of every send.
 
-Every symbol in this scenario is a real surface in `echo/apps/echomq` and `echo/apps/portal`, cited as proof the patterns ship:
-
-- The delayed key and score — `EchoMQ.Keys.delayed/1`, `getDelayedScore` (`score = delayedTimestamp × 0x1000`) in `addDelayedJob-6.lua`, swept by the included `promoteDelayedJobs`.
-- The repeat registry — `EchoMQ.Keys.repeat/1`, `storeRepeatableJob`'s `ZADD repeatKey nextMillis customKey` probed by `ZSCORE` in `addRepeatableJob-2.lua`.
-- The priority score — `EchoMQ.Keys.prioritized/1`, `getPriorityScore` (`priority × 0x100000000 + (INCR pc)`) in `addPrioritizedJob-9.lua`, the counter key `EchoMQ.Keys.pc/1`, consumed by `ZPOPMIN` in `moveToActive-11.lua`.
-- The backoff delay — `EchoMQ.Backoff.calculate/4` (`:exponential` → `trunc(:math.pow(2, attempt - 1) × base_delay)`, then `apply_jitter`); `retryJob-11.lua` re-adds onto `:delayed`.
-- The ranking data — `Portal.Enrollment.Progress` (`percent :: 0..100`, namespace `PRG`); Portal runs no sorted set, so the ranking is the applied pattern, phrased counterfactually.
-
-This workshop cites one excerpt of each move as a door, not a depth. The full scheduler subsystem — the cron parser, the delay/promote/retry coordination across a worker pool, the polyglot concurrency models — is the subject of the dedicated **EchoMQ course**, which opens at `/echomq/lifecycle` (E6 · Lifecycle controls). This workshop closes R4 with five patterns over one sorted set; that course teaches the scheduler that runs them.
+The full schedule pump — the per-pool metronome, the promote/reap coordination across a consumer pool, the repeat sweep — is the subject of the dedicated EchoMQ course's Queue pillar. The archive and the durability dial are the subject of the persistence course.
 
 ## References
 
 ### Sources
 
-- [Redis — *ZADD*](https://redis.io/commands/zadd/) — the single write behind every move: the fire-time score, the repeat upsert, the priority score, the leaderboard score.
-- [Redis — *ZRANGEBYSCORE*](https://redis.io/commands/zrangebyscore/) — the due-range read inside `promoteDelayedJobs` that promotes the reminder and the retry.
-- [Redis — *ZPOPMIN*](https://redis.io/commands/zpopmin/) — pop the smallest composite score: the highest-precedence tier, earliest arrival — how the reset email jumps the queue.
-- [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — the one structure the scenario reads five ways: members ordered by a numeric score.
-- [BullMQ — *the queue protocol*](https://bullmq.io/) — the `:delayed` / `:repeat` / `:prioritized` protocol EchoMQ ports, where the Lua scripts are the protocol.
-- [DragonflyDB — *BullMQ on Dragonfly*](https://www.dragonflydb.io/docs/integrations/bullmq) — the BullMQ-on-Dragonfly direction EchoMQ 2.0 takes native, prefix renamed and keys fully declared.
+- [Valkey — *ZADD*](https://valkey.io/commands/zadd/) — the single write behind every move: the run-at score, the next-run register, the deferral, the backoff fire-time, the ranking score.
+- [Valkey — *ZRANGEBYSCORE*](https://valkey.io/commands/zrangebyscore/) — the due-range read inside the `@promote` Lua that returns the schedule head at or below the server clock.
+- [Valkey — *Sorted sets*](https://valkey.io/topics/data-types/) — the one structure the scenario reads five ways: members ordered by a numeric score, the engine under EchoMQ.
+- [Redis — *ZREVRANGE*](https://redis.io/commands/zrevrange/) — the top-N read the ranking digest carries, highest score first.
+- [Redis — *Documentation*](https://redis.io/docs/) — sorted sets, ranges, and ranks — the command families the schedule set, repeat registry, and leaderboard are built from.
+- [Answer.AI — *The /llms.txt convention*](https://llmstxt.org/) — the machine-readable map convention this course follows for agent readers.
 
 ### Related in this course
 
-- R4.01 · The delayed queue — `/redis-patterns/time-delay-priority/delayed-queue`
-- R4.02 · Schedulers & repeatable jobs — `/redis-patterns/time-delay-priority/schedulers`
-- R4.03 · Priority with composite scores — `/redis-patterns/time-delay-priority/priority-scores`
-- R4.04 · Backoff & retry — `/redis-patterns/time-delay-priority/backoff-retry`
-- R4.05 · Leaderboards — `/redis-patterns/time-delay-priority/leaderboards`
-- R4 · Time, Delay & Priority — `/redis-patterns/time-delay-priority`
-- E6 · Lifecycle controls — `/echomq/lifecycle`
+- [R4.01 · The delayed queue](/redis-patterns/time-delay-priority/delayed-queue) — the reminder's and the retry's run-at schedule set.
+- [R4.02 · Schedulers & repeatable jobs](/redis-patterns/time-delay-priority/schedulers) — the digest's repeat registry and its EXISTS-guarded register.
+- [R4.03 · Priority with composite scores](/redis-patterns/time-delay-priority/priority-scores) — the contrast reading: a packed priority score, where codemojex uses fair lanes.
+- [R4.04 · Backoff & retry](/redis-patterns/time-delay-priority/backoff-retry) — the failed send's backoff curve.
+- [R4.05 · Leaderboards](/redis-patterns/time-delay-priority/leaderboards) — the ranking the digest carries.
+- [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter this workshop closes.
+- [/echomq/queue](/echomq/queue) — the EchoMQ course: the schedule pump and the promote/reap coordination in depth.
+- [/echo-persistence](/echo-persistence) — the durable floor a scheduled and archived notice reaches: the durability dial, the page tier, the remote.

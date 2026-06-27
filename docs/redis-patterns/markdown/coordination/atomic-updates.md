@@ -3,7 +3,7 @@
 > Module hub · route `/redis-patterns/coordination/atomic-updates`
 > Grounding: `echo/apps/echo_mq/lib/echo_mq/jobs.ex` (`enqueue/4` → the `@enqueue` script) ·
 > `echo/apps/echo_wire/lib/echo_mq/script.ex` (`Script.new/2`) · `echo/apps/echo_wire/lib/echo_mq/connector.ex`
-> (`eval/5`, EVALSHA-first, `@wire_version "echomq:2.0.0"`) · committed figures `docs/echo/bcs/content/bcs3.2.md`,
+> (`eval/5`, EVALSHA-first, `@wire_version "echomq:3.0.0"`) · committed figures `docs/echo/bcs/content/bcs3.2.md`,
 > `bcsA.md`. Engine: Valkey.
 
 Ensure data integrity with atomic read-modify-write operations using WATCH/MULTI/EXEC for optimistic locking, Lua
@@ -184,12 +184,12 @@ proves the pattern is real.
 
 This module cites one excerpt — the `@enqueue` script — as proof the pattern ships. The full transition bundle
 (`@claim` / `@complete` / `@retry` / `@promote` / `@reap`), the EVALSHA/NOSCRIPT dispatch internals, and the
-`echomq:2.0.0` version fence are the subject of the dedicated **EchoMQ course** at `/echomq`. The Exchange Platform
-consumer (`echo/apps/exchange`) is the worked application: `Exchange.Gateway.parse_place/1` mints a branded `ORD`
-id at acceptance, and the order is admitted onto the `{orders}` queue as that one atomic script.
+`echomq:3.0.0` version fence are the subject of the dedicated **EchoMQ course** at `/echomq`. The codemojex
+consumer (`echo/apps/codemojex`) is the worked application: `Codemojex.Guesses.submit/3` mints a branded `JOB`
+id at acceptance, and the guess is admitted onto the `cm` lane as that one atomic script.
 
 After R2.01, the Coordination chapter continues with distributed locking, the Redlock contrast, cross-shard
-consistency, and hash-tag colocation, closing with a workshop that makes an Exchange Platform order placement
+consistency, and hash-tag colocation, closing with a workshop that makes an codemojex guess submission
 atomic across runtimes.
 
 ## References

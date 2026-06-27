@@ -144,4 +144,4 @@ lease fresh so a long job does not get reaped mid-work.
   claim that runs the `HINCRBY`.
 - [R2.02.3 · Lease renewal](/redis-patterns/coordination/distributed-locking/lease-renewal) — the next dive: keep the
   lease fresh.
-- [/echomq](/echomq) — the EchoMQ protocol, where the worker-side lock-subkey plane is taught.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol, where the worker-side lock-subkey plane is taught.

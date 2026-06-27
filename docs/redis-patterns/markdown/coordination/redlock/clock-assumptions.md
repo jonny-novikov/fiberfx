@@ -139,5 +139,5 @@ single-Valkey lease is enough, and when Redlock's five-instance cost is justifie
 - [R2.02 · Distributed locking](/redis-patterns/coordination/distributed-locking) — the single-Valkey lease that
   sidesteps the debate.
 - [R2 · Coordination & Consistency](/redis-patterns/coordination) — the chapter.
-- [/echomq](/echomq) — the EchoMQ protocol the claim lease lives in.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol the claim lease lives in.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the functional-Elixir & OTP craft behind the echo umbrella.

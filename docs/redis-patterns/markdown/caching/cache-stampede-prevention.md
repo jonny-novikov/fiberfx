@@ -1,8 +1,8 @@
 # Cache stampede prevention
 
 > Route: `/redis-patterns/caching/cache-stampede-prevention` · Module R1.05 · Source:
-> `content/fundamental/cache-stampede-prevention.md.txt` · Grounding: EchoCache's single-flight `flights` map
-> + the jittered TTL (`echo/apps/echo_cache/lib/echo_cache/table.ex`).
+> `content/fundamental/cache-stampede-prevention.md.txt` · Grounding: EchoStore's single-flight `flights` map
+> + the jittered TTL (`echo/apps/echo_store/lib/echo_store/table.ex`).
 
 Prevent multiple clients from simultaneously regenerating an expired cache key using locking, probabilistic early
 refresh, or request coalescing. A cache stampede — the thundering herd — happens when a popular cache key expires and
@@ -23,7 +23,7 @@ is untouched. When it expires, the picture inverts:
 This is particularly dangerous for keys with expensive regeneration costs — complex queries, aggregations, external
 API calls. The danger scales with two factors: how hot the key is, and how expensive its regeneration is. Plain
 cache-aside has no defence here — every miss is independent, so *N* concurrent misses become *N* source reads. The
-cost of a miss is what makes the herd dangerous: in the measured EchoCache record an L1 ETS hit costs `762 ns`, while
+cost of a miss is what makes the herd dangerous: in the measured EchoStore record an L1 ETS hit costs `762 ns`, while
 the L2 GET it replaces costs `31 us` — the L1 hit is `40 times cheaper`. A herd that goes to L2 and the loader pays
 that round trip *N* times at once.
 
@@ -93,9 +93,9 @@ For most applications, start with mutex locking — it is easier to reason about
 Consider X-Fetch for extremely high-traffic keys where even brief lock contention is problematic. Some systems
 combine both: X-Fetch for normal operation, with a mutex fallback for hard cache misses.
 
-## On EchoCache
+## On EchoStore
 
-EchoCache prevents the stampede by construction with two real mechanisms — and it is worth being exact about which.
+EchoStore prevents the stampede by construction with two real mechanisms — and it is worth being exact about which.
 
 **One fill per herd — the single-flight `flights` map.** Misses route through the table's owner, and concurrent
 misses on one id coalesce onto a single in-flight load. The owner's `handle_call({:fill, id}, from, state)` keeps a
@@ -105,7 +105,7 @@ words: *"Concurrent misses on a key coalesce onto a single in-flight load … ev
 That is request coalescing and the cross-process lock idea fused into one server move — no `N` source reads, one
 fill, every waiter served.
 
-**No synchronized expiry — the jittered TTL.** EchoCache does not implement the probabilistic XFetch rule; the
+**No synchronized expiry — the jittered TTL.** EchoStore does not implement the probabilistic XFetch rule; the
 X-Fetch formula above is the pattern, taught here, not a claim about the code. What the code does instead is
 **expiry jitter**: `expires_at/1` draws each row's expiry from `ttl ± ttl·jitter`, so a cohort filled together never
 expires together. The moduledoc states it plainly: *"Rows expire on a jittered clock — `ttl ± ttl·jitter` — so a
@@ -115,12 +115,12 @@ A single-flight on the L1 owner plus a jittered expiry is the same goal the lock
 per herd, and no synchronized expiry to create the herd in the first place.
 
 The three dives take one solution each — lock-on-miss (mutex locking), probabilistic early refresh (X-Fetch), and
-request coalescing — and run it on a hot key, grounding the applied part in EchoCache's single-flight and jitter.
+request coalescing — and run it on a hot key, grounding the applied part in EchoStore's single-flight and jitter.
 
 ## References
 
 ### Sources
-- [Valkey — SET](https://valkey.io/commands/set) — the `NX` and `PX` options that make one client acquire a self-expiring regeneration lock, and `PX` for the jittered millisecond TTL EchoCache writes.
+- [Valkey — SET](https://valkey.io/commands/set) — the `NX` and `PX` options that make one client acquire a self-expiring regeneration lock, and `PX` for the jittered millisecond TTL EchoStore writes.
 - [Redis — SET](https://redis.io/commands/set) — the canonical command reference for the regeneration lock.
 - [Redis — Documentation](https://redis.io/docs/) — expiry, key TTL, and the string commands the regeneration lock and refresh are built from.
 - [Sanfilippo, S. — antirez weblog](https://antirez.com/) — the Redis creator on locks, TTL, and atomic check-and-delete with a token.
@@ -131,5 +131,5 @@ request coalescing — and run it on a hot key, grounding the applied part in Ec
 - [R1.05.2 · Probabilistic early refresh](/redis-patterns/caching/cache-stampede-prevention/early-refresh) — X-Fetch the pattern; jitter the applied mechanism.
 - [R1.05.3 · Request coalescing](/redis-patterns/caching/cache-stampede-prevention/coalescing) — one fill per herd, every waiter served.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the EchoMQ protocol the cache's coherence lane rides.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — EchoStore single-flight in the near-cache, in depth.

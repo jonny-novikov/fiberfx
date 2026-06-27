@@ -103,7 +103,7 @@ reader never returns part of a value, a consumer never returns part of a batch.
 ### Door — the EchoMQ course
 
 The full pipeline model — the `SCRIPT LOAD` preflight, the EVALSHA/NOSCRIPT dispatch, the per-item verdict mapping,
-and the `echomq:2.0.0` version fence — is the dedicated **EchoMQ course** at `/echomq`. This dive cites one bulk
+and the `echomq:3.0.0` version fence — is the dedicated **EchoMQ course** at `/echomq`. This dive cites one bulk
 admission path as proof the pattern is real; the depth is the next course.
 
 ## References

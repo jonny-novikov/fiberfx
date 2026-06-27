@@ -50,31 +50,37 @@ For a board where a higher score is better, `ZREVRANK` is the rank a player want
 question — how far up from the bottom. The two are mirrors of one position in the same order. If the board holds N
 players, a member's `ZRANK` and `ZREVRANK` add up to N − 1. Reading either end leaves the set unchanged.
 
-## In Portal — the percent is the score the rank would read
+## In codemojex — `ZADD` is the write in `Board.record/3`
 
-The pattern is a clean sorted-set leaderboard: score in, rank out. Portal does not run one. What Portal does record is
-a learner's progress through a lesson as a **percent** — `Portal.Enrollment.Progress`, the field `percent :: 0..100`,
-namespace `PRG`, a row in an in-memory store. Portal has no progress ranking and no Redis sorted set; the percent is a
-plain stored value.
+codemojex is a Telegram emoji-guessing game on the same stack; its leaderboard is exactly this. The competitive state
+is in Valkey, the board is one sorted set per game keyed `cm:<game>:board`, and the score is the linear total from
+`Codemojex.Scoring` — `points = 100 - 20 * d` per emoji at distance `d`, summed over six positions, out of 600. When a
+guess is scored, `Codemojex.Board.record/3` writes the player's best linear total to the board:
 
-Ranking learners by that percent is this dive applied to that data. `ZADD board <percent> <learner>` writes each
-learner's percent as a score; `ZREVRANK board <learner>` then reads where that learner stands. The percent is the
-score the rank would read. State it plainly: the percent exists in Portal's store today, and the sorted-set rank is
-the ordinary structure to add when a ranked view of that percent is wanted — the rank is never stored, only computed
-from the percent order on read.
+```elixir
+# Codemojex.Board.record/3 — fold the best base, then ZADD it to the board
+old = hget_int(conn, k(game, "base"), player)
+new_base = max(old, base)
+Cmd.hset(k(game, "base"), player, to_string(new_base)) |> Wire.run(conn)
+Cmd.zadd(k(game, "board")) |> Cmd.score(new_base, player) |> Wire.run(conn)
+```
+
+`Cmd.zadd/1` and `Cmd.score/3` are the real `EchoWire.Cmd` builders; `k(game, "board")` is `cm:<game>:board`. The
+write is a best-of overwrite: `ZADD` re-places the player at their highest base, never lowering it — the raw linear
+best is the sole rank, no tier ladder, no first-mover bonus. The rank is read back later from the order, not stored.
 
 **The bridge.** `ZADD` writes a score and `ZREVRANK` reads a 0-based rank from the score order, computed on read →
-Portal stores each learner's lesson progress as a `percent` (the `PRG` struct); a ranking view scores by that percent
-(`ZADD board percent learner`) and reads a learner's standing with `ZREVRANK`, the rank derived from the percent order.
+`Codemojex.Board.record/3` writes each player's best linear total with `Cmd.zadd("cm:<game>:board") |> Cmd.score(new_base,
+player)`; the rank is the player's position in that order on read.
 
-**Take.** The score is the write and the rank is the read; nothing stores a rank. Portal stores a progress percent —
-the score a `ZREVRANK` would read.
+**Take.** The score is the write and the rank is the read; nothing stores a rank. codemojex's `Board.record/3` is that
+`ZADD`, with a best-of fold so a player's rank only ever climbs.
 
 ### A door, not a depth
 
-The full ranking machinery — how a group orders its members and resolves equal scores inside the queue — is the
-subject of the dedicated **EchoMQ course**. The intra-group ranking is [E4 · Groups](/echomq/groups). This dive teaches
-`ZADD` and `ZREVRANK`; that course teaches the group ranking built on the same score order.
+How EchoMQ orders work by a packed schedule and priority score — and resolves equal scores in the queue — is the
+subject of the dedicated **EchoMQ course**. From here, open onto [the Queue pillar](/echomq/queue). This dive teaches
+`ZADD` and `ZREVRANK`; that course teaches the queue ranking built on the same score order.
 
 ## References
 
@@ -96,4 +102,4 @@ subject of the dedicated **EchoMQ course**. The intra-group ranking is [E4 · Gr
 - [R4.03 · Composite priority scores](/redis-patterns/time-delay-priority/priority-scores) — packing two axes into one
   score for ties.
 - [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter.
-- [E4 · Groups](/echomq/groups) — the dedicated EchoMQ course: the group ranking on the same score order.
+- [The Queue pillar](/echomq/queue) — the dedicated EchoMQ course: the queue ranking on the same score order.

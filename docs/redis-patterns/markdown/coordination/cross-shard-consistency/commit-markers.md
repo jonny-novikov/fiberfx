@@ -104,7 +104,7 @@ is in `Connector.eval/5` (`connector.ex:63`): every key the script touches is de
 them on one slot and runs the move as a unit.
 
 A commit marker is the multi-shard substitute for exactly that atomicity. You reach for it when the writes land on
-keys that genuinely cannot share a slot — a Valkey read-model paired with the Exchange Platform's database of record,
+keys that genuinely cannot share a slot — a Valkey read-model paired with codemojex's database of record,
 where a single move script is not available and a torn write would otherwise be readable. There the marker rebuilds,
 at the cost of one extra key, the visible-or-not property the one-`EVAL` move gives EchoMQ for free.
 
@@ -133,6 +133,6 @@ it). The full v2 script bundle belongs to the dedicated EchoMQ course.
   the version field that orders a tear, which a marker composes with.
 - [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the single-slot atomic move that is
   visible-or-not in one step, so it needs no marker.
-- [/echomq](/echomq) — the dedicated EchoMQ course: the full v2 script bundle in depth.
+- [/echomq/protocol](/echomq/protocol) — the dedicated EchoMQ course: the full v2 script bundle in depth.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the single-writer engine where a commit boundary keeps a half-finished
   update unseen.

@@ -1,82 +1,98 @@
 # States as locations — the lifecycle as one atomic Lua move
 
-> R3 · Reliable Queues · dive 2 — `/redis-patterns/queues/states-as-locations`
+> Route: `/redis-patterns/queues/states-as-locations` · Dive R3·2 · Chapter R3 Reliable Queues · BCS contract-sheet.
+> Grounding: the real **EchoMQ** keyspace and state machine in `echo/apps/echo_mq` — `EchoMQ.Keyspace` and
+> `EchoMQ.Jobs`. A job's state is the `emq:{q}:` location its branded `JOB` id lives in (`pending`/`active`/`schedule`
+> sorted sets + the row hash + a `state` field). A transition is one inline `EchoMQ.Script.new/2` body run by
+> `EchoMQ.Connector.eval/4` as a single EVALSHA — read-decide-write that cannot tear. Doors: `/echomq/queue`.
 
-A job's state is not a status field on a record. It is *where the job's id lives*. A transition is moving the id from
-one Redis key to another, the whole move run as one atomic Lua script, and a blocked worker woken by a marker instead
-of a poll.
+A job's state is not just a field on a record. It is the `emq:{q}:` key its branded `JOB` id lives in — and a
+transition moves the id from one key to the next, in one atomic Lua move.
 
 ## The state is the location
 
-A naive queue stores a `status` column — `"wait"`, `"active"`, `"done"` — and updates it as the job moves. Two things
-can then disagree: where the job actually sits and what the status says. A crash between writing the status and moving
-the job leaves the two out of sync, and nothing reconciles them.
+A naive queue stores a status column and updates it as the job moves, so the location and the status can disagree
+after a crash. EchoMQ holds the job's identity in a Valkey location and keeps a matching `state` field on the row,
+written in the same atomic move. The pending set `emq:{q}:pending` is a score-0 sorted set so byte order is mint
+order; the active set `emq:{q}:active` is a sorted set scored by each member's lease deadline; the schedule set
+`emq:{q}:schedule` is scored by a future run-at; the dead set `emq:{q}:dead` holds terminal ids; and the row hash
+`emq:{q}:job:<JOB>` carries the `state`, `attempts`, and `payload` fields.
 
-EchoMQ holds no status field. A job's state *is* the Redis key its id lives in:
+`EchoMQ.Keyspace.queue_key/2` builds each location as `emq:{q}:<type>`, with the queue name braced as the cluster
+hash-tag so every key of one queue lands on one slot. `EchoMQ.Keyspace.job_key/2` builds the row key
+`emq:{q}:job:<JOB>` — and **gates the branded `JOB` id at the key builder**: it raises if the id is not a valid
+branded id, so an ill-formed identity never reaches the keyspace. The state is where the id sits, and the location
+can never be reached by an unbranded key.
 
-- `emq:{queue}:wait` — a **LIST** of ids waiting to run.
-- `emq:{queue}:active` — a **LIST** of ids in flight under a lock.
-- `emq:{queue}:delayed` — a **ZSET** scored by the time the job becomes due.
-- `emq:{queue}:prioritized` — a **ZSET** scored by priority.
-- `emq:{queue}:completed` — a **ZSET** of finished ids scored by finish time.
-- `emq:{queue}:failed` — a **ZSET** of failed ids.
-
-`EchoMQ.Keys` builds each of these from the queue context — `wait/1`, `active/1`, `delayed/1`, `prioritized/1`,
-`completed/1`, `failed/1`. A transition is moving the id from one key to the next. There is no separate state column to
-fall out of sync, because the location *is* the state.
+```
+# a job's state is the emq:{q}: key its branded JOB id lives in
+emq:{cm}:pending          → ZSET  · score 0, byte order is mint order
+emq:{cm}:active           → ZSET  · scored by lease deadline (server TIME)
+emq:{cm}:schedule         → ZSET  · scored by a future run-at
+emq:{cm}:dead             → ZSET  · terminal, dead-lettered ids
+emq:{cm}:job:JOB0Nt…      → HASH  · state, attempts, payload
+```
 
 ## The whole transition is one atomic Lua move
 
-Moving a job from `active` to `completed` is not one write. The lifecycle transition reads the job, checks its lock,
-removes the id from `active`, writes the result into `completed`, updates counters and metrics, and pushes the next
-job — touching many keys. Done as separate commands, a crash partway leaves the job in two places or in none.
+Moving a job from active to done is not one write. The transition reads the row's `attempts` to fence the caller,
+checks the token, removes the id from the active set, retires the row, and bumps a metric — touching several keys.
+Done as separate commands, a crash partway leaves the job in two places, or in none.
 
-`moveToFinished-14.lua` performs that whole transition across **fourteen keys** in one `EVALSHA`. Its header documents
-the fourteen `KEYS`: wait, active, prioritized, the event stream, stalled, the rate limiter, delayed, paused, meta, the
-priority counter, the completed-or-failed key, the job hash, the metrics key, and the marker. `EchoMQ.Scripts.move_to_finished/7`
-assembles those fourteen keys in order and runs the script. Because Redis runs a Lua script to completion with no other
-client interleaving, the move applies in full or not at all. There is no torn intermediate state to recover. This is the
-R2.01 atomic-update pattern at lifecycle scale: read, decide, write — in one move.
+EchoMQ runs each transition as one inline `EchoMQ.Script.new/2` body, dispatched by `EchoMQ.Connector.eval/4` as a
+single EVALSHA (the connector is EVALSHA-first, falling back to EVAL on `NOSCRIPT`). `EchoMQ.Jobs.complete/5` is the
+active→done move: it `HGET`s `attempts`, refuses a stale token (`EMQSTALE`), `ZREM`s the id from the active set,
+`DEL`s the row, and `HINCRBY`s the completed metric — all in one script. Valkey runs a Lua script to completion with
+no other client interleaving, so the move applies in full or not at all. This is the R2.01 atomic-update pattern at
+lifecycle scale: read, decide, write — in one move.
 
-## Load once, execute by SHA
+```lua
+-- @complete (inline) — active → done, token-fenced, in one EVALSHA
+local att = redis.call('HGET', KEYS[2], 'attempts')   -- KEYS[2] = the row
+if not att then return 0 end
+if att ~= ARGV[2] then
+  return redis.error_reply('EMQSTALE complete token mismatch')
+end
+redis.call('ZREM', KEYS[1], ARGV[1])                  -- KEYS[1] = emq:{q}:active
+redis.call('DEL', KEYS[2])                            -- retire the row
+redis.call('HINCRBY', ARGV[3] .. 'metrics:completed', 'count', 1)
+return 1
+```
 
-The script is the protocol, and it is cached by its SHA1. `EchoMQ.Scripts.execute_raw/4` computes the script's
-`sha1`, then issues `EVALSHA sha numkeys keys… args…`. On the first call for a script Redis has not seen, it answers
-`NOSCRIPT`; `execute_raw/4` matches that error, falls back to `EVAL` with the full script body (which also caches it),
-and every later call hits `EVALSHA`. The full ~1050-line `moveToFinished-14.lua` body crosses the wire once; after that
-the worker sends only its SHA.
+## Every key is declared, gated, and on one slot
 
-## Blocking pickup, not busy-polling
-
-A worker that loops `LRANGE`/sleep over the wait list burns CPU and adds latency between a job arriving and a worker
-noticing. EchoMQ wakes a blocked worker instead. Every enqueue touches the `emq:{queue}:marker` ZSET
-(`EchoMQ.Keys.marker/1`), and an idle worker parks on `BZPOPMIN marker timeout` on a *dedicated blocking connection* —
-`Redix.command(conn, ["BZPOPMIN", marker_key, timeout_seconds], …)` in the worker's `do_wait_for_job/3`. The worker
-sleeps until a job arrives, then Redis returns the popped marker and the worker fetches the job. No CPU is spent while
-the queue is empty. The Go port's polling ticker is the contrast — it wakes on a fixed interval whether or not a job is
-waiting.
+The atomic move has a discipline behind it. Every key the script touches is passed in `KEYS[]` — the active set and
+the row are declared keys, not derived inside the script from a data value. Every key of one queue carries the same
+`{q}` brace, so the whole transition lands on one cluster slot and Valkey will run the multi-key script. And the
+branded `JOB` id is gated at `EchoMQ.Keyspace.job_key/2` before any key is built. The script is the protocol: the
+caller sends the SHA and the keys, the body lives in Valkey, and the transition is indivisible.
 
 ## In EchoMQ — the lifecycle the worker runs
 
-The pattern and the application line up directly. A job's state is its Redis location, every transition is one atomic
-Lua move, and an idle worker blocks on a marker rather than polling. In EchoMQ that is `moveToFinished-14.lua` — fourteen
-keys, one `EVALSHA` via `EchoMQ.Scripts.execute_raw/4` — together with `emq:{queue}:marker` and `BZPOPMIN`.
-
-The whole lifecycle — the eight states, the script behind every transition, the lock protocol, and the closed error
-codes — is the dedicated EchoMQ course. R3 opens onto its lifecycle chapters.
+The pattern and the application line up directly. A job's state is its `emq:{q}:` location plus a matching `state`
+field written in the same move; every transition is one inline `EchoMQ.Script.new/2` body run by
+`EchoMQ.Connector.eval/4` as a single EVALSHA; and the branded `JOB` id is gated at the key builder. `EchoMQ.Jobs`
+holds the verbs — `claim/3` (pending→active), `complete/5` (active→done), `retry/7` (active→schedule or →dead),
+`reap/2` (active→pending), `promote/3` (schedule→pending). States are locations, a transition is one atomic Lua
+move, and no torn intermediate state exists to recover.
 
 ## References
 
 ### Sources
 
-- [Redis — Scripting with Lua (EVAL / EVALSHA)](https://redis.io/docs/latest/develop/interact/programmability/eval-intro/) — the atomic lifecycle transition; a script runs to completion with no interleaving.
-- [Redis — EVALSHA](https://redis.io/commands/evalsha/) — run a cached script by its SHA1; `NOSCRIPT` falls back to `EVAL`.
-- [Redis — BZPOPMIN](https://redis.io/commands/bzpopmin/) — the blocking pop on the marker ZSET that wakes a worker instead of polling.
-- [BullMQ](https://bullmq.io/) — the reliable-queue protocol EchoMQ ports, where the Lua scripts are the protocol.
+- [Redis — Scripting with Lua](https://redis.io/docs/latest/develop/interact/programmability/eval-intro/) — a script
+  runs to completion with no interleaving, so a transition applies in full or not at all.
+- [Redis — EVALSHA](https://redis.io/commands/evalsha/) — run a cached script by its SHA; a `NOSCRIPT` reply falls
+  back to `EVAL`, which caches the body — the connector's EVALSHA-first dispatch.
+- [Valkey — ZREM](https://valkey.io/commands/zrem/) — removes the id from one state set, the move out of a location.
+- [Redis — Cluster key hash tags](https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/) — the
+  `{q}` brace that lands every key of one queue on one slot, so a multi-key script is legal.
 
 ### Related in this course
 
 - [R3 · Reliable Queues](/redis-patterns/queues) — the chapter: the reliable-queue family in one place.
-- [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue) — dive 1: the in-flight list, at-least-once, and stalled reclaim.
-- [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the atomic move; this dive is that pattern at lifecycle scale.
-- [R0.2 · Redis under Portal](/redis-patterns/overview/redis-under-portal) — the EchoMQ bus these patterns ground in.
+- [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue) — dive 1: the leased claim, at-least-once, and
+  stalled reclaim.
+- [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the atomic move; this dive is that pattern
+  at lifecycle scale.
+- [/echomq/queue](/echomq/queue) — the EchoMQ Queue pillar: the state machine and the inline Lua in depth.

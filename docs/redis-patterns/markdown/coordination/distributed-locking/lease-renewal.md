@@ -124,4 +124,4 @@ claim, fence a stale worker on `attempts`, and recover an expired lease with the
   recovers.
 - [R2.02.2 · Fencing tokens](/redis-patterns/coordination/distributed-locking/fencing-tokens) — why a re-claimed job
   fences the lapsed worker.
-- [/echomq](/echomq) — the EchoMQ protocol, where the worker-side lock-subkey renewal plane is taught.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol, where the worker-side lock-subkey renewal plane is taught.

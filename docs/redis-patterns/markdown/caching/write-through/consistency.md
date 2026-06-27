@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/write-through/consistency` · Module R1.02 · dive 2 · Source:
 > `content/fundamental/write-through.md.txt` (the *Advantages* — reads always hit a fresh cache) · Grounding:
-> the `version <> value` frame in `EchoCache.Table` (`echo/apps/echo_cache/lib/echo_cache/table.ex:294`) — both
+> the `version <> value` frame in `EchoStore.Table` (`echo/apps/echo_store/lib/echo_store/table.ex:294`) — both
 > layers set under one TTL, framed with the write's mint-time version.
 
 A read that follows a write-through write cannot be stale — because both layers were written on the same path, under
@@ -19,7 +19,7 @@ new value. There is no interval in which the cache lags the source after the wri
 In the as-built code the new value carries its own provenance: the put clause stores `version <> value` — a 14-byte
 branded mint-time version in front of the bytes. The version is not for the read after this write (that read is fresh
 because both layers were set in the one call); it is for the *next* writer's late message. A coherence message
-compares versions and drops a row only when the incoming version is newer (`EchoCache.Coherence.newer?/2`), so a
+compares versions and drops a row only when the incoming version is newer (`EchoStore.Coherence.newer?/2`), so a
 late stale invalidation can never erase a newer row. Freshness on the write path; newer-wins across writers.
 
 Contrast cache-aside, which invalidates the cache on a write rather than updating it. After a cache-aside write, the
@@ -44,30 +44,30 @@ written in sequence; if one fails, the write is reported as failed — the laten
 Take a single key with an old value and a new value. A write-through write replaces both layers; a later read of that
 key returns the new value, every time.
 
-- **read after the write returns** — `GET ecc:{instruments}:<id>` returns the new value. Fresh, because both layers
+- **read after the write returns** — `GET ecc:{cm_emojisets}:<id>` returns the new value. Fresh, because both layers
   were set before the write returned.
 - **read while the write runs** — the read returns the old or new value, never a torn one: a single-key `GET` returns
   one whole value, the before or the after, not a mix.
 - **read after the TTL expires** — the L2 row has expired under its `PX`, so the read misses, the loader re-reads the
   still-current source, and the cache backfills. Fresh, because the source is the source of truth.
 
-## On EchoCache
+## On EchoStore
 
-Take an instrument reference row that was updated. `EchoCache.Table.put` sets the L2 Valkey row and the L1 ETS table
+Take an emoji-set row that was updated. `EchoStore.Table.put` sets the L2 Valkey row and the L1 ETS table
 on the same call; the write returns once both are done. A read of the same id is served from the cache and matches
 what was written — there is no moment after the write where the cache could hand back the old value. A caller above
 the table receives one consistent value, not a store and a timing race.
 
 ```
-# echo/apps/echo_cache — a write-through put, then a fetch.
-EchoCache.Table.put(:instruments, "AST0NgWEfAEJfs", new_value)
+# echo/apps/echo_store — a write-through put, then a fetch.
+EchoStore.Table.put(:cm_emojisets, "EMS0ODMggk1d5N", new_value)
 #   handle_call sets L2 (SET … PX) then L1 (insert) under one TTL  ->  {:reply, :ok}
 
-EchoCache.Table.fetch(:instruments, "AST0NgWEfAEJfs")
+EchoStore.Table.fetch(:cm_emojisets, "EMS0ODMggk1d5N")
 #   {:ok, new_value, :hit}   — the L1 row holds the value the put produced
 ```
 
-Across writers, the value's framed version is what keeps order: `EchoCache.Coherence.newer?/2` compares the 11-byte
+Across writers, the value's framed version is what keeps order: `EchoStore.Coherence.newer?/2` compares the 11-byte
 snowflake payloads (lexicographic equals chronological), so a stale late message loses. The functional-Elixir and
 OTP craft behind the echo data layer is in the [`/elixir`](/elixir) course. This dive states the guarantee and shows
 a read confirming it.
@@ -85,4 +85,4 @@ a read confirming it.
 - [R1.02.1 · The synchronous dual write](/redis-patterns/caching/write-through/dual-write) — the previous dive.
 - [R1.02.3 · The latency cost](/redis-patterns/caching/write-through/latency-cost) — the next dive.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the bus behind the coherence lane that carries the framed version.
+- [/echomq/cache](/echomq/cache) — the EchoStore framed mint-time version, in depth.

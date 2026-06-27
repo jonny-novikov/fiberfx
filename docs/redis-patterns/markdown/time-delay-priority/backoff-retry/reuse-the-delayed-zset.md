@@ -1,61 +1,67 @@
-# R4.04.3 · Reusing the delayed ZSET
+# R4.04.3 · Reusing the schedule set
 
 > Route: `/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset` · dive 3 of R4.04
 
-A retry introduces no new structure. It is R4.01's delayed sorted set used a second time: `retryJob-11.lua` re-adds the failed job to `emq:{queue}:delayed` scored by the backoff fire-time, and `promoteDelayedJobs` — the same due-sweep R4.01 teaches — brings it back when due. One set, two uses.
+A retry adds no new structure. It re-enters the same schedule set R4.01's delayed queue uses, scored by `now + delay_ms`, and the same promotion sweep brings it back when due. One sorted set, two uses: a first-time delayed job and every retry.
 
-## The retry re-enters the delayed set
+## §1 — One sorted set, two callers
 
-When a job fails and has retries left, the worker calls `EchoMQ.Scripts.retry_job/5`, which runs `retryJob-11.lua`. That script's `KEYS[7]` is the delayed key — `emq:{queue}:delayed`, the exact set R4.01 schedules into. The failed job is re-added there, scored by its fire-time the way every delayed job is, with the score coming from the same `getDelayedScore` shift R4.01 walks: `(timestamp + delay) × 0x1000`, the fire-time shifted twelve bits so jobs due in the same millisecond stay ordered.
+The delayed queue (R4.01) schedules a job for a future time by ZADDing it onto a sorted set scored by its fire-time, then sweeping the due range back to pending. A retry is the same three moves with one difference: the score comes from a backoff formula instead of a caller-supplied time. Both write to the same key, `emq:{<queue>}:schedule`; both are swept by the same promotion. The schedule set does not know — and does not need to know — which of its members is a first-time delayed job and which is a retry. The score is the only thing that matters.
 
-The delay in that fire-time is the backoff delay — computed first by `EchoMQ.Backoff.calculate/4` in Elixir, then handed to the reschedule. So the retry sits in the delayed set indistinguishable from a freshly-scheduled deferred job: same key, same score shape, same ordering. The set does not know one member is a retry and another is a first-time schedule. To the sorted set they are all jobs scored by when they are due.
+## §2 — The reschedule (`retry/7`)
 
-## The sweep is the same `promoteDelayedJobs`
-
-`retryJob-11.lua` does not only re-add the job — it *includes* the promote sweep. The script carries `[INCLUDED: includes/promoteDelayedJobs.lua]`, and that included function is the same one R4.01's promotion dive teaches:
+`EchoMQ.Jobs.retry/7` is token-fenced and reads the row's `attempts` before it does anything. Under the max-attempts ceiling, it reads the server clock, sets the row's state to `scheduled`, and ZADDs the job onto the schedule set at `now + delay_ms` — the literal delay the host computed with `EchoMQ.Backoff`:
 
 ```lua
--- promoteDelayedJobs (included by retryJob-11.lua) — real
-local jobs = rcall("ZRANGEBYSCORE", delayedKey, 0, (timestamp + 1) * 0x1000 - 1, "LIMIT", 0, 1000)
-if (#jobs > 0) then
-  rcall("ZREM", delayedKey, unpack(jobs))
-  -- ZADD each onto the target (wait) or prioritized list
-end
+-- @retry (jobs.ex) — the non-terminal arm, verbatim
+local t = redis.call('TIME')
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call('HSET', KEYS[4], 'state', 'scheduled')
+redis.call('ZADD', KEYS[2], now + tonumber(ARGV[3]), ARGV[1])
+return 'scheduled'
 ```
 
-It ranges the delayed key from `0` up to `(timestamp + 1) × 0x1000 - 1` — every job whose shifted fire-time is at or below the current millisecond — removes them with `ZREM`, and moves them onto the wait or prioritized list. The retry re-enters at a future score and is swept back by exactly this function when the clock reaches it. There is no retry-specific sweep; the retry is promoted by the same machinery that promotes every delayed job, invoked as `promoteDelayedJobs(KEYS[7], ...)` inside the retry script.
+`KEYS[2]` is the schedule set, `ARGV[3]` is the literal `delay_ms`, `ARGV[1]` is the job id. The script reschedules at a delay it is given; it never computes a curve. At the max-attempts ceiling the other arm of the same script sets the row `dead` and ZADDs the job onto the morgue set instead — the retry gives up.
 
-## One structure, two uses — what changes and what does not
+## §3 — The sweep (`promote/3`)
 
-The whole module reduces to this: R4.01 owns the delayed set, the score shift, and the promote sweep. R4.04 reuses all three. What R4.04 *adds* is upstream of the set — the computation of *which delay* to put in the score, done by `EchoMQ.Backoff` (the exponential doubling, the jitter). What R4.04 does *not* add is any new key, command, or sweep. The reschedule is a `ZADD` to `emq:{queue}:delayed`; the recovery is `promoteDelayedJobs`; both are R4.01's.
+The promotion that brings a retry back is the same one R4.01 teaches for delayed jobs. `EchoMQ.Jobs.promote/3` reads the server clock and ZRANGEBYSCOREs the schedule set from `-inf` to `now`, then moves each due member back to pending:
 
-This is why the pattern is economical. A queue that already has a delayed queue has a retry mechanism for free — it needs only a formula to size the delay and an attempts counter to cap the loop. The hard part (a time-ordered set with an efficient due-range read) was built once, in R4.01, and serves both scheduled work and retries.
+```lua
+-- @promote (jobs.ex) — the due-range sweep, the non-group path
+local due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now, 'LIMIT', 0, tonumber(ARGV[2]))
+for _, id in ipairs(due) do
+  redis.call('ZREM', KEYS[1], id)
+  redis.call('ZADD', KEYS[2], 0, id)         -- a non-group job → the pending set
+  redis.call('HSET', p .. 'job:' .. id, 'state', 'pending')
+end
+return #due
+```
 
-## Where this is heading — EchoMQ 2.0
+`KEYS[1]` is the schedule set, `KEYS[2]` is pending. A retry that was ZADDed at `now + delay_ms` falls into this range once the clock passes its score, and the sweep moves it back to pending exactly as it moves a first-time delayed job. No retry-specific path runs; the retry becomes due like any other member.
 
-The retry re-enters `emq:{queue}:delayed` and is swept by `promoteDelayedJobs` today. EchoMQ 2.0 renames the key to `emq:{queue}:delayed`, applies the `{queue}` hashtag transparently in the core, and declares every Lua key in `KEYS[]` — so `retryJob-11.lua`'s `KEYS[7]` and the sweep's `delayedKey` become fully-declared `emq:`-prefixed keys, and `meta.version` reads `echomq:2.0.0` behind the two-way boot fence. The reuse this dive teaches — one set serving both schedule and retry, swept by one `promoteDelayedJobs` — is unchanged by the break. The break renames the prefix and tightens key declaration; it does not split the delayed set or add a retry-specific structure. The "one structure, two uses" property is a fact about the sorted set, not the prefix.
+## §4 — Why one structure is enough
+
+Reuse is the point, not a coincidence. The schedule set is a timer wheel keyed by score; anything with a future fire-time belongs on it. A delayed job's fire-time is a caller's clock; a retry's fire-time is a backoff curve; a scheduler's next run is an interval — all three are scores on the same sorted set, swept by the same promotion. Adding a separate "retry set" would duplicate the sweep, the promotion, and the morgue handling for no gain. One sorted set, scored by fire-time, is the whole delay machinery — and the retry is one more caller of it.
 
 ## The bridge — pattern to application
 
-- **The pattern.** A retry is a delayed job: re-add the failed job to the delayed set at a backoff fire-time, and let the existing due-sweep bring it back when its time comes. No new structure.
-- **In EchoMQ.** `retryJob-11.lua` re-adds the job to `emq:{queue}:delayed` (`KEYS[7]`) at the backoff score, and the *included* `promoteDelayedJobs` sweeps it back with `ZRANGEBYSCORE delayedKey 0 (timestamp + 1) × 0x1000 - 1` then `ZREM` — R4.01's own sweep, called from inside the retry script.
-
-The takeaway: a retry adds no structure — it reuses R4.01's delayed set, score shift, and `promoteDelayedJobs` sweep, contributing only the backoff delay that sets the fire-time.
+- **The pattern:** a retry is a delayed job whose score is a backoff delay; it rides the same sorted set, the same ZADD, and the same due-range sweep the delayed queue uses — no new structure.
+- **Its EchoMQ application:** `EchoMQ.Jobs.retry/7` ZADDs the job onto `emq:{<queue>}:schedule` at `now + delay_ms`; `EchoMQ.Jobs.promote/3` ZRANGEBYSCOREs the due range and moves it back to pending — the same machinery R4.01 teaches for first-time delayed jobs.
 
 ## References
 
 ### Sources
 
-- [Redis — *ZADD*](https://redis.io/commands/zadd/) — re-add the failed job to `emq:{queue}:delayed` at the backoff fire-time score.
-- [Redis — *ZRANGEBYSCORE*](https://redis.io/commands/zrangebyscore/) — the `promoteDelayedJobs` range that sweeps the due retry back to wait.
-- [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — the one timer-wheel that serves both schedule and retry.
-- [DragonflyDB — *BullMQ on Dragonfly*](https://www.dragonflydb.io/docs/integrations/bullmq) — the BullMQ-on-Dragonfly direction EchoMQ 2.0 takes native.
+- Redis — *ZADD* — https://redis.io/commands/zadd/ — re-add the failed job to the schedule set at its backoff fire-time.
+- Redis — *ZRANGEBYSCORE* — https://redis.io/commands/zrangebyscore/ — the due-range sweep that brings a retry back to pending.
+- Valkey — *Sorted sets* — https://valkey.io/topics/data-types/ — the timer-wheel both the delayed job and the retry ride.
+- Redis — *Documentation* — https://redis.io/docs/ — scoring and range queries in context.
 
 ### Related in this course
 
-- R4.04 · Backoff & retry — `/redis-patterns/time-delay-priority/backoff-retry`
-- R4.04.1 · Exponential backoff — `/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff`
-- R4.04.2 · Jitter & the thundering herd — `/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd`
-- R4.01 · The delayed queue — `/redis-patterns/time-delay-priority/delayed-queue`
-- R4.02 · Scheduler registry — `/redis-patterns/time-delay-priority/schedulers`
-- E6 · Lifecycle controls — `/echomq/lifecycle`
+- R4.04 · Backoff & retry — `/redis-patterns/time-delay-priority/backoff-retry` — the module hub.
+- R4.04.2 · Jitter & the thundering herd — `/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd` — the previous dive.
+- R4.01 · Delayed queue — `/redis-patterns/time-delay-priority/delayed-queue` — the schedule-set machinery this reuses.
+- R4.02 · Schedulers — `/redis-patterns/time-delay-priority/schedulers` — recurring jobs on the same clock.
+- The EchoMQ queue protocol — `/echomq/queue` — the schedule set, the retry, and the promotion in depth.

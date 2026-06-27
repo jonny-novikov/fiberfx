@@ -2,70 +2,53 @@
 
 > Route: `/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff` · dive 1 of R4.04
 
-A retry needs a delay. A fixed delay treats every failure the same; an exponential delay doubles each attempt, so the first retry is quick and a repeatedly-failing dependency gets progressively more room. The formula is `delay = base × 2^(attempt - 1)` — and its owner is `EchoMQ.Backoff.calculate/4` in Elixir, not the Lua.
+The formula: `delay = base × 2^(attempts-1)`. Attempt 1 waits `base`, attempt 2 waits `2 × base`, attempt 3 waits `4 × base`. The owner of this curve is a host-side pure function, `EchoMQ.Backoff.delay_ms/2` — not the wire.
 
-## The formula
+## §1 — The doubling curve
 
-Exponential backoff scales the wait with the attempt number:
+Exponential backoff multiplies the wait by two on each failed attempt. With a `base` of 100 ms the schedule is 100, 200, 400, 800, 1600 — the gap between retries grows as fast as the failures persist. A dependency that recovers quickly costs one short delay; a dependency that stays down is hit less and less often, which is exactly what a struggling service needs.
 
-```
-delay = base × 2^(attempt - 1)
-```
+The exponent is the attempt that just failed, minus one. `attempts = 1` (the first failure) gives `2⁰ = 1`, so the first retry waits exactly `base`. This anchors the curve: the first retry is fast, and each subsequent one doubles.
 
-The exponent is `attempt - 1`, so the first attempt waits exactly the base:
+## §2 — The clamp
 
-- attempt 1 → `base × 2^0` = `base`
-- attempt 2 → `base × 2^1` = `2 × base`
-- attempt 3 → `base × 2^2` = `4 × base`
-- attempt 4 → `base × 2^3` = `8 × base`
+An unbounded curve is a hazard. After 20 attempts `2¹⁹ × base` is enormous — a job that would not re-fire for years. Exponential backoff in practice carries a `cap`: the delay is `min(base × 2^(attempts-1), cap)`. The curve climbs, then holds flat at the ceiling. A clamp turns an exponential into a bounded ramp that protects the dependency without parking the job forever.
 
-With a one-second base the retries land at 1s, 2s, 4s, 8s, 16s out from each failure. The delay doubles each step — a geometric series, not a linear one. Where a fixed 1s delay would re-fire five times in five seconds, the exponential schedule spreads the same five attempts across thirty-one seconds of cumulative wall-clock, giving a struggling dependency exponentially more time to recover between hits.
+## §3 — The formula owner is host-side
 
-## Where the math lives — `EchoMQ.Backoff`, not the Lua
-
-The exponential formula is Elixir. `EchoMQ.Backoff.calculate/4` is the owner; its `:exponential` clause computes the delay and applies jitter:
+In the real bus the curve lives **above the wire**, in `EchoMQ.Backoff.delay_ms/2` — a pure function from a policy and an attempt count to a literal `delay_ms`. No process, no clock, no I/O; a consumer can compute, table, and test its retry cadence without a server. The wire takes a literal delay and never computes a curve. The exponential clause is one `min`:
 
 ```elixir
-def calculate(:exponential, attempt, base_delay, opts) do
-  jitter = Keyword.get(opts, :jitter, 0)
-  delay = trunc(:math.pow(2, attempt - 1) * base_delay)
-  apply_jitter(delay, jitter)
+# EchoMQ.Backoff.delay_ms/2 — the :exponential clause (verbatim)
+def delay_ms({:exponential, base, cap}, attempts) do
+  raw = base * Bitwise.bsl(1, attempts - 1)   # base × 2^(attempts-1)
+  min(raw, cap)                                # clamped at the ceiling
 end
 ```
 
-`:math.pow(2, attempt - 1)` is the doubling; `base_delay` scales it; `trunc` makes it an integer millisecond. The doc example is exact: `calculate(:exponential, 3, 1000)` returns `4000`, and `calculate(:exponential, 3, 1000, jitter: 0.2)` returns about `4000` with the spread. The `:fixed` strategy is the contrast — it returns `apply_jitter(base_delay, jitter)`, the same base every attempt, no doubling.
+Its own doctests pin the curve: `delay_ms({:exponential, 100, 10_000}, 1)` is `100`; `delay_ms({:exponential, 100, 10_000}, 3)` is `400`; `delay_ms({:exponential, 100, 10_000}, 20)` is `10000` — the cap. The shift is exact-integer; the cap holds the curve from overflowing past the ceiling.
 
-This is the binding distinction. The retry reschedule script (`retryJob-11.lua`) does not compute `2^(n-1)`. It re-adds the job to the delayed set at a fire-time it is *given*. The delay value is computed first, in `EchoMQ.Backoff`; the Lua only reschedules at that delay. The formula is the strategy module's; the reschedule is the script's.
+## §4 — The literal delay crosses to the wire
 
-## The base is the whole tuning knob
-
-The base delay sets the floor and, with it, the whole curve. A 100 ms base gives 100ms, 200ms, 400ms — tight retries for a flaky-but-fast dependency. A 5000 ms base gives 5s, 10s, 20s — patient retries for a service that takes minutes to recover. The shape is fixed (doubling); the base slides the whole series up or down. EchoMQ's default base is `1_000` ms (`%{type: :exponential, delay: 1_000, jitter: 0.2}`), so the default schedule is 1s, 2s, 4s, 8s out, jittered.
-
-The exponent has a hard edge worth knowing: it grows the delay without bound, so the attempts cap (the *maximum retry limits* the source names) is what keeps the curve from running away — attempt 20 of a 1s-base exponential would wait over a hundred hours. The base sizes the delays; the cap sizes how many there are.
-
-## Where this is heading — EchoMQ 2.0
-
-The formula is computed in Elixir and the delay is written to `emq:{queue}:delayed` today. EchoMQ 2.0 renames that key to `emq:{queue}:delayed` and bumps `meta.version` to `echomq:2.0.0`, but `EchoMQ.Backoff.calculate/4` is untouched by the break — the doubling is arithmetic over the attempt number, independent of the keyspace it eventually writes to. The exponential curve this dive teaches is the same before and after the rename.
+`EchoMQ.Jobs.retry/7` takes that literal `delay_ms` as its fifth argument and ZADDs the job onto the schedule set at `now + delay_ms` on the server clock. The wire receives one number — the delay — and never the formula that produced it. That separation is the design: the backoff math is a value a consumer owns and tests; the reschedule is the wire's only job.
 
 ## The bridge — pattern to application
 
-- **The pattern.** A retry delay grows with the attempt: `delay = base × 2^(attempt - 1)`, doubling each step.
-- **In EchoMQ.** `EchoMQ.Backoff.calculate(:exponential, attempt, base_delay, opts)` computes `trunc(:math.pow(2, attempt - 1) × base_delay)` then jitters it; `retryJob-11.lua` reschedules at that value. The formula is Elixir; the reschedule is Lua.
-
-The takeaway: exponential backoff doubles the delay each attempt, and the doubling lives in `EchoMQ.Backoff` — the Lua reschedules at the delay it is handed, it never computes the power.
+- **The pattern:** exponential backoff waits `base × 2^(attempts-1)`, clamped at a cap, so each retry waits twice as long and a stubborn job ramps to a ceiling rather than re-firing forever.
+- **Its EchoMQ application:** `EchoMQ.Backoff.delay_ms({:exponential, base, cap}, attempts)` computes the literal delay host-side; `EchoMQ.Jobs.retry/7` carries it to the wire and schedules the job at `now + delay_ms`.
 
 ## References
 
 ### Sources
 
-- [Redis — *ZADD*](https://redis.io/commands/zadd/) — the write that re-schedules the failed job at the computed backoff fire-time.
-- [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — the timer-wheel the exponential delay writes into.
-- [BullMQ — *the queue protocol*](https://bullmq.io/) — the backoff strategy EchoMQ ports.
+- Redis — *ZADD* — https://redis.io/commands/zadd/ — re-add the job to the schedule set at the backoff fire-time.
+- Redis — *Documentation* — https://redis.io/docs/ — sorted sets and scoring in context.
+- Valkey — *Sorted sets* — https://valkey.io/topics/data-types/ — the structure the schedule set is.
 
 ### Related in this course
 
-- R4.04 · Backoff & retry — `/redis-patterns/time-delay-priority/backoff-retry`
-- R4.04.2 · Jitter & the thundering herd — `/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd`
-- R4.04.3 · Reusing the delayed ZSET — `/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset`
-- R4.01 · The delayed queue — `/redis-patterns/time-delay-priority/delayed-queue`
-- E6 · Lifecycle controls — `/echomq/lifecycle`
+- R4.04 · Backoff & retry — `/redis-patterns/time-delay-priority/backoff-retry` — the module hub.
+- R4.04.2 · Jitter & the thundering herd — `/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd` — the next dive.
+- R4.01 · Delayed queue — `/redis-patterns/time-delay-priority/delayed-queue` — the schedule-set machinery the delay rides.
+- The EchoMQ queue protocol — `/echomq/queue` — the retry path on the wire.
+- Functional Programming in Elixir — `/elixir` — the pure-function craft behind the backoff vocabulary.

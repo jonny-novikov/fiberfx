@@ -1,8 +1,8 @@
 # R4.03.3 · ZPOPMIN
 
-> A worker takes the next prioritized job with `ZPOPMIN` — pop the member with the smallest score. The smallest composite score is the highest-priority tier and, within it, the earliest arrival. One command returns the right job and removes it atomically, then `LPUSH` moves it to the active list.
+> A worker takes the next prioritized job with `ZPOPMIN` — pop the member with the smallest score. The smallest composite score is the highest-priority tier and, within it, the earliest arrival. One command returns the right job and removes it atomically. EchoMQ reaches the same head through a rotating ring of lanes, served by weight.
 
-The composite score packs the tier and the arrival order so that "the right next job" is always the smallest number. This dive walks the consume side: the single pop that reads that number, and why a lower priority value comes out first.
+The composite score packs the tier and the arrival order so that "the right next job" is always the smallest number. This dive walks the consume side: the single pop that reads that number, why a lower priority value comes out first, and the lane rotation that serves the same head without a packed score.
 
 ## The smallest score is the right job
 
@@ -11,11 +11,11 @@ The composite score is `priority × 0x100000000 + counter`. A smaller priority n
 `ZPOPMIN` removes and returns the member with the smallest score:
 
 ```
-ZPOPMIN emq:{queue}:prioritized
-# Returns: [ "job:abc123", "4294967297" ]  — the smallest-score member, removed
+ZPOPMIN scored:jobs
+# Returns: [ "job-A", "4294967297" ]  — the smallest-score member, removed
 ```
 
-The pop is atomic: read-and-remove in one step, so two workers polling the same set never claim the same job. The job leaves the prioritized set the instant it is chosen.
+The pop is atomic: read-and-remove in one step, so two workers polling the same set never claim the same job. The job leaves the set the instant it is chosen.
 
 ## Why a lower priority number wins
 
@@ -23,41 +23,38 @@ The convention that surprises newcomers — priority 1 outranks priority 5 — i
 
 The interactive below steps `ZPOPMIN` over a fixed set of prioritized jobs. Each step removes the current smallest score and names the popped job, its tier, and its arrival counter — showing the order march down the tiers and, within each tier, forward through arrivals.
 
-## After the pop: into the active list
+## In EchoMQ — the same head, by a rotating ring
 
-In EchoMQ the pop does not stand alone — the popped job id moves straight onto the active list. `moveToActive-11.lua` runs the pop and the push together:
+EchoMQ serves the highest-precedence work next, but not by popping the smallest composite score from one set. It has no per-job priority score to pop. Instead `EchoMQ.Lanes.wclaim/3` runs a **weighted rotation**: one `LMOVE` rotates a ring of serviceable lanes exactly once, then serves that lane a fair share of `K = min(weight, lane depth, glimit headroom)` heads in one atomic turn. The per-lane `ZPOPMIN` still does the pop — but it pops the head of *the rotated lane*, which the score-0 set keeps in mint order, so within a lane it is FIFO.
 
 ```lua
--- moveToActive-11.lua — real
-local prioritizedJob = rcall("ZPOPMIN", priorityKey)
-if #prioritizedJob > 0 then
-  rcall("LPUSH", activeKey, prioritizedJob[1])
-  return prioritizedJob[1]
-end
+-- @gwclaim (lanes.ex) — rotate the ring once, then serve K heads of that lane, trimmed
+local g = redis.call('LMOVE', KEYS[1], KEYS[1], 'LEFT', 'RIGHT')   -- rotate the ring of serviceable lanes
+local lane = ARGV[1] .. 'g:' .. g .. ':pending'
+local w = tonumber(redis.call('HGET', ARGV[1] .. 'gweight', g) or '1')  -- the lane's throughput share
+local k = w
+if depth < k then k = depth end                                    -- never over-pop the lane
+-- ... for _ = 1, k do  local popped = redis.call('ZPOPMIN', lane)  ...  end
 ```
 
-`prioritizedJob[1]` is the member — the job id — and `prioritizedJob[2]` is its score. The script pushes the id onto the active list with `LPUSH` and returns it. The prioritized set ranks the work; the active list holds the job the worker is now running. One script does both, so a job cannot be popped and then lost between the two steps.
+A higher-weight lane is served proportionally more over a window, never all of it — so precedence is the lane's weight and fairness is constructed by the rotation, not read from a packed number. The consumer **codemojex** rides this directly: `Codemojex.NotificationWorker` drains the `cm.notify` lanes, one fair lane per chat, so one chat's burst cannot starve others.
 
-## In EchoMQ
-
-The prioritized set is `EchoMQ.Keys.prioritized/1` → `emq:{queue}:prioritized`. The consume is `moveToActive-11.lua`: `local prioritizedJob = rcall("ZPOPMIN", priorityKey)` then `rcall("LPUSH", activeKey, prioritizedJob[1])`. The pop honours the composite score `getPriorityScore` wrote on the add side, so the job that comes out is the one the tier and arrival counter ranked first. Re-prioritizing a still-queued job is `EchoMQ.Scripts.change_priority`, which re-scores it with a fresh `getPriorityScore` so its place in the pop order changes.
-
-**The bridge.** A textbook priority queue often needs a structure per tier plus a separate FIFO, then logic to choose across them. EchoMQ needs one sorted set and one `ZPOPMIN`: the composite score already orders by tier then arrival, so the single smallest-score pop returns the right job and removes it, with no scan and no second structure.
+**The bridge.** A textbook priority queue serves the next job with one `ZPOPMIN` over a composite score that already orders by tier then arrival. EchoMQ keeps the per-lane `ZPOPMIN` for the within-lane FIFO, but reaches *across* tiers with a weighted ring rotation in `wclaim/3`: precedence is the lane's `gweight`, the head is the lane's mint-ordered front, and one atomic turn serves the share.
 
 ## References
 
 ### Sources
 
-- [Redis — *ZPOPMIN*](https://redis.io/commands/zpopmin/) — pop the member with the smallest score, atomically; the consume that serves the highest-priority, earliest-arrival job.
+- [Valkey — *ZPOPMIN*](https://valkey.io/commands/zpopmin/) — pop the member with the smallest score, atomically; the consume EchoMQ runs per lane on the engine it ships on.
+- [Redis — *ZPOPMIN*](https://redis.io/commands/zpopmin/) — the same command's Redis reference; pop the smallest-score member.
 - [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — score-then-member ordering, the basis for "smallest score is the right job."
-- [Redis — *ZADD*](https://redis.io/commands/zadd/) — the add side `ZPOPMIN` reads back; the composite score that ranks the job.
-- [BullMQ — *the queue protocol*](https://bullmq.io/) — the prioritized-jobs protocol EchoMQ ports, where the Lua scripts are the protocol.
+- [Redis — *ZADD*](https://redis.io/commands/zadd/) — the add side `ZPOPMIN` reads back; the score that ranks the job (score 0 in EchoMQ's lane sets).
 
 ### Related in this course
 
 - [R4.03 · Priority with composite scores](/redis-patterns/time-delay-priority/priority-scores) — the module hub.
-- [R4.03.1 · Packing two keys in one score](/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score) — the composite score `ZPOPMIN` reads back.
-- [R4.03.2 · FIFO within a tier](/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier) — the arrival counter that orders within a tier the pop honours.
+- [R4.03.1 · Packing two keys in one score](/redis-patterns/time-delay-priority/priority-scores/packing-two-keys-in-one-score) — the composite score this pop reads back.
+- [R4.03.2 · FIFO within a tier](/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier) — the arrival counter, and EchoMQ's score-0 mint order.
 - [R4.01.2 · ZRANGEBYSCORE promotion](/redis-patterns/time-delay-priority/delayed-queue/zrangebyscore-promotion) — the delayed set's score-bounded read, the sibling consume.
 - [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter.
-- [E4 · Groups](/echomq/groups) — the dedicated EchoMQ course: intra-group priority in depth.
+- [/echomq · the Queue pillar](/echomq/queue) — the dedicated EchoMQ course: the lane ring, weighted rotation, and the order theorem.

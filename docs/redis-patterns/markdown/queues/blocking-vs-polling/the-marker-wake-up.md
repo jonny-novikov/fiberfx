@@ -1,103 +1,105 @@
-# The marker wake-up — a doorbell, not a queue
+# The wake-up doorbell — a signal, not a queue
 
 > Route: `/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up` · Dive R3.05.3 · Module R3.05
 > blocking-vs-polling · Chapter R3 Reliable Queues.
-> · Grounding: EchoMQ's marker handshake. The worker parks on `emq:{queue}:marker` (a ZSET, `EchoMQ.Keys.marker/1`,
-> *"the marker sorted set (for blocking operations)"*) with `BZPOPMIN` via `do_wait_for_job/3`. The producer side, when
-> adding a job, runs `addBaseMarkerIfNeeded` → `ZADD emq:{queue}:marker 0 "0"` (verified in `addStandardJob-9.lua` and
-> `drain-5.lua`), which makes the blocked `BZPOPMIN` return `:job_available`. All real in `echo/apps/echomq`.
+> Grounding: EchoMQ's wake handshake. The consumer parks on `emq:{queue}:wake` (a capped LIST) with
+> `BLPOP emq:{queue}:wake <beat>` in `EchoMQ.Consumer.park/1`. The producer side, when admitting/promoting/reclaiming
+> a job, runs `LPUSH emq:{queue}:wake '1'` then `LTRIM emq:{queue}:wake 0 63` (verified in `jobs.ex`, `lanes.ex`,
+> `stalled.ex`), which returns the parked `BLPOP`. For a pool, one `EchoMQ.Metronome` holds the single block. All real
+> in `echo/apps/echo_mq`. The worked consumer is **codemojex** (`echo/apps/codemojex`).
 
-EchoMQ blocks on a dedicated **marker** ZSET, not on the work list. The marker is a doorbell: the producer rings it
-when it adds a job, and the ring wakes a worker parked on `BZPOPMIN`. One `ZADD` wakes one `BZPOPMIN`, so the marker
-signals *that work arrived* without being the work itself.
+EchoMQ parks on a dedicated **wake key**, not on the work list. The wake key is a doorbell: the producer rings it when
+a job becomes serviceable, and the ring returns the parked consumer, which then drains the ring on its command lane.
+Decoupling the signal from the work means one wake fires no matter which lane the new work landed on.
 
-## The marker is a ZSET
+## The park
 
-`EchoMQ.Keys.marker/1` builds `emq:{queue}:marker`, documented as *"the marker sorted set (for blocking operations)"*.
-It is a separate key from the work lists `emq:{queue}:wait` and `emq:{queue}:active`. The worker does not block on the
-work list; it blocks on the marker, and fetches the job from the work lists once woken. Splitting the signal from the
-work keeps the blocking connection parked on one small key and the fetch on the main connection.
+The consumer's loop is reap → promote → drain → park. The park is a blocking pop on the wake key, with the beat as the
+timeout:
 
-## The handshake
-
-The wake-up is four steps across the worker side and the producer side.
-
-```
-1. worker:    BZPOPMIN emq:{queue}:marker 30      # park on the marker (blocking connection)
-2. producer:  LPUSH    emq:{queue}:wait <jobId>   # add the job to the work list
-   producer:  ZADD     emq:{queue}:marker 0 "0"   # ring the doorbell (addBaseMarkerIfNeeded)
-3. worker:    BZPOPMIN returns [marker, "0", 0]    # the ZADD woke the parked block → :job_available
-4. worker:    fetch the job from wait/active        # on the main connection, then run it
+```elixir
+# EchoMQ.Consumer.park/1 — park on the wake key for one beat (real, Elixir)
+defp park(s) do
+  secs = :erlang.float_to_binary(s.beat_ms / 1000, decimals: 3)
+  wake = Keyspace.queue_key(s.queue, "wake")          # emq:{queue}:wake
+  _ = Connector.command(s.conn, ["BLPOP", wake, secs], s.beat_ms + 2_000)
+  :ok
+end
 ```
 
-Step 1 parks the worker. Step 2 adds the job and rings the marker — `addBaseMarkerIfNeeded` runs `ZADD
-emq:{queue}:marker 0 "0"` (verified in `addStandardJob-9.lua` and `drain-5.lua`). Step 3 is the wake: the `ZADD` gives
-the marker a member, so the parked `BZPOPMIN` pops it and returns; `EchoMQ.Worker.do_wait_for_job/3` reads that as
-`:job_available`. Step 4 fetches the job and runs the lifecycle. The marker's value is a constant `"0"` — its presence
-is the whole signal.
+`BLPOP` returns when a wake token is pushed, or once when the beat elapses. The key is built by
+`EchoMQ.Keyspace.queue_key(queue, "wake")` → `emq:{queue}:wake`, hash-tagged on the queue name so it shares the
+queue's cluster slot.
 
-## One ring wakes one worker
+## Ringing the doorbell
 
-`BZPOPMIN` pops the lowest-scored member and removes it. A single `ZADD` adds one member, so a single `ZADD` wakes
-exactly one parked `BZPOPMIN`; any other workers parked on the same marker stay parked, waiting for the next ring.
+The producer rings the wake key from inside the admit Lua. Pushing a job onto the ring runs two calls — a push and a
+trim:
 
-```
-3 workers parked on BZPOPMIN emq:{queue}:marker
-producer: ZADD emq:{queue}:marker 0 "0"   # rings once
-→ exactly one worker wakes and fetches; the other two stay parked
+```text
+# inside the admit/promote/reclaim script (jobs.ex, lanes.ex, stalled.ex)
+LPUSH emq:{queue}:wake '1'        -- ring: return any parked BLPOP
+LTRIM emq:{queue}:wake 0 63       -- bound the list to 64 tokens
 ```
 
-This is fan-out fairness: one added job wakes one worker, not a thundering herd. The marker carries a member per ring,
-so a burst of additions wakes a matching number of parked workers, one each. The base marker is scored `0`; a delayed
-job rings a marker scored by its timestamp instead, which is the time-and-delay chapter's territory, not this one.
+The `LPUSH` makes the parked `BLPOP` return; the `LTRIM` keeps the wake key from growing without bound when wakes
+arrive faster than a consumer drains them. The same two calls appear wherever new work becomes serviceable — an
+enqueue, a schedule promotion, a reclaimed stalled lease — so a parked consumer is returned by every path that adds
+work, not only a fresh enqueue.
 
-## In EchoMQ — the doorbell, in real code
+## A signal, not a queue
 
-The whole handshake is real code in `echo/apps/echomq`. The worker's blocking-fetch internals
-`EchoMQ.Worker.wait_for_job/2` → `do_wait_for_job/3` park on `BZPOPMIN emq:{queue}:marker timeout` on the dedicated
-blocking connection and return `:job_available` or `:timeout`. The producer's `addBaseMarkerIfNeeded` runs `ZADD
-emq:{queue}:marker 0 "0"` whenever a job is added, in `addStandardJob-9.lua`, `drain-5.lua`, and the other add
-scripts. The Go port's empty-queue worker loop does not park on this marker — it sleeps a fixed interval
-(`time.Sleep(100 * time.Millisecond)` / `time.Sleep(time.Second)` in `apps/echomq-go/pkg/echomq/worker_impl.go`), the
-cross-runtime contrast: a poll cadence rather than a marker block.
+The wake key carries no payload — the token is a constant `'1'`. `BLPOP` removes one element, so one `LPUSH` returns
+exactly one parked block. The actual job is never on the wake key; it is in the ring and the lanes, and the returned
+consumer fetches it with `EchoMQ.Lanes.claim/3`. The wake key only answers "is there something to drain," and the
+drain answers "what." That separation is why the bounded `LTRIM` is safe: a few extra tokens cost nothing, because no
+token is a job.
 
-```
-# addBaseMarkerIfNeeded.lua (included by addStandardJob-9 / drain-5) — ring the doorbell (real)
-ZADD emq:{queue}:marker 0 "0"   -- adding a job ZADDs the marker → the blocked BZPOPMIN returns
-```
+## The beat is the fallback
 
-The pattern says block on a signal and ring it when work arrives, so one ring wakes one worker; in EchoMQ the signal is
-the `emq:{queue}:marker` ZSET, the block is `BZPOPMIN`, and the ring is the producer's `ZADD marker 0 "0"`.
+A wake is the fast path, not the only path. When no wake arrives, `BLPOP` times out after one beat (`:beat_ms`,
+default 1000) and the loop runs its reap/promote pump regardless — so a due delayed job or an expired lease is
+recovered on the next beat even if nothing rang the doorbell. The wake makes a fresh enqueue prompt; the beat makes
+the time-driven work reliable.
 
-## Door — not depth
+## One blocker for a pool — the metronome
 
-This module cites one excerpt of EchoMQ's protocol — the marker `BZPOPMIN` block and the producer's `ZADD` that wakes
-it — as proof the blocking fetch ships. The full worker fetch loop, the dedicated blocking connection's lifecycle, and
-the polyglot concurrency models that govern how each runtime parks and wakes are the subject of the dedicated **EchoMQ
-course**, built next with this toolkit. The worker fetch loop is **E2 · the engine**; the marker / heartbeat
-coordination across a worker pool is **E6 · the job lifecycle**. This module teaches the blocking-vs-polling pattern;
-that course teaches the engine that runs it.
+A pool of standalone consumers would each hold their own `BLPOP` on the same wake key — a herd of blockers, one ring
+returning one of them. EchoMQ's opt-in `EchoMQ.Metronome` collapses that to one: a single process holds the one
+`BLPOP emq:{q}:wake <beat>` per queue and a registry of idle consumers, and on a wake it pokes each idle consumer to
+run `EchoMQ.Lanes.claim/3` exactly once (one claim per idle consumer per wake). The herd is gone — one connection
+blocks — and readiness is fanned out fairly over BEAM messages.
+
+## The bridge
+
+**The pattern:** ring a signal when work is added, and the parked worker returns the instant it rings; one ring
+returns one parked worker.
+
+**Its EchoMQ application:** the admit Lua runs `LPUSH emq:{queue}:wake '1'` / `LTRIM … 0 63`; the consumer's
+`BLPOP emq:{queue}:wake <beat>` returns and drains. The beat is the fallback for time-driven work; one
+`EchoMQ.Metronome` blocks once for a whole pool. **codemojex** rides this: `EchoMQ.Consumer` drains the guess queue
+through `Lanes.claim`, returned the instant `Codemojex.Game` admits a guess `JOB`.
+
+## On Valkey
+
+`BLPOP` serves the first element of a list and, when the list is empty, parks the client until another client pushes
+one; the engine returns exactly one of several clients blocked on the same key, in the order they parked
+(valkey.io/commands/blpop). `LTRIM` keeps the list within a fixed length so the doorbell never grows unbounded
+(valkey.io/commands/ltrim).
 
 ## References
 
 ### Sources
-- [Redis — BZPOPMIN](https://redis.io/commands/bzpopmin/) — block on a sorted set until a member is added; the marker
-  pop the worker parks on.
-- [Redis — ZADD](https://redis.io/commands/zadd/) — add a member to a sorted set; the producer's `ZADD marker` that
-  wakes a blocked worker.
-- [Redis — Sorted sets](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — the ZSET data type behind the
-  marker and the `BZPOPMIN` pop.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the marker / `BZPOPMIN` doorbell EchoMQ ports, where the Lua
-  scripts are the protocol.
+
+- [Valkey — BLPOP](https://valkey.io/commands/blpop/) — the park; returns one of several blocked clients per push, in park order.
+- [Valkey — LPUSH](https://valkey.io/commands/lpush/) — ring the wake key so a parked `BLPOP` returns.
+- [Valkey — LTRIM](https://valkey.io/commands/ltrim/) — cap the wake list so the doorbell never grows unbounded.
+- [Redis — Documentation](https://redis.io/docs/) — lists, blocking commands, and the signal-key idiom in context.
 
 ### Related in this course
+
 - [R3.05 · Blocking vs polling](/redis-patterns/queues/blocking-vs-polling) — the module hub.
-- [R3.05.1 · The busy-poll cost](/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost) — the polling loop the
-  marker block replaces.
-- [R3.05.2 · Blocking pop](/redis-patterns/queues/blocking-vs-polling/blocking-pop) — the blocking primitive and the
-  dedicated connection it parks on.
-- [R3.01 · The processing list](/redis-patterns/queues/processing-list) — the wait/active lists the woken worker fetches
-  from.
-- [E2 · The engine](/echomq/core) — the dedicated EchoMQ course: the worker fetch loop and the blocking connection.
-- [E6 · The job lifecycle](/echomq/lifecycle) — the dedicated EchoMQ course: the marker / heartbeat coordination and
-  the polyglot concurrency models.
+- [R3.05.2 · Blocking pop](/redis-patterns/queues/blocking-vs-polling/blocking-pop) — the previous dive: the blocking primitive.
+- [R3.01 · Processing list](/redis-patterns/queues/processing-list) — the wait/active states the returned consumer drains.
+- [R3 · Reliable Queues](/redis-patterns/queues) — the chapter.
+- [/echomq/queue](/echomq/queue) — the Queue pillar: the consumer loop, the wake key, and the metronome in depth.

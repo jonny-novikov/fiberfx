@@ -131,5 +131,5 @@ argument the whole Redlock debate turns on.
 - [R2.02 · Distributed locking](/redis-patterns/coordination/distributed-locking) — the single-Valkey lease this
   majority is weighed against.
 - [R2 · Coordination & Consistency](/redis-patterns/coordination) — the chapter.
-- [/echomq](/echomq) — the EchoMQ protocol the claim lease lives in.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol the claim lease lives in.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the functional-Elixir & OTP craft behind the echo umbrella.

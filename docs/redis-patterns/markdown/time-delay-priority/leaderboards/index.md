@@ -10,8 +10,8 @@ order they were filled, with no notion of which member is highest. A sorted set 
 and the set orders its members by score for free; the rank of any player is their position in that order, the top-N is
 a read of the first N positions, and an around-me window is a read of the positions either side of a player's own. No
 position is stored. The rank is recomputed on every read in O(log N), so it is always exactly the score order, never a
-stale snapshot. This module takes the textbook leaderboard apart and then bridges to the one place Portal would apply
-it: ranking learners by the progress percent it already records.
+stale snapshot. This module takes the textbook leaderboard apart and grounds it in the one that runs live:
+**`Codemojex.Board`** keeps one sorted set per game and ranks players by their best linear score.
 
 ## Core operations — `ZADD` and the score
 
@@ -34,7 +34,9 @@ ZSCORE leaderboard "player:alice"
 ```
 
 The score is the entire ordering. Reading the set high-to-low gives the leader at the top; reading low-to-high gives
-the trailing player. Nothing else indexes the board.
+the trailing player. Nothing else indexes the board. This is the move `Codemojex.Board.record/3` makes: it folds the
+player's best base score (`new_base = max(old, base)`) and writes it straight to the board — `Cmd.zadd("cm:<game>:board")
+|> Cmd.score(new_base, player)`.
 
 ## Rank vs reverse rank
 
@@ -115,56 +117,54 @@ points across days, `MAX` for a personal best, `MIN` for a best time. Redis 6.2 
 unified `ZRANGE` with a `REV` option, so `ZRANGE … REV` reads the same top-N as the older `ZREVRANGE`; the ordering is
 identical, only the spelling changed.
 
-## Where this is heading — EchoMQ 2.0
+## The pattern, applied — codemojex's per-game leaderboard
 
-A leaderboard is a generic sorted-set ranking — it is not part of the EchoMQ queue protocol. Where EchoMQ does rank
-with a sorted set is its priority queue (R4.03's `emq:{queue}:prioritized`), which orders jobs by a packed score
-exactly as a leaderboard orders players. The settled **EchoMQ 2.0** design (the protocol break on the first EMQ rung,
-`emq.1`) renames that keyspace to `emq:{queue}:prioritized`, replacing the `emq:` prefix with `emq:`, declaring every
-Lua key in `KEYS[]`, and bumping `meta.version` to `echomq:2.0.0` — and the ranking math is unchanged. A sorted-set
-ranking, whether a leaderboard or a priority queue, is a property of the score order alone: it is independent of the
-prefix or the version it rides on.
+The pattern lands twice: the textbook sorted-set leaderboard, and the one codemojex runs. **codemojex** is a Telegram
+emoji-guessing game on the same stack. Its competitive state lives in Valkey, and the leaderboard is exactly this
+pattern, in the real code:
 
-## The pattern, applied — Portal's progress as the data a ranking sorts
+- The score is the linear total from `Codemojex.Scoring` — `points = 100 - 20 * d` per emoji at distance `d`, summed
+  over six positions, out of 600. The same secret and guess always yield the same total, so a re-delivered guess
+  re-scores identically.
+- The board is one sorted set per game, keyed `cm:<game>:board`. `Codemojex.Board.record/3` reads the player's best
+  base from `cm:<game>:base`, folds the higher of the old and new (`new_base = max(old, base)`), and writes it to the
+  board with `Cmd.zadd("cm:<game>:board") |> Cmd.score(new_base, player)` — the raw linear best is the sole rank, no
+  tier ladder, no first-mover bonus.
+- The read is the top-N: `Codemojex.Board.top/2` runs `Cmd.zrevrange("cm:<game>:board", 0, n - 1) |> Cmd.withscores()`,
+  highest first. `Codemojex.View.leaderboard/2` returns `{player, max_score}` rows from it, withholding everyone's
+  guesses — the leaderboard is the one place a player sees others, and only their scores.
 
-The pattern lands twice: the sorted-set leaderboard, and the one place Portal would apply it. Portal records a
-learner's progress through a lesson as a **percent** — the `Portal.Enrollment.Progress` struct
-(`%Portal.Enrollment.Progress{id, enrollment_id, lesson_id, percent}`, the field `percent :: 0..100`, the namespace
-`PRG`), held as a row in an in-memory, namespace-partitioned store. Portal does not run a Redis sorted set and has no
-progress ranking; the percent is a plain stored value.
-
-A leaderboard that ranks learners by progress is exactly this pattern applied to that data. Score each learner by their
-percent — `ZADD board <percent> <learner>` — and the top-N learners are a `ZREVRANGE`, a learner's standing is a
-`ZREVRANK`, and an around-me view is a rank-range read. The data already exists as a percent; the sorted set is the
-standard way to add the ranked query over it. State it plainly: Portal stores progress as a percent today, and the
-sorted-set ranking is the ordinary structure to reach for when a ranked view of that percent is wanted.
+The score worker is the authority: `Codemojex.ScoreWorker.handle/1` scores a guess with the pure engine
+(`s = Scoring.score(secret, emojis)`) and records the result on the board (`Board.record(game, player, s.total)`). The
+rank is never stored — it is the player's position in the score order, recomputed on every read of the board.
 
 **The bridge.** A sorted set ranks players by score in O(log N), with the rank computed on read and never stored →
-Portal stores each learner's lesson progress as a `percent` (the `PRG` struct, an in-memory store row); ranking those
-learners by progress is the leaderboard pattern as the ranking view over that data — `ZADD board percent learner`,
-`ZREVRANGE` for the top, `ZREVRANK` for "where am I".
+`Codemojex.Board` keeps one sorted set per game (`cm:<game>:board`), writes each player's best linear total with `ZADD`
+(via `EchoWire.Cmd.zadd/1` + `Cmd.score/3`), and reads the top-N with `ZREVRANGE … WITHSCORES` (`Board.top/2`). The
+board stores scores; the rank is the order.
 
-**Take.** A leaderboard never stores a rank; it stores scores and reads the order. Portal stores a progress percent;
-the ranked view over it is a sorted set away.
+**Take.** A leaderboard never stores a rank; it stores scores and reads the order. codemojex's board is a sorted set
+per game with each player's best linear score — the rank is whatever the order says on read.
 
 ## The three dives
 
 - [R4.05.1 · `ZADD` and `ZREVRANK`](/redis-patterns/time-delay-priority/leaderboards/zadd-and-zrank) — the leaderboard
   core: `ZADD` a score, read `ZREVRANK` (0-based from the top) and its mirror `ZRANK`; the score is the ranking key.
 - [R4.05.2 · Top-N and around-me](/redis-patterns/time-delay-priority/leaderboards/top-n-and-around-me) — the two read
-  shapes: `ZREVRANGE 0 N-1 WITHSCORES` for the top-N, and the around-me window — `ZREVRANK` to find a rank, then a
-  rank-range read centred on it.
+  shapes: `ZREVRANGE 0 N-1 WITHSCORES` for the top-N (what `Board.top/2` runs), and the around-me window — `ZREVRANK`
+  to find a rank, then a rank-range read centred on it.
 - [R4.05.3 · The score-update path](/redis-patterns/time-delay-priority/leaderboards/the-score-update-path) — updating
-  a score: `ZADD` overwrites, `ZINCRBY` accumulates; the rank is recomputed on read, never stored, which is why it is
-  O(log N) and always consistent.
+  a score: `ZADD` overwrites (the best-of write `Board.record/3` makes), `ZINCRBY` accumulates; the rank is recomputed
+  on read, never stored, which is why it is O(log N) and always consistent.
 
 ### A door, not a depth
 
-This module cites a clean standalone leaderboard as the pattern and `Portal.Enrollment.Progress` as the data a ranking
-would sort. Where EchoMQ ranks for real — intra-group ordering and priority inside a job group — is the subject of the
-dedicated **EchoMQ course**, built next with this toolkit. From here, open onto
-[E4 · Groups](/echomq/groups). This module teaches the leaderboard; that course teaches the group ranking that uses
-the same score order.
+A leaderboard is a generic sorted-set ranking — it is not part of the EchoMQ queue protocol. Where EchoMQ ranks for
+real is the **Queue pillar**: the queue orders work by a packed schedule/priority score in the `emq:{q}:` keyspace,
+the same score-order idea a leaderboard uses. codemojex's board rides Valkey beside that queue. From here, open onto
+[the Queue pillar](/echomq/queue) for the EchoMQ ranking in depth, and onto
+[the persistence floor](/echo-persistence) for how a score survives a restart — the board is a derived view that a
+durable substrate rebuilds.
 
 ## References
 
@@ -190,4 +190,5 @@ the same score order.
   idea, there for ties.
 - [R4 · Score as meaning](/redis-patterns/time-delay-priority/score-as-meaning) — the orientation dive: the score is
   the semantic axis.
-- [E4 · Groups](/echomq/groups) — the dedicated EchoMQ course: intra-group ranking and priority in depth.
+- [The Queue pillar](/echomq/queue) — the dedicated EchoMQ course: the queue's score-ordered work in depth.
+- [The persistence floor](/echo-persistence) — how a derived board survives a restart, rebuilt from the durable tier.

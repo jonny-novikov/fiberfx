@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/client-side-caching/invalidation-push` · Module R1.04 · dive 2 · Source:
 > `content/fundamental/client-side-caching.md.txt` (the *How Invalidation Works* section) · Grounding: real RESP3 push
-> frames + EchoCache's broadcast lane (`Coherence.broadcast/4` PUBLISH `ecc:{<table>}:coh`, `coherence.ex:82`; the
+> frames + EchoStore's broadcast lane (`Coherence.broadcast/4` PUBLISH `ecc:{<table>}:coh`, `coherence.ex:82`; the
 > 29-byte message `id <> ":" <> version`, `coherence.ex:35`; the push handler `{:emq_push, ["message", …]}`,
 > `table.ex:362`).
 
@@ -30,14 +30,14 @@ needed — and a key that is never read again costs only the one dropped entry.
 The lifecycle runs through four states: the holder serves reads from memory; the push arrives and the copy is now
 suspect; the holder drops the copy without re-reading; the next access misses, fetches once, and is tracked again.
 
-## Applied — the broadcast lane in EchoCache
+## Applied — the broadcast lane in EchoStore
 
-EchoCache rides this push over plain pub/sub, and adds one byte-field a bare invalidation lacks: the writer's mint-time
-version. A writer that changes an instrument row publishes the change on the table's channel — the real
+EchoStore rides this push over plain pub/sub, and adds one byte-field a bare invalidation lacks: the writer's mint-time
+version. A writer that changes an emoji-set row publishes the change on the table's channel — the real
 `Coherence.broadcast/4`:
 
 ```elixir
-# echo/apps/echo_cache/lib/echo_cache/coherence.ex
+# echo/apps/echo_store/lib/echo_store/coherence.ex
 def channel(table), do: "ecc:{" <> table <> "}:coh"
 def payload(<<_::binary-14>> = id, <<_::binary-14>> = version), do: id <> ":" <> version
 
@@ -49,7 +49,7 @@ end
 Every subscribing table receives the push and applies it newer-wins in its owner:
 
 ```elixir
-# echo/apps/echo_cache/lib/echo_cache/table.ex
+# echo/apps/echo_store/lib/echo_store/table.ex
 def handle_info({:emq_push, ["message", _channel, payload]}, state) do
   case Coherence.parse(payload) do
     {:ok, id, version} -> Ring.publish(state.ring, {id, version})
@@ -62,7 +62,7 @@ end
 The message is twenty-nine bytes — a cached name, a colon, and the writer's mint-time version. That version is the one
 thing a bare `CLIENT TRACKING` invalidation cannot send, and it is what lets a late stale message bounce off both
 layers: the L2 drop runs as a Lua script that deletes the row only when the incoming version is newer than the one
-framed into the stored value. The committed measure (`content/bcs4.2.md`): **median push latency 72 us over 100
+framed into the stored value. The committed measure (`bcs.4.md`): **median push latency 72 us over 100
 messages**, against the durable job lane at **148 us at-least-once** — *the guarantee costs 2.1 times the latency*. A
 lost broadcast costs one TTL of staleness, which is why a risk surface rides the job lane instead.
 
@@ -77,4 +77,4 @@ lost broadcast costs one TTL of staleness, which is why a risk surface rides the
 - [R1.04 · Client-side caching](/redis-patterns/caching/client-side-caching) — the module hub.
 - [R1.04.1 · CLIENT TRACKING](/redis-patterns/caching/client-side-caching/client-tracking) — the record the push uses.
 - [R1.04.3 · The SHA1 script-cache parallel](/redis-patterns/caching/client-side-caching/script-cache) — the next dive.
-- [/echomq](/echomq) — the connector's send-only push path, in depth.
+- [/echomq/cache](/echomq/cache) — the EchoStore invalidation push that drops L1, in depth.

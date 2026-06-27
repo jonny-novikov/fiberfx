@@ -87,6 +87,6 @@ semantics from any connector; the runtimes differ only in how they dispatch it.
 ### Related in this course
 - [R0.3 · Patterns become protocol](/redis-patterns/overview/patterns-become-protocol) — the module hub.
 - [R0.3.2 · The immutable core](/redis-patterns/overview/patterns-become-protocol/the-immutable-core) — the next dive: the owned core and its governance.
-- [R0.2 · Valkey under the Exchange Platform](/redis-patterns/overview/redis-under-portal) — where Valkey sits in the build.
+- [R0.2 · Valkey under codemojex](/redis-patterns/overview/redis-under-game) — where Valkey sits in the build.
 - [/echomq](/echomq) — the protocol in depth: the bundle, rung by rung.
 - [/bcs](/bcs) — the architecture the bus is built inside.

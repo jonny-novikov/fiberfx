@@ -1,84 +1,66 @@
-# Two-phase mark/recover — one grace pass before a reclaim
+# Two-phase mark/recover — count the stalls, bound the recovery
 
-> Route: `/redis-patterns/queues/stalled-recovery/two-phase-mark-recover` · Dive R3.03.2 · Module R3.03 Stalled recovery.
-> · Grounding: `moveStalledJobsToWait-8.lua` (`EchoMQ.Scripts.move_stalled_jobs_to_wait/4`) uses a `stalled` set
-> (`EchoMQ.Keys.stalled/1` → `emq:{queue}:stalled`) to mark a job on the first sweep and recover it on the second,
-> moving it to `wait` or, past max attempts, to `failed`. All real in `echo/apps/echomq`.
+> **Route:** `/redis-patterns/queues/stalled-recovery/two-phase-mark-recover` · **Dive:** R3.03.2
+> **Grounding:** `echo/apps/echo_mq/lib/echo_mq/stalled.ex` — `EchoMQ.Stalled.check/3` (`@sweep_stalled`), the per-job `stalled` field (`HINCRBY`), `:max_stalled` the dead-letter threshold, the `emq:{q}:dead` morgue.
 
-A lock that lapsed is a strong signal a worker died, but it is not certain. A worker can miss one heartbeat — a long GC
-pause, a slow disk, a scheduler hiccup — and still recover on the next tick. If the sweep reclaimed a job the instant its
-lock lapsed, every momentary stall would be redelivered, and the work would run twice. The two-phase sweep gives a job
-one grace pass before it is reclaimed.
+Detection finds a job whose lease lapsed. Recovery has a harder decision: should this job go back in line, or has it stalled so many times that returning it again only re-poisons the queue? A job that crashes its worker every time it is claimed would, under a plain reaper, be recovered forever. The mark/recover layer counts the stalls and bounds them.
 
-## Mark on the first sweep
+## The reaper recovers; the sweep counts
 
-The first sweep that finds a job stalled does not reclaim it. It **marks** it: it records the job in a `stalled` set and
-moves on. The mark is a memory across sweeps — a note that this job was seen without a live worker once. A job that was
-merely paused, whose worker renews its lock before the next sweep, has its mark cleared and is never touched. A job whose
-worker is genuinely dead stays stalled, and its mark survives.
+`EchoMQ.Jobs.reap/2` is the unconditional layer — it returns any expired-lease job to `pending` once, no count, the at-least-once floor. `EchoMQ.Stalled.check/3` is the count-thresholded layer that rides on top. Each pass it examines the same expired prefix, but for each job it increments a per-job `stalled` field on the row (`HINCRBY ... 'stalled' 1`) and branches on the result against `max_stalled` (default `1`):
 
-The grace pass costs one sweep interval of delay before a dead worker's job is reclaimed, in exchange for not
-redelivering every job that briefly pauses. The trade is deliberate: a momentary stall is common and harmless, while a
-double-run is expensive, so the sweep spends one interval to avoid the second.
+    local st = redis.call('HINCRBY', jk, 'stalled', 1)   -- this job's stall count, this pass
+    if st >= maxst then
+      redis.call('HSET', jk, 'state', 'dead')
+      redis.call('HSET', jk, 'last_error', 'stalled')
+      redis.call('ZADD', KEYS[3], 0, id)                 -- emq:{q}:dead
+      redis.call('HINCRBY', p .. 'metrics:failed', 'count', 1)
+      -- dead-lettered: not recovered
+    else
+      redis.call('ZADD', KEYS[2], 0, id)                 -- emq:{q}:pending
+      redis.call('HSET', jk, 'state', 'pending')
+      -- recovered: back in line
+    end
 
-## Recover on the second sweep
+The `stalled` field is the mark. It is not a separate set or a separate key — it is a field on the job's three-field row, so marking a job costs nothing the row did not already hold. A job's stall history travels with the job, and a recovered job carries its count into the next claim.
 
-The next sweep checks the marked jobs. A job still in the `stalled` set, still without a live worker, is **recovered**:
-its attempt count is incremented, and it is moved out of `active`. A job whose mark was cleared in between — its worker
-came back and renewed the lock — is left alone.
+## Recover below the threshold, dead-letter at it
 
-Where a recovered job goes depends on its attempt count. A job back from a stall has used one of its attempts. If it has
-attempts left, it returns to `wait` to be picked up again. If the recovery has pushed it past its maximum attempts, it
-goes to `failed` instead — a job that stalls every time it runs would otherwise loop forever, so the attempt ceiling
-caps the retries.
+The branch is the two phases in one decision:
 
-```
-# sweep 1: mark the stalled job (no reclaim yet)
-SADD emq:{queue}:stalled <id>             # record it; a paused worker clears this before sweep 2
+- **Below `max_stalled` — recover.** `ZADD emq:{q}:pending`, `HSET state pending`. The job goes back to be claimed again. A grouped job (a fair lane) recovers into its lane, `emq:{q}:g:<group>:pending`, mirroring the reaper's group branch, so lane fairness is preserved across a recovery.
+- **At or above `max_stalled` — dead-letter.** `HSET state dead`, `ZADD emq:{q}:dead`, and the `metrics:failed` counter ticks. The job stops cycling; it is now a record in the morgue rather than a member of the working set.
 
-# sweep 2: recover only if still marked and still stalled
-if SISMEMBER emq:{queue}:stalled <id> and EXISTS emq:{queue}:<id>:lock == 0:
-    attempts = HINCRBY emq:{queue}:<id> atm 1
-    LREM emq:{queue}:active 1 <id>
-    if attempts >= max_attempts:
-        ZADD emq:{queue}:failed <ts> <id>   # past the ceiling: fail, do not retry
-    else:
-        LPUSH emq:{queue}:wait <id>          # attempts left: back to wait for another worker
-```
+`max_stalled` is the budget. Set to `1`, a job is recovered once and dead-lettered on its second stall — the strict default. Raise it for a workload where a transient stall (a slow downstream, a brief pause) is expected and a job deserves several recoveries before it is given up. The threshold separates *the worker died* (recover, it was not the job's fault) from *this job kills workers* (dead-letter, the job is poison).
 
-The two phases together make the sweep tolerant. A flicker is forgiven by the grace pass; a dead worker is reclaimed on
-the second sweep; a chronically stalling job is failed rather than retried without end.
+## Idempotent across a restart
 
-## The pattern, applied
+The sweep is idempotent over the active set. If the sweep process crashes and its `:transient` child restarts, the next pass re-reads `ZRANGEBYSCORE active -inf now` and re-applies the branch — a job already recovered has left `active`, so it is not examined again; a job not yet recovered is recovered on the re-sweep. No double-recovery, no loss across a restart, because the move reads the live set, not a journal of what the last pass intended to do.
 
-In EchoMQ the two phases live inside one script. `moveStalledJobsToWait-8.lua` operates over a `stalled` set
-(`EchoMQ.Keys.stalled/1` → `emq:{queue}:stalled`) alongside `wait`, `active`, and `failed`. On a sweep it marks a newly
-stalled job into the `stalled` set; a job already in the set that is still stalled is the one it recovers, moving it to
-`wait` or — past its attempt ceiling — to `failed`, incrementing the attempt count as it goes. The `max_stalled_count`
-argument bounds how many times a job may be recovered from a stall before it is failed outright. Because the mark and the
-recover live in the same script, the two-phase decision runs without a separate process holding intermediate state.
+## The bridge
 
-The full sweep cadence — how often the script runs, how the `stalled-check` key throttles concurrent sweeps, and the
-pool-wide coordination — is the dedicated EchoMQ course. This dive teaches the mark-then-recover decision; that course
-teaches the schedule that drives it.
+- **detect** — a job's lease lapsed, the reaper finds it on `active`.
+- **then bound the recovery** — `EchoMQ.Stalled` increments the job's `stalled` field, recovers it below `max_stalled` into `pending` (or its lane), and dead-letters it at or above the threshold into `emq:{q}:dead`.
+
+The take: a plain reaper recovers a poison job forever; the stall count turns "recover" into "recover a bounded number of times, then retire."
+
+## Where a dead-lettered job lands
+
+A job in `emq:{q}:dead` is a durable record of a failure, not a working-set member. When the bus trims the stream that carries the queue's history, `EchoStore.StreamArchive` folds the trimmed segments into the durable Graft floor on CubDB at a reserved high page range and on to Tigris — deep history without resident memory, queryable beside the live tail. The morgue is the dial's first detent — held in Valkey — and the archive is the next: the floor `/echo-persistence` builds.
 
 ## References
 
 ### Sources
-- [Redis — Sets](https://redis.io/docs/latest/develop/data-types/sets/) — the `stalled` set that marks a job once across
-  sweeps.
-- [Redis — SADD](https://redis.io/commands/sadd/) — the mark: record a newly stalled job for the next sweep.
-- [Redis — HINCRBY](https://redis.io/commands/hincrby/) — the attempt-count increment on a recovered job.
-- [Redis — EVAL / scripting](https://redis.io/commands/eval/) — why the mark and the recover run in one indivisible
-  script.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the two-phase stalled-check worker path EchoMQ ports.
+
+- [Valkey — *HINCRBY*](https://valkey.io/commands/hincrby/) — the in-script increment of the per-job `stalled` count; the field travels with the row.
+- [Valkey — *Sorted Sets*](https://valkey.io/topics/sorted-sets/) — `pending`, `active`, and `dead` are scored sets the sweep moves a job between.
+- [Redis — *EVALSHA*](https://redis.io/commands/evalsha/) — the whole mark-and-branch runs as one cached script per sweep.
+- [Oban — *Robust job processing in Elixir*](https://hexdocs.pm/oban/Oban.html) — the Postgres-backed prior art for retries, attempts, and a dead-letter outcome.
 
 ### Related in this course
-- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery) — the module: the recovery sweep in full.
-- [R3.03.1 · Lock-expiry detection](/redis-patterns/queues/stalled-recovery/lock-expiry-detection) — the prior dive: the
-  lease as the death signal.
-- [R3.03.3 · Atomic vs non-atomic](/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic) — the next dive: why the
-  recover step must be one step.
-- [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue) — the family in one place: the three guarantees.
-- [E6 · The job lifecycle](/echomq/lifecycle) — the dedicated EchoMQ course: the sweep schedule that drives the two
-  phases.
+
+- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery) — the module hub.
+- [R3.03.1 · Lock-expiry detection](/redis-patterns/queues/stalled-recovery/lock-expiry-detection) — how a stalled job is found.
+- [R3.03.3 · Atomic vs non-atomic](/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic) — why the mark-and-move is one step.
+- [R3.02 · At-least-once](/redis-patterns/queues/at-least-once) — the attempts counter the recovery rides beside.
+- [/echo-persistence](/echo-persistence) — the durability floor a dead-lettered job's history folds into.

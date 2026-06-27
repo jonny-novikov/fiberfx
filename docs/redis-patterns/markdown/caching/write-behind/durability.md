@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/write-behind/durability` · Module R1.03 · dive 2 · Source:
 > `content/fundamental/write-behind.md.txt` (*The Durability Trade-off* + *Mitigating Data Loss*) · Grounding:
-> `EchoCache.Journal` — the SQLite WAL, `replay/2`, `compact/1`; the measured price from `content/bcs4.4.md`.
+> `EchoStore.Journal` — the SQLite WAL, `replay/2`, `compact/1`; the measured price from `bcs.4.md`.
 > Engine: Valkey.
 
 Between a write and its flush, the cache holds the only copy. That window is the price of the throughput. The flush
@@ -45,9 +45,9 @@ Each mode changes what survives a process restart, and so changes the real risk 
 Two dials bound the risk: the flush interval sizes the window, and durable storage sets whether a crash in it actually
 loses anything.
 
-## On EchoCache — the lane that remembers
+## On EchoStore — the lane that remembers
 
-EchoCache does not put an append log on the cache. The bus stays volatile by decision; durability for the job lane's
+EchoStore does not put an append log on the cache. The bus stays volatile by decision; durability for the job lane's
 obligations lives in a per-group **SQLite WAL** standing beside the bus (`journal.ex:125-126` — `PRAGMA
 journal_mode=WAL`, `synchronous=NORMAL`). The outbox closes the window by construction: the intent is recorded *before*
 the bus hears it, and `replay/2` (`journal.ex:103`) re-enqueues every intent not yet covered by the applied memory after
@@ -58,7 +58,7 @@ carries an applied version at least as new — coverage, not acknowledgment.
 The committed record prices the memory exactly. The writer's edge costs `143 us per record-and-mark pair`; the
 remembered-lane median is `524 us` against the bare lane's 148 — and after a staged bus loss, replay re-enqueued
 `exactly 30 uncovered intents re-enqueued in seq order`. The chapter's own closing words: "3.5 times the latency buys an
-outbox, a last word per name, and a replay that survives the bus" (`content/bcs4.4.md`).
+outbox, a last word per name, and a replay that survives the bus" (`bcs.4.md`).
 
 `synchronous=NORMAL` is the stated trade: every process crash, consumer kill, and bus restart this part stages is fully
 covered, and only a machine power loss may trim the unsynced tail of the WAL — the layer that closes that gap is a
@@ -76,4 +76,4 @@ separate off-box process, referenced and deliberately not built in.
 - [R1.03.1 · The async buffer](/redis-patterns/caching/write-behind/async-buffer) — the previous dive.
 - [R1.03.3 · Coalescing writes](/redis-patterns/caching/write-behind/coalescing) — the next dive.
 - [R1.03 · Write-behind](/redis-patterns/caching/write-behind) — the module hub.
-- [/echomq](/echomq) — the job lane the journal replays into.
+- [/echomq/cache](/echomq/cache) — the EchoStore Journal replays the outbox, in depth.

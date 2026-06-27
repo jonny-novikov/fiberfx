@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/write-behind/coalescing` · Module R1.03 · dive 3 · Source:
 > `content/fundamental/write-behind.md.txt` (*Advantages* — write coalescing) · Grounding:
-> `EchoCache.Journal.record_many/2` (group commit) + `compact/1` (coverage). Engine: Valkey.
+> `EchoStore.Journal.record_many/2` (group commit) + `compact/1` (coverage). Engine: Valkey.
 
 Twenty updates to one key between flushes should cost one database write, not twenty. The async buffer already cut the
 database to a batch per flush; coalescing cuts it further, by keeping each changed key once.
@@ -46,9 +46,9 @@ stream where one key is hot. Each *update* does an `SADD`; *flush* writes the da
 clears the set. The readout reports updates seen, the distinct keys held, and the coalescing ratio — how many updates one
 database write absorbed. A hot key updated again and again still costs one database write per flush.
 
-## On EchoCache — group commit at the writer's edge
+## On EchoStore — group commit at the writer's edge
 
-EchoCache coalesces in two places. At the cache, the dirty-set keeps each changed key once — the Valkey structure above.
+EchoStore coalesces in two places. At the cache, the dirty-set keeps each changed key once — the Valkey structure above.
 At the journal, the equivalent is `record_many/2` (`journal.ex:57`): "group commit at the writer's edge — record a batch
 of intents inside one transaction, one WAL append amortized across the batch." Newer-wins makes a re-applied version
 harmless, so two intents on the same name collapse to one effect: applying the same version twice is a comparison that
@@ -56,8 +56,8 @@ answers stale the second time. `compact/1` (`journal.ex:106`) then retires the o
 when its name carries an applied version at least as new.
 
 The coherence message is the smallest possible cargo for this: `id <> ":" <> version` (`coherence.ex:35`) — 14 bytes of
-branded name, a colon, 14 bytes of branded version, **29 bytes total**. The job lane carrying it over EchoMQ is the
-EchoMQ protocol; the [`/echomq` course](/echomq) teaches the fair lanes in depth.
+branded name, a colon, 14 bytes of branded version, **29 bytes total**. The deferred write it carries is buffered by
+EchoStore; the [`/echomq/cache` course](/echomq/cache) teaches how the EchoStore Journal coalesces deferred writes in depth.
 
 ## References
 
@@ -71,4 +71,4 @@ EchoMQ protocol; the [`/echomq` course](/echomq) teaches the fair lanes in depth
 - [R1.03.2 · The durability trade-off](/redis-patterns/caching/write-behind/durability) — the previous dive.
 - [R1.03 · Write-behind](/redis-patterns/caching/write-behind) — the module hub.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the fair-lanes job queue the 29-byte message rides.
+- [/echomq/cache](/echomq/cache) — the EchoStore Journal coalesces deferred writes, in depth.

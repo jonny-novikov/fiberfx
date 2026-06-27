@@ -85,11 +85,11 @@ vector `slot("123456789") == 12739` asserted.
 This dive cites one real surface — `EchoMQ.Keyspace.slot/1` — as proof. The closed `emq:{q}:<type>` grammar, the
 `{emq}:` reserve of exactly four members, the version fence the connector negotiates before the first command, and
 the slot function's role on the clustered day are the subject of the dedicated
-[EchoMQ course](/echomq) and the [BCS fence-and-keyspace chapter](/bcs/bus/fence-and-keyspace) — the companion
+[EchoMQ course](/echomq) and the [BCS keyspace chapter](/bcs/bus/the-keyspace) — the companion
 courses that teach the keyspace and the connector in full.
 
 R2.05 ends here; the chapter closes with the [R2.06 workshop](/redis-patterns/coordination/workshop), where the
-coordination patterns combine on a real Exchange Platform order placement.
+coordination patterns combine on a real codemojex guess submission.
 
 ## References
 
@@ -106,6 +106,6 @@ coordination patterns combine on a real Exchange Platform order placement.
   rules, the hot-slot problem, and the EchoMQ exemplar.
 - [R2.05.2 · CROSSSLOT prevention](/redis-patterns/coordination/hash-tag-colocation/crossslot-prevention) — the
   previous dive: what co-location buys, and the `CROSSSLOT` a shared tag prevents.
-- [R2.06 · Coordination workshop](/redis-patterns/coordination/workshop) — the chapter's Exchange Platform exemplar
+- [R2.06 · Coordination workshop](/redis-patterns/coordination/workshop) — the chapter's codemojex exemplar
   workshop, where the coordination patterns combine.
-- [EchoMQ — the protocol](/echomq) — the `emq:{q}:` keyspace, the version fence, and the connector in depth.
+- [EchoMQ — the protocol](/echomq/protocol) — the `emq:{q}:` keyspace, the version fence, and the connector in depth.

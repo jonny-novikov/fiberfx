@@ -129,5 +129,5 @@ priority and the control plane). The course home is `/echomq`.
 - [R3 · Reliable Queues](/redis-patterns/queues) — the reliable job this chapter schedules and orders.
 - [R3.05 · Blocking vs polling](/redis-patterns/queues/blocking-vs-polling) — the marker the delayed set wakes a
   worker through.
-- [R0.2 · Redis under Portal](/redis-patterns/overview/redis-under-portal) — the EchoMQ bus these patterns ground in.
+- [R0.2 · Redis under Portal](/redis-patterns/overview/redis-under-game) — the EchoMQ bus these patterns ground in.
 - [/elixir · The GenServer](/elixir/language/otp/genserver) — the runtime process the scheduler's timers run inside.

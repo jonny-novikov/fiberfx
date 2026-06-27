@@ -109,4 +109,4 @@ TTL. The next dive makes the fence explicit with `attempts`.
 - [R2.02.2 · Fencing tokens](/redis-patterns/coordination/distributed-locking/fencing-tokens) — `attempts` is the
   fence; the next dive.
 - [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — why the whole claim is one Lua EVAL.
-- [/echomq](/echomq) — the EchoMQ protocol, where the worker-side lock-subkey plane is taught.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol, where the worker-side lock-subkey plane is taught.

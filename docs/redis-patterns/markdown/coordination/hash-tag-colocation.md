@@ -258,7 +258,7 @@ stays legal; in EchoMQ the braced `emq:{q}:` keyspace makes that automatic, and 
 client-side so routing needs no round trip.
 
 The closed `emq:{q}:<type>` grammar, the `{emq}:` reserve, and the version fence are the subject of the dedicated
-**[EchoMQ course](/echomq)** and the [BCS fence-and-keyspace chapter](/bcs/bus/fence-and-keyspace) — the companion
+**[EchoMQ course](/echomq)** and the [BCS keyspace chapter](/bcs/bus/the-keyspace) — the companion
 courses that teach the keyspace in full. Return to the [Coordination chapter](/redis-patterns/coordination) to
 continue toward the chapter's closing workshop.
 
@@ -289,5 +289,5 @@ continue toward the chapter's closing workshop.
   this prevention substitutes for.
 - [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the single-slot atomic move that
   co-location keeps legal.
-- [EchoMQ — the protocol](/echomq) — the `emq:{q}:` keyspace and the version fence in depth.
-- [BCS — the fence and the keyspace](/bcs/bus/fence-and-keyspace) — the committed slot-locality record.
+- [EchoMQ — the protocol](/echomq/protocol) — the `emq:{q}:` keyspace and the version fence in depth.
+- [BCS — the keyspace](/bcs/bus/the-keyspace) — the committed slot-locality record.

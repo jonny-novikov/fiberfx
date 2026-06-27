@@ -2,9 +2,9 @@
 
 > Route: `/redis-patterns/caching/cache-stampede-prevention/early-refresh` · Module R1.05 · dive 2 · Source:
 > `content/fundamental/cache-stampede-prevention.md.txt` (*Solution 1: Probabilistic Early Expiration (X-Fetch)* — How
-> It Works · The Algorithm · Outcome) · Grounding: EchoCache's jittered TTL `expires_at/1`
-> (`echo/apps/echo_cache/lib/echo_cache/table.ex`). **Honest framing:** X-Fetch is taught as the pattern; the applied
-> mechanism EchoCache really runs is expiry jitter, not probabilistic early expiration.
+> It Works · The Algorithm · Outcome) · Grounding: EchoStore's jittered TTL `expires_at/1`
+> (`echo/apps/echo_store/lib/echo_store/table.ex`). **Honest framing:** X-Fetch is taught as the pattern; the applied
+> mechanism EchoStore really runs is expiry jitter, not probabilistic early expiration.
 
 No lock, no waiting. Each read may rebuild the key early, with a chance that rises as the TTL nears zero, so one
 request refreshes moments before it would expire. Probabilistic early expiration — X-Fetch — decouples logical expiry
@@ -52,10 +52,10 @@ Instead of thousands of simultaneous source reads at expiration, a single reques
 expiration while all others continue serving cached data. The traffic spike is smoothed into a single early rebuild,
 at the cost of one or two source reads and a brief, bounded staleness window — and with no lock and no waiting.
 
-## On EchoCache — jitter, not XFetch
+## On EchoStore — jitter, not XFetch
 
-Here the honesty matters. EchoCache does **not** implement the probabilistic XFetch rule above — there is no
-`now - delta·beta·log(rand)` test in the code, and this dive does not claim one. What EchoCache runs against the same
+Here the honesty matters. EchoStore does **not** implement the probabilistic XFetch rule above — there is no
+`now - delta·beta·log(rand)` test in the code, and this dive does not claim one. What EchoStore runs against the same
 problem — a cohort that expires together and re-herds — is **expiry jitter**. Every row draws its expiry from
 `ttl ± ttl·jitter`:
 
@@ -82,7 +82,7 @@ sweeper tick, `:rand.uniform`, the monotonic clock — is the [`/elixir` course]
 ## References
 
 ### Sources
-- [Valkey — SET](https://valkey.io/commands/set) — `PX` for the jittered millisecond TTL EchoCache writes to L2.
+- [Valkey — SET](https://valkey.io/commands/set) — `PX` for the jittered millisecond TTL EchoStore writes to L2.
 - [Redis — TTL](https://redis.io/commands/ttl) — the remaining time-to-live X-Fetch inspects to size the gap to expiry.
 - [Redis — Documentation](https://redis.io/docs/) — key expiry and the string commands that store the value with its timestamp and delta.
 - [Sanfilippo, S. — antirez weblog](https://antirez.com/) — the Redis creator on expiry, eviction, and smoothing regeneration load.
@@ -92,5 +92,5 @@ sweeper tick, `:rand.uniform`, the monotonic clock — is the [`/elixir` course]
 - [R1.05.1 · Lock-on-miss](/redis-patterns/caching/cache-stampede-prevention/lock-on-miss) — the deterministic alternative and the X-Fetch fallback.
 - [R1.05.3 · Request coalescing](/redis-patterns/caching/cache-stampede-prevention/coalescing) — the next dive.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the EchoMQ protocol behind the cache's coherence lane.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — EchoStore early refresh on jittered TTL, in depth.

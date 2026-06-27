@@ -1,12 +1,12 @@
 # R0 · Overview — Redis Patterns Applied, to the BCS architecture
 
 > Route: `/redis-patterns/overview` (chapter landing) · Source of structure: the R0 orientation spec
-> (`specs/overview/`) + the TOC · Grounding: the BCS build — EchoMQ backed by Valkey, EchoCache in front
+> (`specs/overview/`) + the TOC · Grounding: the BCS build — EchoMQ backed by Valkey, EchoStore in front
 > (`docs/echo/bcs/content/`). Reframed under [`specs/reframe-echomq/`](../specs/reframe-echomq/reframe-echomq.md).
 
 Orientation before the patterns. The running system is the BCS build: **EchoMQ** backed by **Valkey**, Valkey
-under the hood, **EchoCache** in front. One Valkey carries two surfaces — the EchoMQ bus behind the braced
-`emq:{q}:` keyspace, and the EchoCache near-cache reading through an L1 of ETS tables — and the two surfaces
+under the hood, **EchoStore** in front. One Valkey carries two surfaces — the EchoMQ bus behind the braced
+`emq:{q}:` keyspace, and the EchoStore near-cache reading through an L1 of ETS tables — and the two surfaces
 ground the two halves of the catalog. Two orientation modules set that up before the pattern chapters begin.
 
 ## The seam, retold — two surfaces over one Valkey
@@ -21,7 +21,7 @@ four sorted sets per queue carry the lifecycle — `pending` score-zero, `active
 `schedule` scored by run-at, `dead` score-zero — and every transition is a single atomic script (`bcs3.3.md`).
 The coordination, queue, time, streams, and flow families (R2–R6) and the operations chapter (R8) ground here.
 
-**The EchoCache near-cache.** EchoCache is "branded keys, local speed, bus-driven coherence" (`bcs4.md`): an L1
+**The EchoStore near-cache.** EchoStore is "branded keys, local speed, bus-driven coherence" (`bcs4.md`): an L1
 of declared ETS tables in front of the shared L2 Valkey. The committed figure: `1311621 hit reads per second
 (762 ns each)` against `31 us per L2 GET` on the same wire — the L1 hit is `40 times cheaper` than the round
 trip it replaces (`bcs4.1.md`). The caching family (R1) and the R7 read-models ground here.
@@ -33,13 +33,13 @@ trip it replaces (`bcs4.1.md`). The caching family (R1) and the R7 read-models g
 
 ## Pick a surface
 
-The split is the catalog's map. The read path grounds in EchoCache; the bus families ground in the `emq:{q}:`
+The split is the catalog's map. The read path grounds in EchoStore; the bus families ground in the `emq:{q}:`
 keyspace and its scripts. Each chapter names its surface up front.
 
 - **The EchoMQ bus** — the braced `emq:{q}:` keyspace; a job row is a hash of three fields, moved across four
   sorted sets, every transition a single script. Committed: `emq:{orders}:job:ORD0NgWEfAEJfs`, 17 bytes of
   grammar before the payload. Grounds R2–R6 and R8. (bcs3.1–3.3)
-- **The EchoCache near-cache** — an L1 of declared ETS tables over the shared L2 Valkey. Committed: `1311621`
+- **The EchoStore near-cache** — an L1 of declared ETS tables over the shared L2 Valkey. Committed: `1311621`
   hit reads per second (`762 ns` each) against `31 us` per L2 GET — the L1 hit is 40 times cheaper than the
   round trip it replaces. Grounds R1 and the R7 read-models. (bcs4.1)
 
@@ -51,7 +51,7 @@ it on every connect, first boot and every reconnect, refusing to serve against a
 read is self-referential — it travels through a connection that could not exist had the fence not held:
 
 ```
-GET {emq}:version              answers echomq:2.0.0   ← through the fenced connector itself
+GET {emq}:version              answers echomq:3.0.0   ← through the fenced connector itself
 rung record                    PASS 5/5
 ```
 
@@ -65,7 +65,7 @@ Two orientation modules set up the grounding the pattern chapters reuse.
 
 | Module | Title | What it sets up |
 | --- | --- | --- |
-| R0.2 | Valkey under the Exchange Platform | The placement — the two roles Valkey plays below the one owned wire facade (`EchoWire`) the Exchange Platform calls: the EchoMQ bus and EchoCache. Dives: the facade seam · the two roles · the reserved tier. |
+| R0.2 | Valkey under codemojex | The placement — the two roles Valkey plays below the one owned wire facade (`EchoWire`) codemojex calls: the EchoMQ bus and EchoStore. Dives: the facade seam · the two roles · the reserved tier. |
 | R0.3 | Patterns become protocol | The four-layer model and the immutable core — why the data model is the contract, and the door to the EchoMQ course. Dives: the four layers · the immutable core · the door to EchoMQ. |
 
 ## Up next — the pattern chapters
@@ -86,7 +86,7 @@ R1–R4 link through; R5–R8 are specified and link through when their chapters
 
 ### Related in this course
 - [Course home](/redis-patterns) — the full chapter→module map.
-- [R1 · Caching](/redis-patterns/caching) — the read path; grounds in EchoCache.
-- [R0.2 · Valkey under the Exchange Platform](/redis-patterns/overview/redis-under-portal) — the placement, in detail.
+- [R1 · Caching](/redis-patterns/caching) — the read path; grounds in EchoStore.
+- [R0.2 · Valkey under codemojex](/redis-patterns/overview/redis-under-game) — the placement, in detail.
 - [/echomq](/echomq) — EchoMQ, the protocol in depth — the far side of the door.
 - [/bcs](/bcs) — the Branded Component System — the architecture these patterns run inside.

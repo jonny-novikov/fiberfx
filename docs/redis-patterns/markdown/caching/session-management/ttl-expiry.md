@@ -2,8 +2,8 @@
 
 > Route: `/redis-patterns/caching/session-management/ttl-expiry` · Module R1.06 · dive 2 · Source:
 > `content/community/session-management.md.txt` (the *Sliding Expiration* section + *Session Data Cleanup*) ·
-> Grounding: `EchoCache.Table` — `SET … PX`, the jittered `expires_at/1`, and the `:sweep` sweeper
-> (`echo/apps/echo_cache/lib/echo_cache/table.ex`).
+> Grounding: `EchoStore.Table` — `SET … PX`, the jittered `expires_at/1`, and the `:sweep` sweeper
+> (`echo/apps/echo_store/lib/echo_store/table.ex`).
 
 An absolute TTL ends the session at a fixed time from sign-in. A sliding TTL refreshes the deadline on each request, so
 active users stay in and idle ones fall out.
@@ -34,9 +34,9 @@ The session-id references in a user's roster Set are *not* reclaimed by the key 
 they name. *Session Data Cleanup* reconciles them as a low-traffic background job: walk `user:*:sessions`, and for each
 id drop the reference when `session:{id}` no longer exists.
 
-## On EchoCache
+## On EchoStore
 
-EchoCache writes its L2 row with the TTL in the same command — `SET ecc:{<table>}:<id> (version<>value) PX ttl_ms`
+EchoStore writes its L2 row with the TTL in the same command — `SET ecc:{<table>}:<id> (version<>value) PX ttl_ms`
 (`table.ex:290`) — so value and deadline land atomically; a session is a TTL'd row and the `PX` expiry is its lifetime.
 A re-`put` on the next request re-stamps the row with a fresh deadline, the sliding-window move. Above L2, the L1 ETS
 copy carries its own expiry drawn from a **jittered** clock — `expires_at/1` returns `ttl ± ttl·jitter` (`table.ex:484`)
@@ -49,7 +49,7 @@ enforces.
 
 ### Sources
 - [Valkey — EXPIRE](https://valkey.io/commands/expire) — set a key's time-to-live; the command rerun on each read to slide a session's deadline, and the engine's two reclamation paths.
-- [Valkey — SET](https://valkey.io/commands/set) — set a key with `PX`; value and TTL in one command, the way `EchoCache.Table.put` writes L2.
+- [Valkey — SET](https://valkey.io/commands/set) — set a key with `PX`; value and TTL in one command, the way `EchoStore.Table.put` writes L2.
 - [Redis — TTL](https://redis.io/commands/ttl) — read a key's remaining life in seconds; `-2` for a reclaimed key, `-1` for no deadline.
 - [Sanfilippo, S. — antirez weblog](https://antirez.com/) — the Redis creator on expiry sampling and the cost of background eviction.
 
@@ -58,4 +58,4 @@ enforces.
 - [R1.06.1 · Hash, String & JSON](/redis-patterns/caching/session-management/encodings) — the previous dive.
 - [R1.06.3 · The auth tie-in](/redis-patterns/caching/session-management/auth-session) — the next dive.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the protocol the coherence lane rides.
+- [/echomq/cache](/echomq/cache) — EchoStore jittered-TTL expiry, in depth.

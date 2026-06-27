@@ -1,8 +1,8 @@
 # Session management
 
 > Route: `/redis-patterns/caching/session-management` · Module R1.06 · Source:
-> `content/community/session-management.md.txt` · Grounding: `EchoCache.Table` — a TTL'd branded-id row keyed `SES`,
-> stored via `SET … PX`, refused at the door by the kind gate (`echo/apps/echo_cache/lib/echo_cache/table.ex`).
+> `content/community/session-management.md.txt` · Grounding: `EchoStore.Table` — a TTL'd branded-id row keyed `SES`,
+> stored via `SET … PX`, refused at the door by the kind gate (`echo/apps/echo_store/lib/echo_store/table.ex`).
 
 Store user sessions in Valkey with automatic expiration using TTL, choosing between Hashes (field-level access),
 Strings (serialized), or JSON (nested data) based on access patterns. Valkey is the fit for session storage because of
@@ -31,7 +31,7 @@ SET session:abc123 '{"user_id":1,"cart":["item1","item2"],"prefs":{"theme":"dark
 ```
 
 The JSON form simplifies nested data but requires reading and writing the entire session on each update. The trade-off
-is **field-level access** (the Hash) against **one round trip for the whole blob** (the String/JSON). EchoCache takes
+is **field-level access** (the Hash) against **one round trip for the whole blob** (the String/JSON). EchoStore takes
 the String case one step further: it frames the value as a 14-byte branded **version** prefix followed by the bytes —
 `version <> value` — so a later coherence message can compare versions newer-wins.
 
@@ -58,14 +58,14 @@ inactive session runs out the clock and expires on its own — no cron job, no s
 
 Creating a session is four steps:
 
-1. Generate a unique session id — a UUID or a cryptographically secure random string. In EchoCache a session keys to a
+1. Generate a unique session id — a UUID or a cryptographically secure random string. In EchoStore a session keys to a
    branded `SES` id minted at sign-in.
 2. Store the session data with its initial fields.
 3. Set the expiration time.
 4. Return the session id to the client, typically as a cookie.
 
 The session id must be **cryptographically random** to prevent guessing attacks; a guessable id is a way into someone
-else's account.
+else's signed-in session.
 
 ## Logout & Real-Time Session Invalidation
 
@@ -101,20 +101,22 @@ A session store has a small, fixed security checklist:
 - Consider storing a hash of the user's IP or user-agent to detect session hijacking.
 - Set the cookie flags `HttpOnly`, `Secure`, and `SameSite`.
 
-## On EchoCache
+## On EchoStore
 
-A session is the textbook TTL'd row, and EchoCache stores one without any auth surface of its own. `EchoCache.Table.put/3`
+A session is the textbook TTL'd row, and EchoStore stores one without any auth surface of its own. `EchoStore.Table.put/3`
 sets both layers under the declared TTL — `SET ecc:{sessions}:<id> (version<>value) PX ttl_ms`
 (`table.ex:290`) — keyed by a branded `SES` id. A re-auth re-`put`s with a fresh mint-time version
-(`put/3` mints `BrandedId.generate!(spec.kind)`, `table.ex:90`); logout is `EchoCache.Table.invalidate/3`
+(`put/3` mints `BrandedId.generate!(spec.kind)`, `table.ex:90`); logout is `EchoStore.Table.invalidate/3`
 (`table.ex:171` — `DEL` L2 + `:ets.delete`, the admin verb).
 
-The auth tie is the **kind gate**, not a credential check EchoCache owns. Before either layer is touched, `gate/2`
+The membership tie is the **kind gate**, not a credential check EchoStore owns. Before either layer is touched, `gate/2`
 (`table.ex:495`) requires `byte_size(id) == 14 and binary_part(id, 0, 3) == kind and BrandedId.valid?(id)`, returning
 `{:error, :kind}` otherwise — so a `USR` id can never be used as a `SES` key, and a wrong-namespace id is refused at the
-door with zero keys on the wire. The Exchange Platform carries an opaque **account** id
-(`Exchange.Gateway.parse_account/1`, `gateway.ex:212` — `{:ok, binary()} | {:error, :malformed}`); a session keys to the
-account it admits. The functional-Elixir and OTP craft behind the echo data layer is taught by the
+door with zero keys on the wire. codemojex carries the same shape one level down: a player's per-round state is a
+per-player hash `cm:{round}:lock:{player}` (`Codemojex.Locks`, `locks.ex` — field = position, value = code), so a
+locked position **persists across guesses with no client state to lose**, server-side and durable, keyed by the
+player's `USR` brand. A session is that same idea — state with a deadline, keyed by an identity, held in Valkey, not
+in the client. The functional-Elixir and OTP craft behind the echo data layer is taught by the
 [`/elixir`](/elixir) course; this module is the session store in front of it.
 
 ## The three dives
@@ -125,14 +127,14 @@ session's life is tied to the namespace it belongs to.
 - **R1.06.1 · Hash, String & JSON** — the encoding choice and what a single-field update costs in each.
 - **R1.06.2 · TTL expiry** — absolute against sliding, and the lazy and active eviction that makes an `EXPIRE` real.
 - **R1.06.3 · The auth tie-in** — keyed by a branded `SES` id, dropped on logout, refused at the kind gate; grounded in
-  `EchoCache.Table.put` and `gate/2`.
+  `EchoStore.Table.put` and `gate/2`.
 
 ## References
 
 ### Sources
 - [Redis — Documentation](https://redis.io/docs/) — hashes, strings, key expiry, and the data structures a session store is built from.
 - [Redis — HSET](https://redis.io/commands/hset) — set one or more fields of a Hash; the field-level write a Hash session uses.
-- [Valkey — SET](https://valkey.io/commands/set) — set a key to one value with `PX`; value and TTL set atomically, the way `EchoCache.Table.put` writes L2.
+- [Valkey — SET](https://valkey.io/commands/set) — set a key to one value with `PX`; value and TTL set atomically, the way `EchoStore.Table.put` writes L2.
 - [Valkey — EXPIRE](https://valkey.io/commands/expire) — set a key's time-to-live; the deadline that ends an idle session on its own.
 - [Sanfilippo, S. — antirez weblog](https://antirez.com/) — the Redis creator on key expiry and how the engine reclaims keys that have run out.
 
@@ -141,5 +143,5 @@ session's life is tied to the namespace it belongs to.
 - [R1.06.2 · TTL expiry](/redis-patterns/caching/session-management/ttl-expiry) — absolute, sliding, and eviction.
 - [R1.06.3 · The auth tie-in](/redis-patterns/caching/session-management/auth-session) — the SES key, logout, the kind gate.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the EchoMQ protocol the cache's coherence lane rides.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — the EchoStore near-cache sessions live in, in depth.

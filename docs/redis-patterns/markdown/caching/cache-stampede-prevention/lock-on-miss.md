@@ -2,20 +2,20 @@
 
 > Route: `/redis-patterns/caching/cache-stampede-prevention/lock-on-miss` · Module R1.05 · dive 1 · Source:
 > `content/fundamental/cache-stampede-prevention.md.txt` (*Solution 2: Mutex Locking* — How It Works · Redis Commands ·
-> Handling Waiting Clients · Releasing the Lock) · Grounding: EchoCache's single-flight `flights` map
-> (`echo/apps/echo_cache/lib/echo_cache/table.ex`).
+> Handling Waiting Clients · Releasing the Lock) · Grounding: EchoStore's single-flight `flights` map
+> (`echo/apps/echo_store/lib/echo_store/table.ex`).
 
 One request wins the lock and rebuilds the hot key. The rest wait, serve a stale copy, or fail fast — but never read
 the source. Lock-on-miss is the deterministic defence: a per-key regeneration lock that admits exactly one writer.
 
 ## Acquire with NX and PX
 
-The lock is one command. `SET lock:instruments:AAPL <token> NX PX 5000` sets the lock key to a unique token only if it does
+The lock is one command. `SET lock:set:EMS0ODMggk1d5N <token> NX PX 5000` sets the lock key to a unique token only if it does
 not already exist (`NX`), with a five-second expiry in milliseconds (`PX 5000`). The reply is the gate: `OK` means
 this request holds the lock and may rebuild; `nil` means another request already holds it.
 
 ```
-SET lock:instruments:AAPL "a1b2c3-unique-token" NX PX 5000
+SET lock:set:EMS0ODMggk1d5N "a1b2c3-unique-token" NX PX 5000
 # -> OK    : this request holds the lock; read the source and refill
 # -> (nil) : another request holds it; this request waits or serves stale
 ```
@@ -47,7 +47,7 @@ becomes one source read.
 
 Releasing looks trivial — delete the lock key after the refill — and a naive `DEL` is a bug. Suppose request A wins
 the lock, but its rebuild runs long and the `PX 5000` expiry fires. The lock is now free; request B acquires it with
-a fresh token. If A then finishes and calls a plain `DEL lock:instruments:AAPL`, it deletes *B's* lock — and now two
+a fresh token. If A then finishes and calls a plain `DEL lock:set:EMS0ODMggk1d5N`, it deletes *B's* lock — and now two
 requests run as the lock holder at once. The guard against this is the token.
 
 The release reads the lock, checks the stored token equals this request's token, and deletes only on a match. That
@@ -59,13 +59,13 @@ if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
 end
 return 0
--- KEYS[1] = lock:instruments:AAPL   ARGV[1] = this request's token
+-- KEYS[1] = lock:set:EMS0ODMggk1d5N   ARGV[1] = this request's token
 -- returns 1 (released) or 0 (the lock is no longer this one's — do nothing)
 ```
 
-## Lock-on-miss on EchoCache
+## Lock-on-miss on EchoStore
 
-EchoCache reaches the same "one winner per miss" guarantee without a separate lock key — it elects the single fill
+EchoStore reaches the same "one winner per miss" guarantee without a separate lock key — it elects the single fill
 *at the owner*. A read first tries L1 caller-side; on a miss it calls the owner with `{:fill, id}`. The owner keeps a
 `flights` map of in-flight loads keyed by id. The first miss launches a flight; a concurrent miss on the same id does
 not launch a second — it appends its caller to the waiter list and bumps the `:coalesced` counter:
@@ -88,7 +88,7 @@ end
 The owner is the lock: serializing the fill through one process means the first caller's flight is the only one that
 reaches L2 and the loader, and every waiter reads the one answer. The flight itself runs `GET ecc:{table}:id`; on
 `{:ok, nil}` it calls the declared loader and writes both layers with `SET ... PX`. Where this dive's Redis lock
-elects one rebuild across processes with `SET NX PX`, the EchoCache owner elects it in-process for free. The
+elects one rebuild across processes with `SET NX PX`, the EchoStore owner elects it in-process for free. The
 functional-Elixir & OTP craft behind the echo data layer — GenServer call paths, `spawn_monitor`, the waiter list —
 is the [`/elixir` course](/elixir/pragmatic/state).
 
@@ -105,5 +105,5 @@ is the [`/elixir` course](/elixir/pragmatic/state).
 - [R1.05.2 · Probabilistic early refresh](/redis-patterns/caching/cache-stampede-prevention/early-refresh) — the next dive.
 - [R1.05.3 · Request coalescing](/redis-patterns/caching/cache-stampede-prevention/coalescing) — one fill per herd, every waiter served.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the EchoMQ protocol behind the cache's coherence lane.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — the EchoStore per-key single-flight, in depth.

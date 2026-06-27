@@ -206,5 +206,5 @@ enough.
 - [R2.02 · Distributed locking](/redis-patterns/coordination/distributed-locking) — the single-Valkey lease this
   contrast weighs against.
 - [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the atomic move a lock protects.
-- [/echomq](/echomq) — the EchoMQ protocol the claim lease lives in.
+- [/echomq/protocol](/echomq/protocol) — the EchoMQ protocol the claim lease lives in.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the functional-Elixir & OTP craft behind the echo umbrella.

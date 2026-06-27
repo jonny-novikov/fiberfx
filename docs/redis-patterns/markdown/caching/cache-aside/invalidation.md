@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/cache-aside/invalidation` · Module R1.01 · dive 2 · Source:
 > `content/fundamental/cache-aside.md.txt` (the write path + *Mitigating Staleness*) · Grounding:
-> `EchoCache.Table.invalidate/3` (`table.ex:171`) and the version-safe `EchoCache.Coherence.drop_l2/4`
+> `EchoStore.Table.invalidate/3` (`table.ex:171`) and the version-safe `EchoStore.Coherence.drop_l2/4`
 > (`coherence.ex:75`).
 
 A write clears the cached key with an explicit `DEL`. The order matters: write the source first, delete the key
@@ -19,7 +19,7 @@ holding a value neither intended. `DEL` fails safe — an absent key is never st
 read on the next request. Deleting fails safe where rewriting can fail stale.
 
 ```
-DEL ecc:{quotes}:AST0NuE6bV7FoH        # => 1 if it existed, 0 if already absent
+DEL ecc:{cm_emojisets}:EMS0ODMggk1d5N        # => 1 if it existed, 0 if already absent
 ```
 
 ## The resurrection race, step by step
@@ -30,9 +30,9 @@ the value the reader read — which, if it read before the write committed, is t
 in the cache until its TTL expires. Write the source first and delete the key second, so the delete is the last
 word: a fill that lands after the delete caches whatever the reader read, so the delete must come last.
 
-## On EchoCache
+## On EchoStore
 
-EchoCache offers two invalidations. The unconditional admin verb is `Table.invalidate/3` — a `DEL` on the L2 key
+EchoStore offers two invalidations. The unconditional admin verb is `Table.invalidate/3` — a `DEL` on the L2 key
 plus an `:ets.delete` on L1, dropping one name from both layers. But the sharper tool closes the resurrection race
 by construction: `Coherence.drop_l2/4` runs one atomic Lua script (`coherence_drop`) that deletes the L2 row **only
 when the incoming version is newer** than the version framed into the stored value — so a late stale invalidation
@@ -66,5 +66,5 @@ deletes only on newer — one transition, one script, no resurrection.
 - [R1.01.1 · GET / SET PX miss-fill](/redis-patterns/caching/cache-aside/miss-fill) — the read path the re-fill uses.
 - [R1.01.3 · TTL & staleness](/redis-patterns/caching/cache-aside/ttl-staleness) — the next dive.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the EchoMQ protocol the coherence job lane rides.
+- [/echomq/cache](/echomq/cache) — EchoStore coherence drops the stale copy, in depth.
 - [/elixir · State](/elixir/pragmatic/state) — the functional-Elixir craft behind the write.

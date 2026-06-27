@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/cache-aside/miss-fill` · Module R1.01 · dive 1 · Source:
 > `content/fundamental/cache-aside.md.txt` (the *How It Works* sequence + *Redis Commands Used*) · Grounding:
-> `EchoCache.Table.launch_flight/2` (`echo/apps/echo_cache/lib/echo_cache/table.ex:391`).
+> `EchoStore.Table.launch_flight/2` (`echo/apps/echo_store/lib/echo_store/table.ex:391`).
 
 Ask Valkey first. On a hit, serve it. On a miss, read the source and write it back with an expiry, so the next read
 is a hit. This is the read half of cache-aside — the source's *How It Works* sequence, focused on the miss path,
@@ -19,17 +19,17 @@ strategy is called **lazy loading** — nothing is cached until it is asked for.
 ## Filling with an expiry, never without
 
 ```
-GET ecc:{quotes}:AST0NuE6bV7FoH                       # => nil  (a miss)
-SET ecc:{quotes}:AST0NuE6bV7FoH "{…value…}" PX 300    # fill the cache, value + TTL in one command
+GET ecc:{cm_emojisets}:EMS0ODMggk1d5N                       # => nil  (a miss)
+SET ecc:{cm_emojisets}:EMS0ODMggk1d5N "{…value…}" PX 300    # fill the cache, value + TTL in one command
 ```
 
 Set the value and the TTL in one command. A bare `SET` with a separate `EXPIRE` leaves an immortal key if the
 process dies between the two, so the value never falls out of the cache and staleness has no ceiling. The `PX 300`
 caps the lifetime of the filled value — the backstop the third dive measures.
 
-## On EchoCache
+## On EchoStore
 
-The miss path is the real `EchoCache.Table.launch_flight/2`: the flight runs `GET ecc:{table}:id`; on `{:ok, nil}`
+The miss path is the real `EchoStore.Table.launch_flight/2`: the flight runs `GET ecc:{table}:id`; on `{:ok, nil}`
 it calls the declared `loader.(id)`, then writes both layers with `SET … PX ttl`, framing the value with the
 write's mint-time version. The whole read surface is `Table.fetch/3` — it returns `{:ok, value, source}` with
 source `:hit | :l2 | :fill`, so a caller learns whether its answer came from L1 ETS, L2 Valkey, or a fresh loader
@@ -49,7 +49,7 @@ case Connector.command(conn, ["GET", l2]) do
 end
 ```
 
-The key is `ecc:{<table>}:<id>` (`EchoCache.Keyspace.key/2`), the table name hash-tagged so the entity lands in one
+The key is `ecc:{<table>}:<id>` (`EchoStore.Keyspace.key/2`), the table name hash-tagged so the entity lands in one
 cluster slot. The `PX` ties the L2 row to its expiry so a key the next dives never clear still cannot live forever.
 
 ## References
@@ -64,5 +64,5 @@ cluster slot. The `PX` ties the L2 row to its expiry so a key the next dives nev
 - [R1.01 · Cache-aside](/redis-patterns/caching/cache-aside) — the module hub.
 - [R1.01.2 · Explicit invalidation](/redis-patterns/caching/cache-aside/invalidation) — the next dive.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the EchoMQ protocol behind the connector.
+- [/echomq/cache](/echomq/cache) — the EchoStore L1/L2 miss-fill, in depth.
 - [/elixir · State](/elixir/pragmatic/state) — the functional-Elixir craft behind the loader.

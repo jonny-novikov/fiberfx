@@ -1,144 +1,120 @@
 # Score as meaning
 
-> The sorted set is one mechanism; the score is the whole semantic axis. Score a job
-> by a future timestamp and the set is a delayed queue; score it by a composite
-> priority and the set is a priority ladder; score it by a next-run time and the set is
-> a scheduler registry. Same member, same commands — three meanings, all carried by one
-> number.
+> **Route:** `/redis-patterns/time-delay-priority/score-as-meaning` · R4 · orientation dive
 
-**Route:** `/redis-patterns/time-delay-priority/score-as-meaning`
-**Chapter:** R4 · Time, Delay & Priority — orientation dive
-**Pager:** prev `the-sorted-set-as-a-clock` · next `the-road-ahead`
+The sorted set is one mechanism; the score is the whole semantic axis. Score a job by a future millisecond and the
+set is a delayed queue; flatten the score to a constant and let the member's mint order serve as the queue; score
+it by a next-run time and the set is a scheduler registry. Same member, same commands — three meanings, all carried
+by one number.
 
-A sorted set stores members ordered by a floating-point score. The textbook delayed
-queue uses the simplest possible score: a Unix timestamp. The member is the task id; the
-score is when it should run; `ZRANGEBYSCORE` reads back everything due. That one idea —
-the score is a number that sorts the set — is the whole pattern. This dive shows how
-EchoMQ refines it: the same double can carry two meanings at once, because the bits of
-the score are split into a high field and a low field.
+A sorted set stores members ordered by a numeric score. The textbook delayed queue uses the simplest possible
+score: a timestamp. The member is the task id; the score is when it should run; `ZRANGEBYSCORE` reads back
+everything due. That one idea — the score is a number that sorts the set — is the whole pattern. This dive shows how
+EchoMQ reads one number three ways across three real sets.
 
 ## The score is a number that sorts
 
-The delayed-queue pattern (`docs/redis-patterns/content/fundamental/delayed-queue.md.txt`)
-schedules tasks with a sorted set whose score is a Unix timestamp:
+The delayed-queue pattern schedules tasks with a sorted set whose score is a run-at millisecond:
 
 ```
-ZADD delayed_queue 1706649000 "task:abc123"
-ZRANGEBYSCORE delayed_queue -inf 1706648500 LIMIT 0 10
-ZREM delayed_queue "task:abc123"
+ZADD schedule 1706649000000 "JOB0Nb1VTbfnu4"
+ZRANGEBYSCORE schedule -inf 1706648500000 LIMIT 0 10
+ZREM schedule "JOB0Nb1VTbfnu4"
 ```
 
-The member is the task id, the score is the fire-time, and the set stays ordered by
-fire-time with no extra bookkeeping. A worker reads the due head with `ZRANGEBYSCORE`,
-claims each task with an atomic `ZREM` (1 means this worker won the claim), and processes
-it. Nothing in Redis is told what the score "means" — it is a number, and the set sorts
-by it. The meaning lives in how the writer chooses the number and how the reader
-interprets the order.
+The member is the job id, the score is the fire-time, and the set stays ordered by fire-time with no extra
+bookkeeping. A pump reads the due head with `ZRANGEBYSCORE`, removes each member with `ZREM`, and promotes it.
+Nothing in Valkey is told what the score "means" — it is a number, and the set sorts by it. The meaning lives in how
+the writer chooses the number and how the reader interprets the order.
 
-That freedom is the lever. Because the score is an arbitrary `double`, a writer can pack
-more than one fact into it, as long as the bit layout still sorts the way the reader
-needs. EchoMQ does exactly this on its `emq:{queue}:delayed` set.
+That freedom is the lever. Because the score is an arbitrary number, the *member* can carry meaning too. EchoMQ uses
+this on its `pending` set: it flattens every score to `0` and lets the branded job id — which sorts as its mint
+instant — carry the order.
 
-### The hero interactive — the composite-score decoder
+### The hero interactive — the score decoder
 
-A priority tier (1–5; lower = more urgent) and an arrival number (0–999) feed the EchoMQ
-priority formula `score = priority * 4294967296 + arrival`. The readout shows the decimal
-score, the hex split (the tier in the high 32 bits, the arrival in the low 32), and where
-the job sorts: served before any job in a higher-numbered tier, and after earlier arrivals
-within its own tier.
+A control reads one fixed example job three ways. Each reading computes the actual stored score and names the write
+and read commands: **fire-time** (`score = run_at_ms`), **order** (`score = 0`, the mint-ordered id is the sort
+key), and **next-run** (`score = next_run_ms`, upserted). The readout shows the score and where the job sorts.
 
-## Packing two meanings into one double
+## One number, three real sets
 
-EchoMQ scores its `:prioritized` set with a **composite priority**. The Lua function
-`getPriorityScore` (verbatim in `addPrioritizedJob-9.lua`, `addDelayedJob-6.lua`,
-`changePriority-7.lua`, `addJobScheduler-11.lua`, `promote-9.lua`, `addParentJob-6.lua`)
-computes:
+EchoMQ never packs two facts into one score. It keeps each reading on its own set and lets each set carry exactly
+one number per member.
 
-```
-prioCounter = rcall("INCR", priorityCounterKey)        -- the :pc arrival counter
-score       = priority * 0x100000000 + prioCounter % 0x100000000
-```
+**Fire-time — `emq:{q}:schedule`.** `EchoMQ.Jobs.enqueue_at/6` writes the caller's absolute run-at millisecond as
+the score; `enqueue_in/6` computes `now + delay_ms` from the server clock inside the `@schedule` Lua
+(`local t = redis.call('TIME')`). The score *is* the millisecond — no left-shift, no lossy recovery. The job's row
+is written `state = scheduled` and parked on the set; the score is a visibility fence, not a second queue.
 
-`0x100000000` is 2³² = 4294967296. Multiplying the priority by 2³² shifts it into the
-**high 32 bits** of the score; the arrival counter (the next value of `INCR :pc`) occupies
-the **low 32 bits**. One double now carries two facts:
+**Order — `emq:{q}:pending`.** Once a scheduled job is due, `EchoMQ.Jobs.promote/3` `ZADD`s it onto the pending set
+with score `0`. Every pending member shares score `0`, so the set sorts entirely by the *member* — the branded
+`JOB` id, which sorts as its mint instant. The `claim` script's `ZPOPMIN` therefore serves the oldest job first.
+The order is carried by the id, not by a packed counter.
 
-- **the priority tier** (high 32 bits) — the primary sort key. A lower tier value is more
-  urgent, and `ZPOPMIN` pops the smallest score first, so tier 1 always outranks tier 2.
-- **the arrival number** (low 32 bits) — the tiebreaker. Within a tier, the job that was
-  enqueued first has the smaller arrival counter, so it has the smaller score and is served
-  first. Strict priority across tiers, FIFO within a tier — from a single number.
-
-The delayed set uses the same trick at a different scale. `getDelayedScore`
-(`addDelayedJob-6.lua`) scores a delayed job by `delayedTimestamp * 0x1000`, where
-`delayedTimestamp = timestamp + delay`. `0x1000` is 4096 = 2¹², so the fire-time in
-milliseconds sits in the high bits and a 12-bit discriminator sits in the low bits — two
-jobs due in the same millisecond can still be ordered. To recover the real millisecond,
-`getNextDelayedTimestamp` reads the head and returns `nextTimestamp / 0x1000`, dividing
-the 12-bit shift back out.
+**Next-run — `emq:{q}:repeat`.** `EchoMQ.Repeat.register/6` `ZADD`s a registration name scored by its next-run
+millisecond, and the `@register` Lua **upserts** — it guards on `EXISTS KEYS[2]` (the per-name record hash) and
+returns `0` without re-adding when the name is already live, so a reboot that re-registers the same recurring job
+adds no duplicate. The pump reads the due names with `ZRANGEBYSCORE repeat -inf now` and `EchoMQ.Repeat.advance/4`
+re-scores each to `now + every_ms`.
 
 ### The main interactive — the three-readings panel
 
-One fixed example job, read three ways. Each reading computes the actual stored score and
-names the write command and the read command:
+One fixed example job, read three ways. Each reading computes the actual stored score and names the write command
+and the read command:
 
-- **fire-time** → `score = (now + delay) * 4096`; write `ZADD :delayed score id`; read
-  `ZRANGEBYSCORE :delayed 0 now*4096`.
-- **priority** → `score = tier * 4294967296 + arrival`; write `ZADD :prioritized score id`;
-  read `ZPOPMIN :prioritized`.
-- **next-run** → `score = nextRunMs`; write `ZADD :repeat nextRunMs key` (upsert); read
-  `ZRANGE :repeat 0 0 WITHSCORES`.
+- **fire-time** → `score = run_at_ms`; write `ZADD emq:{q}:schedule score id`; read
+  `ZRANGEBYSCORE emq:{q}:schedule -inf now`.
+- **order** → `score = 0`; write `ZADD emq:{q}:pending 0 id`; read `ZPOPMIN emq:{q}:pending`.
+- **next-run** → `score = next_run_ms`; write `ZADD emq:{q}:repeat next_run_ms name` (upsert); read
+  `ZRANGEBYSCORE emq:{q}:repeat -inf now`.
 
-The same job is stored three different ways because the score carries three different
-meanings.
+The same job is stored three different ways because the score carries three different meanings.
 
-## The bridge — three sets, one mechanism
+## The bridge — the writer encodes the meaning
 
-The third reading is the scheduler registry. EchoMQ's `:repeat` set
-(`EchoMQ.Keys.repeat/1` → `"#{base}:repeat"`) is a **ZSET** scored by the next-run
-millisecond: `storeRepeatableJob` (`addRepeatableJob-2.lua`, `addJobScheduler-11.lua`)
-runs `ZADD repeatKey nextMillis customKey`, and **upserts** by reading the prior score
-with `ZSCORE repeatKey customKey` and replacing it — so a reboot that re-registers the
-same recurring job does not duplicate it. (The `keys.ex` doc-comment that calls `:repeat`
-a "hash" is a source defect; the code uses `ZADD`/`ZSCORE`, which are ZSET commands.)
+The textbook reaches the same "next job to serve" order by *packing* two fields into one score — a priority tier in
+the high 32 bits, an arrival counter in the low 32 bits (`score = priority × 2³² + arrival`), read by `ZPOPMIN`.
+That is a valid encoding, and it is the contrast worth knowing: it puts the order *in the score*. EchoMQ chose the
+opposite — it puts the order *in the member*. A score-0 pending set ordered by a mint-ordered branded id needs no
+arrival counter to break ties, because the id already is one.
 
 | reading | set | score | meaning |
 | --- | --- | --- | --- |
-| fire-time | `:delayed` | `(timestamp + delay) * 0x1000` | *when* a job runs |
-| composite priority | `:prioritized` | `priority * 0x100000000 + (INCR :pc)` | *in what order* |
-| next-run | `:repeat` | next-run millis (upsert) | *how often* |
+| fire-time | `emq:{q}:schedule` | run-at ms | *when* a job runs |
+| order | `emq:{q}:pending` | `0` (id carries order) | *in what order* |
+| next-run | `emq:{q}:repeat` | next-run ms (upsert) | *how often* |
 
-Three sorted sets, one mechanism. The commands stay constant — `ZADD` to write,
-`ZRANGEBYSCORE` / `ZPOPMIN` / `ZSCORE` / `ZRANGE` to read — and the score is the whole
-semantic axis. To read an EchoMQ set is to read what its score means.
+> **The pattern:** the sorted set does not store time, priority, or schedule — it stores one number per member and
+> keeps the set ordered by it.
+>
+> **→ In EchoMQ:** three real sets — `emq:{q}:schedule` scored by run-at ms, `emq:{q}:pending` scored `0` and
+> ordered by the mint-ordered `JOB` id, `emq:{q}:repeat` scored by next-run ms and upserted — each carrying exactly
+> one number per member.
 
-**Take:** the sorted set does not store time, priority, or schedule — it stores one number
-per member and keeps the set ordered by it. The number is the meaning, and the writer
-encodes it.
+**Take:** the number is the meaning, and the writer encodes it. EchoMQ's choice is to keep each number simple and
+let the branded id do the ordering work a packed counter would otherwise carry.
 
 ## References
 
 ### Sources
 
-- [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) —
-  the data type: members ordered by a floating-point score, the substrate every reading
-  shares.
-- [Redis — *ZADD*](https://redis.io/commands/zadd/) — add or update a member's score; the
-  one write command behind all three readings (and the `:repeat` upsert).
-- [Redis — *ZSCORE*](https://redis.io/commands/zscore/) — read a member's current score;
-  the upsert check that lets `:repeat` replace a prior next-run rather than duplicate it.
-- [Redis — *ZPOPMIN*](https://redis.io/commands/zpopmin/) — pop the lowest-scored member;
-  the read that turns the composite-priority set into a strict-then-FIFO ladder.
-- [BullMQ](https://bullmq.io/) — the reliable-queue protocol EchoMQ ports, where the
-  composite priority and the `* 0x1000` delayed score originate.
+- [Valkey — *Sorted sets*](https://valkey.io/topics/) — the data type: members ordered by a numeric score, the
+  substrate every reading shares.
+- [Redis — *ZADD*](https://redis.io/commands/zadd/) — add or update a member's score; the one write command behind
+  all three readings (and the `emq:{q}:repeat` upsert).
+- [Redis — *ZRANGEBYSCORE*](https://redis.io/commands/zrangebyscore/) — read members by score range; the due-head
+  read the promote and repeat sweeps both use.
+- [Redis — *ZPOPMIN*](https://redis.io/commands/zpopmin/) — pop the lowest-scored member; the read that serves the
+  oldest job from the score-0 pending set.
 
 ### Related in this course
 
-- [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter: the
-  sorted-set-as-clock family in one place.
-- [R4 · The sorted set as a clock](/redis-patterns/time-delay-priority/the-sorted-set-as-a-clock) —
-  the prior dive: one set, two readings (timer wheel and priority ladder).
-- [R4 · The road ahead](/redis-patterns/time-delay-priority/the-road-ahead) — the arc
-  R4.01→R4.06 and the door to EchoMQ's scheduler subsystem.
-- [R3 · Blocking vs polling](/redis-patterns/queues/blocking-vs-polling) — the marker
-  wake-up that replaces the textbook sleep-to-next-due.
+- [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter: the sorted-set-as-clock family
+  in one place.
+- [R4 · The sorted set as a clock](/redis-patterns/time-delay-priority/the-sorted-set-as-a-clock) — the prior dive:
+  one set, two readings (timer wheel and mint-ordered queue).
+- [R4 · The road ahead](/redis-patterns/time-delay-priority/the-road-ahead) — the arc R4.01→R4.06 and the door to
+  the EchoMQ Queue.
+- [The Queue — EchoMQ, In Depth](/echomq/queue) — the EchoMQ state machine, the schedule set, and the promote pump,
+  in depth.

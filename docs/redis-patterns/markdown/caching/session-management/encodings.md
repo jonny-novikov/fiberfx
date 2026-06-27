@@ -2,8 +2,8 @@
 
 > Route: `/redis-patterns/caching/session-management/encodings` · Module R1.06 · dive 1 · Source:
 > `content/community/session-management.md.txt` (the *Hash-Based Sessions* and *String-Based Sessions with JSON*
-> sections + *Memory Optimization*) · Grounding: `EchoCache.Table` — the `version <> value` frame
-> (`echo/apps/echo_cache/lib/echo_cache/table.ex`).
+> sections + *Memory Optimization*) · Grounding: `EchoStore.Table` — the `version <> value` frame
+> (`echo/apps/echo_store/lib/echo_store/table.ex`).
 
 A Hash for field-level reads and writes. A string for one opaque blob. JSON when the blob has structure. The trade-off
 is field access against a single round trip.
@@ -31,14 +31,14 @@ others alone. A String or JSON value must be read whole, edited, re-serialized, 
 written as one unit, the String's single value is simpler. *Memory Optimization* favours the lean record either way —
 store minimal data, use short field names, fetch full user details from the source when needed.
 
-## On EchoCache
+## On EchoStore
 
-EchoCache stores its values in the String shape, with one addition: it frames the bytes with a 14-byte branded
-**version** prefix. `EchoCache.Table.put/3` writes `SET ecc:{<table>}:<id> (version<>value) PX ttl_ms`
+EchoStore stores its values in the String shape, with one addition: it frames the bytes with a 14-byte branded
+**version** prefix. `EchoStore.Table.put/3` writes `SET ecc:{<table>}:<id> (version<>value) PX ttl_ms`
 (`table.ex:290`), and a read splits the frame back apart — `<<version::binary-14, value::binary>>` (`table.ex:429`).
 The framed prefix is what lets a later coherence message compare two writes newer-wins; a plain unframed `SET` is the
 simpler choice when no cross-node coherence is needed. A session record is flat and few-field — a `SES` id, a user id,
-an opaque token — the shape a Hash backs cleanly when the store is bare Valkey; the framed-String form is what EchoCache
+an opaque token — the shape a Hash backs cleanly when the store is bare Valkey; the framed-String form is what EchoStore
 itself holds. The functional-Elixir and OTP craft behind the cache is the [`/elixir`](/elixir) course; this dive is the
 encoding the store holds.
 
@@ -47,12 +47,12 @@ encoding the store holds.
 ### Sources
 - [Redis — HSET](https://redis.io/commands/hset) — set named fields of a Hash; the field-level write a Hash session uses.
 - [Redis — HGETALL](https://redis.io/commands/hgetall) — read every field of a Hash in one command; the full-session read.
-- [Valkey — SET](https://valkey.io/commands/set) — set a key to one value with `PX`; the framed-String encoding `EchoCache.Table.put` writes.
+- [Valkey — SET](https://valkey.io/commands/set) — set a key to one value with `PX`; the framed-String encoding `EchoStore.Table.put` writes.
 - [Redis — Documentation](https://redis.io/docs/) — the Hash and String types and when each fits a record.
 
 ### Related in this course
 - [R1.06 · Session management](/redis-patterns/caching/session-management) — the module hub.
 - [R1.06.2 · TTL expiry](/redis-patterns/caching/session-management/ttl-expiry) — the next dive.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the protocol the coherence lane rides.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — the EchoStore value layer the encoding rides, in depth.

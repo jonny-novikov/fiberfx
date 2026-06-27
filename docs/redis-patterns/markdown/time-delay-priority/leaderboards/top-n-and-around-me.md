@@ -51,31 +51,38 @@ With a window half-width k, the band is `rank − k` through `rank + k`. Near th
 rank 2 with k = 5 reads `0 7`, since there is nothing above rank 0. The band is a slice of the existing order; neither
 read changes the set. Locate, then read the band around the located rank.
 
-## In Portal — ranking the progress percent
+## In codemojex — the top-N is `Board.top/2`
 
-The pattern is two reads over a sorted order. Portal runs no sorted set. It records a learner's lesson progress as a
-**percent** — `Portal.Enrollment.Progress`, the field `percent :: 0..100`, namespace `PRG`, an in-memory store row.
-There is no progress ranking; the percent is a stored value.
+codemojex runs the top-N read directly. Its leaderboard is one sorted set per game, keyed `cm:<game>:board`, scored by
+each player's best linear total. The read side is `Codemojex.Board.top/2`:
 
-A ranked view of learners by progress is this dive applied to that data. Score each learner by their percent with
-`ZADD board <percent> <learner>`, and the two reads serve the two views: `ZREVRANGE board 0 9 WITHSCORES` reads the ten
-learners furthest along, and `ZREVRANK` then a rank-range read shows one learner where they stand among their nearest
-peers. State it plainly: the percent is in Portal's store today; the top-N and around-me reads are the standard way to
-present a ranked view of it, and both read the percent order without changing it.
+```elixir
+# Codemojex.Board.top/2 — the top-N, highest first, scores attached
+case Cmd.zrevrange(k(game, "board"), 0, n - 1) |> Cmd.withscores() |> Wire.run(Bus.conn()) do
+  {:ok, flat} -> {:ok, parse(flat)}
+  other -> other
+end
+```
 
-**The bridge.** The top-N is a head-read of the score order (`ZREVRANGE 0 N-1`) and around-me is a band centred on a
-rank (`ZREVRANK`, then a rank-range read) → Portal stores each learner's progress as a `percent` (the `PRG` struct); a
-ranked view scores by that percent and reads the top learners as a head-read and a single learner's neighbourhood as a
-band around their rank.
+`Cmd.zrevrange/3` and `Cmd.withscores/1` are the real `EchoWire.Cmd` builders; `0, n - 1` is the rank range — the
+first N positions from the top. `Codemojex.View.leaderboard/2` calls it and returns `{player, max_score}` rows,
+withholding everyone's guesses: the leaderboard is the one place a player sees others, and only their scores. The
+around-me window — `ZREVRANK` to find a rank, then a rank-range read — is the same order read with different bounds;
+the board does not need a stored rank to answer it.
 
-**Take.** Two reads cover every view: the head for the top-N, a band for around-me. Both read the order — Portal's
-progress percent, ranked — and leave it untouched.
+**The bridge.** The top-N is a head-read of the score order (`ZREVRANGE 0 N-1 WITHSCORES`) and around-me is a band
+centred on a rank (`ZREVRANK`, then a rank-range read) → `Codemojex.Board.top/2` runs `Cmd.zrevrange("cm:<game>:board",
+0, n - 1) |> Cmd.withscores()` for the top-N, highest first; the same order serves an around-me band by adjusting the
+bounds.
+
+**Take.** Two reads cover every view: the head for the top-N, a band for around-me. Both read the order — codemojex's
+`Board.top/2` is the head-read — and leave it untouched.
 
 ### A door, not a depth
 
-How a job group presents its own ordered members, and how the queue reads a band of a group's work, is the subject of
-the dedicated **EchoMQ course**. The intra-group ranking is [E4 · Groups](/echomq/groups). This dive teaches the top-N
-and around-me reads; that course teaches the group reads built on the same order.
+How the EchoMQ queue presents its ordered work, and how it reads a band of a group's jobs, is the subject of the
+dedicated **EchoMQ course**. From here, open onto [the Queue pillar](/echomq/queue). This dive teaches the top-N and
+around-me reads; that course teaches the queue reads built on the same order.
 
 ## References
 
@@ -97,4 +104,4 @@ and around-me reads; that course teaches the group reads built on the same order
   dive: updating a score, the rank recomputed.
 - [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter.
 - [R4 · Score as meaning](/redis-patterns/time-delay-priority/score-as-meaning) — the score is the semantic axis.
-- [E4 · Groups](/echomq/groups) — the dedicated EchoMQ course: the group reads on the same order.
+- [The Queue pillar](/echomq/queue) — the dedicated EchoMQ course: the queue reads on the same order.

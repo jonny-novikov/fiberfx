@@ -118,7 +118,7 @@ declared in `KEYS`; `ARGV` carries values only**. Hand that script a key on a di
 `CROSSSLOT`. There is no partial write to detect, because the script is the serialization point.
 
 So the token detector is the fallback for the case EchoMQ engineers away: keys that genuinely cannot share a slot —
-keys on different shards, or a Valkey read-model paired with the Exchange Platform's database of record.
+keys on different shards, or a Valkey read-model paired with codemojex's database of record.
 
 The colocation mechanic itself — the `{tag}` hash, CRC16 mod 16384, `CROSSSLOT` prevention — is the chapter's next
 module, **R2.05 hash-tag colocation** (return to the [Coordination chapter](/redis-patterns/coordination) to reach
@@ -144,5 +144,5 @@ it). The full v2 script bundle and the EVALSHA/NOSCRIPT dispatch belong to the d
   the version that orders the tear the bare token only flags.
 - [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the single-slot atomic move colocation
   keeps legal, and what a tear loses.
-- [/echomq](/echomq) — the dedicated EchoMQ course: the full v2 script bundle in depth.
+- [/echomq/protocol](/echomq/protocol) — the dedicated EchoMQ course: the full v2 script bundle in depth.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the single-writer engine that serializes cross-system state.

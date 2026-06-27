@@ -1,8 +1,8 @@
 # Server-assisted client-side caching
 
 > Route: `/redis-patterns/caching/client-side-caching` · Module R1.04 · Source:
-> `content/fundamental/client-side-caching.md.txt` · Grounding: the real broadcast-coherence path of EchoCache — the
-> client holds L1 ETS, the server pushes invalidations over RESP3 pub/sub (`EchoCache.Coherence.broadcast/4`,
+> `content/fundamental/client-side-caching.md.txt` · Grounding: the real broadcast-coherence path of EchoStore — the
+> client holds L1 ETS, the server pushes invalidations over RESP3 pub/sub (`EchoStore.Coherence.broadcast/4`,
 > `coherence.ex:82`; the RESP3 subscription `Connector.start_link(protocol: 3, push_to: self())`, `table.ex:243`), plus
 > the SHA1 script cache (`EchoMQ.Script.new/2`, EVALSHA-first, `script.ex:13`) shown as a parallel, not a door.
 
@@ -21,7 +21,7 @@ This creates a multi-tier cache:
 
 The key innovation is that the server records which keys each client holds and sends invalidation messages when those
 keys change. A repeated read of an unchanged key never leaves the process; the value is a memory lookup, and the server
-pushes a message the moment it goes stale. This is exactly the shape of EchoCache (`echo/apps/echo_cache`): an L1 ETS
+pushes a message the moment it goes stale. This is exactly the shape of EchoStore (`echo/apps/echo_store`): an L1 ETS
 table in the caller's process over an L2 Valkey row, with coherence carried by a server-side push.
 
 ## Tracking Modes
@@ -46,7 +46,7 @@ CLIENT TRACKING ON BCAST PREFIX user: PREFIX session:
 
 This client receives invalidations for any key starting with `user:` or `session:`. The trade-off reverses: a client
 may receive invalidations for keys it does not have cached locally, but server memory stays minimal because it tracks
-prefix subscriptions, not individual key accesses. EchoCache rides the broadcast shape over plain pub/sub: a table
+prefix subscriptions, not individual key accesses. EchoStore rides the broadcast shape over plain pub/sub: a table
 subscribes to one channel, `ecc:{<table>}:coh`, and the writer publishes a message naming the changed key.
 
 ## How Invalidation Works
@@ -58,7 +58,7 @@ When tracking is enabled and a key changes:
 3. The client removes the key from its local cache.
 4. The next access fetches fresh data from the server.
 
-This keeps local caches synchronized without polling. In EchoCache the message carries one more thing than a bare
+This keeps local caches synchronized without polling. In EchoStore the message carries one more thing than a bare
 `CLIENT TRACKING` invalidation does — the writer's mint-time version — so a late stale message can never erase a newer
 row.
 
@@ -111,17 +111,17 @@ This pattern benefits:
 - **Complexity** — handling invalidation messages requires dedicated connection management or async processing.
 - **Not for volatile data** — if data changes constantly, invalidation traffic may exceed the benefit of caching.
 - **RESP3 recommended** — the RESP3 protocol carries push notifications natively, making invalidation handling cleaner.
-  EchoCache requires it for the broadcast lane: the table opens a RESP3 connection precisely so a push and a reply can
+  EchoStore requires it for the broadcast lane: the table opens a RESP3 connection precisely so a push and a reply can
   share one wire.
 
-## Applied — the broadcast lane in EchoCache
+## Applied — the broadcast lane in EchoStore
 
-The near cache the Exchange Platform would put in front of its instrument catalog is an EchoCache table: an L1 ETS row
+The near cache codemojex would put in front of its emoji set is an EchoStore table: an L1 ETS row
 in the caller's process over an L2 Valkey row keyed `ecc:{instruments}:<id>`. Coherence is carried by a server push,
 not by polling. On start the table opens a RESP3 connection and subscribes to its coherence channel:
 
 ```elixir
-# echo/apps/echo_cache/lib/echo_cache/table.ex (init) — the broadcast subscription
+# echo/apps/echo_store/lib/echo_store/table.ex (init) — the broadcast subscription
 {:ok, sub} =
   Connector.start_link(
     Keyword.get(opts, :connector, [])
@@ -135,7 +135,7 @@ When a writer changes a row, it publishes the change on that channel. The messag
 name, a colon, and the writer's mint-time version, and nothing else:
 
 ```elixir
-# echo/apps/echo_cache/lib/echo_cache/coherence.ex
+# echo/apps/echo_store/lib/echo_store/coherence.ex
 def channel(table), do: "ecc:{" <> table <> "}:coh"
 def payload(<<_::binary-14>> = id, <<_::binary-14>> = version), do: id <> ":" <> version
 
@@ -145,7 +145,7 @@ end
 ```
 
 Every subscribing table receives the push as `{:emq_push, ["message", channel, payload]}` and applies it newer-wins in
-its owner. The committed measure (`content/bcs4.2.md`): the message is a **twenty-nine-byte** payload, and the
+its owner. The committed measure (`bcs.4.md`): the message is a **twenty-nine-byte** payload, and the
 broadcast lane runs at **broadcast median 72 us fire-and-forget**, against the job lane at **148 us at-least-once** —
 *the guarantee costs 2.1 times the latency*. A lost broadcast costs one TTL of staleness, which is why a surface where
 a stale read costs money rides the durable job lane over EchoMQ's fair lanes instead.
@@ -155,7 +155,7 @@ a stale read costs money rides the durable job lane over EchoMQ's fair lanes ins
 The module takes the pattern in three steps — *track → invalidate → the same shape elsewhere*:
 
 - **R1.04.1 · CLIENT TRACKING** — the server-assisted near cache: how the server records which keys a connection
-  holds, in default and broadcast mode, and the real RESP3 subscription EchoCache opens for it.
+  holds, in default and broadcast mode, and the real RESP3 subscription EchoStore opens for it.
 - **R1.04.2 · The invalidation push** — when a tracked key changes, the server sends a RESP3 message naming the key to
   every holder, which drops its local copy and re-reads lazily; the real `Coherence.broadcast/4` and the 29-byte
   message.
@@ -167,14 +167,14 @@ The third dive draws a **parallel** only. The script cache uses the same cache-t
 course, which this module links forward to rather than teaches.
 
 **One idea, two places.** Server-assisted client-side caching is one instance of a broader move: keep a derived copy
-near the work, and accept a signal that invalidates it when the source changes. EchoCache holds an L1 ETS value and
+near the work, and accept a signal that invalidates it when the source changes. EchoStore holds an L1 ETS value and
 drops it on a broadcast push; `EchoMQ.Script` holds a script's precomputed SHA1 and resends the body on a `NOSCRIPT`
 reply. The signal differs; the shape is the same.
 
 ## References
 
 ### Sources
-- [Valkey — Client-side caching](https://valkey.io/topics/client-side-caching/) — server-assisted tracking and its invalidation messages; the unversioned, orderless gap EchoCache's mint-time version closes.
+- [Valkey — Client-side caching](https://valkey.io/topics/client-side-caching/) — server-assisted tracking and its invalidation messages; the unversioned, orderless gap EchoStore's mint-time version closes.
 - [Valkey — Pub/Sub](https://valkey.io/topics/pubsub/) — at-most-once delivery, the broadcast lane's contract taken whole.
 - [Redis — Client-side caching](https://redis.io/docs/latest/develop/use/client-side-caching/) — the server-assisted near cache and `CLIENT TRACKING`.
 - [Redis — CLIENT TRACKING](https://redis.io/commands/client-tracking) — default and broadcast modes, `REDIRECT`, `NOLOOP`, and `OPTIN`/`OPTOUT`.
@@ -184,5 +184,5 @@ reply. The signal differs; the shape is the same.
 - [R1.04.2 · The invalidation push](/redis-patterns/caching/client-side-caching/invalidation-push) — the change notification.
 - [R1.04.3 · The SHA1 script-cache parallel](/redis-patterns/caching/client-side-caching/script-cache) — the same shape, applied.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the EVALSHA/script-loading protocol in depth.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — the EchoStore :tracking coherence mode, in depth.

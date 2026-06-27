@@ -48,42 +48,39 @@ rewritten. Their scores are unchanged; only their computed position differs on t
 update is O(log N) for the re-placement; the ripple through everyone else's rank costs nothing at write time, because
 it is computed at read time.
 
-## In Portal — updating the progress percent a ranking would read
+## In codemojex — the best-of overwrite in `Board.record/3`
 
-The pattern is a score updated two ways, the rank recomputed on read. Portal runs no sorted set. It records a
-learner's lesson progress as a **percent** — `Portal.Enrollment.Progress`, the field `percent :: 0..100`, namespace
-`PRG`, an in-memory store row. There is no progress ranking; the percent is a stored value that the learner's activity
-moves over time.
+codemojex's score update is `ZADD`, with a best-of fold so a rank only ever climbs. The score worker is the authority:
+`Codemojex.ScoreWorker.handle/1` scores a guess with the pure engine and records the result on the board:
 
-A ranking view of learners by progress is this dive applied to that data. As a learner's percent changes, a ranking
-board would update its score: `ZADD board <new-percent> <learner>` to set the percent outright, the way a recomputed
-progress percent is known as an absolute value. The learner is re-placed by their new percent, and every other
-learner's rank recomputes on the next read — no neighbour's percent is touched. State it plainly: Portal updates the
-percent in its store today; were a ranked view added, the score update is the same `ZADD`, and the rank is read from
-the percent order, never stored.
+```elixir
+# Codemojex.ScoreWorker.handle/1 (excerpt) — score, then record on the board
+s = Scoring.score(secret, emojis)          # the linear total, out of 600
+# …store the GES guess, count the attempt…
+eff = Board.record(game, player, s.total)  # ZADD the player's best base to cm:<game>:board
+```
+
+`Codemojex.Board.record/3` reads the player's current best from `cm:<game>:base`, takes `new_base = max(old, base)`,
+and writes it to the board with `Cmd.zadd("cm:<game>:board") |> Cmd.score(new_base, player)`. That is an absolute
+overwrite to the best-so-far — never `ZINCRBY`, because the rank is the best single result, not a running sum. A
+re-delivered guess re-scores identically (the engine is pure) and the `max/2` fold makes the write idempotent: a lower
+or equal base leaves the rank where it was. No rank is stored; the next `Board.top/2` read recomputes the whole order.
 
 **The bridge.** A score is updated by `ZADD` (overwrite) or `ZINCRBY` (accumulate), and the rank is recomputed from
-the order on read, never stored → Portal stores each learner's progress as a `percent` (the `PRG` struct) and updates
-it as the learner advances; a ranking view sets the score with `ZADD board percent learner` on each change and reads
-the rank from the percent order.
+the order on read, never stored → `Codemojex.Board.record/3` writes each player's best linear total with
+`Cmd.zadd("cm:<game>:board") |> Cmd.score(new_base, player)` — a best-of overwrite, idempotent on re-delivery; the rank
+is read from the order, never written.
 
 **Take.** Update the score, not the rank — `ZADD` to overwrite, `ZINCRBY` to accumulate. The rank is read from the
-order, so it is never stale. Portal's progress percent is the score such an update would write.
+order, so it is never stale. codemojex's `Board.record/3` is that `ZADD`, folded to the player's best base.
 
 ### A door, not a depth
 
-How the queue updates a job's standing within its group, and how the group re-orders on a change, is the subject of
-the dedicated **EchoMQ course**. The intra-group ranking is [E4 · Groups](/echomq/groups). This dive teaches the score
-update and the rank-on-read; that course teaches the group re-ordering built on it.
-
-## Where this is heading — EchoMQ 2.0
-
-The score-update path is generic sorted-set work — `ZADD` to overwrite, `ZINCRBY` to accumulate, the rank read from
-the order. It is not part of the EchoMQ queue protocol. Where EchoMQ does order by a sorted-set score is its priority
-queue (R4.03's `emq:{queue}:prioritized`), and the settled **EchoMQ 2.0** design (the protocol break on the first EMQ
-rung, `emq.1`) renames that keyspace to `emq:{queue}:prioritized` — the `emq:` prefix replacing `emq:`, every Lua key
-declared in `KEYS[]`, `meta.version` bumped to `echomq:2.0.0` — with the score order unchanged. A score update and the
-rank it recomputes are a property of the order; they are independent of the prefix or the version.
+How the EchoMQ queue updates a job's standing and re-orders its work on a change is the subject of the dedicated
+**EchoMQ course** — open onto [the Queue pillar](/echomq/queue). And because the board is a derived view, how a score
+survives a restart belongs to the [persistence floor](/echo-persistence): the durable substrate rebuilds the volatile
+board from the record of what was scored. This dive teaches the score update and the rank-on-read; those courses teach
+the queue re-ordering and the durable rebuild.
 
 ## References
 
@@ -107,4 +104,4 @@ rank it recomputes are a property of the order; they are independent of the pref
 - [R4.03 · Composite priority scores](/redis-patterns/time-delay-priority/priority-scores) — the same sorted-set
   ordering, packed for ties.
 - [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter.
-- [E4 · Groups](/echomq/groups) — the dedicated EchoMQ course: the group re-ordering on a score change.
+- [The persistence floor](/echo-persistence) — how a derived board survives a restart, rebuilt from the durable tier.

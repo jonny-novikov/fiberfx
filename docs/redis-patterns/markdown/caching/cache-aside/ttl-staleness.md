@@ -1,7 +1,7 @@
 # TTL & staleness
 
 > Route: `/redis-patterns/caching/cache-aside/ttl-staleness` · Module R1.01 · dive 3 · Source:
-> `content/fundamental/cache-aside.md.txt` (*The Staleness Problem*) · Grounding: `EchoCache.Table.expires_at/1`
+> `content/fundamental/cache-aside.md.txt` (*The Staleness Problem*) · Grounding: `EchoStore.Table.expires_at/1`
 > (`table.ex:484`, jittered `ttl ± ttl·jitter`), the `:sweep` sweeper (`table.ex:350`), and `SET … PX`
 > (`table.ex:290`).
 
@@ -26,12 +26,12 @@ remaining TTL at the moment of the write. The bound is the smaller of those two:
 first.
 
 ```
-PTTL ecc:{quotes}:AST0NuE6bV7FoH       # => remaining ms, or -2 if the key is already gone
+PTTL ecc:{cm_emojisets}:EMS0ODMggk1d5N       # => remaining ms, or -2 if the key is already gone
 ```
 
-## On EchoCache
+## On EchoStore
 
-EchoCache fills every L2 row with `SET … PX ttl_ms` (`table.ex:290`), so a missed invalidation still expires. Two
+EchoStore fills every L2 row with `SET … PX ttl_ms` (`table.ex:290`), so a missed invalidation still expires. Two
 mechanisms keep the floor honest. First, expiry is **jittered**: `expires_at/1` (`table.ex:484`) draws each L1 row's
 deadline from `ttl ± ttl·jitter`, so a cohort filled together never expires together and the TTL itself cannot
 schedule the next herd. Second, a `:sweep` sweeper (`table.ex:350`) reclaims expired L1 rows on a fixed tick with a
@@ -64,5 +64,5 @@ invalidation is missed, and the delete latency if it lands.
 - [R1.01.1 · GET / SET PX miss-fill](/redis-patterns/caching/cache-aside/miss-fill) — the read path that fills with the TTL.
 - [R1.01.2 · Explicit invalidation](/redis-patterns/caching/cache-aside/invalidation) — the DEL the TTL backstops.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the EchoMQ protocol behind the connector.
+- [/echomq/cache](/echomq/cache) — EchoStore jittered TTL and staleness, in depth.
 - [/elixir · State](/elixir/pragmatic/state) — the functional-Elixir craft behind the cache.

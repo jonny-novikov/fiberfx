@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/write-behind/async-buffer` · Module R1.03 · dive 1 · Source:
 > `content/fundamental/write-behind.md.txt` (the *How It Works* sequence + *The Sync Process*) · Grounding:
-> `EchoCache.Journal.intend_and_enqueue/4` — the outbox in one verb. Engine: Valkey.
+> `EchoStore.Journal.intend_and_enqueue/4` — the outbox in one verb. Engine: Valkey.
 
 The write lands in Valkey and returns; a separate worker carries it to the database later, on its own clock. This is the
 write half of write-behind — the source's *How It Works* sequence and its *Sync Process*, focused on the buffer that
@@ -51,9 +51,9 @@ one database batch. The readout reports the buffer depth, the total database bat
 carried. The write path never waits for the flush path: a burst piles into the buffer and leaves the database in a
 handful of batches, not one round trip per write.
 
-## On EchoCache — the outbox in one verb
+## On EchoStore — the outbox in one verb
 
-EchoCache's write-behind path is the transactional outbox in `EchoCache.Journal`. The writer's verb,
+EchoStore's write-behind path is the transactional outbox in `EchoStore.Journal`. The writer's verb,
 `intend_and_enqueue/4` (`journal.ex:66`), is the two paths made real: it mints a `JOB` id, `record`s the intent in a
 local SQLite file, calls `Lanes.enqueue` (the async job lane over EchoMQ) with the coherence payload, and
 `mark_enqueued`s the intent. The write returns after the **local record** — the bus carries the apply off the write
@@ -63,10 +63,10 @@ path, exactly the split this dive draws.
 {:ok, job_id} = Journal.intend_and_enqueue(:limits_journal, conn, name_id, version)
 ```
 
-The job lane is `EchoCache.Coherence.enqueue/5` (`coherence.ex:89`): `Lanes.enqueue(conn, queue(table), group, JOB-id,
+The job lane is `EchoStore.Coherence.enqueue/5` (`coherence.ex:89`): `Lanes.enqueue(conn, queue(table), group, JOB-id,
 payload)` — "the job lane: at-least-once over EchoMQ's fair lanes." The key the value lands under is
-`ecc:{<table>}:<id>` (`EchoCache.Keyspace.key/2`, `keyspace.ex:20`) — the table name hash-tagged so one cache lands in
-one cluster slot. The fair-lanes queue itself is the EchoMQ protocol; the [`/echomq` course](/echomq) teaches it in
+`ecc:{<table>}:<id>` (`EchoStore.Keyspace.key/2`, `keyspace.ex:20`) — the table name hash-tagged so one cache lands in
+one cluster slot. The buffer that defers the apply is the EchoStore near-cache; the [`/echomq/cache` course](/echomq/cache) teaches the EchoStore Journal outbox in
 depth.
 
 ## References
@@ -81,4 +81,4 @@ depth.
 - [R1.03 · Write-behind](/redis-patterns/caching/write-behind) — the module hub.
 - [R1.03.2 · The durability trade-off](/redis-patterns/caching/write-behind/durability) — the next dive.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the fair-lanes job queue the apply rides.
+- [/echomq/cache](/echomq/cache) — the EchoStore Journal outbox buffers the apply, in depth.

@@ -1,7 +1,7 @@
 # Write-behind (write-back)
 
 > Route: `/redis-patterns/caching/write-behind` · Module R1.03 · Source: `content/fundamental/write-behind.md.txt`
-> · Grounding: `EchoCache.Journal` — the transactional outbox, the async job lane over EchoMQ, the SQLite WAL.
+> · Grounding: `EchoStore.Journal` — the transactional outbox, the async job lane over EchoMQ, the SQLite WAL.
 > Engine: Valkey.
 
 Maximize write throughput by writing only to Valkey and asynchronously syncing to the database later—trades immediate
@@ -36,16 +36,16 @@ persists them. The write path adds one move to mark the key changed — `LPUSH w
 `SADD dirty <key>` onto a dirty-set — and the flush path drains it (`RPOP`, or `SMEMBERS`) and reads the current value
 before writing the source.
 
-**On EchoCache.** The deferral is real code in `EchoCache.Journal` — the transactional outbox. The writer's verb,
+**On EchoStore.** The deferral is real code in `EchoStore.Journal` — the transactional outbox. The writer's verb,
 `intend_and_enqueue/4` (`journal.ex:66`), mints a `JOB` id, records the intent in a local SQLite file, hands the apply to
 the async job lane over EchoMQ with `Lanes.enqueue`, and marks the intent enqueued. The write returns after the **local
-record**; the bus carries the apply off the write path. The job lane itself is `EchoCache.Coherence.enqueue/5`
-(`coherence.ex:89`) — "the job lane: at-least-once over EchoMQ's fair lanes." That lane is the EchoMQ protocol; the
-[`/echomq` course](/echomq) teaches it in depth.
+record**; the bus carries the apply off the write path. The job lane itself is `EchoStore.Coherence.enqueue/5`
+(`coherence.ex:89`) — "the job lane: at-least-once over EchoMQ's fair lanes." That lane is buffered by EchoStore; the
+[`/echomq/cache` course](/echomq/cache) teaches the EchoStore write-behind Journal in depth.
 
 ## Advantages
 
-- **Extremely low write latency** — operations complete as soon as Valkey acknowledges (and, on EchoCache, after one
+- **Extremely low write latency** — operations complete as soon as Valkey acknowledges (and, on EchoStore, after one
   local SQLite append), because no database round trip is on the request path.
 - **High throughput** — the database is protected from write storms. Many rapid updates collapse into a single database
   write during sync.
@@ -60,7 +60,7 @@ This pattern trades durability for speed, and the cost is exact:
   becomes the system of record during the sync window.
 - **Eventual consistency** — the database lags behind the cache. Queries directly to the database may return stale data.
 
-Several strategies reduce the risk. EchoCache closes the window not with a cache-side AOF but with the outbox: the intent
+Several strategies reduce the risk. EchoStore closes the window not with a cache-side AOF but with the outbox: the intent
 is recorded in a **SQLite WAL** before the bus hears it (`journal.ex:125-126` — `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`),
 so a bus restart loses the queued obligation but `replay/2` (`journal.ex:103`) re-enqueues every intent not yet covered
 by the applied memory. The bus already deduplicates a re-enqueued job id and newer-wins makes a re-applied version
@@ -81,7 +81,7 @@ Write-behind excels where a small, bounded loss is acceptable in exchange for wr
 - **Counters and metrics** — page views, likes, impressions, where losing a few counts is acceptable.
 - **High-velocity session updates** — frequent session touches where database latency would be prohibitive.
 - **Analytics ingestion** — collecting telemetry at high speed.
-- **Coherence obligations on EchoCache** — a changed risk limit must reach every cache copy; the job lane carries it
+- **Coherence obligations on EchoStore** — a changed risk limit must reach every cache copy; the job lane carries it
   at-least-once, and the journal makes the obligation survive a bus restart.
 
 Never use write-behind for data where loss is unacceptable:
@@ -101,18 +101,18 @@ The background synchronization typically works in four steps, and must handle fa
 4. **Mark keys as synchronized** — clear them from the buffer or dirty-set.
 
 If a database write fails, the key must remain marked for retry — the buffer is the only copy until the source confirms.
-On EchoCache the equivalent is `compact/1` (`journal.ex:106`): an intent is retired only when its name carries an applied
+On EchoStore the equivalent is `compact/1` (`journal.ex:106`): an intent is retired only when its name carries an applied
 version at least as new — coverage, not acknowledgment, so the hot path pays no per-intent completion write. A burst of
 writes to one key collapses to a single source write: the dirty-set holds the key once however often it changed, and the
 flush reads its current value. The third dive walks that coalescing step.
 
-## On EchoCache — the lane that remembers
+## On EchoStore — the lane that remembers
 
-`EchoCache.Journal` is the write-behind path made durable. The bus stays volatile by decision; durability for the job
+`EchoStore.Journal` is the write-behind path made durable. The bus stays volatile by decision; durability for the job
 lane's obligations lives in a per-group SQLite file standing beside the bus — the `intents` outbox (record → enqueue →
 mark) and the `applied` memory (the last version applied per name). The committed measure: `143 us per record-and-mark
 pair` at the writer's edge, a remembered-lane median of `524 us` against the bare lane's 148 — "3.5 times the latency
-buys an outbox, a last word per name, and a replay that survives the bus" (`content/bcs4.4.md`). The 29-byte coherence
+buys an outbox, a last word per name, and a replay that survives the bus" (`bcs.4.md`). The 29-byte coherence
 message — `id <> ":" <> version` (`coherence.ex:35`) — is the cargo the lane carries.
 
 ## References
@@ -130,4 +130,4 @@ message — `id <> ":" <> version` (`coherence.ex:35`) — is the cargo the lane
 - [R1.03.3 · Coalescing writes](/redis-patterns/caching/write-behind/coalescing) — many updates to one key, one flush.
 - [R1.02 · Write-through](/redis-patterns/caching/write-through) — the synchronous, always-fresh contrast.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the fair-lanes job queue the coherence lane rides.
+- [/echomq/cache](/echomq/cache) — the EchoStore write-behind Journal, in depth.

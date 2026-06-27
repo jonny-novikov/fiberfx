@@ -1,131 +1,110 @@
 # The reliable queue — lose no job
 
-> Route: `/redis-patterns/queues/the-reliable-queue` · Dive R3 · 1 · Chapter R3 Reliable Queues.
-> · Grounding: EchoMQ's worker fetch loop. `moveToActive-11.lua` runs `rcall("RPOPLPUSH", waitKey, activeKey)` so a
-> job leaves `emq:{queue}:wait` and lands in `emq:{queue}:active` under a lock in one step — a crash parks it
-> recoverable, never lost. `EchoMQ.Keys.dedup/2` builds `emq:{queue}:de:{id}` so a redelivered job runs its effect
-> once. `moveStalledJobsToWait-8.lua` returns a job whose worker died (its lock expired) to `wait` for another worker.
-> All real in `echo/apps/echomq`.
+> Route: `/redis-patterns/queues/the-reliable-queue` · Dive R3·1 · Chapter R3 Reliable Queues · BCS contract-sheet.
+> Grounding: the real **EchoMQ** leased state machine in `echo/apps/echo_mq`. `EchoMQ.Jobs.claim/3` pops the oldest
+> pending `JOB` with `ZPOPMIN`, mints a lease from the server `TIME`, and `HINCRBY`s the row's `attempts` fencing
+> token — a crash leaves the job leased in `emq:{q}:active`, recoverable. The branded `JOB` id is the idempotency
+> key. `EchoMQ.Stalled.check/3` (a count-thresholded sweep) and `EchoMQ.Jobs.reap/2` return a job whose lease
+> expired by the server clock. Doors: `/echomq/queue`.
 
-A reliable queue is one that loses no job. The naive form — pop a job, process it, done — loses a job the instant the
-worker dies between the pop and the finish: the job is gone from Redis and was never completed. Three guarantees turn
-that fragile loop into a reliable one, and they build in order: move the job *into an in-flight list* atomically so a
-crash leaves it recoverable; accept that redelivery means **at-least-once**, so the consumer must be idempotent; and
-reclaim a job whose worker died back to `wait` for another worker. EchoMQ's real worker path is each of the three.
+A reliable queue loses no job. The naive loop — claim a job, process it, done — drops a job the instant a worker
+dies between the claim and the finish. Three guarantees build a queue that survives a crash, and they build in
+order: claim a job into a recoverable in-flight state so a worker that dies leaves it reclaimable, not lost; accept
+that redelivery means at-least-once, so the consumer must be idempotent; and reclaim a job whose worker died — its
+lease expired — back to pending. Each guarantee is EchoMQ's real worker path.
 
-## The in-flight move
+## The recoverable claim
 
-`RPOP` and process is the leak. The job leaves the queue the moment it is popped, before any work has happened; if the
-worker crashes mid-job — a deploy, an OOM kill, a power loss — the job is neither in Redis nor finished. It is lost,
-silently, with nothing to recover it from.
+A pop-and-process loop is the leak. If a job leaves the queue the moment it is taken — before any work has happened —
+and the worker then crashes (a deploy, an OOM kill, a power loss), the job is neither in Valkey nor finished. It is
+lost, with nothing to recover it from.
 
-The fix is to never let a job leave Redis until it is done. Instead of popping the job out, move it *into a second
-list* — an in-flight list — in one atomic step. `RPOPLPUSH source dest` (and its modern successor `LMOVE source dest
-RIGHT LEFT`) pops from one list and pushes to another as a single command: the job is in exactly one of the two lists
-at every instant, never in neither. A job parked in the in-flight list whose worker has died is still *there* — it can
-be found and returned for redelivery. The job is not lost; it is waiting to be reclaimed.
+The fix is to never let a job leave a recoverable place until it is done. EchoMQ does not pop a job out: it **claims**
+it from the pending sorted set into the active set under a **lease**. `EchoMQ.Jobs.claim/3` runs one inline Lua
+script: `ZPOPMIN emq:{q}:pending` takes the oldest id; `HINCRBY` bumps the row's `attempts`; `HSET` marks the row
+`active`; and `ZADD emq:{q}:active <now + lease_ms> <id>` parks the id in the active set scored by its lease
+deadline, where `now` is read from the server's `TIME`. The job is in exactly one set at every instant. A worker that
+dies leaves its job in the active set with a lease that will expire — it can be found and returned.
 
+```lua
+-- @claim (inline EchoMQ.Script.new/2) — the leased, recoverable claim
+local popped = redis.call('ZPOPMIN', KEYS[1])   -- KEYS[1] = emq:{q}:pending
+if #popped == 0 then return {} end
+local id = popped[1]
+local jk = ARGV[1] .. id                          -- the row key
+local att = redis.call('HINCRBY', jk, 'attempts', 1)   -- the fencing token
+redis.call('HSET', jk, 'state', 'active')
+local t = redis.call('TIME')
+local now = t[1] * 1000 + math.floor(t[2] / 1000)
+redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), id)  -- KEYS[2] = emq:{q}:active, lease deadline
+return {id, redis.call('HGET', jk, 'payload'), att}
 ```
-# the leak: a window where the job is in neither list
-job = RPOP queue            # job is now out of Redis...
-process(job)                # ...if the worker dies HERE, the job is gone
 
-# the fix: the job is always in exactly one list
-job = RPOPLPUSH queue processing   # atomic: leaves `queue`, lands in `processing`
-process(job)                       # a crash here leaves the job in `processing`, recoverable
-LREM processing 1 job              # remove only after the work is truly done
-```
-
-`RPOPLPUSH` is the original move command; `LMOVE` (Redis 6.2+) generalises it with explicit directions and is the
-recommended form for new code. Either way the guarantee is the same: there is no instant at which the job exists
-nowhere.
+The lease is the recovery contract: hold a claim too long and it expires, and another worker can take the job. There
+is no instant at which the job exists nowhere.
 
 ## At-least-once and idempotency
 
-The in-flight move makes redelivery *possible* — that is the whole point. But it also makes redelivery *inevitable* in
-one case: a worker that finishes the work, then crashes before it can remove the job from the in-flight list. On
-recovery the job is still in-flight, so it is redelivered and the work runs again. The same is true of any reclaim
-path: a job whose worker stalled is handed to a new worker, and the old worker may yet be alive and slow.
+The recoverable claim makes redelivery possible — that is the whole point. It also makes redelivery inevitable in one
+case: a worker that finishes the work, then crashes before it completes the job. On recovery the lease has expired, so
+the job is reclaimed and the work runs again.
 
-This is the honest cost of never losing a job. **Exactly-once delivery is a lie** — you cannot both guarantee a job is
-never lost *and* guarantee it is never delivered twice, because the acknowledgement itself can be lost. What a reliable
-queue actually offers is **at-least-once** delivery: a job is delivered one or more times, never zero. The
-responsibility moves to the consumer, which must be **idempotent** — running the same job twice must produce the same
-effect as running it once.
+This is the honest cost of never losing a job. **Exactly-once delivery is a lie** — you cannot both guarantee a job
+is never lost and guarantee it is never delivered twice, because the completion itself can be lost. What a reliable
+queue offers is **at-least-once**: a job is delivered one or more times, never zero. The responsibility moves to the
+consumer, which must be **idempotent** — running the same job twice must produce the same effect as running it once.
 
-The discipline is to make the *effect* exactly-once even though the *delivery* is at-least-once. The standard move is a
-dedup marker keyed by a stable job id: before the effect runs, claim the marker; if it already exists, the effect has
-already happened, so skip it.
-
-```
-# at-least-once delivery + an idempotent effect = exactly-once effect
-if SET dedup:{job_id} 1 NX:          # claim the marker; NX = only if absent
-    apply_effect(job)                # first delivery: charge the card once
-else:
-    skip()                           # a redelivery: the marker is already set, do nothing
-```
-
-A non-idempotent consumer double-charges on every redelivery. An idempotent one charges once, no matter how many times
-the job arrives. The marker is what makes the difference: the second delivery sees it and skips the effect.
+The discipline is to make the *effect* exactly-once even though the *delivery* is at-least-once. The stable key for
+that is the job's identity: every EchoMQ job is a branded `JOB` id, gated at the key builder
+(`EchoMQ.Keyspace.job_key/2`). Key the effect on that id — a row keyed by the `JOB` id, an upsert, a charge recorded
+against it — and a redelivery is a no-op. EchoMQ also fences completion itself: `EchoMQ.Jobs.complete/5` carries the
+`attempts` token the claim minted, and a completion whose token no longer matches (because the lease was reaped and
+re-claimed) is refused. A stale worker cannot complete a job another worker now holds.
 
 ## Stalled recovery
 
-A job in the in-flight list whose worker has died must come back. The signal that a worker died is a **lock that
-expired**: each in-flight job holds a lock with a TTL, and a healthy worker renews it on a heartbeat. When the worker
-crashes, the heartbeat stops, the lock expires, and the job is now stuck in-flight with no live worker.
+A job in the active set whose worker has died must come back. The death signal is a **lease that expired**: the
+active set is scored by each job's lease deadline, so any member whose score is in the past is held by no live
+worker. `EchoMQ.Jobs.reap/2` is the recovery: one inline Lua sweep over `emq:{q}:active` for members scored
+`<= now` (server `TIME`), each `ZADD`ed back to `emq:{q}:pending` and re-marked `pending`. The job re-enters the
+normal pickup path and is delivered again — at-least-once in action.
 
-A separate recovery sweep finds these jobs and returns them to `wait` for another worker to pick up. It checks the
-in-flight list, and for each job whose lock has expired, moves it back to the waiting list. The job re-enters the
-normal pickup path and is delivered again — at-least-once in action — to a worker that can finish it. A job is only
-truly lost if both the recovery sweep and every worker fail at once, which is the failure the lock TTL plus the sweep
-are designed to bound.
+The sweep must itself be careful. Done as two steps — read the expired set, then move each member — two recovery
+processes can both see the same stalled job and both move it. EchoMQ runs detect-and-move as **one Lua script** over
+the active and pending sets, so each stalled member is reclaimed once per sweep. A non-atomic check-then-move is the
+cautionary contrast, correct only until two sweeps overlap.
 
-The recovery sweep must itself be careful. If it runs the check and the move as two separate steps, two recovery
-processes can both see the same stalled job and both move it, redelivering it twice over. The atomic form runs the
-detect-and-move as one step — one Lua script over the in-flight list, the lock, and the waiting list — so each stalled
-job is reclaimed exactly once per sweep. The non-atomic form, where the check and the move are separate round trips, is
-the cautionary contrast: correct only until two sweeps overlap.
+Above the bare reaper sits `EchoMQ.Stalled.check/3`, a count-thresholded sweep: each pass increments a per-job
+`stalled` field, recovers a job below the `:max_stalled` threshold, and dead-letters one at or above it — so a job
+that repeatedly stalls is not recovered forever.
 
-## The pattern, applied
+## In EchoMQ — the worker path that loses no job
 
-EchoMQ's worker fetch loop is all three guarantees in real code, in `echo/apps/echomq`.
-
-The in-flight move is `moveToActive-11.lua`: its body runs `rcall("RPOPLPUSH", waitKey, activeKey)`, where `waitKey`
-is `emq:{queue}:wait` and `activeKey` is `emq:{queue}:active` (`EchoMQ.Keys.wait/1` and `EchoMQ.Keys.active/1`). The
-job leaves `wait` and lands in `active` under a lock in one atomic script — a crash leaves it in `active`, recoverable,
-never lost.
-
-At-least-once with an idempotent effect is the dedup marker `EchoMQ.Keys.dedup/2`, which builds
-`emq:{queue}:de:{id}` (`"#{base(ctx)}:de:#{dedup_id}"`). A job carrying a deduplication id is dropped if the marker
-already exists, so the effect runs once across redeliveries.
-
-Stalled recovery is `moveStalledJobsToWait-8.lua`: it operates over the `stalled`, `wait`, and `active` keys, and for
-each job in `active` whose lock has expired it moves the job back to `wait` for another worker. The Go port's
-non-atomic stalled path — a separate check followed by a separate move — is the cautionary contrast to this atomic
-form, not the recommended one.
-
-The full worker fetch loop — the heartbeat manager that renews the lock, the stalled-check coordination across a whole
-worker pool, the include graph of the eleven-key `moveToActive`, and the polyglot concurrency models — is the
-dedicated EchoMQ course, which teaches that protocol in depth. This dive teaches the reliable-queue pattern; that
-course teaches the engine that runs it.
+EchoMQ's worker loop is all three guarantees in real code, in `echo/apps/echo_mq`. The recoverable claim is
+`EchoMQ.Jobs.claim/3` — `ZPOPMIN` from `emq:{q}:pending` into `emq:{q}:active` under a server-clock lease. The
+idempotency key is the branded `JOB` id, fenced by the `attempts` token on `EchoMQ.Jobs.complete/5`. Stalled
+recovery is `EchoMQ.Jobs.reap/2` and the count-thresholded `EchoMQ.Stalled.check/3`. The naive pop-and-process loses
+a job on a crash; the leased claim, the id-keyed idempotent effect, and the reap sweep are the three guarantees that
+make the queue lose none.
 
 ## References
 
 ### Sources
-- [Redis — RPOPLPUSH](https://redis.io/commands/rpoplpush/) — the original atomic move that parks a job in the
-  in-flight list, the heart of `moveToActive-11.lua`.
-- [Redis — LMOVE](https://redis.io/commands/lmove/) — the modern successor (Redis 6.2+), with explicit `RIGHT`/`LEFT`
-  directions, recommended for new code.
-- [Redis — EVAL / scripting](https://redis.io/docs/latest/develop/interact/programmability/eval-intro/) — how the
-  multi-key reliable move and the stalled sweep run as one atomic Lua script.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the wait/active/stalled worker path EchoMQ ports, where "the Lua
-  scripts are the protocol."
+
+- [Valkey — ZPOPMIN](https://valkey.io/commands/zpopmin/) — the pop that claims the oldest pending job from the
+  score-0 mint-ordered set, the heart of the claim script.
+- [Valkey — HINCRBY](https://valkey.io/commands/hincrby/) — increments the row's `attempts`, the lease fencing token
+  that makes a stale completion a no-op.
+- [Valkey — TIME](https://valkey.io/commands/time/) — the server clock the lease deadline and reap both read, never
+  the caller's.
+- [Redis — Scripting with Lua](https://redis.io/docs/latest/develop/interact/programmability/eval-intro/) — how the
+  multi-key claim and the reap sweep each run as one atomic script.
 
 ### Related in this course
+
 - [R3 · Reliable Queues](/redis-patterns/queues) — the chapter: the whole reliable-queue family.
-- [R3 · States as locations](/redis-patterns/queues/states-as-locations) — the next dive: each job state is a Redis
-  list it lives in, and the move between them is the state transition.
+- [R3 · States as locations](/redis-patterns/queues/states-as-locations) — the next dive: each state is an
+  `emq:{q}:` location, and the move between them is one atomic Lua transition.
 - [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the atomic move the reliable queue is built
   on: read-decide-write in one indivisible step.
-- [R0.2 · Redis under Portal](/redis-patterns/overview/redis-under-portal) — where EchoMQ sits in Portal's reserved
-  Redis tier.
+- [/echomq/queue](/echomq/queue) — the EchoMQ Queue pillar: the leased state machine in depth.

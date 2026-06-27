@@ -1,8 +1,8 @@
 # R4.03.1 · Packing two keys in one score
 
-> A priority queue needs two orderings at once: by tier, then by arrival within a tier. EchoMQ packs both into one number — `priority × 0x100000000 + counter` — putting the tier in the high 32 bits and the arrival counter in the low 32. One score, two fields, one sorted set.
+> A priority queue needs two orderings at once: by tier, then by arrival within a tier. The composite-score pattern packs both into one number — `priority × 0x100000000 + counter` — putting the tier in the high 32 bits and the arrival counter in the low 32. One score, two fields, one sorted set.
 
-The whole pattern rests on one decision: what number goes in the score. A delayed queue puts the fire-time there. A priority queue puts a **composite** there — a number whose high bits carry the priority tier and whose low bits carry the arrival order. This dive takes that number apart.
+The whole pattern rests on one decision: what number goes in the score. A delayed queue puts the fire-time there. A priority queue puts a **composite** there — a number whose high bits carry the priority tier and whose low bits carry the arrival order. This dive takes that number apart, then shows the different answer the real EchoMQ bus chose.
 
 ## The problem: two orderings, one score
 
@@ -12,22 +12,19 @@ The move is positional. Reserve the high bits of the score for the tier and the 
 
 ## The formula
 
-EchoMQ computes the score with `getPriorityScore`, an included Lua function whose canonical home is `addPrioritizedJob-9.lua`:
-
-```lua
--- getPriorityScore.lua (included by addPrioritizedJob-9) — real
-local function getPriorityScore(priority, priorityCounterKey)
-  local prioCounter = rcall("INCR", priorityCounterKey)
-  return priority * 0x100000000 + prioCounter % 0x100000000
-end
-```
-
-`0x100000000` is `2^32` — `4294967296`. Multiplying the priority by it shifts the tier left thirty-two binary places, leaving the low thirty-two bits at zero. The arrival counter, taken `% 2^32`, then fills those low bits. The result is one number whose top half is the tier and whose bottom half is the position within the tier.
+The composite score is computed positionally:
 
 ```
-priority × 0x100000000  +  (INCR pc) % 0x100000000
-└──── high 32 bits ────┘    └──── low 32 bits ────┘
-        the tier                the arrival counter
+priority × 0x100000000  +  counter
+└──── high 32 bits ────┘    └─ low 32 ─┘
+        the tier             the arrival order
+```
+
+`0x100000000` is `2^32` — `4294967296`. Multiplying the priority by it shifts the tier left thirty-two binary places, leaving the low thirty-two bits at zero. The arrival counter — an atomic `INCR` on a per-queue counter key, taken at the moment the job is added — then fills those low bits. The result is one number whose top half is the tier and whose bottom half is the position within the tier.
+
+```
+ZADD scored:jobs 4294967297 "job-A"   # priority 1, counter 1 → 1·2^32 + 1
+ZADD scored:jobs 8589934594 "job-B"   # priority 2, counter 2 → 2·2^32 + 2
 ```
 
 One IEEE double carries the whole thing exactly. A double holds 53 bits of integer precision; a small priority shifted into the high 32 bits plus a counter in the low 32 stays well under that ceiling, so the score is exact and the ordering never rounds.
@@ -42,11 +39,25 @@ The interactive below sets a priority and a counter on two sliders, computes the
 
 The formula makes a higher-precedence job a **smaller** number: priority 1 produces a smaller high-bit field than priority 2, so its composite score is smaller. The consume command is `ZPOPMIN`, which returns the smallest score first. The two compose into the convention a queue user sees: **a lower priority number means higher precedence.** Priority 1 beats priority 2 because 1 makes the smaller score and `ZPOPMIN` pops the smallest.
 
-## In EchoMQ
+## In EchoMQ — the number moves to the lane
 
-The prioritized set is `EchoMQ.Keys.prioritized/1` → `emq:{queue}:prioritized`. The arrival-counter key is `EchoMQ.Keys.pc/1` → `emq:{queue}:pc`. The public entry `EchoMQ.Scripts.add_prioritized_job/4` runs `addPrioritizedJob-9.lua`, passing `Keys.pc(ctx)` as `KEYS[9]`; the script calls `getPriorityScore` and then `rcall("ZADD", prioritizedKey, score, jobId)`. The same `getPriorityScore` is reused verbatim across the priority-aware scripts, so every path that scores a prioritized job packs the tier and counter the same way.
+The real EchoMQ bus does **not** pack precedence into a job's score. `EchoMQ.Lanes` says so in the source: *"there is no numeric per-job priority (retired by design); 'served more' is a property of the identity, not the work."* EchoMQ keeps the two orderings the composite score combines, but separates them across two structures instead of two bit-ranges of one number.
 
-**The bridge.** A textbook composite key packs two fields into one ordering key — the source packs them into the member and reads with `ZRANGEBYLEX`. EchoMQ packs them into the **score**: the tier in the high 32 bits, the arrival counter in the low 32, so one numeric score orders by tier first and arrival second, read with one `ZPOPMIN`.
+The arrival order — the low bits in the textbook — is the **branded `JOB` id** itself. A lane set is written at score 0 (`ZADD <lane> 0 <job-id>`), so the set orders purely by member, and the typed, time-ordered branded id makes that member order the **mint order**. The high-bit tier becomes the lane's **weight**: `EchoMQ.Lanes.weight/4` writes a `gweight` hash (group → weight), and `EchoMQ.Lanes.wclaim/3` serves a higher-weight lane a larger share per rotation. The bit-packing trick is unnecessary because the precedence never lives in the job's number at all.
+
+```elixir
+# EchoMQ.Lanes.weight/4 (lanes.ex) — the "high bits" become a lane weight, verbatim
+def weight(conn, queue, group, w) when is_integer(w) and w >= 1 do
+  _ = lane_key!(queue, group)
+  keys = [Keyspace.queue_key(queue, "gweight")]
+  case Connector.eval(conn, @gweight, keys, [group, Integer.to_string(w)]) do
+    {:ok, 1} -> :ok
+    other -> other
+  end
+end
+```
+
+**The bridge.** A textbook composite key packs two fields into one ordering key — the tier in the high 32 bits, the arrival counter in the low 32, read with one `ZPOPMIN`. EchoMQ splits the two apart: arrival order is the branded id's mint order (a score-0 set), and the tier becomes the lane's `gweight`. The precedence moves from the bits of a number onto the identity of a lane.
 
 ## References
 
@@ -55,13 +66,13 @@ The prioritized set is `EchoMQ.Keys.prioritized/1` → `emq:{queue}:prioritized`
 - [Redis — *ZADD*](https://redis.io/commands/zadd/) — add a member with its score; the write that scores a prioritized job by its composite number.
 - [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — score-then-member ordering, the axis the composite score occupies.
 - [Redis — *INCR*](https://redis.io/commands/incr/) — the atomic increment that produces the arrival counter folded into the low bits.
-- [BullMQ — *the queue protocol*](https://bullmq.io/) — the prioritized-jobs protocol EchoMQ ports, where the Lua scripts are the protocol.
+- [Valkey — *Sorted sets*](https://valkey.io/topics/sorted-sets/) — the engine's own reference for the score-then-member order behind both encodings.
 
 ### Related in this course
 
 - [R4.03 · Priority with composite scores](/redis-patterns/time-delay-priority/priority-scores) — the module hub.
-- [R4.03.2 · FIFO within a tier](/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier) — the next dive: the counter that breaks the within-tier tie.
+- [R4.03.2 · FIFO within a tier](/redis-patterns/time-delay-priority/priority-scores/fifo-within-tier) — the next dive: the counter, and EchoMQ's score-0 mint order.
 - [R4.03.3 · ZPOPMIN](/redis-patterns/time-delay-priority/priority-scores/zpopmin) — the smallest-score pop that reads this score.
-- [R4.01.1 · The score is the fire-time](/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time) — the sibling score, shifted twelve bits for time.
+- [R4.01.1 · The score is the fire-time](/redis-patterns/time-delay-priority/delayed-queue/score-is-fire-time) — the sibling score, the run-at millisecond for time.
 - [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the chapter.
-- [E4 · Groups](/echomq/groups) — the dedicated EchoMQ course: intra-group priority in depth.
+- [/echomq · the Queue pillar](/echomq/queue) — the dedicated EchoMQ course: the lane ring and fair-share weight in depth.

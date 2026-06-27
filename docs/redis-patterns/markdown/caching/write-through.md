@@ -1,7 +1,7 @@
 # Write-through
 
 > Route: `/redis-patterns/caching/write-through` · Module R1.02 · Source: `content/fundamental/write-through.md.txt`
-> · Grounding: `EchoCache.Table.put/3,4` (`echo/apps/echo_cache/lib/echo_cache/table.ex`) — the writer path that
+> · Grounding: `EchoStore.Table.put/3,4` (`echo/apps/echo_store/lib/echo_store/table.ex`) — the writer path that
 > sets both layers under one TTL, framed with the write's mint-time version; the engine is Valkey.
 
 Maintain cache-database consistency by synchronously writing to both the cache and the database before returning
@@ -38,10 +38,10 @@ UPDATE instruments ... WHERE id = ...                               # the corres
 `EXPIRE` after `SET` leaves an immortal key if the process dies between the two. The cache half of a write-through
 write is one command; the dual-write dive takes that command apart.
 
-**On EchoCache.** `EchoCache.Table.put/3` is the writer path: it sets both layers under the declared TTL, framed
+**On EchoStore.** `EchoStore.Table.put/3` is the writer path: it sets both layers under the declared TTL, framed
 with the write's mint-time version. `put/3` mints the version now, of the table's kind — the write is its own event;
 `put/4` carries the writer's own 14-byte version. The key is the cache's own form `ecc:{<table>}:<id>`
-(`EchoCache.Keyspace.key/2`), with the table name hash-tagged so every key of one cache lands in one cluster slot.
+(`EchoStore.Keyspace.key/2`), with the table name hash-tagged so every key of one cache lands in one cluster slot.
 The functional-Elixir and OTP craft behind the echo data layer is taught in the [`/elixir`](/elixir) course; this
 module shows the Valkey side of the write.
 
@@ -50,7 +50,7 @@ module shows the Valkey side of the write.
 - **Strong consistency** — the cache always reflects the latest data. There is no window where the cache holds stale
   information, because the cache write is on the same path as the database write.
 - **Fast reads after writes** — data written is immediately available in the cache for the next read, which benefits
-  write-then-read patterns. The L1 ETS hit it serves is `40 times cheaper` than the L2 round trip (`bcs4.1`).
+  write-then-read patterns. The L1 ETS hit it serves is `40 times cheaper` than the L2 round trip (`bcs.4`).
 - **Simpler cache invalidation** — because writes go through the cache, there is no need to explicitly invalidate
   keys after a database update.
 
@@ -90,14 +90,14 @@ wrong answer.
 
 A write-heavy, stale-tolerant workload reaches for write-behind instead — the next module.
 
-## Redis Pattern Applied — on EchoCache's write path
+## Redis Pattern Applied — on EchoStore's write path
 
 Write the cache and the source in one synchronous step, so a read after a write is always fresh — at the cost of a
-second write on every change. On EchoCache, `EchoCache.Table.put` runs `SET … PX` to the L2 Valkey row then
+second write on every change. On EchoStore, `EchoStore.Table.put` runs `SET … PX` to the L2 Valkey row then
 `insert` into the L1 ETS table, both inside one synchronous `GenServer.call`; reads are always fresh. The write's
-mint-time branded version frames the value (`version <> value`) so coherence can later compare newer-wins. The bus
-behind the cache's at-least-once coherence lane is the EchoMQ protocol, taught in depth at [`/echomq`](/echomq);
-the EchoCache manuscript is [`/bcs`](/bcs), Part IV.
+mint-time branded version frames the value (`version <> value`) so coherence can later compare newer-wins. The
+near-cache — EchoStore's two-layer write kept coherent by the framed mint-time version — is taught in depth at
+[`/echomq/cache`](/echomq/cache); the EchoStore manuscript is [`/bcs`](/bcs), Part IV.
 
 Three dives take the pattern apart:
 
@@ -112,7 +112,7 @@ Three dives take the pattern apart:
 
 ### Sources
 - [Valkey — SET](https://valkey.io/commands/set) — `SET key value PX <ms>` sets the value and the millisecond TTL atomically; the L2 write-path command.
-- [Valkey — Topics](https://valkey.io/topics/) — the engine EchoCache's L2 layer is written against; the live line is Valkey.
+- [Valkey — Topics](https://valkey.io/topics/) — the engine EchoStore's L2 layer is written against; the live line is Valkey.
 - [Redis — SET](https://redis.io/commands/set) — the string write-path command and its `EX`/`PX` expiry options.
 - [Redis — Documentation](https://redis.io/docs/) — the data structures and commands the cache write is built from.
 
@@ -121,6 +121,6 @@ Three dives take the pattern apart:
 - [R1.02.2 · The consistency guarantee](/redis-patterns/caching/write-through/consistency) — read-after-write freshness.
 - [R1.02.3 · The latency cost](/redis-patterns/caching/write-through/latency-cost) — the price of the guarantee.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the bus behind the at-least-once coherence lane, rung by rung.
-- [/bcs](/bcs) — the EchoCache manuscript, Part IV.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — the EchoStore dual-layer write kept coherent, in depth.
+- [/bcs](/bcs) — the EchoStore manuscript, Part IV.

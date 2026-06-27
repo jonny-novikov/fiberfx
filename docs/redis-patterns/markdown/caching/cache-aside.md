@@ -1,7 +1,7 @@
 # Cache-aside (lazy loading)
 
 > Route: `/redis-patterns/caching/cache-aside` · Module R1.01 · Source: `content/fundamental/cache-aside.md.txt`
-> · Grounding: EchoCache's declared near-cache — `EchoCache.Table` (`echo/apps/echo_cache`), L1 ETS over L2 Valkey.
+> · Grounding: EchoStore's declared near-cache — `EchoStore.Table` (`echo/apps/echo_store`), L1 ETS over L2 Valkey.
 
 Use cache-aside for read-heavy workloads: on a cache miss, fetch from the database and populate the cache; on a
 write, invalidate or update the cache explicitly. The application treats the cache as an auxiliary data store,
@@ -34,8 +34,8 @@ DEL ecc:{quotes}:AST0NuE6bV7FoH                  # invalidate on a write
 Set the value and the TTL in one command. A separate `EXPIRE` after `SET` leaves an immortal key if the process dies
 between the two. The `PX 300` caps the lifetime of any value the invalidation path misses.
 
-**On EchoCache.** `EchoCache.Table` is the declared near-cache: an L1 of ETS in front of the L2 Valkey the systems
-already share. The key is the cache's own keyspace — `ecc:{<table>}:<id>` (`EchoCache.Keyspace.key/2`), the table
+**On EchoStore.** `EchoStore.Table` is the declared near-cache: an L1 of ETS in front of the L2 Valkey the systems
+already share. The key is the cache's own keyspace — `ecc:{<table>}:<id>` (`EchoStore.Keyspace.key/2`), the table
 name hash-tagged so every key of one cache lands in one cluster slot. `Table.fetch/3` is the whole read surface:
 it returns `{:ok, value, source}` with source `:hit | :l2 | :fill` — an L1 hit in the caller's own process, an L2
 Valkey hit, or a loader fill — and the moduledoc states the pattern outright: *cache-aside at ETS speed*. The
@@ -62,7 +62,7 @@ The standard mitigation is **cache invalidation on write**: when the application
 deletes the cached key with `DEL`. The next read misses and fetches fresh data. Deleting is simpler and safer than
 updating the cache in place, which risks a race — two set-on-write writers can interleave and leave the older value
 in place indefinitely, whereas delete-on-write is wrong for at most one TTL. The TTL is therefore a correctness
-bound, not a memory knob. In EchoCache the unconditional admin verb is `Table.invalidate/3` — a `DEL` on L2 plus an
+bound, not a memory knob. In EchoStore the unconditional admin verb is `Table.invalidate/3` — a `DEL` on L2 plus an
 `:ets.delete` on L1, dropping one name from both layers.
 
 ## When to Use Cache-Aside
@@ -78,15 +78,15 @@ bound, not a memory knob. In EchoCache the unconditional admin verb is `Table.in
 - Write-then-immediately-read patterns are common (the read may hit a stale cache).
 - The cost of a cache miss is extremely high.
 
-## The bridge — cache-aside → EchoCache
+## The bridge — cache-aside → EchoStore
 
 The pattern: the application owns the cache — read Valkey first, fill on a miss with an expiry, invalidate on a
 write. The cache is a disposable copy of a source of record, and its lag is bounded, not zero.
 
-Its EchoCache application: `Table.fetch` returns `:hit | :l2 | :fill` — an L1 ETS hit, an L2 Valkey hit, or a loader
+Its EchoStore application: `Table.fetch` returns `:hit | :l2 | :fill` — an L1 ETS hit, an L2 Valkey hit, or a loader
 fill — and `invalidate` drops both layers. The measured floor is the chapter's title made a number: a `762 ns` L1
 hit against a `31 us` L2 `GET` on the same wire — the L1 hit is **40 times cheaper** than the round trip it
-replaces (`bcs4.1`).
+replaces (`bcs.4`).
 
 **The application door.** `SET key value PX <ms>` sets value and TTL atomically (valkey.io/commands/set); the
 `ecc:{<table>}:<id>` hash-tag key lands one cache in one cluster slot. **A note on Valkey:** `SET … PX` writes the
@@ -106,5 +106,5 @@ two (valkey.io/commands/set).
 - [R1.01.2 · Explicit invalidation](/redis-patterns/caching/cache-aside/invalidation) — DEL on write.
 - [R1.01.3 · TTL & staleness](/redis-patterns/caching/cache-aside/ttl-staleness) — the safety net.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the EchoMQ protocol the coherence job lane rides.
+- [/echomq/cache](/echomq/cache) — the EchoStore two-layer cache-aside near-cache, in depth.
 - [/elixir · State](/elixir/pragmatic/state) — the functional-Elixir craft behind the echo data layer.

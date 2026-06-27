@@ -66,13 +66,13 @@ What keeps the core immutable is the protocol's own machinery, in three parts.
 
 **The fence.** At every connect the connector reads `{emq}:version`, claims it on a fresh keyspace, verifies
 the read-back, and refuses any other value with a typed error — `{:error, {:version_fence, got}}` at boot, a
-stop the supervisor records on reconnect. The committed line reads: `GET {emq}:version answers echomq:2.0.0
+stop the supervisor records on reconnect. The committed line reads: `GET {emq}:version answers echomq:3.0.0
 through the fenced connector itself` — the read travels through a connection that could not exist had the
 fence not held.
 
 **The change rules.** The wire version is recorded monotonically and changes only under written rules: additive
 registration — a new key type, a new reserve member with its probe, a new wire class with its probe — is a
-**minor**; a wire break or a field repurpose is a **major**. The break happened exactly once. EchoMQ broke from its v1 line, now frozen at `1.3.0`.
+**minor**; a wire break or a field repurpose is a **major**. A break is the rare event the rules exist to make deliberate; additive registration is the everyday path.
 
 **The wire classes.** Every refusal a bundle script issues leads with its class word — a closed registry of
 two: `EMQKIND` (kind refusal at enqueue) and `EMQSTALE` (fencing-token refusal). A refusal that names its class

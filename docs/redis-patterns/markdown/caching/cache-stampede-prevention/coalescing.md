@@ -2,9 +2,9 @@
 
 > Route: `/redis-patterns/caching/cache-stampede-prevention/coalescing` · Module R1.05 · dive 3 · Source:
 > `content/fundamental/cache-stampede-prevention.md.txt` (the *Handling Waiting Clients* / single-regeneration idea
-> behind both solutions, extended across processes by *Solution 2: Mutex Locking*) · Grounding: EchoCache's
+> behind both solutions, extended across processes by *Solution 2: Mutex Locking*) · Grounding: EchoStore's
 > single-flight `flights` map, the `:coalesced` counter, and the "one fill per herd" moduledoc
-> (`echo/apps/echo_cache/lib/echo_cache/table.ex`).
+> (`echo/apps/echo_store/lib/echo_store/table.ex`).
 
 The first miss starts the rebuild. Every later miss on the same owner attaches to it and waits for the one result —
 one source read serves the whole burst. Request coalescing is the mechanism underneath the lock and X-Fetch.
@@ -37,7 +37,7 @@ in-process table entry.
 # Two layers: coalesce in-process, then the lock across processes.
 # 1. in-process: the first miss starts the rebuild; later misses attach.
 # 2. cross-process: the rebuild contends for the shared lock —
-SET lock:instruments:AAPL "token" NX PX 5000
+SET lock:set:EMS0ODMggk1d5N "token" NX PX 5000
 # one instance wins and reads the source; the rest serve stale or poll.
 ```
 
@@ -46,9 +46,9 @@ on the lock; the lock across instances collapses those attempts to one rebuild f
 fleet-wide flood — every instance, every concurrent request — down to a single source read. No protection makes one
 source read per miss; in-process coalescing makes one per instance; the lock makes exactly one for the whole fleet.
 
-## On EchoCache — the flights map
+## On EchoStore — the flights map
 
-This is EchoCache's read path, exactly. A read first tries L1 caller-side; on a miss it calls the owner with
+This is EchoStore's read path, exactly. A read first tries L1 caller-side; on a miss it calls the owner with
 `{:fill, id}`. The owner keeps a `flights` map keyed by id. The first miss launches a flight; a concurrent miss on
 the same id finds the entry, appends its caller to the waiter list, and bumps the `:coalesced` counter — it does not
 start a second load:
@@ -90,5 +90,5 @@ the waiter list, `spawn_monitor` — is the [`/elixir` course](/elixir/pragmatic
 - [R1.05.1 · Lock-on-miss](/redis-patterns/caching/cache-stampede-prevention/lock-on-miss) — the lock that carries the merge across processes.
 - [R1.05.2 · Probabilistic early refresh](/redis-patterns/caching/cache-stampede-prevention/early-refresh) — the lockless alternative.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [R0 · Overview](/redis-patterns/overview) — Valkey under the Exchange Platform.
-- [/echomq](/echomq) — the EchoMQ protocol behind the cache's coherence lane.
+- [R0 · Overview](/redis-patterns/overview) — Valkey under codemojex.
+- [/echomq/cache](/echomq/cache) — EchoStore single-flight coalesces the fills, in depth.

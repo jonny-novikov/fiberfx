@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/write-through/dual-write` · Module R1.02 · dive 1 · Source:
 > `content/fundamental/write-through.md.txt` (the *How It Works* sequence + *Redis Commands Used*) · Grounding:
-> `EchoCache.Table` `handle_call({:put, …})` (`echo/apps/echo_cache/lib/echo_cache/table.ex`) — `SET … PX` to L2
+> `EchoStore.Table` `handle_call({:put, …})` (`echo/apps/echo_store/lib/echo_store/table.ex`) — `SET … PX` to L2
 > then `insert` into L1, both in one synchronous call.
 
 One write reaches both layers. The L1 ETS cache and the L2 Valkey row update together, and the call does not return
@@ -11,7 +11,7 @@ dual write, with the one Valkey command its cache side runs.
 
 ## Two writes, bound into one
 
-The write-through write is a single logical step made of two store writes. `EchoCache.Table.put` receives a changed
+The write-through write is a single logical step made of two store writes. `EchoStore.Table.put` receives a changed
 value, sets the L2 Valkey row with `SET … PX`, writes the L1 ETS table with `insert`, and returns once both have
 landed. The two layers are never out of step at the moment the write returns, because the write does not return
 until both are done. In the as-built code the order is L2 first, then L1: the `handle_call({:put, id, value,
@@ -40,25 +40,25 @@ the write sets value and expiry atomically. The command is the cache side of the
 on the same path.
 
 ```
-SET ecc:{instruments}:AST0NgWEfAEJfs "<version><value>" PX 300000   # value + 5-minute TTL, atomically
-SET ecc:{instruments}:AST0NgWEfAEJfs "<version><value>" PX 3600000  # value + 1-hour TTL
+SET ecc:{cm_emojisets}:EMS0ODMggk1d5N "<version><value>" PX 300000   # value + 5-minute TTL, atomically
+SET ecc:{cm_emojisets}:EMS0ODMggk1d5N "<version><value>" PX 3600000  # value + 1-hour TTL
 ```
 
-The key is the cache's own form `ecc:{<table>}:<id>` (`EchoCache.Keyspace.key/2`): a fresh prefix beside `emq:`,
+The key is the cache's own form `ecc:{<table>}:<id>` (`EchoStore.Keyspace.key/2`): a fresh prefix beside `emq:`,
 with the table name hash-tagged in braces so every key of one cache lands in one cluster slot. The value is framed
 `version <> value` — a 14-byte branded version prefix in front of the bytes — so a later coherence message can
 compare newer-wins.
 
-## On EchoCache
+## On EchoStore
 
-Take one change: an instrument reference row is updated. `EchoCache.Table.put` sets the new value into the L2 Valkey
+Take one change: an emoji-set row is updated. `EchoStore.Table.put` sets the new value into the L2 Valkey
 row and the L1 ETS table, then returns. A later read serves the cached value and matches the source, because the
 cache was written on the same path. A caller above the table calls `put` and reads `fetch`; it is never exposed to
 the two store writes directly.
 
 ```
-# echo/apps/echo_cache/lib/echo_cache/table.ex — handle_call({:put, id, value, version})
-l2 = Keyspace.key(state.table, id)                     # "ecc:{instruments}:AST0NgWEfAEJfs"
+# echo/apps/echo_store/lib/echo_store/table.ex — handle_call({:put, id, value, version})
+l2 = Keyspace.key(state.table, id)                     # "ecc:{cm_emojisets}:EMS0ODMggk1d5N"
 
 {:ok, "OK"} =
   Connector.command(state.conn, [
@@ -86,4 +86,4 @@ one command writes the cache on the same path as the source.
 - [R1.02.2 · The consistency guarantee](/redis-patterns/caching/write-through/consistency) — the next dive.
 - [R1.02.3 · The latency cost](/redis-patterns/caching/write-through/latency-cost) — the price of the dual write.
 - [R1 · Caching](/redis-patterns/caching) — the chapter.
-- [/echomq](/echomq) — the bus behind the coherence lane the framed version feeds.
+- [/echomq/cache](/echomq/cache) — the EchoStore two-layer write kept coherent, in depth.

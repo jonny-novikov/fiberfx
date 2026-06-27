@@ -45,7 +45,7 @@ The boundary between L2 and L3 is the line between the owned protocol and the ru
 the line is not a pinned commit. It is the **version fence**: at every connect — first boot and every reconnect —
 the connector reads `{emq}:version`, claims it on a fresh keyspace, and refuses to start on any other value
 with a typed error. The committed line from `bcs3.1` reads:
-`GET {emq}:version answers echomq:2.0.0 through the fenced connector itself`.
+`GET {emq}:version answers echomq:3.0.0 through the fenced connector itself`.
 
 ```text
 L4  runtime API     — varies per runtime: EchoMQ.Jobs in Elixir; a Go loop around the same calls
@@ -90,6 +90,6 @@ begin.
 - [R0.3.1 · The four layers](/redis-patterns/overview/patterns-become-protocol/the-four-layers) — the stack, L0 to L4.
 - [R0.3.2 · The immutable core](/redis-patterns/overview/patterns-become-protocol/the-immutable-core) — the owned core and its governance.
 - [R0.3.3 · The door to EchoMQ](/redis-patterns/overview/patterns-become-protocol/the-door-to-echomq) — the contract, and the doors.
-- [R0.2 · Valkey under the Exchange Platform](/redis-patterns/overview/redis-under-portal) — where Valkey sits.
+- [R0.2 · Valkey under codemojex](/redis-patterns/overview/redis-under-game) — where Valkey sits.
 - [R0 · Overview](/redis-patterns/overview) — the chapter.
 - [/echomq](/echomq) — the protocol in depth, rung by rung.

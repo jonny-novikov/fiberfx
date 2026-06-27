@@ -2,7 +2,7 @@
 
 > Route: `/redis-patterns/caching/write-through/latency-cost` · Module R1.02 · dive 3 · Source:
 > `content/fundamental/write-through.md.txt` (the *Disadvantages* + *Handling Partial Failures*) · Grounding:
-> the synchronous `GenServer.call(name, {:put, …}, 10_000)` (`echo/apps/echo_cache/lib/echo_cache/table.ex:101`) —
+> the synchronous `GenServer.call(name, {:put, …}, 10_000)` (`echo/apps/echo_store/lib/echo_store/table.ex:101`) —
 > the caller waits for the L2 `SET` round-trip.
 
 The freshness guarantee is not free: every write pays for the L2 round-trip on the hot path, and either layer can
@@ -12,11 +12,11 @@ failure modes.
 
 ## Every write pays for both layers
 
-`EchoCache.Table.put` is a synchronous `GenServer.call(name, {:put, id, value, version}, 10_000)`: the caller blocks
+`EchoStore.Table.put` is a synchronous `GenServer.call(name, {:put, id, value, version}, 10_000)`: the caller blocks
 until the owner has set the L2 Valkey row and inserted into the L1 ETS table. The L1 insert is cheap — an ETS write
 is sub-microsecond — but the L2 `SET` is a network round-trip, the larger term, and write-through puts it on every
 write. The committed figures size the gap: an L1 hit is `762 ns`, an L2 `GET` is `31 us` — the L1 hit is `40 times
-cheaper` than the round trip (`bcs4.1`). Write-through pays that L2 cost on the write path rather than deferring it.
+cheaper` than the round trip (`bcs.4`). Write-through pays that L2 cost on the write path rather than deferring it.
 
 This is the trade write-behind makes differently. Write-behind writes the L1 cache, records the change locally, and
 returns — so its hot-path latency is the cache write plus a small local record, and the database catches up
@@ -50,16 +50,16 @@ Writing the source first bounds the damage: a source failure never leaves the ca
 failure is reported, not hidden behind a stale value. In the put clause, the strict `{:ok, "OK"} = …` match means a
 non-OK L2 reply fails the call rather than falling through to the L1 insert.
 
-## On EchoCache
+## On EchoStore
 
-On EchoCache's write path, `EchoCache.Table.put` sets the L2 Valkey row, inserts into the L1 ETS table, and returns
-once both are done — all inside one `GenServer.call`. A caller that updates an instrument row waits for the L2
+On EchoStore's write path, `EchoStore.Table.put` sets the L2 Valkey row, inserts into the L1 ETS table, and returns
+once both are done — all inside one `GenServer.call`. A caller that updates an emoji-set row waits for the L2
 round-trip, and reads the fresh value back immediately. If the L2 `SET` does not answer `{:ok, "OK"}`, the match
 fails the call rather than reporting success with a stale cache. The cost — the L2 round-trip on every write — is the
 price of that guarantee.
 
 ```
-# echo/apps/echo_cache/lib/echo_cache/table.ex
+# echo/apps/echo_store/lib/echo_store/table.ex
 def put(name, id, value, <<_::binary-14>> = version) when is_binary(value) do
   # ... gate the kind ...
   GenServer.call(name, {:put, id, value, version}, 10_000)   # synchronous: the caller waits
@@ -71,8 +71,8 @@ insert(state, id, value, version)                                               
 # write latency = L2 SET round-trip + L1 insert   (both on the hot path)
 ```
 
-How the bus carries a deferred write at-least-once — the write-behind alternative — is the EchoMQ protocol, taught in
-depth at [`/echomq`](/echomq). This dive weighs the latency and names the failure modes; it does not repeat the
+How the near-cache defers a write — EchoStore's write path and its write-behind outbox — is taught in
+depth at [`/echomq/cache`](/echomq/cache). This dive weighs the latency and names the failure modes; it does not repeat the
 engine's internals.
 
 Write-through trades write latency and a second point of failure for the consistency guarantee. The write-heavy,
@@ -91,4 +91,4 @@ stale-tolerant alternative is write-behind — the next module.
 - [R1.02.2 · The consistency guarantee](/redis-patterns/caching/write-through/consistency) — the previous dive.
 - [R1.02.1 · The synchronous dual write](/redis-patterns/caching/write-through/dual-write) — the write that costs this latency.
 - [R1 · Caching](/redis-patterns/caching) — the chapter; R1.03 Write-behind is the latency-cheaper alternative.
-- [/echomq](/echomq) — the bus the write-behind alternative defers the database write onto.
+- [/echomq/cache](/echomq/cache) — the EchoStore write path and its deferral, in depth.

@@ -1,101 +1,110 @@
-# R3 · Reliable Queues — wait, active, done, recover
+# R3 · Reliable Queues
 
-> Route: `/redis-patterns/queues` (chapter landing) · Source of structure: the chapter spec
-> `specs/queues/queues.md` + the TOC · Grounding: EchoMQ's worker fetch loop in the iconic Elixir app
-> `echo/apps/echomq` (the Go port `apps/echomq-go` is the labelled contrast). The course's pivot chapter — the heart
-> of the EchoMQ grounding.
+> Route: `/redis-patterns/queues` · Chapter landing (manifest) · BCS contract-sheet identity (redis-red).
+> Grounding: the real **EchoMQ** worker path — the leased state machine in `echo/apps/echo_mq` (`EchoMQ.Jobs`,
+> `EchoMQ.Consumer`, `EchoMQ.Stalled`, `EchoMQ.Lanes`, `EchoMQ.Keyspace`), worked through the **codemojex** consumer
+> (`echo/apps/codemojex`). Engine: Valkey. Doors: `/echomq/queue` (the Queue pillar) + `/echo-persistence` (the
+> durable floor) + `/bcs`.
 
-The pivot of the course: a job is never lost. A reliable queue is not one pattern but a family — a job is moved into
-an in-flight list under a lock, delivered at least once to an idempotent consumer, reclaimed if its worker dies,
-transitioned atomically, and picked up without busy-polling. This is the densest real grounding in the course, drawn
-straight from EchoMQ's worker path. It depends on R2's atomic moves and lock lease.
+A reliable queue loses no job. This is the pivot chapter of the course: with a queue that survives a crash, every
+later chapter is a different surface over the same jobs.
 
 ## Overview
 
-A naive queue is a list: push on one end, pop on the other. It loses jobs. The moment a worker pops a job and then
-crashes — before the work is done, before it is acknowledged — that job is gone from Redis and gone from memory.
-Nothing reclaims it. The reliable-queue family is the set of techniques that close every one of those gaps: where
-the job sits while in flight, how a duplicate delivery is made harmless, how a dead worker's job comes back, how the
-whole lifecycle moves without tearing, and how a worker waits for work without burning CPU.
+A naive queue pops a job off one end and hands it to a worker. The moment that worker crashes — mid-job, before the
+work is acknowledged — the job is gone from Valkey and gone from memory, with nothing to reclaim it. The
+reliable-queue family is the set of techniques that close that gap and the others around it: where a job sits while
+in flight, how a duplicate delivery is made harmless, how a dead worker's job comes back, how the whole lifecycle
+moves without tearing, and how a worker waits for work without burning CPU.
 
-EchoMQ implements every one of these in real code. Its worker fetch loop is the worked example for the whole
-chapter: `moveToActive-11.lua` parks a job in `emq:{queue}:active` with `RPOPLPUSH`; `EchoMQ.Keys.dedup/2` writes
-the `de:{id}` marker that makes a second delivery idempotent; `moveStalledJobsToWait-8.lua` reclaims a job whose lock
-expired; `moveToFinished-14.lua` is the whole lifecycle transition in one EVALSHA; and `EchoMQ.Keys.marker/1` with
-`BZPOPMIN` wakes a blocked worker instead of polling.
+EchoMQ implements every one of these as a **leased state machine** over Valkey, and that worker path is the worked
+example for the chapter. A job is a branded `JOB` id; its row is a Valkey hash at `emq:{q}:job:<id>`; the pending set
+is a score-0 sorted set so byte order is mint order. `EchoMQ.Jobs.claim/3` pops the oldest pending id with
+`ZPOPMIN`, mints a lease on the **server clock** (`TIME`), and increments the row's `attempts` field — the fencing
+token. A crash leaves the job in the active set with an expired lease, and `EchoMQ.Jobs.reap/2` returns it to
+pending. The state is never a place a crash can erase.
 
 ## Why & when
 
-Use the reliable-queue family whenever losing a job is not acceptable and a worker can crash at any instant — which
-is every real background-job system. Each failure mode below has one matching technique:
+Reach for the reliable-queue family whenever losing a job is not acceptable and a worker can crash at any instant —
+which is every real background-job system. Each failure mode below has one matching technique, and the chapter is the
+set of those answers.
 
-- **A worker crashes mid-job** — the job must not vanish when a worker dies → move it into an in-flight list under a
-  lock (`RPOPLPUSH wait→active`, `moveToActive-11.lua`), and reclaim it when the lock expires
-  (`moveStalledJobsToWait-8.lua`).
-- **A job runs twice** — at-least-once delivery means a job can be delivered more than once → make the consumer
-  idempotent and mark completion (`emq:{queue}:de:{id}` via `EchoMQ.Keys.dedup/2`).
-- **A multi-step transition tears** — a job's lifecycle move touches many keys and must be all-or-nothing → run the
-  whole transition as one Lua script (`moveToFinished-14.lua`, one 14-key EVALSHA).
-- **The worker busy-polls the queue** — a worker that loops on the queue burns CPU and adds latency → block on a
-  marker (`emq:{queue}:marker` + `BZPOPMIN`) and let Redis wake it.
+- **A worker crashes mid-job.** The job must not vanish when a worker dies — claim it under a server-clock lease, and
+  reap it back to pending when the lease expires.
+- **A job runs twice.** At-least-once delivery means a job can arrive more than once — make the consumer idempotent
+  and key the effect on the branded `JOB` id.
+- **A multi-step transition tears.** A lifecycle move touches the row, a set, and a counter and must be
+  all-or-nothing — run the whole transition as one inline Lua script.
+- **The worker busy-polls the queue.** A worker that loops on the queue burns CPU and adds latency — park on a wake
+  key and let Valkey wake it.
 
 ## The patterns
 
-Three deep dives carry the chapter's built content; a granular module ladder builds each pattern in depth.
+Six teaching modules, then a workshop. Each module is a hub with three dives, grounded in the real EchoMQ worker
+path.
 
-| Module | Pattern | Grounding |
-| --- | --- | --- |
-| The reliable queue | `reliable-queue` | `RPOPLPUSH wait→active` (`moveToActive-11.lua`) + `de:{id}` idempotency + `moveStalledJobsToWait-8.lua` |
-| States as locations | `atomic-updates` | the lifecycle as one EVALSHA (`moveToFinished-14.lua`); `:marker` + `BZPOPMIN` replaces busy-polling |
-| The road ahead | — | the arc R3→R8 and the door into the living EchoMQ course |
-
-The granular module ladder, in progress: R3.01 processing-list · R3.02 at-least-once · R3.03 stalled-recovery ·
-R3.04 atomic-state-machine · R3.05 blocking-vs-polling · R3.06 workshop — the modules that build each pattern in
-depth.
+- **R3.01 · Processing list** — move a job *into* a recoverable in-flight state; the real mechanism is the leased
+  `EchoMQ.Jobs.claim/3`, not a list pop.
+- **R3.02 · At-least-once** — delivery guarantees and idempotent consumers; the branded `JOB` id is the idempotency
+  key. Why exactly-once is a lie.
+- **R3.03 · Stalled recovery** — reclaim a dead worker's job by lease expiry on the server clock; `EchoMQ.Stalled`
+  the count-thresholded sweep, and the durable floor a repeatedly-stalled job reaches.
+- **R3.04 · Atomic state machine** — the lifecycle as one inline `EchoMQ.Script.new/2` Lua transition; states are
+  `emq:{q}:` locations, read-decide-write in one EVALSHA, the gated branded `JOB` id.
+- **R3.05 · Blocking vs polling** — stop busy-polling; the `EchoMQ.Consumer` parks on the wake key with `BLPOP`.
+- **R3.06 · Workshop** — a reliable codemojex guess-command queue: `Codemojex.Guesses.submit/3` enqueues a `JOB` on
+  the player's fair lane, `Codemojex.ScoreWorker.handle/1` drains it through `EchoMQ.Lanes.claim/3`.
 
 ## How to apply
 
-Name the failure you cannot allow, and the reliable-queue technique follows:
+The hard part is matching the reliable-queue technique to the failure you cannot allow. Name the failure, and the
+technique — and the real EchoMQ artifact that implements it — follows.
 
-- **A worker crashes mid-job** → the in-flight list: `RPOPLPUSH wait→active` (`moveToActive-11.lua`) parks the job
-  under a lock so a crash is recoverable; stalled reclaim (`moveStalledJobsToWait-8.lua`) brings it back when the
-  lock expires.
-- **A job runs twice** → at-least-once with an idempotent consumer: `emq:{queue}:de:{id}` via `EchoMQ.Keys.dedup/2`
-  makes a second delivery a no-op.
-- **A multi-step transition tears** → the whole lifecycle as one EVALSHA: `moveToFinished-14.lua` moves the job
-  across 14 keys atomically.
-- **The worker busy-polls the queue** → blocking pickup: `BZPOPMIN` on `emq:{queue}:marker` (`EchoMQ.Keys.marker/1`)
-  parks the worker on a dedicated blocking connection until a job arrives.
+| Failure | Technique | The EchoMQ artifact |
+|---|---|---|
+| A worker crashes mid-job | leased claim + reap | `EchoMQ.Jobs.claim/3` lease on server `TIME`; `EchoMQ.Jobs.reap/2` |
+| A job runs twice | idempotent effect keyed by the `JOB` id | the branded `JOB` id; `EchoMQ.Jobs.complete/5` |
+| A multi-step transition tears | one inline Lua transition | `EchoMQ.Script.new/2` run by `EchoMQ.Connector.eval/4` |
+| The worker busy-polls | park on the wake key | `EchoMQ.Consumer` `BLPOP emq:{q}:wake` |
 
-## The road ahead
+There is no single reliable-queue trick — only the technique that closes the failure you cannot accept, each one a
+real move in EchoMQ's worker loop.
 
-R3 is the spine the rest of the course hangs from. Each later chapter is a different surface over the same reliable
-queue:
+## The workshop — codemojex's guess-command queue
 
-- **R4 · Time, Delay & Priority** — the sorted set as a clock: schedule and prioritize the jobs R3 makes reliable.
-- **R5 · Streams & Events** — the durable log: observe the lifecycle R3 defines, replayable after the fact.
-- **R6 · Flow Control** — staying stable under load: rate-limit, batch, and bound concurrency over R3's jobs.
-- **R7 · Data Modeling** — how data lives in RAM: the job record and read-models behind the queue.
-- **R8 · Production & Operations** — running the tier at scale: operate everything above in production.
+The chapter closes with R3.06: a reliable codemojex guess-command queue assembled from R3.01–R3.05.
+`Codemojex.Guesses.submit/3` mints a branded `JOB` id and enqueues it on the player's fair lane with
+`EchoMQ.Lanes.enqueue/5`; `Codemojex.ScoreWorker.handle/1` — wired as an `EchoMQ.Consumer` with `lease_ms: 10_000` —
+drains the lane through `EchoMQ.Lanes.claim/3`, scores the guess, and completes the job with
+`EchoMQ.Jobs.complete/5`. A worker that crashes mid-score leaves its `JOB` leased in the active set; the next reap
+returns it to its lane. A guess is never lost, and one keyboard masher cannot starve the field because the lane is
+named by the player.
 
-## The door
+## The road ahead — R4 to R8
 
-**→ EchoMQ.** R3's depth — the full worker fetch loop, the heartbeat manager, the stalled-check coordination across
-a worker pool, and the polyglot concurrency models (BEAM process pool vs goroutine semaphore) — is the dedicated
-**EchoMQ course**, a living companion that teaches the protocol in depth and tracks the EchoMQ build rung by rung.
-Per its cross-link map, R3 opens onto E2 (the as-built library and the worker fetch loop), E5 (batches), and E6
-(lifecycle controls).
+R3 is the spine the rest of the course hangs from. Each later chapter is a different surface over the same jobs: R4
+schedules and prioritizes them with the sorted set as a clock; R5 records the durable event log; R6 holds the tier
+stable under load; R7 attends to how the job data lives in RAM; R8 operates the tier in production. A job that
+exhausts its retries or is archived reaches the **durable floor** — the persistence tier behind `/echo-persistence`.
 
 ## References
 
 ### Sources
-- [Redis — RPOPLPUSH](https://redis.io/commands/rpoplpush/) — the atomic move that parks a job in the in-flight list.
-- [Redis — BZPOPMIN](https://redis.io/commands/bzpopmin/) — the blocking pop that wakes a worker instead of polling.
-- [Redis — Scripting with Lua](https://redis.io/docs/latest/develop/interact/programmability/eval-intro/) — the atomic lifecycle transition via EVAL / EVALSHA.
-- [BullMQ](https://bullmq.io/) — the reliable-queue protocol EchoMQ ports.
+
+- [Valkey — ZPOPMIN](https://valkey.io/commands/zpopmin/) — the pop that claims the oldest pending job from the
+  score-0 mint-ordered set, the engine the connector is gated against.
+- [Valkey — HINCRBY](https://valkey.io/commands/hincrby/) — increments the row's `attempts` field, the lease fencing
+  token that makes a stale completion a no-op.
+- [Redis — Scripting with Lua](https://redis.io/docs/latest/develop/interact/programmability/eval-intro/) — the
+  atomic lifecycle transition via EVAL / EVALSHA that every EchoMQ script runs.
+- [Redis — Patterns](https://redis.io/docs/latest/develop/use/patterns/) — the canonical write-ups of the reliable
+  work-queue access pattern.
 
 ### Related in this course
+
 - [R2 · Coordination](/redis-patterns/coordination) — the atomic moves and lock lease R3 builds on.
-- [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — every state move as one Lua script.
-- [R0.2 · Redis under Portal](/redis-patterns/overview/redis-under-portal) — the EchoMQ bus these patterns ground in.
-- [/elixir · Commands, queries & events](/elixir/pragmatic/cqrs) — the engine the atomic moves run inside.
+- [R4 · Time, Delay & Priority](/redis-patterns/time-delay-priority) — the sorted set as a clock over R3's jobs.
+- [/echomq/queue](/echomq/queue) — the EchoMQ Queue pillar: the state machine, lanes, and the schedule set in depth.
+- [/echo-persistence](/echo-persistence) — the durable floor a dead-lettered or archived job reaches.
+- [The Branded Component System](/bcs) — Part III builds the EchoMQ bus these patterns ground in.

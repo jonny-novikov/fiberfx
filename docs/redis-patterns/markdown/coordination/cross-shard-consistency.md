@@ -187,12 +187,12 @@ happening.
 So the bridge is: a cross-shard detection pattern (shared token, version stamp, commit marker) is what an application
 reaches for when prevention is unavailable; EchoMQ's answer is prevention by colocation — one slot, one Lua `EVAL`
 over co-located keys, the script as the serialization point. Detection is the fallback only when the keys genuinely
-cannot share a slot — keys on different shards, or a Valkey read-model paired with the Exchange Platform's database
+cannot share a slot — keys on different shards, or a Valkey read-model paired with codemojex's database
 of record.
 
 The colocation mechanic itself — the `{tag}` hash, CRC16 mod 16384, `CROSSSLOT` prevention — is the next module,
 **R2.05 hash-tag colocation** (return to the [Coordination chapter](/redis-patterns/coordination) to continue). The
-full v2 script bundle, the EVALSHA/NOSCRIPT dispatch, and the version fence (`{emq}:version` → `echomq:2.0.0`) are
+full v2 script bundle, the EVALSHA/NOSCRIPT dispatch, and the version fence (`{emq}:version` → `echomq:3.0.0`) are
 taught in depth in the dedicated EchoMQ course.
 
 ## The three dives
@@ -227,5 +227,5 @@ taught in depth in the dedicated EchoMQ course.
   keeps legal.
 - [R2.02 · Distributed locking](/redis-patterns/coordination/distributed-locking) — the claim lease on the same
   co-located keys.
-- [/echomq](/echomq) — the dedicated EchoMQ course: the full v2 script bundle and the version fence in depth.
+- [/echomq/protocol](/echomq/protocol) — the dedicated EchoMQ course: the full v2 script bundle and the version fence in depth.
 - [/elixir · CQRS](/elixir/pragmatic/cqrs) — the single-writer engine that serializes cross-system state.

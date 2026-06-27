@@ -128,4 +128,4 @@ slot raises `CROSSSLOT`, and how the `{q}` tag keeps a queue's multi-key claim l
   loses when keys do not share a slot, and how to detect the tear.
 - [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the single-slot `MULTI`/`EXEC` and Lua
   atomicity co-location preserves.
-- [EchoMQ — the protocol](/echomq) — the `emq:{q}:` keyspace and the version fence in depth.
+- [EchoMQ — the protocol](/echomq/protocol) — the `emq:{q}:` keyspace and the version fence in depth.

@@ -49,8 +49,8 @@ through the application, never through a multi-queue script.
 
 In the BCS build the contract has an address. **EchoMQ is the bus**: the queue patterns of this course —
 atomic moves, leases, schedules, the morgue — live in its bundle, backed by Valkey under the hood.
-**EchoCache is the near-cache in front**: branded keys, local speed, bus-driven coherence — an L1 of ETS
-tables over the shared L2 Valkey. The cache family of this course lands in EchoCache; the queue, coordination,
+**EchoStore is the near-cache in front**: branded keys, local speed, bus-driven coherence — an L1 of ETS
+tables over the shared L2 Valkey. The cache family of this course lands in EchoStore; the queue, coordination,
 time, and flow families land in the bus. One engine, two surfaces, and the patterns of the catalog map onto
 them chapter by chapter.
 
@@ -80,6 +80,6 @@ Overview chapter closes and the pattern chapters begin.
 ### Related in this course
 - [R0.3 · Patterns become protocol](/redis-patterns/overview/patterns-become-protocol) — the module hub; the pager loops back here.
 - [R0.3.2 · The immutable core](/redis-patterns/overview/patterns-become-protocol/the-immutable-core) — the core this contract rides on.
-- [R0.2 · Valkey under the Exchange Platform](/redis-patterns/overview/redis-under-portal) — where Valkey sits in the build.
+- [R0.2 · Valkey under codemojex](/redis-patterns/overview/redis-under-game) — where Valkey sits in the build.
 - [/echomq](/echomq) — the far side of this door.
 - [/bcs](/bcs) — the architecture, with the frozen transcripts.

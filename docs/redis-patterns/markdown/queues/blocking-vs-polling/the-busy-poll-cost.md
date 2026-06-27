@@ -2,91 +2,85 @@
 
 > Route: `/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost` · Dive R3.05.1 · Module R3.05
 > blocking-vs-polling · Chapter R3 Reliable Queues.
-> · Grounding: the polling loop the source's `Blocking Variant` section replaces — `RPOP wait`; if nil,
-> `sleep(interval)`; repeat. The contrast for the rest of the module is EchoMQ's blocking marker fetch
-> (`do_wait_for_job/3` running `BZPOPMIN emq:{queue}:marker`); the polling form is also what the Go port's empty-queue
-> worker loop does (`time.Sleep` in `apps/echomq-go/pkg/echomq/worker_impl.go`).
+> Grounding: the polling loop the source's `Blocking Variant` section replaces — pop the work list; if nil,
+> `sleep(interval)`; repeat. The contrast for the rest of the module is EchoMQ's parked consumer
+> (`EchoMQ.Consumer.park/1` running `BLPOP emq:{queue}:wake <beat>`, real in
+> `echo/apps/echo_mq/lib/echo_mq/consumer.ex`): "park, don't poll — a parked consumer costs the wire nothing."
 
 A worker that takes the next job by polling pays a cost on every empty queue. The loop is plain: pop the work list;
-if the result is nil, sleep a fixed interval; repeat. The sleep interval is the only dial, and it cannot be set well —
-short trades latency for round-trips, long trades round-trips for latency, and the loop pays both at once.
+if the result is nil, sleep a fixed interval; retry. On a queue that is empty most of the time, that nil-then-sleep is
+the steady state, and it pays two costs that no single interval can both make cheap.
 
 ## The polling loop
 
-The naive wait is a spin. The worker pops the work list; an empty queue returns nil; the worker sleeps, then polls
-again.
+The naive wait is a spin. Each pass sends a pop command and, when the queue is empty, gets a nil back. That nil is a
+**wasted round-trip** — a full command-and-reply over the wire for no work. The worker then sleeps the interval and
+tries again. The work of *checking* whether a job exists is paid separately from the work of *doing* the job, and on
+an idle queue only the checking happens.
 
 ```
-# the polling loop — RPOP, sleep, retry
+# the polling loop: spin, sleep, retry — every nil pass is a wasted round-trip
 loop:
-  job = RPOP wait              # nil when the queue is empty
+  job = pop work_queue -> processing
   if job == nil:
-    sleep(interval)            # burn the interval, then poll again
+    sleep(interval)          # burn the interval, then poll again
     continue
-  process(job)                 # a job arrived — run it
+  process(job)
 ```
 
-Every pass that returns nil is a **wasted round-trip**: a command sent to Redis and a nil sent back, for no work. On a
-queue that is empty most of the time, that is the steady state — the worker spends its life asking an empty queue
-whether it is still empty.
+The second cost is latency. A job rarely arrives exactly when the worker polls. It arrives in the gap between two
+polls and waits the rest of that gap before the next poll picks it up, so average pickup latency is about **half the
+interval**.
 
-## The latency a poll adds
+## The interval is the only dial — and it has no good setting
 
-A job rarely arrives exactly when the worker polls. It arrives somewhere in the gap between two polls, and waits the
-rest of the gap before the next poll picks it up. Over many arrivals, the wait averages about **half the interval**:
+The interval is the single knob, and it sets the two costs against each other:
 
-```
-poll        poll        poll        poll
- |           |     ↑      |           |
- |<-- interval -->|       |           |
-                  job arrives here, waits ~½ interval for the next poll
-```
+- A **short** interval cuts pickup latency but multiplies the empty round-trips on an idle queue — a 50 ms interval is
+  twenty polls a second per worker, almost all of them empty.
+- A **long** interval cuts the round-trips but lengthens pickup latency — a 1 s interval is one poll a second, but a
+  job can wait up to a full second before pickup.
 
-A 100 ms interval adds about 50 ms of average pickup latency on top of the work itself. The interval is a floor on
-responsiveness that no amount of worker speed removes.
+No value is cheap on both axes, because polling charges for checking and for doing as two separate things. The only
+way off the trade is to stop checking on a cadence at all — to park until there is something to do.
 
-## No interval wins
+## The cost, quantified
 
-The two costs pull against each other on the one dial:
+Over a fixed window with a known arrival rate, the polling cost is arithmetic:
 
-```
-short interval (10 ms)   →  ~5 ms latency,  but ~100 empty polls/sec on an idle queue
-long interval (1000 ms)  →  ~500 ms latency, but ~1 empty poll/sec
-```
+- empty polls ≈ `window / interval` minus the polls that land on work,
+- average pickup latency ≈ `interval / 2`,
+- round-trips per second ≈ `1000 / interval` per idle worker.
 
-Shorten the interval to cut latency and the empty round-trips multiply. Lengthen it to cut the round-trips and pickup
-latency grows. There is no value that is cheap on both axes, because polling pays for *checking* whether work exists
-separately from *doing* the work. The fix is not a better interval. The fix is to stop polling: block on a primitive,
-and let Redis return the instant work arrives — the next dive.
+Pick the interval and both numbers move in opposite directions. Sweep it and there is no minimum that satisfies both —
+the wasteful end and the laggy end are the only choices polling offers.
 
-## In EchoMQ — the contrast the rest of the module removes
+## The bridge
 
-EchoMQ's worker does not run this loop on an idle queue. When no job is immediately available, it parks on a blocking
-fetch — `EchoMQ.Worker.do_wait_for_job/3` runs `BZPOPMIN emq:{queue}:marker timeout` on a dedicated blocking
-connection — so it spends no round-trips while idle and picks a job up the instant the producer rings the marker. The
-polling loop above is what that blocking fetch replaces. It is also what the Go port's empty-queue worker loop does:
-`apps/echomq-go/pkg/echomq/worker_impl.go` runs `time.Sleep(100 * time.Millisecond)` / `time.Sleep(time.Second)` when
-the queue is empty — a fixed-interval poll, the cross-runtime contrast to the marker block.
+**The pattern:** a pop/sleep loop pays a wasted round-trip on every empty poll and adds about half an interval of
+pickup latency; the interval dials one cost against the other, and no setting wins.
 
-The pattern says the wait-by-polling cost is paid twice and dialled once; in EchoMQ the worker blocks on the marker
-instead, so the next two dives build the primitive and the handshake that remove the cost.
+**Its EchoMQ application:** `EchoMQ.Consumer` does not poll. Its loop drains the ring, then parks on
+`BLPOP emq:{queue}:wake <beat>` — no spin, no empty round-trips, and a wake returns it the instant work is admitted.
+The next dive builds that blocking park.
+
+## On Valkey
+
+A pop on an empty list returns nil immediately, so a polling loop must add its own sleep to avoid a tight spin — and
+that sleep is exactly the interval that sets latency against round-trips. The blocking forms remove the sleep by
+parking the connection on the server (valkey.io/commands/blpop).
 
 ## References
 
 ### Sources
-- [Redis — RPOP](https://redis.io/commands/rpop/) — the non-blocking pop the polling loop spins on, returning nil on an
-  empty queue.
-- [Redis — BLMOVE](https://redis.io/commands/blmove/) — the blocking move that removes the poll interval, built in the
-  next dive.
-- [Redis — Latency monitoring](https://redis.io/docs/latest/develop/use/patterns/) — the Redis patterns index, the home
-  of the reliable-queue and blocking-consumer guidance.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the marker-based worker wait EchoMQ ports in place of the poll.
+
+- [Redis — Documentation](https://redis.io/docs/) — lists, pops, and why a polling loop needs an explicit sleep.
+- [Valkey — LPOP](https://valkey.io/commands/lpop/) — the non-blocking pop a polling loop spins on; nil on an empty list.
+- [Valkey — BLPOP](https://valkey.io/commands/blpop/) — the blocking alternative that removes the interval and the empty round-trips.
 
 ### Related in this course
+
 - [R3.05 · Blocking vs polling](/redis-patterns/queues/blocking-vs-polling) — the module hub.
-- [R3.05.2 · Blocking pop](/redis-patterns/queues/blocking-vs-polling/blocking-pop) — the primitive that removes the
-  poll interval and the wasted round-trips.
-- [R3.05.3 · The marker wake-up](/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up) — the EchoMQ marker
-  handshake that wakes the worker.
-- [R3.01 · The processing list](/redis-patterns/queues/processing-list) — the wait/active lists the worker pops from.
-- [E2 · The engine](/echomq/core) — the dedicated EchoMQ course: the worker fetch loop.
+- [R3.05.2 · Blocking pop](/redis-patterns/queues/blocking-vs-polling/blocking-pop) — the next dive: the primitive that removes the spin.
+- [R3 · Reliable Queues](/redis-patterns/queues) — the chapter.
+- [/echomq/queue](/echomq/queue) — the Queue pillar: the consumer loop in depth.

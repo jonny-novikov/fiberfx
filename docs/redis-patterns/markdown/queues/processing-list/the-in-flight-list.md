@@ -1,9 +1,12 @@
 # The in-flight list — the recovery ledger
 
 > Route: `/redis-patterns/queues/processing-list/the-in-flight-list` · Dive R3.01.3 · Module R3.01 Processing list.
-> · Grounding: EchoMQ's `emq:{queue}:active` (`EchoMQ.Keys.active/1`) is the in-flight list a crashed worker leaves a
-> job parked in; the lock `emq:{queue}:<id>:lock` (`EchoMQ.Keys.lock/2`) marks the holding worker. The ack is
-> `LREM active 1 job` after the work is done. Real in `echo/apps/echomq`.
+> · Grounding: EchoMQ's `emq:{queue}:active` sorted set (`EchoMQ.Keyspace.queue_key(queue, "active")`) is the in-flight
+> ledger a crashed worker leaves a job parked in; each member is **scored at its lease deadline** on the server clock,
+> so the score is the recovery clock — no per-worker list needed. The ack is `EchoMQ.Jobs.complete/4`, token-fenced on
+> the row's `attempts` value. `EchoMQ.Jobs.reap/2` returns any member whose lease score has passed `now` to `pending`;
+> `EchoMQ.Stalled.check/3` counts repeated stalls and dead-letters a job past its threshold to the durable floor. Real
+> in `echo/apps/echo_mq`.
 
 The in-flight list is not a buffer to pass jobs through quickly. It is a ledger: at any instant it holds exactly the
 jobs currently being processed. Because a job stays in the ledger until the work is acknowledged, a worker that dies
@@ -18,30 +21,30 @@ yet finished. Reading the list answers a question that matters for reliability �
 without any extra bookkeeping. The record is the list itself.
 
 ```
-emq:{queue}:active  (LIST)   →  [ job 7, job 6 ]   two jobs in flight
+emq:{queue}:active  →  [ job 7, job 6 ]   two jobs in flight
 ```
 
 This is what makes a crash recoverable. When a worker dies between taking a job and acknowledging it, the job is still
-in `active`. Nothing was lost, because nothing removed it. A recovery process can read the list and see the parked job,
+in `active`. Nothing was lost, because nothing removed it. A recovery process can read the list and find the parked job,
 exactly because the list is a record of in-flight work and not a transient buffer.
 
-## Per-worker lists attribute the parked job
+## Per-worker lists, or a lease score
 
-One shared in-flight list works, but it cannot tell which worker holds which job. Giving each worker its own in-flight
-list does: `processing:worker1`, `processing:worker2`. A job in `processing:worker1` is held by worker 1. When worker 1
-dies, a recovery monitor reads worker 1's list, finds the parked jobs, and returns them to the waiting list for another
-worker — `LMOVE processing:worker1 work_queue RIGHT RIGHT`. Per-worker lists make the attribution direct: the list name
-is the worker.
+One shared in-flight list works, but it cannot tell which worker holds which job. The classic LIST form gives each
+worker its own in-flight list — `processing:worker1`, `processing:worker2`. A job in `processing:worker1` is held by
+worker 1. When worker 1 dies, a recovery monitor reads worker 1's list, finds the parked jobs, and returns them to the
+waiting list for another worker — `LMOVE processing:worker1 work_queue RIGHT RIGHT`. Per-worker lists make the
+attribution direct: the list name is the worker.
 
 ```
-processing:worker1  (LIST)   jobs held by worker 1
-processing:worker2  (LIST)   jobs held by worker 2
+processing:worker1   jobs held by worker 1
+processing:worker2   jobs held by worker 2
 ```
 
-A real engine refines the death signal beyond "how long has the job sat here." EchoMQ marks each in-flight job with a
-lock that has a TTL, renewed by the live worker on a heartbeat; an expired lock is the death signal, and a stalled sweep
-returns the job to the waiting list. R3.03 is that sweep. Here the shape is enough: a per-worker list attributes a
-parked job to the worker that left it.
+A real engine refines the death signal beyond "how long has the job sat here." EchoMQ scores each member of
+`emq:{queue}:active` at its lease deadline on the server clock; a member whose score has passed `now` is a worker that
+stopped renewing, and `EchoMQ.Jobs.reap/2` returns it to `pending`. The lease score is the death signal, so EchoMQ needs
+no per-worker list — the ledger's own score names the deadline. R3.03 is the count-thresholded sweep on top.
 
 ## The ack removes it only when done
 
@@ -63,22 +66,26 @@ the ledger and the ack; the redelivery cost is the next module's.
 
 ## The pattern, applied
 
-EchoMQ's in-flight list is `emq:{queue}:active`, built by `EchoMQ.Keys.active/1` (`"#{base(ctx)}:active"`), real in
-`echo/apps/echomq`. A job is moved into it under a lock named by `EchoMQ.Keys.lock/2` (`emq:{queue}:<id>:lock`,
-`"#{job(ctx, job_id)}:lock"`), so the parked job is both in the ledger and attributable to its worker. A crash leaves
-the job in `active` with its lock still set; once the lock's TTL expires, the stalled sweep returns it to `wait`. The
-ack that removes a finished job from `active` runs only after the work is done.
+EchoMQ's in-flight list is the `emq:{queue}:active` sorted set, built by `EchoMQ.Keyspace.queue_key(queue, "active")`,
+real in `echo/apps/echo_mq`. The ack is `EchoMQ.Jobs.complete/4`: it is token-fenced on the row's `attempts` value, so
+only the worker that holds the current lease can retire the job — a worker whose lease was reaped and re-claimed by
+another worker is refused, and a redelivered completion is a no-op. A crash leaves the id in `active`, and `reap/2`
+returns any member past its lease score to `pending`. A job that stalls repeatedly past `EchoMQ.Stalled`'s threshold is
+dead-lettered to `emq:{queue}:dead` and folds onward to the durable floor (`EchoStore.StreamArchive` → the Graft page
+engine), the persistence frontier the `/echo-persistence` course follows.
 
-```lua
--- moveToActive-11.lua — the job lands in the in-flight ledger, under a lock (real)
-local activeKey = KEYS[2]    -- emq:{queue}:active  (EchoMQ.Keys.active/1)
-local jobId = rcall("RPOPLPUSH", waitKey, activeKey)  -- job parked in the ledger
--- the lock emq:{queue}:<id>:lock (EchoMQ.Keys.lock/2) marks the holding worker
+```
+-- the ack and the recovery clock (echo/apps/echo_mq/lib/echo_mq/jobs.ex)
+-- complete/4: token-fenced on attempts, only the lease holder may retire the row
+local att = redis.call('HGET', KEYS[2], 'attempts')      -- KEYS[2] = the job row
+if att ~= ARGV[2] then return redis.error_reply('EMQSTALE complete token mismatch') end
+redis.call('ZREM', KEYS[1], ARGV[1])                     -- KEYS[1] = emq:{queue}:active, remove from the ledger
+-- reap/2: any member whose lease score has passed now returns to pending
 ```
 
-`{queue}` is a documentation placeholder for the queue name (`EchoMQ.Keys.base/1` is `"#{prefix}:#{name}"`), not the
-cluster hash-tag `{tag}`. The lock manager, the heartbeat that renews the lock, and the stalled sweep that reads expired
-locks are the dedicated EchoMQ course; this dive teaches the ledger and the ack.
+The branded `JOB` id is gated at the key builder; the lease score is the server clock (`TIME`). The reaper, the stalled
+sweep, and the archive into the durable floor are the dedicated EchoMQ Queue pillar and the persistence course; this
+dive teaches the ledger and the ack.
 
 ## References
 
@@ -89,13 +96,15 @@ locks are the dedicated EchoMQ course; this dive teaches the ledger and the ack.
   after the work is done.
 - [Redis — RPOPLPUSH](https://redis.io/commands/rpoplpush/) — the move that parks a job in the in-flight ledger
   atomically.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the active-list-plus-lock layout EchoMQ ports.
+- [Valkey — ZADD](https://valkey.io/commands/zadd/) — score a member of a sorted set, how EchoMQ records the lease
+  deadline that doubles as the recovery clock.
 
 ### Related in this course
 - [R3.01 · Processing list](/redis-patterns/queues/processing-list) — the module hub: the in-flight move.
-- [R3.01.1 · List as wait + active](/redis-patterns/queues/processing-list/list-wait-active) — the two named lists.
+- [R3.01.1 · List as wait + active](/redis-patterns/queues/processing-list/list-wait-active) — the two named places.
 - [R3.01.2 · LMOVE / RPOPLPUSH](/redis-patterns/queues/processing-list/lmove-rpoplpush) — the atomic move that parks the
   job in this ledger.
 - [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue) — at-least-once and stalled recovery, the
   guarantees this ledger enables.
-- [E2 · the engine](/echomq/core) — the dedicated EchoMQ course: the lock manager and stalled sweep in depth.
+- [/echomq/queue](/echomq/queue) — the dedicated EchoMQ Queue pillar: the leased state machine in depth.
+- [/echo-persistence](/echo-persistence) — the durability floor a dead-lettered job folds onto.

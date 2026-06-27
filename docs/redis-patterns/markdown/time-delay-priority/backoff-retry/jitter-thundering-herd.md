@@ -2,57 +2,53 @@
 
 > Route: `/redis-patterns/time-delay-priority/backoff-retry/jitter-thundering-herd` · dive 2 of R4.04
 
-Exponential backoff alone has a failure mode. When many jobs fail at the same instant, they all compute the same delay and all re-fire at the same future millisecond — a synchronized spike that hits the recovering dependency at once. Jitter spreads the retries across a window so the herd disperses.
+A fixed backoff schedules every job that failed together for the same future instant — so they re-fire in one spike, the thundering herd. Jitter spreads them across a window. In the real bus jitter is a policy wrapper: `{:jitter, inner}`, a uniform random delay in `0..inner_delay`.
 
-## The thundering herd
+## §1 — The herd
 
-A dependency goes down. Every job that needed it fails in the same window — say a thousand jobs failing within the same second. Each runs the same exponential formula with the same base and the same attempt number, so each computes the *same* delay. They all re-schedule for the same future millisecond. When that millisecond arrives, all thousand re-fire together.
+A dependency blinks. A hundred jobs fail in the same moment, each at attempt 3. A fixed exponential backoff prices the same delay for all of them — `4 × base` — so all hundred are scheduled for the **same** future instant. When that instant arrives the promotion sweep moves all hundred back to pending at once, and they hit the dependency together: a second spike on a service that was already struggling. The retry meant to relieve the dependency instead re-creates the original pressure.
 
-The dependency, perhaps newly back on its feet, takes the full thousand-job spike in one instant and may fall over again — which schedules a thousand more retries for the next backoff window, and the spike repeats. Backoff was supposed to space the load out; without jitter it re-synchronizes it. The herd is the cost of every member computing an identical delay from identical inputs.
+## §2 — Spreading the cohort
 
-## Jitter spreads the window
+Jitter breaks the synchrony. Instead of scheduling each job at exactly `delay`, schedule it at a random point bounded by `delay`. A hundred jobs that failed together now carry a hundred different fire-times scattered across the window, and the promotion sweep releases them gradually. The dependency sees a spread, not a spike. The full-jitter form makes the bound the whole delay: each job's wait is a uniform random value in `0..delay`.
 
-The fix is to add controlled randomness to each delay so the retries land across a window instead of on a point. `EchoMQ.Backoff` applies it in `apply_jitter/2`. For a jitter fraction in (0, 1] it widens the delay into a band:
+The cost is variance: a given job's exact wait is no longer predictable, only its bound. That is the trade — predictability for the absence of a herd — and for retry work it is almost always worth taking.
+
+## §3 — Jitter as a policy wrapper
+
+In the real bus jitter is not a flag on the formula; it is a policy that wraps any inner policy. `{:jitter, inner}` computes the inner policy's delay, then draws a uniform random value bounded by it:
 
 ```elixir
-defp apply_jitter(delay, jitter) when jitter > 0 and jitter <= 1 do
-  min_delay = trunc(delay * (1 - jitter))
-  jitter_range = trunc(delay * jitter * 2)
-  min_delay + :rand.uniform(jitter_range + 1) - 1
+# EchoMQ.Backoff.delay_ms/2 — the :jitter clause (verbatim)
+def delay_ms({:jitter, inner}, attempts) do
+  bound = delay_ms(inner, attempts)          # the inner curve's delay
+  if bound <= 0, do: 0, else: :rand.uniform(bound + 1) - 1   # uniform in 0..bound
 end
 ```
 
-`min_delay` is the floor — the computed delay reduced by the jitter fraction. `jitter_range` spans twice the fraction, so the band runs from `delay × (1 - jitter)` up to `delay × (1 + jitter)`. `:rand.uniform` picks a point inside it, independently for each job. With `jitter: 0.2` on a 4000 ms delay, `min_delay` is 3200, `jitter_range` is 1600, and each retry lands somewhere in `[3200, 4800]` — the computed delay plus or minus twenty percent. A thousand jobs that would have re-fired on one millisecond now scatter across a 1600 ms window, a few per millisecond instead of all at once.
+Wrapping the exponential policy — `{:jitter, {:exponential, 100, 10_000}}` — gives a curve that climbs **and** spreads: attempt 3's bound is 400, so the jittered delay is a uniform draw in `0..400`. The inner delay is its bound, and the randomness is the point. This is the only non-deterministic policy in the vocabulary; `:fixed` and `:exponential` are pure functions of `(policy, attempts)`.
 
-The doc example carries it: `calculate(:exponential, 3, 1000, jitter: 0.2)` returns *about* 4000 — about, not exactly, because each call draws a different point in the band. The default config sets `jitter: 0.2`, so the spread is on by default. A jitter of `0` (the `apply_jitter(delay, 0)` clause) returns the delay unchanged — that is the synchronized case, the herd.
+## §4 — Where the spread lands
 
-## Jitter applies to fixed backoff too
-
-The herd is not exclusive to exponential schedules. A fixed backoff — the same base every attempt — has the same flaw: a batch that fails together re-fires together. `EchoMQ.Backoff`'s `:fixed` clause routes through the same jitter: `apply_jitter(base_delay, jitter)`. So a `%{type: :fixed, delay: 5_000, jitter: 0.2}` config spaces a batch's retries across `[4000, 6000]` exactly the way the exponential one does. Jitter is the herd-breaker; the strategy (fixed or exponential) only decides the center of the band, not whether it is spread.
-
-## Where this is heading — EchoMQ 2.0
-
-Jitter is computed in `EchoMQ.Backoff` before the delay is written, so the spread is decided in Elixir, not in the key. EchoMQ 2.0 renames the delayed key from `emq:{queue}:delayed` to `emq:{queue}:delayed` and records `meta.version` as `echomq:2.0.0`, but `apply_jitter/2` is unchanged by the break — the band math runs over the delay value, not the keyspace. The herd-breaking this dive teaches works the same on either prefix.
+The jittered delay crosses to the wire the same way every backoff delay does: as the literal `delay_ms` argument to `EchoMQ.Jobs.retry/7`, which ZADDs the job onto the schedule set at `now + delay_ms`. A cohort that failed together is written to the schedule set at scattered scores, so `EchoMQ.Jobs.promote/3` sweeps them back across a window rather than in one ZRANGEBYSCORE pull. The spread is a property of the scores; nothing on the wire knows it was jittered.
 
 ## The bridge — pattern to application
 
-- **The pattern.** A synchronized batch of retries re-fires as one spike; jitter scatters each delay across a window so the load spreads.
-- **In EchoMQ.** `apply_jitter(delay, jitter)` returns `min_delay + :rand.uniform(jitter_range + 1) - 1`, where `min_delay = trunc(delay × (1 - jitter))` and `jitter_range = trunc(delay × jitter × 2)` — so `jitter: 0.2` spreads a 4000 ms delay across `[3200, 4800]`. Each job draws its own point.
-
-The takeaway: fixed-and-exact delays re-synchronize a failed batch into a spike; jitter widens each delay into a band and draws an independent point per job, so the herd disperses across a window instead of hitting on one millisecond.
+- **The pattern:** a fixed backoff synchronizes a failed cohort into one re-fire spike; full jitter draws each retry's wait uniformly in `0..delay`, so the cohort re-fires across a window.
+- **Its EchoMQ application:** `EchoMQ.Backoff.delay_ms({:jitter, inner}, attempts)` returns a uniform random delay bounded by the inner curve; `EchoMQ.Jobs.retry/7` schedules each job at `now + delay_ms`, scattering the cohort across the schedule set.
 
 ## References
 
 ### Sources
 
-- [Redis — *ZADD*](https://redis.io/commands/zadd/) — the write that places each jittered retry at its own fire-time score.
-- [Redis — *Sorted sets*](https://redis.io/docs/latest/develop/data-types/sorted-sets/) — the timer-wheel the spread retries scatter across.
-- [BullMQ — *the queue protocol*](https://bullmq.io/) — the backoff-with-jitter protocol EchoMQ ports.
+- Redis — *ZADD* — https://redis.io/commands/zadd/ — write each jittered retry at its own schedule-set score.
+- Redis — *ZRANGEBYSCORE* — https://redis.io/commands/zrangebyscore/ — the sweep that releases the spread cohort gradually.
+- Valkey — *Sorted sets* — https://valkey.io/topics/data-types/ — the structure the scattered scores live on.
 
 ### Related in this course
 
-- R4.04 · Backoff & retry — `/redis-patterns/time-delay-priority/backoff-retry`
-- R4.04.1 · Exponential backoff — `/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff`
-- R4.04.3 · Reusing the delayed ZSET — `/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset`
-- R4.01 · The delayed queue — `/redis-patterns/time-delay-priority/delayed-queue`
-- E6 · Lifecycle controls — `/echomq/lifecycle`
+- R4.04 · Backoff & retry — `/redis-patterns/time-delay-priority/backoff-retry` — the module hub.
+- R4.04.1 · Exponential backoff — `/redis-patterns/time-delay-priority/backoff-retry/exponential-backoff` — the curve jitter wraps.
+- R4.04.3 · Reusing the schedule set — `/redis-patterns/time-delay-priority/backoff-retry/reuse-the-delayed-zset` — the next dive.
+- R1.05 · Cache stampede prevention — `/redis-patterns/caching/cache-stampede-prevention` — jitter applied to TTLs, the same anti-herd move.
+- The EchoMQ queue protocol — `/echomq/queue` — the retry path on the wire.

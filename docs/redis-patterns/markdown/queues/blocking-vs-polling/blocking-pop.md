@@ -2,104 +2,90 @@
 
 > Route: `/redis-patterns/queues/blocking-vs-polling/blocking-pop` · Dive R3.05.2 · Module R3.05 blocking-vs-polling
 > · Chapter R3 Reliable Queues.
-> · Grounding: the source's `Blocking Variant`. EchoMQ's worker parks on a blocking pop — `do_wait_for_job/3` runs
-> `BZPOPMIN emq:{queue}:marker timeout` — and uses a **dedicated** blocking connection
-> (`EchoMQ.RedisConnection.blocking_connection/1`: *"a dedicated blocking connection for operations like BRPOPLPUSH or
-> BZPOPMIN"*) so the main command connection stays free. All real in `echo/apps/echomq`.
+> Grounding: the source's `Blocking Variant`. EchoMQ's consumer parks on a blocking pop — `EchoMQ.Consumer.park/1`
+> runs `BLPOP emq:{queue}:wake <beat>` — on a dedicated connector lane (the consumer's moduledoc: "a dedicated
+> connector — blocking verbs get their own lane"), so the lane that drains and settles jobs stays free. All real in
+> `echo/apps/echo_mq/lib/echo_mq/consumer.ex`.
 
-A blocking pop removes the poll interval and the wasted round-trips at once. The worker parks on the Redis server and
-the call returns the instant an element is available, or after a timeout. It buys that with one cost: a blocking call
-ties up the connection for the duration of the block. The discipline is to park the block on a dedicated connection, so
-the worker's main connection stays free.
+A blocking pop removes the poll interval and the wasted round-trips at once. The worker parks on the server and the
+call does not return until an element is available or the timeout elapses — so a job is picked up the moment it
+arrives, and an idle queue costs no traffic at all.
 
-## The primitive
+## The blocking primitives
 
-A blocking command does not return immediately on an empty input. It parks the connection on the server until an
-element arrives or a timeout elapses. Three forms cover the reliable queue:
+The source's reliable-queue loop replaces its pop/sleep spin with a blocking move:
 
 ```
-BLMOVE     wait active RIGHT LEFT 30   # block until wait has an element, then move it; 30s timeout
-BRPOPLPUSH wait active 30              # the older blocking move (Redis < 6.2)
-BZPOPMIN   marker 30                   # block until the marker ZSET has a member, then pop the lowest
+BLMOVE work_queue processing:worker1 RIGHT LEFT 30
 ```
 
-Each parks for up to the timeout. `BLMOVE` and `BRPOPLPUSH` block on the work list itself and move an element when one
-arrives; `BZPOPMIN` blocks on a sorted set and pops its lowest-scored member. EchoMQ uses the `BZPOPMIN` form on a
-marker ZSET — the next dive — but the shape is the same: park, then wake on arrival.
+`BLMOVE` atomically moves an element from the work list to the processing list, parking the connection for up to thirty
+seconds if the work list is empty. `BRPOPLPUSH` is the older form of the same move. `BLPOP` is the simplest blocking
+pop: it removes and returns the first element of a list, parking until one is pushed or the timeout fires. All three
+share the property that matters: **no poll interval and no empty round-trips** — the call returns the instant there is
+work, or once on the timeout.
 
-## What blocking removes
+## The cost is the connection
 
-Against the polling loop, the blocking pop removes both costs the interval traded between:
+A blocking call occupies its connection for the whole park. A command sent on the **same** connection waits behind the
+block, so a worker that parks on its only connection cannot also fetch or acknowledge. The discipline is a
+**dedicated** connection for the block:
 
-```
-polling:   poll → nil → sleep → poll → nil → sleep → … → poll → job   (many round-trips, ~½-interval latency)
-blocking:  park ────────────────────────────────────── job arrives → return   (1 round-trip, ~0 latency)
-```
+- the blocking connection parks on the wake key and does nothing else;
+- the command connection drains the ring, runs the claim, and settles the job;
+- the two never contend, so a long park never stalls a fetch.
 
-There is no poll interval, so a job is picked up the moment it arrives, not up to one interval later — pickup latency
-is effectively zero. There are no empty round-trips, because the call does not return until there is work or the
-timeout fires. The timeout is not a poll interval: it is an upper bound on the park, so the worker can return to
-re-check its own liveness and is never blocked forever. A short timeout still costs nothing while idle — re-issuing a
-block is not a busy spin.
+EchoMQ encodes this in the consumer: it holds "a dedicated connector — blocking verbs get their own lane," and the
+park rides that lane while the drain rides the command lane.
 
-## The connection cost
+## The park, in EchoMQ
 
-The block has one price. While a connection is parked on `BZPOPMIN`, it is busy — a command sent on the **same**
-connection waits behind the block until it returns. A worker that blocked on its only connection could not fetch the
-job, renew a lock, or acknowledge a result while parked.
-
-```
-# one shared connection — the block starves the other commands
-conn: BZPOPMIN marker 30     # parked…
-conn: SET lock …             # …waits behind the block, cannot run
-
-# a dedicated blocking connection — the main connection stays free
-block_conn: BZPOPMIN marker 30   # parks here
-main_conn:  SET lock …           # runs immediately on the free connection
-```
-
-The fix is a second connection used only for blocking. The worker parks the `BZPOPMIN` on the dedicated connection and
-keeps its main connection free for fetches, lock renewals, and acknowledgements.
-
-## In EchoMQ — the dedicated blocking connection
-
-EchoMQ's worker parks on the dedicated connection by design.
-`EchoMQ.RedisConnection.blocking_connection/1` — documented as *"a dedicated blocking connection for operations like
-BRPOPLPUSH or BZPOPMIN"* — hands the worker a connection used only for the block. The blocking-fetch internals
-`EchoMQ.Worker.wait_for_job/2` → `do_wait_for_job/3` run the `BZPOPMIN emq:{queue}:marker timeout` on that connection,
-and `do_wait_for_job/3` returns `:job_available` when a marker arrived or `:timeout` when the park elapsed. The worker's
-main command connection is untouched while it is parked, so it fetches the woken job and runs the rest of the lifecycle
-without waiting behind the block.
+The consumer's loop is reap → promote → drain → park, repeating. The park is one blocking call with the beat as its
+timeout:
 
 ```elixir
-# EchoMQ.Worker.do_wait_for_job/3 — park on the marker ZSET on the blocking connection (real)
-case Redix.command(conn, ["BZPOPMIN", marker_key, timeout_seconds], timeout: :infinity) do
-  {:ok, nil}                  -> :timeout         # the park elapsed, no job
-  {:ok, [_key, _member, _sc]} -> :job_available   # a marker arrived → a job is available
+# EchoMQ.Consumer.park/1 — park on the wake key for one beat, then loop (real, Elixir)
+defp park(s) do
+  secs = :erlang.float_to_binary(s.beat_ms / 1000, decimals: 3)
+  wake = Keyspace.queue_key(s.queue, "wake")          # emq:{queue}:wake
+  _ = Connector.command(s.conn, ["BLPOP", wake, secs], s.beat_ms + 2_000)
+  :ok
 end
 ```
 
-The pattern says block on a primitive with a timeout, on a connection set aside for the block; in EchoMQ that is
-`BZPOPMIN` on the marker ZSET over `blocking_connection/1`, with the main connection free for the fetch.
+The `BLPOP` returns one of two ways: a wake token was pushed (work was admitted — drain it), or the beat elapsed (run
+the reap/promote pump, then park again). Either way the connection spent the idle time parked, not polling. The beat
+(`:beat_ms`, default 1000) is the timeout, so the loop always re-runs its pump within one beat and is never parked
+forever; the lease the claim holds is bounded by `:lease_ms` (default 30 000).
+
+## The bridge
+
+**The pattern:** a blocking pop with a timeout parks the connection until work arrives — no interval, no wasted
+round-trips — at the cost of a tied-up connection, which a dedicated connection keeps off the working one.
+
+**Its EchoMQ application:** `EchoMQ.Consumer.park/1` runs `BLPOP emq:{queue}:wake <beat>` on a dedicated connector
+lane; the command lane stays free to claim and settle. The beat bounds the park; a wake returns it early. The next
+dive walks the wake handshake that rings the doorbell.
+
+## On Valkey
+
+`BLPOP` is "the blocking variant of LPOP": when the list is empty it parks the client until another client pushes an
+element, or the timeout elapses; the engine serves exactly one of several blocked clients per push, in park order
+(valkey.io/commands/blpop). A blocking call is the reason a worker keeps a separate connection for it.
 
 ## References
 
 ### Sources
-- [Redis — BLMOVE](https://redis.io/commands/blmove/) — the modern blocking move that parks on the work list until an
-  element arrives.
-- [Redis — BRPOPLPUSH](https://redis.io/commands/brpoplpush/) — the older blocking reliable-queue pop, the form
-  `BLMOVE` succeeds.
-- [Redis — BZPOPMIN](https://redis.io/commands/bzpopmin/) — block on a sorted set until a member is added, then pop the
-  lowest-scored; the form EchoMQ parks on.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the blocking worker wait, on a dedicated connection, that EchoMQ
-  ports.
+
+- [Valkey — BLPOP](https://valkey.io/commands/blpop/) — block until an element is pushed to a list; the park EchoMQ's consumer makes.
+- [Redis — BLMOVE](https://redis.io/commands/blmove/) — the modern blocking reliable-queue pop the source uses.
+- [Redis — BRPOPLPUSH](https://redis.io/commands/brpoplpush/) — the older blocking reliable-queue pop, the move BLMOVE replaces.
+- [Redis — Documentation](https://redis.io/docs/) — blocking commands and why each blocking call wants its own connection.
 
 ### Related in this course
+
 - [R3.05 · Blocking vs polling](/redis-patterns/queues/blocking-vs-polling) — the module hub.
-- [R3.05.1 · The busy-poll cost](/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost) — the polling loop the
-  blocking pop removes.
-- [R3.05.3 · The marker wake-up](/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up) — the producer's `ZADD`
-  that wakes the parked `BZPOPMIN`.
-- [R3.01 · The processing list](/redis-patterns/queues/processing-list) — the wait/active lists the woken worker fetches
-  from.
-- [E2 · The engine](/echomq/core) — the dedicated EchoMQ course: the worker fetch loop and the blocking connection.
+- [R3.05.1 · The busy-poll cost](/redis-patterns/queues/blocking-vs-polling/the-busy-poll-cost) — the previous dive: the cost this removes.
+- [R3.05.3 · The wake-up doorbell](/redis-patterns/queues/blocking-vs-polling/the-marker-wake-up) — the next dive: ringing the wake key.
+- [R3 · Reliable Queues](/redis-patterns/queues) — the chapter.
+- [/echomq/queue](/echomq/queue) — the Queue pillar: the dedicated connector lane in depth.

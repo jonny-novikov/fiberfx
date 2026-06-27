@@ -1,14 +1,14 @@
 # R1 · Caching — the read path
 
 > Route: `/redis-patterns/caching` (chapter landing) · Source of structure: the chapter spec
-> `specs/caching/caching.md` + the TOC · Grounding: **EchoCache** — the declared near-cache, an L1 of ETS tables
-> over the shared L2 Valkey (`echo/apps/echo_cache`) — in front of the **Exchange Platform**'s instrument catalog.
+> `specs/caching/caching.md` + the TOC · Grounding: **EchoStore** — the declared near-cache, an L1 of ETS tables
+> over the shared L2 Valkey (`echo/apps/echo_store`) — in front of the **codemojex**'s emoji set.
 > The first chapter, because caching depends on nothing else.
 
 The most common Valkey use: serving reads fast, and keeping the cache honest when the source changes. Six patterns
 from the read-path family — cache-aside, write-through, write-behind, client-side caching, stampede prevention, and
-session storage — each with the trade-off that decides when to reach for it. The grounding is EchoCache, the declared
-near-cache in front of the Exchange Platform's instrument catalog; the chapter closes by caching that catalog tier end
+session storage — each with the trade-off that decides when to reach for it. The grounding is EchoStore, the declared
+near-cache in front of codemojex's emoji set; the chapter closes by caching that catalog tier end
 to end.
 
 ## Why & when
@@ -38,7 +38,7 @@ Six teaching modules, then a workshop. Each module is a hub with three dives.
 | R1.04 Client-side caching | server-assisted `client-side-caching` | Cache in application memory; the server pushes invalidations. |
 | R1.05 Stampede prevention | `cache-stampede-prevention` | Stop a thundering herd regenerating one expired key. |
 | R1.06 Session management | `session-management` | Store sessions with TTL expiry. |
-| R1.07 Workshop | — | Cache the Exchange Platform's instrument catalog end to end. |
+| R1.07 Workshop | — | Cache codemojex's emoji set end to end. |
 
 ## How to apply
 
@@ -56,8 +56,8 @@ There is no best caching pattern, only the one that matches the constraint you c
 
 ## The workshop
 
-The chapter closes with **R1.07**: cache the Exchange Platform's instrument catalog end to end. The instrument listing
-and a single instrument are served from EchoCache with cache-aside, kept consistent on edits through coherence,
+The chapter closes with **R1.07**: cache codemojex's emoji set end to end. The instrument listing
+and a single instrument are served from EchoStore with cache-aside, kept consistent on edits through coherence,
 protected from a stampede on the most-viewed instrument, and measured for hit rate — the read path the later chapters
 build on.
 
@@ -67,10 +67,10 @@ build on.
 - [Redis — Patterns](https://redis.io/docs/latest/develop/use/patterns/) — the canonical write-ups of the core caching access patterns.
 - [Valkey — SET](https://valkey.io/commands/set/) — set a value with a PX expiry, the cache-aside miss-fill on the engine the connector is gated against.
 - [Redis — Client-side caching](https://redis.io/docs/latest/develop/use/client-side-caching/) — server-assisted invalidation via CLIENT TRACKING.
-- [Valkey — Client-side caching](https://valkey.io/topics/client-side-caching/) — the RESP3 invalidation push EchoCache's coherence frames with a mint-time version.
+- [Valkey — Client-side caching](https://valkey.io/topics/client-side-caching/) — the RESP3 invalidation push EchoStore's coherence frames with a mint-time version.
 
 ### Related in this course
-- [R0 · Overview](/redis-patterns/overview) — where Valkey sits under the Exchange Platform.
+- [R0 · Overview](/redis-patterns/overview) — where Valkey sits under codemojex.
 - [R2 · Coordination](/redis-patterns/coordination) — the next chapter.
-- [The Branded Component System](/bcs) — Part IV builds the EchoCache near-cache these patterns apply.
+- [The Branded Component System](/bcs) — Part IV builds the EchoStore near-cache these patterns apply.
 - [Functional Programming in Elixir](/elixir) — the functional-Elixir and OTP craft behind the echo data layer.

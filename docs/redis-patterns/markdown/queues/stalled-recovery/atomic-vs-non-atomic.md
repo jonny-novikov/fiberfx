@@ -1,102 +1,74 @@
 # Atomic vs non-atomic — one EVALSHA vs the round-trip loop
 
-> Route: `/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic` · Dive R3.03.3 · Module R3.03 Stalled recovery.
-> · Grounding: the atomic, recommended form is `moveStalledJobsToWait-8.lua`
-> (`EchoMQ.Scripts.move_stalled_jobs_to_wait/4`) — one EVALSHA, the detect-and-move runs inside Redis's single thread.
-> The cautionary contrast is the Go port `apps/echomq-go/pkg/echomq/stalled.go`, where
-> `StalledChecker.checkStalledJobs` does the same work app-side in separate round trips (`LRANGE active` →
-> `EXISTS lock` → `LREM`/`LPUSH`, with `atm` incremented client-side). All real.
+> **Route:** `/redis-patterns/queues/stalled-recovery/atomic-vs-non-atomic` · **Dive:** R3.03.3
+> **Grounding:** `echo/apps/echo_mq/lib/echo_mq/stalled.ex` — `@sweep_stalled`, one `EVALSHA` detect-and-move over `active`/`pending`/`dead`, the in-script `HINCRBY 'attempts'`/`'stalled'`. The non-atomic contrast is a **generic** app-side loop, not any shipped surface.
 
-The recovery sweep is two moves: detect — is this job stalled? — and recover — remove it from `active`, push it to
-`wait`. How those two moves are joined determines whether the sweep is correct under concurrency. Joined as one indivisible
-step, the sweep is exact. Joined as two separate round trips, a second sweep can slip between them and recover the same
-job twice. This dive is that difference, run side by side.
+This is the dive the module is built around. Stalled recovery has to detect a stalled job and move it, and there are two ways to do that: as one indivisible step inside the server, or as a sequence of round trips from the application. They look equivalent on a quiet queue. Under two overlapping sweeps they are not — and the difference is whether a job is redelivered once or twice.
 
-## The detect-and-move as one step
+## The atomic form — one EVALSHA
 
-The atomic form runs detect-and-move as a single Lua script. `moveStalledJobsToWait-8.lua` is invoked with one EVALSHA:
-its body reads the in-flight list, tests each job's lock, and moves the stalled ones to `wait` — all inside Redis's
-single command thread. No other command runs between the script's first line and its last. A second sweep that fires
-during the script does not interleave with it; it waits its turn and then finds the work already done. Each stalled job
-is reclaimed once per sweep, and the attempt count is incremented in the script, on the value the script itself read.
+`EchoMQ.Stalled` runs the whole recovery as one cached Lua script, dispatched `EVALSHA`-first. Read, decide, and write happen on the server's single thread, so nothing interleaves between them:
 
-```lua
--- moveStalledJobsToWait-8.lua — atomic detect-and-move, one EVALSHA (real, Elixir)
--- KEYS: stalled(SET) wait(LIST) active(LIST) failed(ZSET) stalled-check meta paused marker
--- for each job in `active` whose lock has expired:
---   mark it on the first pass; on the next pass move it to `wait` (or `failed` past max attempts)
---   and increment attemptsMade — all in one indivisible step, nothing interleaves
-```
+    local exp = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now, 'LIMIT', 0, lim)  -- detect
+    for _, id in ipairs(exp) do
+      redis.call('ZREM', KEYS[1], id)                       -- claim it out of active
+      local jk = p .. 'job:' .. id
+      local st = redis.call('HINCRBY', jk, 'stalled', 1)    -- count in-script
+      if st >= maxst then
+        redis.call('HSET', jk, 'state', 'dead')
+        redis.call('ZADD', KEYS[3], 0, id)                  -- dead
+      else
+        redis.call('ZADD', KEYS[2], 0, id)                  -- pending
+        redis.call('HSET', jk, 'state', 'pending')
+      end
+    end
 
-The script is the lock. Because the read, the decision, and the writes are one step, there is no window between the check
-and the move for a second sweep to act in.
+The `ZREM` that removes a job from `active` and the `ZADD` that puts it in `pending` are in the same script. A job is never in both sets and never in neither — between the two writes no other command runs. A second sweep that starts while this one is mid-loop does not begin until this `EVALSHA` returns, because the server runs one script at a time. Each expired lease is reclaimed exactly once per sweep, and the `stalled` and `attempts` counters are incremented by the script, never read-modify-written by a client.
 
-## The two separate round trips
+## The non-atomic form — the round-trip loop
 
-The non-atomic form is the Go port's `StalledChecker`, the cautionary contrast — the Go runtime's path, not EchoMQ's
-recommended one. It does the same work app-side, in separate commands: `LRANGE active 0 -1` lists the in-flight jobs;
-then for each job `EXISTS lock` is the stalled test (`isJobStalled`); then `recoverStalledJob` runs `HGETALL
-job`, reads and increments the `atm` (attemptsMade) field in Go, runs `LREM active`, branches to `failed` past max
-attempts, and runs `LPUSH wait` with a pipelined `HSET atm`. Each is a round trip, and the gaps between them are open.
+The same recovery, written app-side, is a sequence of separate round trips: list the in-flight set, probe each member's liveness, then move the stalled ones. In pseudocode:
 
-```go
-// stalled.go — the non-atomic Go path (the cautionary contrast, NOT "EchoMQ")
-activeJobs, _ := redis.LRange(ctx, kb.Active(), 0, -1).Result()   // list in-flight jobs
-for _, jobID := range activeJobs {
-    if exists, _ := redis.Exists(ctx, kb.Lock(jobID)).Result(); exists == 0 {  // stalled?
-        // ...a second checker can BOTH reach here for the same job — double-recovery window
-        redis.LRem(ctx, kb.Active(), 1, jobID)   // separate round trip
-        redis.LPush(ctx, kb.Wait(), jobID)       // separate round trip
-        // atm (attemptsMade) read + incremented client-side, then HSet — a lost-update race
-    }
-}
-```
+    in_flight = ZRANGEBYSCORE active -inf now      -- round trip 1: detect
+    for id in in_flight:
+      if probe_says_stalled(id):                   -- round trip 2: re-check
+        ZREM active id                             -- round trip 3: remove
+        ZADD pending 0 id                          -- round trip 4: re-queue
+        n = HGET job:id stalled; HSET job:id stalled (n+1)  -- read, increment, write
 
-Two gaps in this loop are the bugs the atomic script does not have.
+Every line is a separate command, and the application's state lives between them. That gap is where correctness leaks. This is the cautionary contrast — not a strawman, the genuinely common shape of an app-side recovery, and exactly what the atomic Lua exists to avoid.
 
-**The double-recovery window.** Between `EXISTS lock` (the job is stalled) and `LREM`/`LPUSH` (reclaim it), a second
-checker can run the same `EXISTS lock` for the same job, also see it stalled, and also run `LREM`/`LPUSH`. The job lands
-in `wait` twice. One stalled job is redelivered to two workers — at-least-once becomes at-least-twice, by accident.
+## The double-recovery window
 
-**The client-side attempt-count race.** The Go path reads `atm` with `HGETALL`, increments it in Go, and writes it back
-with `HSET`. Two checkers that read the same `atm` before either writes both compute the same next value and both write
-it — a lost update on the attempt counter, so a job that stalled twice records one attempt. The atomic Lua increments the
-field in the script, on the value the script itself read, with nothing in between.
+Two sweeps run on a cadence; on a busy queue they overlap. In the non-atomic loop, sweep A reads the in-flight set and finds job `J` stalled. Before A reaches its `ZREM`, sweep B also reads the set and also finds `J` stalled. Now both move it: A removes it from `active` and pushes it to `pending`; B removes it again (a no-op) and pushes it again. `J` is now in `pending` twice — claimed twice, run twice. The same gap corrupts the count: A reads `stalled = 2`, B reads `stalled = 2`, both write `3`, and one increment is lost — a job that has stalled four times records two.
 
-## The pattern, applied
+The atomic form has no window. A single sweep's detect-and-move is one script; a concurrent sweep cannot start mid-loop. Even two sweeps fired at once serialize on the server, so `J` is reclaimed once and its count is exact. The lesson is the reliable-queue family's core: a recovery that detects and moves in separate steps is correct only until two recoveries overlap, and recoveries always eventually overlap.
 
-EchoMQ uses the atomic form. `EchoMQ.Scripts.move_stalled_jobs_to_wait/4` wraps `moveStalledJobsToWait-8.lua`, an
-eight-key script over `stalled`, `wait`, `active`, `failed`, `stalled-check`, `meta`, `paused`, and `marker`. One
-EVALSHA reclaims each stalled job once per sweep and increments its attempt count in-script — both gaps closed by
-construction. The Go port `apps/echomq-go/pkg/echomq/stalled.go` keeps the same job model but does the recovery in
-separate round trips, and so carries both windows. It is shown here not as EchoMQ but as the contrast that makes the
-atomic form's value concrete: the multi-round-trip loop is correct until two sweeps overlap, and a recovery sweep, by its
-nature, runs concurrently.
+## The bridge
 
-The full script dispatch — the EVALSHA cache, the `stalled-check` throttle, and the pool-wide coordination that keeps two
-sweeps from racing in the first place — is the dedicated EchoMQ course. This dive teaches why the move must be one step;
-that course teaches the engine that runs it.
+- **The pattern:** the detect-and-move must be one indivisible step, or two overlapping sweeps redeliver the same job and lose an increment on the attempt counter.
+- **Its EchoMQ application:** `@sweep_stalled` is that one step — `ZRANGEBYSCORE` + `ZREM` + `ZADD` + `HINCRBY` inside a single `EVALSHA`, on the server's single thread; the count is bumped in-script, never read-modify-written by a client.
+
+The take: atomic recovery is not a performance choice; it is the only form that survives two sweeps running at once.
+
+## When a recovery gives up
+
+The atomic sweep that recovers a job is the same one that dead-letters it: at `max_stalled` the job lands in `emq:{q}:dead` in the same script that detected it. From there its history is durable. When the bus trims the stream, `EchoStore.StreamArchive` folds the trimmed segments into the Graft floor and on to Tigris — so a job that exhausted its recoveries is kept, not lost. The durability dial is the subject of `/echo-persistence`.
 
 ## References
 
 ### Sources
-- [Redis — EVALSHA](https://redis.io/commands/evalsha/) — the cached-script call that runs the detect-and-move as one
-  EVALSHA.
-- [Redis — EVAL / scripting](https://redis.io/commands/eval/) — why a Lua script is one indivisible step, so no second
-  sweep interleaves.
-- [Redis — LREM](https://redis.io/commands/lrem/) — the in-flight removal both forms run; in the Go path a separate round
-  trip.
-- [Redis — LMOVE](https://redis.io/commands/lmove/) — the atomic move back to wait, the one-step alternative to the Go
-  loop's separate `LREM`/`LPUSH`.
-- [BullMQ — the queue protocol](https://bullmq.io/) — the stalled-check worker path both runtimes port.
+
+- [Redis — *EVALSHA*](https://redis.io/commands/evalsha/) — the cached script run as one indivisible step; the dispatch the connector uses first.
+- [Redis — *EVAL / scripting*](https://redis.io/commands/eval/) — the server runs one script at a time, so two sweeps serialize.
+- [Valkey — *ZRANGEBYSCORE*](https://valkey.io/commands/zrangebyscore/) — the detect read at the top of both forms; only the atomic form fences the move that follows it.
+- [Valkey — *HINCRBY*](https://valkey.io/commands/hincrby/) — the in-script increment that avoids the lost-update race a client-side read-modify-write opens.
 
 ### Related in this course
-- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery) — the module: the recovery sweep in full.
-- [R3.03.1 · Lock-expiry detection](/redis-patterns/queues/stalled-recovery/lock-expiry-detection) — the lease the sweep
-  tests.
-- [R3.03.2 · Two-phase mark/recover](/redis-patterns/queues/stalled-recovery/two-phase-mark-recover) — the prior dive:
-  mark once, recover on the next sweep.
-- [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the one-step atomic move this sweep needs.
-- [R3 · The reliable queue](/redis-patterns/queues/the-reliable-queue) — the family in one place: the three guarantees.
-- [E2 · The lifecycle, components & runtimes](/echomq/core) — the dedicated EchoMQ course: the worker fetch loop and the
-  script dispatch.
+
+- [R3.03 · Stalled recovery](/redis-patterns/queues/stalled-recovery) — the module hub.
+- [R3.03.1 · Lock-expiry detection](/redis-patterns/queues/stalled-recovery/lock-expiry-detection) — the lease the sweep reads.
+- [R3.03.2 · Two-phase mark/recover](/redis-patterns/queues/stalled-recovery/two-phase-mark-recover) — the stall count this script increments.
+- [R2.01 · Atomic updates](/redis-patterns/coordination/atomic-updates) — the one-step atomic move, in full.
+- [/echomq/queue](/echomq/queue) — the EchoMQ Queue pillar: the state machine and the inline Lua in depth.
+- [/echo-persistence](/echo-persistence) — the durability floor a dead-lettered job's history reaches.
