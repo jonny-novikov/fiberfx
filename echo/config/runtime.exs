@@ -96,3 +96,16 @@ if config_env() == :prod do
     end
   end
 end
+
+# Dev/local: arm the codemojex bot's OUTBOUND send token from CODEMOJI_BOT_TOKEN (it
+# lives in echo/.env — `set -a && source echo/.env` before `mix phx.server`, because
+# mix does not load .env itself). Without this the dev token wiring did not exist (the
+# block above is :prod-only), so Codemojex.Bot.token/0 fell back to the demo hello bot
+# and resolved nil. INBOUND polling stays off in dev on purpose: prod owns
+# @codemoji_bot's webhook and a dev getUpdates poller would conflict with it — wire a
+# separate dev bot token if dev inbound is ever needed.
+if config_env() == :dev do
+  if bot_token = System.get_env("CODEMOJI_BOT_TOKEN") do
+    config :codemojex, Codemojex.Telegram, token: bot_token
+  end
+end

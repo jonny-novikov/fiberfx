@@ -17,6 +17,12 @@ config :codemojex, Codemojex.Repo,
 
 config :codemojex, CodemojexWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4000],
+  # Dev convenience: accept WebSocket connections regardless of Origin host, so the
+  # LiveView and channel sockets connect whether the app is reached at localhost or
+  # 127.0.0.1 (without this, a 127.0.0.1 Origin fails the check against the configured
+  # "localhost" url host and the live socket never connects). Prod keeps its explicit
+  # check_origin allowlist in runtime.exs.
+  check_origin: false,
   debug_errors: true,
   secret_key_base: String.duplicate("dev_secret_key_base_", 4),
   watchers: []
