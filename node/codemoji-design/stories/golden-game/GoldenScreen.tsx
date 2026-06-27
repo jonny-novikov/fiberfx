@@ -41,7 +41,9 @@ function Frame({ children }: { children: React.ReactNode }) {
 function StandingsCard() {
   return (
     <BoardCard>
-      <BoardTabs>
+      {/* single-panel (the Golden standings) until the Golden tabs get their own
+          reconcile pass — open on the leaderboard tab via the shared strip */}
+      <BoardTabs defaultActive="leaderboard">
         <GoldenLeaderboard items={GOLDEN_STANDINGS} />
       </BoardTabs>
     </BoardCard>

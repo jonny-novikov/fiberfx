@@ -10,6 +10,7 @@ import { GuessActions } from './GuessActions';
 import { EmojiKeyboard } from './EmojiKeyboard';
 import { BoardTabs } from './BoardTabs';
 import { Leaderboard, type LeaderboardEntry } from './Leaderboard';
+import { GuessHistory, type GuessHistoryEntry } from './GuessHistory';
 import { GameRules } from './GameRules';
 import { ShareKeys } from './ShareKeys';
 import { BoardCard } from './lib/BoardCard';
@@ -43,6 +44,33 @@ export const BOARD_LEADERS: LeaderboardEntry[] = [
   { handle: '@lolkekcheburek420', score: 240, metric: '11.2%', avatar: '🤖', isCurrentPlayer: true },
   { handle: '@swagyolo360noscope', score: 120, metric: '9.4%', avatar: '🧑‍🦰' },
   { handle: '@getrektm8', score: 60, metric: '9.4%', avatar: '🇩🇪' },
+];
+
+// The player's own attempts for the History tab — newest first (the app counts
+// `historyData.length - index`). The top row is the last completed guess (the six
+// animals = PREV_GUESS, 280 pts); earlier rows show the per-peg annotation feature
+// (green = right place, yellow = right emoji/wrong place, red = absent).
+export const BOARD_HISTORY: GuessHistoryEntry[] = [
+  {
+    attemptNumber: 3,
+    emojis: ['0800', '0005', '0507', '0902', '0403', '0603'],
+    points: 280,
+    percent: 47,
+    marks: ['green', 'idle', 'yellow', 'idle', 'green', 'idle'],
+  },
+  {
+    attemptNumber: 2,
+    emojis: ['0302', '0104', '0407', '0003', '0506', '0805'],
+    points: 180,
+    percent: 30,
+    marks: ['yellow', 'red', 'idle', 'green', 'idle', 'red'],
+  },
+  {
+    attemptNumber: 1,
+    emojis: ['0300', '0500', '0200', '0604', '0606', '0903'],
+    points: 120,
+    percent: 20,
+  },
 ];
 
 // Sample guess data as XXYY sprite codes (the app draws emoji from the sprite sheet).
@@ -90,11 +118,15 @@ export function BoardScreen() {
           <EmojiKeyboard selected={CURRENT_PICKS} used={PREV_GUESS} />
         </BoardCard>
 
-        {/* tabs + the leaderboard */}
+        {/* tabs — History (the default, the player's attempts) ⇄ Leaderboard;
+            the strip switches panels by id, labels localized inside BoardTabs */}
         <BoardCard>
-          <BoardTabs>
-            <Leaderboard items={BOARD_LEADERS} />
-          </BoardTabs>
+          <BoardTabs
+            panels={{
+              history: <GuessHistory items={BOARD_HISTORY} />,
+              leaderboard: <Leaderboard items={BOARD_LEADERS} />,
+            }}
+          />
         </BoardCard>
 
         {/* rules → share (the master order), then the free-key footer */}
