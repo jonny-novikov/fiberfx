@@ -79,7 +79,7 @@ TMPDIR=/tmp mix test                             # add --include valkey for a wi
   mint contention within a run*, which re-seeding does not reproduce. For a suite without that hazard, a
   multi-seed sweep + an honest determinism-posture statement is enough.
 
-## 4. The v2 master invariant (the wire broke once — do not break it again)
+## 4. The v3 master invariant (the wire broke once — do not break it again)
 
 > Braced `emq:{q}:` keyspace · branded `JOB` ids gated at the key builder · **every Lua key in `KEYS[]`, or
 > derived from a *declared* `KEYS[n]` root** (an `ARGV`-passed base is **not** a declared root — this was

@@ -251,6 +251,14 @@ as `{"type": "streamable-http", "url": "http://localhost:8899/"}`
 
 ## 8 · Surfaced fork — the frontmatter `type` placement (Venus surfaces, the Operator rules)
 
+> **Resolution (2026-06-18) — RULED + SHIPPED.** The Operator ruled Arm A; the as-built realizes it through
+> Arm C's mechanism (the safest blend): `Parse` reads the nested `metadata:` block while a top-level
+> `type`/`originSessionId` still wins when present, so the live corpus is classified *and* the top-level
+> fixtures keep passing ([`internal/frontmatter/parse.go`](../../../go/msh/memory/internal/frontmatter/parse.go)
+> — `rawFrontmatter` + `coalesce`; tests `TestParseNestedMetadata` / `TestParseTopLevelTypeWinsOverMetadata`).
+> Proven: **0 `unknown`** over the 40-node corpus. The arms below are retained as the decision record (Arm B —
+> the destructive corpus rewrite — CHOSEN-AGAINST).
+
 A genuine, verified design fork: the frontmatter parser reads a **top-level** `type:` field
 ([`internal/frontmatter/parse.go:13`](../../../go/msh/memory/internal/frontmatter/parse.go)), but the live
 corpus at [`memory/`](../../../memory) nests it under a `metadata:` map — every note opens

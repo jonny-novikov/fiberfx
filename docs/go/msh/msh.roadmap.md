@@ -83,12 +83,14 @@ unruled fork arms; everything in the tree is present-tense as-built. The workflo
 
 ## Seams & open decisions
 
-1. **The frontmatter `type` placement** (design §8) — **OPEN, Operator to rule.** The parser reads top-level
-   `type:` ([`internal/frontmatter/parse.go:13`](../../../go/msh/memory/internal/frontmatter/parse.go)); the
-   live corpus nests it as `metadata.type`, so most notes classify `unknown`. Three arms are surfaced in the
-   design (Arm A fix the parser to read nested · Arm B migrate the corpus to top-level · Arm C support both).
-   Recommendation on record: Arm A (lowest-liability, no destructive corpus rewrite). Until ruled this is rung
-   **msh.FX**, planned but not scheduled.
+1. **The frontmatter `type` placement** (design §8) — **RULED + SHIPPED (2026-06-18).** The Operator ruled the
+   parser fix; `Parse` now also reads the nested `metadata:` block, with a top-level `type`/`originSessionId`
+   winning when present (Arm C's mechanism realizing Arm A's intent — the live corpus is classified *and* the
+   top-level fixtures still pass). Proven: **0 `unknown`** over the 40-node `memory/` corpus (32 project ·
+   6 feedback · 1 reference · 1 index). As-built:
+   [`internal/frontmatter/parse.go`](../../../go/msh/memory/internal/frontmatter/parse.go) (`rawFrontmatter` +
+   `coalesce`; tests `TestParseNestedMetadata` / `TestParseTopLevelTypeWinsOverMetadata`). Arm B (the
+   destructive corpus migration) kept on record, CHOSEN-AGAINST. Rung **msh.FX** closed.
 2. **Phase 2 — semantic-similarity enrichment** — **DEFERRED.** The `hugot` (endpoint `localhost:8902`) and
    `similarity` (threshold `0.85`, top-k `5`) config blocks are parsed and merged today
    ([`internal/config/defaults.go:38`](../../../go/msh/memory/internal/config/defaults.go)) but consumed by no
