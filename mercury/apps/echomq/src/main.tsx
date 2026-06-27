@@ -2,10 +2,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { initTheme, setTheme } from "@mercury/effector";
 import { App } from "./App";
+import "./echomq.css";
 
-// EchoMQ defaults to dark.
+// EchoMQ is a dark-first dashboard — default to dark unless the visitor has
+// already chosen a theme (persisted by @mercury/effector).
+if (typeof localStorage !== "undefined" && !localStorage.getItem("mercury-theme")) setTheme("dark");
 initTheme();
-if (!localStorage.getItem("mercury-theme")) setTheme("dark");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
