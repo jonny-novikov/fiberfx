@@ -196,16 +196,18 @@ server.registerTool(
   "export-node",
   {
     title: "Export Node as Image",
-    description: "Exports a node as an image in PNG, SVG, or JPG format. Writes the bytes to a bounded Mac temp path and returns {path, w, h, byteLen} — the bytes never enter the tool result. Omit nodeId to fall back to the current page's single selected node.",
+    description: "Exports a node as an image in PNG, SVG, or JPG format. Writes the bytes to a bounded Mac temp path and returns {path, scale, w, h, byteLen} — the bytes never enter the tool result. Pass scale=2 for a Retina @2x raster (PNG/JPG only; SVG is vector and ignores it); defaults to 1×. Omit nodeId to fall back to the current page's single selected node.",
     inputSchema: {
       nodeId: z.string().optional(),
-      format: z.enum(['PNG', 'SVG', 'JPG']).optional()
+      format: z.enum(['PNG', 'SVG', 'JPG']).optional(),
+      scale: z.number().positive().optional() // 2 = Retina @2x (PNG/JPG); default 1×
     },
   },
-  async ({ nodeId, format }) => {
+  async ({ nodeId, format, scale }) => {
     const resolvedFormat = (format || 'PNG').toUpperCase();
+    const resolvedScale = scale ?? 1;
     const normalizedNodeId = nodeId ? normalizeNodeId(nodeId) : undefined;
-    const result = await requestFigma('export-node', { nodeId: normalizedNodeId, format: resolvedFormat });
+    const result = await requestFigma('export-node', { nodeId: normalizedNodeId, format: resolvedFormat, scale: resolvedScale });
     const buf = Buffer.from(result.data, 'base64');
     const file = renderFilename(result.nodeId || normalizedNodeId, resolvedFormat);
     const fullPath = path.join(RENDER_ROOT, file);
@@ -214,7 +216,8 @@ server.registerTool(
       path: fullPath,
       nodeId: result.nodeId,
       format: resolvedFormat,
-      w: result.w,
+      scale: result.scale ?? resolvedScale, // what the plugin honored (1 if it's an un-reloaded plugin)
+      w: result.w, // 1× design dims; the raster on disk is scale× larger
       h: result.h,
       byteLen: result.byteLen ?? buf.length,
     };

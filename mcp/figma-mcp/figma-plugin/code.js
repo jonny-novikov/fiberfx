@@ -43,7 +43,8 @@ figma.ui.onmessage = async (msg) => {
                     result = await getNodeProperties(params.nodeId, params.depth, params.maxNodes);
                     break;
                 case 'export-node':
-                    result = await exportNode(params.nodeId, params.format);
+                    // scale forwarded for Retina @2x (PNG/JPG only); defaults to 1× in exportNode.
+                    result = await exportNode(params.nodeId, params.format, params.scale);
                     break;
                 case 'get-batch-nodes':
                     result = await getBatchNodes(params.nodeIds);
@@ -197,19 +198,30 @@ function serializeSubtree(root, depth, maxNodes) {
         result.truncated = true;
     return result;
 }
-async function exportNode(nodeId, format = 'PNG') {
+async function exportNode(nodeId, format = 'PNG', scale = 1) {
     const id = resolveNodeId(nodeId);
     // ADR-8: async swap (see getNodeProperties comment).
     const node = (await figma.getNodeByIdAsync(id));
     if (!node) {
         throw new Error(`Node not found: ${id}`);
     }
-    const bytes = await node.exportAsync({ format });
+    // Retina @2x: a SCALE constraint multiplies the raster output (e.g. scale:2
+    // doubles each dimension). PNG/JPG only — SVG is vector, so scale is a no-op
+    // there and we never attach the constraint (Figma rejects it on SVG). scale
+    // defaults to 1, so every existing 1× caller is byte-for-byte unchanged.
+    const s = Number(scale) || 1;
+    const settings = (format === 'SVG' || s === 1)
+        ? { format }
+        : { format, constraint: { type: 'SCALE', value: s } };
+    const bytes = await node.exportAsync(settings);
+    // node.width/height are the 1× design dimensions; the actual raster is
+    // scale× larger. Report both so callers can name files / verify @2x.
     const w = 'width' in node ? node.width : undefined;
     const h = 'height' in node ? node.height : undefined;
     return {
         nodeId: id,
         format,
+        scale: s,
         data: figma.base64Encode(bytes),
         w,
         h,
