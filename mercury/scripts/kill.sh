@@ -7,13 +7,15 @@
 # would also take down unrelated Vite servers elsewhere on the machine.
 #
 # Usage:
-#   scripts/kill.sh            # stop the four Mercury apps (5173–5176)
-#   scripts/kill.sh 5180 5181  # also stop these extra ports
+#   scripts/kill.sh            # stop the Mercury apps (5173–5177) + the Codemojex family (3000, 5180)
+#   scripts/kill.sh 5181 5182  # also stop these extra ports
 #
 set -euo pipefail
 
-# showcase · catalogue · echomq · docs · mobile — kept in sync with package.json dev:* ports.
-PORTS=(5173 5174 5175 5176 5177 "$@")
+# Mercury apps: showcase · catalogue · echomq · docs · mobile (5173–5177) — kept
+# in sync with package.json dev:* ports.
+# Codemojex family (cm-all.sh): the api on 3000; 5180 reserved for a future UI.
+PORTS=(5173 5174 5175 5176 5177 3000 5180 "$@")
 
 killed=0
 for port in "${PORTS[@]}"; do

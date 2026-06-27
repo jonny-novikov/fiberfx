@@ -31,7 +31,7 @@ export function AuthCode({ value, onChange, onComplete, length = 6, allow = "num
           <input
             key={i}
             ref={(el) => {
-              refs.current[i] = el;
+              (refs.current ??= [])[i] = el;
             }}
             className="mx-auth__cell"
             type="text"
@@ -43,12 +43,12 @@ export function AuthCode({ value, onChange, onComplete, length = 6, allow = "num
             onChange={(e) => {
               const clean = e.target.value.replace(pattern, "").slice(-1);
               setAt(i, clean);
-              if (clean && i < length - 1) refs.current[i + 1]?.focus();
+              if (clean && i < length - 1) refs.current?.[i + 1]?.focus();
             }}
             onKeyDown={(e) => {
               if (e.key === "Backspace" && !chars[i] && i > 0) {
                 e.preventDefault();
-                refs.current[i - 1]?.focus();
+                refs.current?.[i - 1]?.focus();
                 setAt(i - 1, "");
               }
             }}
@@ -58,7 +58,7 @@ export function AuthCode({ value, onChange, onComplete, length = 6, allow = "num
               e.preventDefault();
               const next = text.slice(0, length);
               onChange(next);
-              refs.current[Math.min(text.length, length - 1)]?.focus();
+              refs.current?.[Math.min(text.length, length - 1)]?.focus();
               if (next.length === length) onComplete?.(next);
             }}
           />
