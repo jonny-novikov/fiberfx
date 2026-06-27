@@ -1,41 +1,54 @@
 import * as React from 'react';
 import { cn } from '../lib/cn';
-import { EmojiTile } from './lib/EmojiTile';
+import { SpriteEmoji } from './lib/SpriteEmoji';
 
-// The previous-attempt row above the guess slots (94:2974). Re-expresses
-// shared/ui/previous-attempt in the Figma master's shape: the label "Предыдущая
-// попытка" on the left, the last guess as small filled tiles in the middle, and
-// the score it earned on the right. Tapping the row calls onClick to refill the
-// slots with it (the app's fillSlots). Scoring is linear — 100 per emoji in the
-// right place — so the score rides as a bare number (no /600 in the master).
+// The previous-attempt row above the guess slots. Faithful re-expression of the app's
+// shared/ui/previous-attempt (codemoji-app): a CENTERED button — the hardcoded label
+// "Предыдущая попытка:", then the last guess as small sprite emoji, then the score it
+// earned (a bare integer, only shown when non-zero). Tapping refills the slots with it
+// (the app's fillSlots). Emoji are XXYY sprite codes drawn at size 14, like the app.
 export interface PreviousAttemptProps {
-  /** the six glyphs of the last guess, left to right */
-  emojis: string[];
-  /** points it scored (0–600; 100 per correctly-placed emoji) */
-  points: number;
+  /** the guess glyphs, left to right, as XXYY sprite codes (a hole = empty position) */
+  emojis: (string | undefined)[];
+  /** points it scored (shown only when non-zero) */
+  points?: number;
+  /** sprite size for each glyph (app default 14) */
+  emojiSize?: number;
   /** fired when the row is tapped (refills the slots with this guess) */
   onClick?: () => void;
   className?: string;
 }
 
-export function PreviousAttempt({ emojis, points, onClick, className }: PreviousAttemptProps) {
+export function PreviousAttempt({
+  emojis,
+  points = 0,
+  emojiSize = 14,
+  onClick,
+  className,
+}: PreviousAttemptProps) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full items-center justify-between gap-2 text-xs font-medium leading-none',
-        onClick && 'cursor-pointer transition-opacity hover:opacity-70 active:opacity-50',
-        className
-      )}
-    >
-      <span className="text-card-foreground-secondary">Предыдущая попытка</span>
-      <span className="inline-flex items-center gap-1">
-        {emojis.map((emoji, i) => (
-          <EmojiTile key={i} emoji={emoji} state="filled" size="sm" />
-        ))}
-      </span>
-      <span className="font-bold text-card-foreground tabular-nums">{points}</span>
-    </button>
+    <div className="flex justify-center">
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'flex items-center justify-center gap-2 text-xs font-medium leading-none',
+          onClick && 'cursor-pointer transition-opacity hover:opacity-70 active:opacity-50',
+          className
+        )}
+      >
+        <span>Предыдущая попытка:</span>
+        <span className="inline-flex items-center gap-1">
+          {emojis.map((code, i) =>
+            code ? (
+              <SpriteEmoji key={i} code={code} size={emojiSize} />
+            ) : (
+              <span key={i} style={{ width: emojiSize, display: 'inline-block' }} />
+            )
+          )}
+        </span>
+        {points !== 0 ? <span>{points}</span> : null}
+      </button>
+    </div>
   );
 }

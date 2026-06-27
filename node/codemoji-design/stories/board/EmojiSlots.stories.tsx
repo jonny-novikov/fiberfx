@@ -21,10 +21,13 @@ export default meta;
 
 type Story = StoryObj<typeof EmojiSlots>;
 
+// emojis are XXYY sprite codes (🐶 🦊 🐯 🎮 💎 🏎 …)
 export const Empty: Story = { args: { emojis: [] } };
-export const InProgress: Story = { args: { emojis: ['😀', '🐱', '🔥'] } };
-export const Full: Story = { args: { emojis: ['😀', '🐱', '🔥', '🎮', '💎', '🚀'] } };
+export const InProgress: Story = { args: { emojis: ['0800', '0005', '0507'] } };
+export const Full: Story = {
+  args: { emojis: ['0800', '0005', '0507', '0613', '0500', '0700'] },
+};
 export const WithPinned: Story = {
   name: 'With pinned slot',
-  args: { emojis: ['😀', undefined, '🔥'], locked: [0] },
+  args: { emojis: ['0800', undefined, '0500'], locked: [0] },
 };

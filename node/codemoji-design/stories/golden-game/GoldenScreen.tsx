@@ -56,7 +56,7 @@ export function GoldenInProgressScreen() {
       <BoardCard className="px-3 pt-5 pb-4">
         <h2 className="mb-3 text-center text-xl font-bold leading-none">Guess the code</h2>
         <div className="flex flex-col gap-3">
-          <EmojiSlots emojis={['😀', '🐱', '🔥']} />
+          <EmojiSlots emojis={['0104', '0300', '0500']} />
           <GuessActions keyCost={5} />
         </div>
       </BoardCard>

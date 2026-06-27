@@ -19,9 +19,10 @@ export default meta;
 
 type Story = StoryObj<typeof PreviousAttempt>;
 
+// emojis are XXYY sprite codes
 export const Default: Story = {
-  args: { emojis: ['😀', '🐱', '🔥', '🎮', '💎', '🚀'], points: 80 },
+  args: { emojis: ['0800', '0005', '0507', '0613', '0500', '0700'], points: 80 },
 };
 export const HighScore: Story = {
-  args: { emojis: ['😎', '🦊', '⭐', '🚀', '🔑', '🌈'], points: 520 },
+  args: { emojis: ['0902', '0005', '0707', '0510', '0613', '0011'], points: 520 },
 };

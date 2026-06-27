@@ -44,6 +44,12 @@ export const BOARD_LEADERS: LeaderboardEntry[] = [
   { handle: '@getrektm8', score: 60, metric: '9.4%', avatar: '🇩🇪' },
 ];
 
+// Sample guess data as XXYY sprite codes (the app draws emoji from the sprite sheet).
+// PREV_GUESS = the last completed guess (🐶 🦊 🐯 🐼 🐵 🦁); CURRENT_PICKS = the
+// in-progress pick (🐝 🔥 💎) — three of six slots filled.
+const PREV_GUESS = ['0800', '0005', '0507', '0902', '0403', '0603'];
+const CURRENT_PICKS = ['0104', '0300', '0500'];
+
 // The board's "All Screen Fill" gradient (Figma 94:2974 fill) — top-light to
 // bottom-blue, on the design system's bg tokens (#E8F3F7 → #AFC7D6).
 const SCREEN_FILL = 'linear-gradient(180deg, var(--color-bg-app-from), var(--color-bg-app-to))';
@@ -69,15 +75,16 @@ export function BoardScreen() {
         <BoardCard className="px-3 pt-5 pb-4">
           <h2 className="mb-3 text-center text-xl font-bold leading-none">Отгадай код из 6 эмодзи</h2>
           <div className="flex flex-col gap-3">
-            <PreviousAttempt emojis={['🐝', '🪑', '🌳', '🔌', '💎', '🚀']} points={280} />
-            <EmojiSlots emojis={['🐝', '🪑', '🌳']} />
+            {/* last guess = the six animals (280 pts); now picking 🐝 🔥 💎 */}
+            <PreviousAttempt emojis={PREV_GUESS} points={280} />
+            <EmojiSlots emojis={CURRENT_PICKS} />
             <GuessActions keyCost={5} />
           </div>
         </BoardCard>
 
-        {/* the emoji keyboard */}
+        {/* the emoji keyboard — current picks show green, the last guess shows faded */}
         <BoardCard>
-          <EmojiKeyboard />
+          <EmojiKeyboard selected={CURRENT_PICKS} used={PREV_GUESS} />
         </BoardCard>
 
         {/* tabs + the leaderboard */}
