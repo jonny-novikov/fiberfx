@@ -12,6 +12,7 @@ const BACKED_ACTIONS = [
   'export-node',
   'get-batch-nodes',
   'resolve-variables',
+  'export-figure',
 ] as const;
 
 function connectToBridge() {
@@ -48,13 +49,19 @@ figma.ui.onmessage = async (msg) => {
           result = await getNodeProperties(params.nodeId, params.depth, params.maxNodes);
           break;
         case 'export-node':
-          result = await exportNode(params.nodeId, params.format);
+          // scale forwarded for Retina @2x (PNG/JPG only); defaults to 1× in exportNode.
+          result = await exportNode(params.nodeId, params.format, params.scale);
           break;
         case 'get-batch-nodes':
           result = await getBatchNodes(params.nodeIds);
           break;
         case 'resolve-variables':
           result = await resolveVariables(params.nodeId);
+          break;
+        case 'export-figure':
+          // figl.6 — the FigureBundle RAW gather (structure + tokens + per-asset
+          // export). mcp.js does the pure-data projection + humanized disk egress.
+          result = await exportFigure(params.nodeId, params.depth, params.scale, params.maxNodes);
           break;
         default:
           throw new Error(`Unknown action: ${action}`);
@@ -210,7 +217,7 @@ function serializeSubtree(root: BaseNode, depth: number, maxNodes: number) {
   return result;
 }
 
-async function exportNode(nodeId?: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG') {
+async function exportNode(nodeId?: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG', scale: number = 1) {
   const id = resolveNodeId(nodeId);
   // ADR-8: async swap (see getNodeProperties comment).
   const node = (await figma.getNodeByIdAsync(id)) as SceneNode;
@@ -218,12 +225,24 @@ async function exportNode(nodeId?: string, format: 'PNG' | 'SVG' | 'JPG' = 'PNG'
     throw new Error(`Node not found: ${id}`);
   }
 
-  const bytes = await node.exportAsync({ format });
+  // Retina @2x: a SCALE constraint multiplies the raster output (e.g. scale:2
+  // doubles each dimension). PNG/JPG only — SVG is vector, so scale is a no-op
+  // there and Figma rejects the constraint on SVG. scale defaults to 1, so every
+  // existing 1× caller is byte-for-byte unchanged. Two calls (not one settings
+  // object) so control-flow narrows `format` to 'PNG'|'JPG' for the typed
+  // ExportSettingsImage overload that carries `constraint`.
+  const s = Number(scale) || 1;
+  const bytes = (format === 'SVG' || s === 1)
+    ? await node.exportAsync({ format })
+    : await node.exportAsync({ format, constraint: { type: 'SCALE', value: s } });
+  // node.width/height are the 1× design dimensions; the actual raster is scale×
+  // larger. Report both so callers can name files / verify @2x.
   const w = 'width' in node ? node.width : undefined;
   const h = 'height' in node ? node.height : undefined;
   return {
     nodeId: id,
     format,
+    scale: s,
     data: figma.base64Encode(bytes),
     w,
     h,
@@ -253,24 +272,14 @@ async function getBatchNodes(nodeIds: string[]) {
   return out;
 }
 
-// ADR-4: the one capability the Mac client physically cannot supply.
-// `valuesByMode` "will not resolve any aliases" (typings :11441) — only
-// `Variable.resolveForConsumer(consumer)` (:11432) walks the chain to a
-// concrete value, and it needs a SceneNode that lives only inside the plugin.
-//
-// Walks every alias reachable from the node — both at the node-level
-// (`node.boundVariables`) AND inside the per-Paint bindings on
-// fills/strokes/effects/layoutGrids (where most fill-color bindings live,
-// e.g. the 14 CODEMOJIES aliases). Returns `{nodeId, bindings, count}` —
-// each binding records its source path, the variable id/name, and either
-// {value, resolvedType} on success or {error} on failure (per-binding, so one
-// dead alias does not fail the whole call).
-async function resolveVariables(nodeId?: string) {
-  const id = resolveNodeId(nodeId);
-  const node = await figma.getNodeByIdAsync(id);
-  if (!node) {
-    throw new Error(`Node not found: ${id}`);
-  }
+// ADR-4 core, factored out (figl.6) so export-figure can resolve the bound
+// variables of EVERY node in a subtree without re-implementing the walk. The
+// binding list — its order, fields, and per-binding shape — is byte-identical
+// to the figl.5 resolve-variables contract; the public action below is now a
+// thin wrapper. `valuesByMode` "will not resolve any aliases" (typings :11441);
+// only `Variable.resolveForConsumer(consumer)` (:11432) walks the chain to a
+// concrete value, and it needs the consuming SceneNode (which lives only here).
+async function collectBoundVariables(node: BaseNode): Promise<any[]> {
   const sceneNode = node as SceneNode;
   const bindings: any[] = [];
 
@@ -339,7 +348,127 @@ async function resolveVariables(nodeId?: string) {
     }
   }
 
+  return bindings;
+}
+
+// ADR-4: the one capability the Mac client physically cannot supply. Thin
+// wrapper over collectBoundVariables — the figl.5 {nodeId, bindings, count}
+// contract is unchanged (the binding walk now lives in the helper above).
+async function resolveVariables(nodeId?: string) {
+  const id = resolveNodeId(nodeId);
+  const node = await figma.getNodeByIdAsync(id);
+  if (!node) {
+    throw new Error(`Node not found: ${id}`);
+  }
+  const bindings = await collectBoundVariables(node);
   return { nodeId: id, bindings, count: bindings.length };
+}
+
+// figl.6 / ADR-9, ADR-10 — vector asset boundaries. An icon is usually a GROUP
+// of paths; we want it as ONE reusable .svg, not N path fragments. So a node is
+// an asset boundary when its WHOLE subtree is vector shapes (or it is a single
+// vector leaf). A layout frame mixing a vector with text is NOT a boundary — it
+// stays structural and we recurse into it. Types per the typings: VECTOR :10529,
+// LINE :10446, ELLIPSE :10462, POLYGON :10482, STAR :10502, BOOLEAN_OPERATION :10884.
+const VECTOR_TYPES = ['VECTOR', 'STAR', 'LINE', 'ELLIPSE', 'POLYGON', 'BOOLEAN_OPERATION'];
+
+function isVectorSubtree(node: BaseNode): boolean {
+  if (VECTOR_TYPES.indexOf(node.type) !== -1) return true;
+  if ('children' in node) {
+    const kids = (node as any).children as BaseNode[];
+    return kids.length > 0 && kids.every(isVectorSubtree);
+  }
+  return false;
+}
+
+// A leaf that paints a raster (an IMAGE fill) → export it as a PNG at `scale`.
+function hasImageFill(node: BaseNode): boolean {
+  const fills = (node as any).fills;
+  return Array.isArray(fills) && fills.some((f: any) => f && f.type === 'IMAGE' && f.visible !== false);
+}
+
+// figl.6 — the FigureBundle RAW gather. The plugin does ONLY what needs the
+// figma.* API: the structural read (serializeNodeDetailed), token resolution
+// (collectBoundVariables → resolveForConsumer), and per-asset export — the
+// SVG_STRING overload returns a string (typings :8675); the image overload
+// returns a Uint8Array (:8673) base64-encoded with figma.base64Encode (:1886).
+// It returns RAW payloads (svg strings, base64 rasters, raw bindings); every
+// pure-data transform (RGBA→hex, fills→background, auto-layout→flex, box-shadow,
+// humanized naming, disk egress) lives in mcp.js / figure.js, unit-tested on the
+// Mac with no Figma. Bounded by maxNodes exactly like serializeSubtree (ADR-2):
+// depth omitted = the full subtree (capped); depth=N expands N levels.
+async function exportFigure(nodeId?: string, depth?: number, scale: number = 1, maxNodes: number = DEFAULT_MAX_NODES) {
+  const id = resolveNodeId(nodeId);
+  const root = await figma.getNodeByIdAsync(id);
+  if (!root) {
+    throw new Error(`Node not found: ${id}`);
+  }
+
+  const s = Number(scale) || 1;
+  const assets: any[] = [];
+  let count = 0;
+  let truncated = false;
+  const maxDepth = depth === undefined ? Infinity : depth;
+
+  async function walk(node: BaseNode, d: number): Promise<any> {
+    count++;
+    const data: any = serializeNodeDetailed(node);
+    if ('opacity' in node) data.opacity = (node as any).opacity; // BlendMixin :4331
+    const tokens = await collectBoundVariables(node);
+    if (tokens.length) data.tokens = tokens;
+
+    // Asset boundary: a pure-vector subtree → one SVG; an image leaf → one PNG.
+    // The node becomes a leaf asset — we do NOT recurse into it.
+    if (isVectorSubtree(node) && 'exportAsync' in node) {
+      const svgString = await (node as SceneNode).exportAsync({ format: 'SVG_STRING' });
+      assets.push({
+        node: node.id,
+        name: node.name,
+        type: 'svg',
+        data: svgString,
+        w: 'width' in node ? (node as any).width : undefined,
+        h: 'height' in node ? (node as any).height : undefined,
+        byteLen: svgString.length,
+      });
+      data.assetRef = node.id;
+      delete data.children;
+      return data;
+    }
+    if (!('children' in node) && hasImageFill(node) && 'exportAsync' in node) {
+      const bytes = s === 1
+        ? await (node as SceneNode).exportAsync({ format: 'PNG' })
+        : await (node as SceneNode).exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: s } });
+      assets.push({
+        node: node.id,
+        name: node.name,
+        type: 'png',
+        data: figma.base64Encode(bytes),
+        scale: s,
+        w: 'width' in node ? (node as any).width : undefined,
+        h: 'height' in node ? (node as any).height : undefined,
+        byteLen: bytes.length,
+      });
+      data.assetRef = node.id;
+      return data;
+    }
+
+    // Structural: recurse (bounded), replacing the lite {id,name,type} stubs.
+    if (d > 0 && 'children' in node) {
+      const kids = (node as any).children as BaseNode[];
+      const rich: any[] = [];
+      for (const c of kids) {
+        if (count >= maxNodes) { truncated = true; break; }
+        rich.push(await walk(c, d - 1));
+      }
+      data.children = rich;
+    }
+    return data;
+  }
+
+  const rootData = await walk(root, maxDepth);
+  rootData.nodeCount = count;
+  if (truncated) rootData.truncated = true;
+  return { root: rootData, assets };
 }
 
 function serializeNode(node: BaseNode) {

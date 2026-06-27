@@ -4,6 +4,7 @@ import { z } from "zod";
 import os from "node:os";
 import path from "node:path";
 import { mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { buildFigureBundle } from "./figure.js";
 
 const BRIDGE_URL = process.env.FIGMA_BRIDGE_URL || 'http://localhost:3001';
 const MAX_RETRIES = 3;
@@ -14,6 +15,13 @@ const INITIAL_RETRY_DELAY = 1000;
 // auto-created at startup; cleanup is explicit via the cleanup-renders tool.
 const RENDER_ROOT = process.env.FIGMA_MCP_RENDER_ROOT || path.join(os.tmpdir(), 'figma-mcp-renders');
 mkdirSync(RENDER_ROOT, { recursive: true });
+
+// figl.6 / ADR-10 — reusable figure assets (humanized + STABLE names) live under
+// a SEPARATE root from the ephemeral renders. cleanup-renders only lists the
+// top-level files of RENDER_ROOT (the readdir below), so this subdir is never
+// swept — assets persist "for future use".
+const ASSET_ROOT = process.env.FIGMA_MCP_ASSET_ROOT || path.join(RENDER_ROOT, 'assets');
+mkdirSync(ASSET_ROOT, { recursive: true });
 
 // Plugin-backed tools (ADR-5). Compared against /health backedActions in
 // check-bridge-status; a mismatch is WARN, never a hard fail.
@@ -26,6 +34,7 @@ const ADVERTISED_ACTIONS = [
   'export-node',
   'get-batch-nodes',
   'resolve-variables',
+  'export-figure',
 ];
 
 const server = new McpServer({
@@ -254,6 +263,35 @@ server.registerTool(
     const normalizedNodeId = nodeId ? normalizeNodeId(nodeId) : undefined;
     const result = await requestFigma('resolve-variables', { nodeId: normalizedNodeId });
     return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  }
+);
+
+server.registerTool(
+  "export-figure",
+  {
+    title: "Export Figure (React-suitable bundle)",
+    description: "Exports a node's subtree as a FigureBundle for rendering React components: a THIN structural IR (layout incl. auto-layout→flex, CSS-style props with resolved design-token references {token,value}, text) plus humanized, REUSABLE on-disk assets — a vector subtree → one .svg, an image leaf → .png — written under FIGMA_MCP_ASSET_ROOT/<screen-slug>/<layer-slug>. Heavy bytes are NEVER in the result; assets are {path,…} refs (svg inline only when svg='inline'). Omit nodeId to fall back to the current selection. depth bounds the walk (omit = full subtree, capped by maxNodes; the root then carries truncated/nodeCount). scale sets the raster @Nx (vectors ignore it).",
+    inputSchema: {
+      nodeId: z.string().optional(),
+      depth: z.number().int().nonnegative().optional(),
+      scale: z.number().positive().optional(),
+      maxNodes: z.number().int().positive().optional(),
+      svg: z.enum(['file', 'inline']).optional(),
+    },
+  },
+  async ({ nodeId, depth, scale, maxNodes, svg }) => {
+    const normalizedNodeId = nodeId ? normalizeNodeId(nodeId) : undefined;
+    const resolvedScale = scale ?? 1;
+    const raw = await requestFigma('export-figure', { nodeId: normalizedNodeId, depth, scale: resolvedScale, maxNodes });
+
+    // Pure projection + write plan (figure.js, Mac-testable). ADR-1 egress: the
+    // heavy asset bytes land on disk here; the returned bundle carries only refs.
+    const { bundle, writes } = buildFigureBundle(raw, { svg, assetRoot: ASSET_ROOT });
+    for (const w of writes) {
+      mkdirSync(path.dirname(w.path), { recursive: true });
+      writeFileSync(w.path, Buffer.from(w.data, w.encoding));
+    }
+    return { content: [{ type: "text", text: JSON.stringify(bundle, null, 2) }] };
   }
 );
 
