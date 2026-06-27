@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
 
 // Builds the board as a content-hashed ESM bundle into ../priv/static/board, with a
 // vite manifest the edge-deploy script reads. This is the artifact uploaded to
@@ -13,7 +14,11 @@ export default defineConfig({
     manifest: true,
     target: "es2020",
     rollupOptions: {
-      input: "react/index.tsx",
+      // Absolute path, NOT the bare specifier "react/index.tsx": the entry dir is named
+      // `react`, which collides with the npm `react` package, so a bare string is resolved
+      // as a package subpath (→ "Missing ./index.tsx specifier in react"). fileURLToPath
+      // forces file resolution regardless of cwd or vite `root`.
+      input: fileURLToPath(new URL("./react/index.tsx", import.meta.url)),
       output: {
         format: "es",
         entryFileNames: "board-[hash].js",
