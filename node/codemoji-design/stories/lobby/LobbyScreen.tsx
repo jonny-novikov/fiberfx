@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 // Reused straight from the board — the design-system payoff: these two are the SAME
 // components the gameplay board uses, composed here into a different screen.
 import { GameRules } from '../board/GameRules';
@@ -60,6 +61,7 @@ export const LOBBY_ARCHIVE = [
 const SCREEN_FILL = 'linear-gradient(180deg, var(--color-bg-app-from), var(--color-bg-app-to))';
 
 export function LobbyScreen() {
+  const { t } = useTranslation();
   return (
     <div className="font-sans" style={{ background: SCREEN_FILL }}>
       {/* phone chrome — full-bleed (status bar to the corners), near the top */}
@@ -87,8 +89,8 @@ export function LobbyScreen() {
           }}
         >
           <RoomList rooms={LOBBY_ROOMS} />
-          <ArchiveList title="Ваши золотые комнаты" items={LOBBY_GOLDEN_ARCHIVE} />
-          <ArchiveList title="Архив комнат" items={LOBBY_ARCHIVE} onShowMore={() => {}} />
+          <ArchiveList title={t('lobby.archive.yourGolden')} items={LOBBY_GOLDEN_ARCHIVE} />
+          <ArchiveList title={t('lobby.archive.rooms')} items={LOBBY_ARCHIVE} onShowMore={() => {}} />
           <GameRules />
           <ShareKeys />
           <CharacterFooter />

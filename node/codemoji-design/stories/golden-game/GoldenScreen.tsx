@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 // Reused straight from the board — the Golden Game IS the board with a gold
 // treatment, so the composer / keyboard / tabs / rules / share are all imported.
 import { StatusBar } from '../board/StatusBar';
@@ -49,18 +50,19 @@ function StandingsCard() {
 
 // 1089:19410 — an active boosted game.
 export function GoldenInProgressScreen() {
+  const { t } = useTranslation();
   return (
     <Frame>
       <StatusBar username="@player" diamonds={52352} clips={4} keys={147} />
       <GoldenHero timeLeft="48:00:00" prizePool={2352} boost={3} />
       <BoardCard className="px-3 pt-5 pb-4">
-        <h2 className="mb-3 text-center text-xl font-bold leading-none">Guess the code</h2>
+        <h2 className="mb-3 text-center text-xl font-bold leading-none">{t('game.guessTheCode')}</h2>
         <div className="flex flex-col gap-3">
           <EmojiSlots emojis={['0104', '0300', '0500']} />
           <GuessActions keyCost={5} />
         </div>
       </BoardCard>
-      <Button variant="golden">View winners</Button>
+      <Button variant="golden">{t('golden.viewWinners')}</Button>
       <BoardCard>
         <EmojiKeyboard />
       </BoardCard>
@@ -73,12 +75,13 @@ export function GoldenInProgressScreen() {
 
 // 1108:27589 — post-settlement, winner-take-all of the boosted pool.
 export function GoldenFinishedScreen() {
+  const { t } = useTranslation();
   return (
     <Frame>
       <StatusBar username="@player" diamonds={52352} clips={4} keys={147} />
       <GoldenHero timeLeft="00:00:00" prizePool={2352} boost={3} />
       <GoldenAnswerReveal code={GOLDEN_ANSWER} />
-      <Button variant="golden">Play again</Button>
+      <Button variant="golden">{t('gameOverDialog.playAgain')}</Button>
       <StandingsCard />
       <GameRules />
       <ShareKeys />

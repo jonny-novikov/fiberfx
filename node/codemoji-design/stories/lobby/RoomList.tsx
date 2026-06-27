@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { RoomCard } from './RoomCard';
 
@@ -19,10 +20,11 @@ const SAMPLE_ROOMS: React.ComponentProps<typeof RoomCard>[] = [
 ];
 
 export function RoomList({ rooms = SAMPLE_ROOMS, className }: RoomListProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn(className)}>
-      <p className="text-center text-h1 font-bold text-dark-muted">Выбери сейф, чтобы начать</p>
-      <p className="text-center text-h5 text-muted">Получай ключи, чтобы подобрать эмоджи код</p>
+      <p className="text-center text-h1 font-bold text-dark-muted">{t('rooms.chooseRoom')}</p>
+      <p className="text-center text-h5 text-muted">{t('rooms.getKeysDescription')}</p>
       <div className="mt-5 grid grid-cols-1 gap-y-2">
         {rooms.map((room, i) => (
           <RoomCard key={`${room.name}-${i}`} {...room} />

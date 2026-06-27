@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { EmojiTile } from '../board/lib/EmojiTile';
 
@@ -12,10 +13,11 @@ export interface GoldenAnswerRevealProps {
 }
 
 export function GoldenAnswerReveal({ code, className }: GoldenAnswerRevealProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn('rounded-2xl bg-gold-texture p-4 text-center', className)}>
       <div className="mb-2 text-2xs font-bold uppercase tracking-wide text-primary">
-        Correct answer
+        {t('golden.correctAnswer')}
       </div>
       <div className="flex justify-center gap-1.5">
         {code.map((emoji, i) => (

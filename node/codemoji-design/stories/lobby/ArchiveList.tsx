@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { Button } from '../components/Button';
 import { ArchiveRoomItem } from './ArchiveRoomItem';
@@ -16,10 +17,12 @@ export interface ArchiveListProps {
   className?: string;
 }
 
-export function ArchiveList({ title = 'Архив комнат', items, onShowMore, className }: ArchiveListProps) {
+export function ArchiveList({ title, items, onShowMore, className }: ArchiveListProps) {
+  const { t } = useTranslation();
+  const resolvedTitle = title ?? t('lobby.archive.rooms');
   return (
     <div className={cn(className)}>
-      <h2 className="text-h1 px-4 font-bold text-primary">{title}</h2>
+      <h2 className="text-h1 px-4 font-bold text-primary">{resolvedTitle}</h2>
 
       <div className="mt-4 space-y-2">
         {items.map((item, index) => (
@@ -29,7 +32,7 @@ export function ArchiveList({ title = 'Архив комнат', items, onShowMo
 
       {onShowMore && (
         <Button variant="outline" className="mt-4 w-full" onClick={onShowMore}>
-          Показать больше
+          {t('archive.showMore')}
         </Button>
       )}
     </div>

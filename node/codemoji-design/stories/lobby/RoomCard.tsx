@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { BoardCard } from '../board/lib/BoardCard';
 import { Button } from '../components/Button';
@@ -37,12 +38,16 @@ export function RoomCard({
   emojiCount = 80,
   cells = 6,
   bestPercent,
-  ctaLabel = 'Открыть сейф',
+  ctaLabel,
   golden = false,
   disabled = false,
   onJoin,
   className,
 }: RoomCardProps) {
+  const { t } = useTranslation();
+  // A caller-provided CTA (the Figma-curated sample labels) wins; otherwise the
+  // localized default room-entry label.
+  const resolvedCta = ctaLabel ?? t('rooms.joinGame');
   return (
     <BoardCard
       className={cn('flex flex-col gap-4', golden && 'border-2 border-gold-border', className)}
@@ -55,9 +60,9 @@ export function RoomCard({
         <p className="flex items-center gap-2 text-h5 text-card-foreground-secondary">
           <span aria-hidden>{'⭐'.repeat(Math.max(1, stars))}</span>
           <span>/</span>
-          <span>{emojiCount} эмоджи</span>
+          <span>{emojiCount} {t('rooms.emoji')}</span>
           <span>/</span>
-          <span>{cells} ячеек</span>
+          <span>{cells} {t('rooms.cells')}</span>
         </p>
       </div>
 
@@ -77,7 +82,7 @@ export function RoomCard({
       )}
 
       <Button variant={golden ? 'golden' : 'enter'} disabled={disabled} onClick={onJoin}>
-        {ctaLabel}
+        {resolvedCta}
       </Button>
     </BoardCard>
   );

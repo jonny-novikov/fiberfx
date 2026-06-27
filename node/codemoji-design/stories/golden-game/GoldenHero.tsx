@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 
 // The signature golden surface — the gold hero on the Golden Room screens
@@ -33,16 +34,17 @@ export function GoldenHero({
   onReadRules,
   className,
 }: GoldenHeroProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn('overflow-hidden rounded-2xl', className)}>
       <div className="grid grid-cols-2 gap-3 bg-gold-texture p-4 text-primary">
         <div className="text-center">
           <div className="text-2xl font-bold leading-none">{timeLeft}</div>
-          <div className="mt-1 text-2xs font-medium">Round time</div>
+          <div className="mt-1 text-2xs font-medium">{t('golden.roundTime')}</div>
         </div>
         <div className="text-center">
           <div className="text-2xl font-bold leading-none">{prizePool.toLocaleString()} 💎</div>
-          <div className="mt-1 text-2xs font-medium">Prize pool · {boost}× boost</div>
+          <div className="mt-1 text-2xs font-medium">{t('golden.prizePoolBoost', { boost })}</div>
         </div>
       </div>
       <button
@@ -51,9 +53,9 @@ export function GoldenHero({
         className="flex w-full items-center justify-between bg-primary px-4 py-3"
       >
         <span className="font-bold" style={goldText}>
-          Golden Room
+          {t('golden.roomTitle')}
         </span>
-        <span className="text-xs font-medium text-primary-foreground">Read rules ›</span>
+        <span className="text-xs font-medium text-primary-foreground">{t('golden.readRules')} ›</span>
       </button>
     </div>
   );

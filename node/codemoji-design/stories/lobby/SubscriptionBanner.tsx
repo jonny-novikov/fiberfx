@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { Button } from '../components/Button';
 
@@ -18,29 +19,33 @@ export interface SubscriptionBannerProps {
 }
 
 export function SubscriptionBanner({
-  heading = 'Тысяча.',
-  description = 'Не миллионов, чтобы ты сразу испугался и спрятался за скепсис. И не двадцать баксов, чтобы ты снисходительно фыркнул. Ровно столько, чтобы ты сказал: «Хм… а вдруг?»',
-  ctaLabel = 'Это что такое?',
+  heading,
+  description,
+  ctaLabel,
   onClose,
   onCta,
   className,
 }: SubscriptionBannerProps) {
+  const { t } = useTranslation();
+  const resolvedHeading = heading ?? t('lobby.subscription.heading');
+  const resolvedDescription = description ?? t('lobby.subscription.description');
+  const resolvedCta = ctaLabel ?? t('lobby.subscription.cta');
   return (
     <div className={cn('relative rounded-2xl bg-primary p-6 text-white', className)}>
       {onClose && (
         <button
           type="button"
-          aria-label="Закрыть"
+          aria-label={t('common.close')}
           onClick={onClose}
           className="absolute right-3 top-3 text-white transition-opacity hover:opacity-70"
         >
           ✕
         </button>
       )}
-      <p className="text-h3 font-bold">{heading}</p>
-      <p className="mt-2 text-h5 font-medium leading-snug">{description}</p>
+      <p className="text-h3 font-bold">{resolvedHeading}</p>
+      <p className="mt-2 text-h5 font-medium leading-snug">{resolvedDescription}</p>
       <Button className="mt-4 bg-card text-card-foreground" variant="default" onClick={onCta}>
-        {ctaLabel}
+        {resolvedCta}
       </Button>
     </div>
   );
