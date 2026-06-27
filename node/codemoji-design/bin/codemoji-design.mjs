@@ -46,18 +46,36 @@ async function extract(nodeId) {
   const { nodes, imageAssets, calls } = await boundedWalk(id, { depth: 3 });
   writeFileSync(join(dir, 'structure', 'summary.json'), JSON.stringify({ screen: id, nodes }, null, 2));
 
+  const REF_SCALE = 2; // Retina @2x reference renders (Figma node size × 2) for fidelity.
   const targets = renderTargets(nodes);
-  console.log(`rendering ${targets.length} figures ...`);
+  console.log(`rendering ${targets.length} figures @${REF_SCALE}x ...`);
+  // renderNodes (src/extract.mjs) renders 1× and writes the reference/ PNGs + names
+  // each render file. We then re-export the SAME targets at @2x straight to the same
+  // filenames, overwriting the 1× bytes — so reference/ ends up @2x while reusing
+  // renderNodes' filename + manifest plumbing untouched.
   const renders = await renderNodes(targets, join(dir, 'reference'));
+  const refDir = join(dir, 'reference');
+  for (const r of renders) {
+    if (r.error || !r.file) continue;
+    try {
+      const res = await bridge.exportNode(r.id, 'PNG', REF_SCALE); // @2x
+      writeFileSync(join(refDir, r.file), Buffer.from(res.data, 'base64'));
+      r.kb = Math.round(Buffer.from(res.data, 'base64').length / 1024);
+      r.w = res.w; r.h = res.h; r.scale = res.scale ?? REF_SCALE; // w/h are 1× design dims; scale is what the plugin honored
+    } catch (e) {
+      r.error = String(e.message || e); // a re-export miss leaves the 1× PNG on disk; record why
+    }
+  }
   writeFileSync(join(dir, 'structure', 'renders.json'), JSON.stringify(renders, null, 2));
 
   const manifest = buildManifest({ screen: { id, name }, nodes, renders, imageAssets, source: bridge.BRIDGE_URL, stamp: new Date().toISOString() });
+  manifest.renderScale = REF_SCALE; // references are exported at this scale (@2x)
   writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2));
   writeFileSync(join(dir, 'spec.md'), specMarkdown(manifest, nodes));
   writeFileSync(join(dir, 'tokens.md'), tokensMarkdown(nodes));
 
   const ok = renders.filter((r) => !r.error).length;
-  console.log(`done: ${nodes.length} nodes (${calls} bridge calls), ${ok}/${renders.length} renders -> ${dir}`);
+  console.log(`done: ${nodes.length} nodes (${calls} bridge calls), ${ok}/${renders.length} renders @${REF_SCALE}x -> ${dir}`);
   if (renders.some((r) => r.error)) console.log('render errors:', JSON.stringify(renders.filter((r) => r.error).slice(0, 6)));
 }
 

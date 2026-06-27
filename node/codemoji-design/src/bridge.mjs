@@ -9,13 +9,14 @@
 //   LIVE     get-current-page · get-selection · get-all-pages ·
 //            find-nodes(query) ·
 //            get-node-properties(nodeId?, depth?, maxNodes?) ·
-//            export-node(nodeId?, format) ·
+//            export-node(nodeId?, format, scale=1) ·
 //            get-batch-nodes(nodeIds[]) ·
 //            resolve-variables(nodeId?)
 //            - nodeId is OPTIONAL on get-node-properties / export-node / resolve-variables —
 //              omit it to fall back to the current page's single selected node.
-//            - export-node returns { nodeId, format, data: base64, w, h, byteLen }
-//              (Fork 2 / B1 / ADR-1 — base64 wire, decoded Mac-side).
+//            - export-node returns { nodeId, format, scale, data: base64, w, h, byteLen }
+//              (Fork 2 / B1 / ADR-1 — base64 wire, decoded Mac-side). w/h are the
+//              1× design dims; pass scale=2 for a Retina @2x raster (PNG/JPG only).
 //            - serializeNodeDetailed carries cornerRadius (+ per-corner,
 //              figma.mixed-guarded), auto-layout fields (only when layoutMode !== 'NONE'),
 //              and absoluteBoundingBox (ADR-3).
@@ -67,7 +68,10 @@ export async function request(action, params = {}) {
 export const getSelection = () => request('get-selection');
 export const getCurrentPage = () => request('get-current-page');
 export const getNode = (nodeId) => request('get-node-properties', { nodeId: normId(nodeId) });
-export const exportNode = (nodeId, format = 'PNG') => request('export-node', { nodeId: normId(nodeId), format });
+// scale=2 requests a Retina @2x raster (PNG/JPG only — SVG ignores it plugin-side).
+// Defaults to 1 so existing callers are unchanged; the plugin must be reloaded for
+// scale>1 to actually take effect (older deployed plugins ignore the param → 1×).
+export const exportNode = (nodeId, format = 'PNG', scale = 1) => request('export-node', { nodeId: normId(nodeId), format, scale });
 export const findNodes = (query) => request('find-nodes', { query });
 export const resolveVariables = (nodeId) => request('resolve-variables', { nodeId: normId(nodeId) });
 
