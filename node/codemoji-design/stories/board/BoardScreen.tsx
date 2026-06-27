@@ -71,15 +71,16 @@ export function BoardScreen() {
           bestAttempt={0}
         />
 
-        {/* the guess card */}
+        {/* the guess panel — reconciled to the app's EmotionPicker card: the card
+            (bg-card rounded-2xl px-3 pt-5 pb-4), the heading, then the panel's parts
+            spaced by the app's explicit margins (heading mb-3, prev mb-3, slots mb-4). */}
         <BoardCard className="px-3 pt-5 pb-4">
-          <h2 className="mb-3 text-center text-xl font-bold leading-none">Отгадай код из 6 эмодзи</h2>
-          <div className="flex flex-col gap-3">
-            {/* last guess = the six animals (280 pts); now picking 🐝 🔥 💎 */}
-            <PreviousAttempt emojis={PREV_GUESS} points={280} />
-            <EmojiSlots emojis={CURRENT_PICKS} />
-            <GuessActions keyCost={5} />
-          </div>
+          <h2 className="mb-3 text-center text-xl font-bold leading-none">Угадай код из 6 эмодзи</h2>
+          {/* last guess = the six animals (280 pts); tapping refills the slots */}
+          <PreviousAttempt emojis={PREV_GUESS} points={280} className="mb-3" onClick={() => {}} />
+          {/* now picking 🐝 🔥 💎 (3 of 6) */}
+          <EmojiSlots emojis={CURRENT_PICKS} className="mb-4" />
+          <GuessActions keyCost={5} />
         </BoardCard>
 
         {/* the emoji keyboard — current picks show green, the last guess shows faded */}
