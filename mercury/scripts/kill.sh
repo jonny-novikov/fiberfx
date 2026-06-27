@@ -12,8 +12,8 @@
 #
 set -euo pipefail
 
-# showcase · catalogue · echomq · docs — kept in sync with package.json dev:* ports.
-PORTS=(5173 5174 5175 5176 "$@")
+# showcase · catalogue · echomq · docs · mobile — kept in sync with package.json dev:* ports.
+PORTS=(5173 5174 5175 5176 5177 "$@")
 
 killed=0
 for port in "${PORTS[@]}"; do

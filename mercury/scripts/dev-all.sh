@@ -14,6 +14,7 @@ pnpm --filter @mercury/showcase  exec vite --port 5173 --strictPort &
 pnpm --filter @mercury/catalogue exec vite --port 5174 --strictPort &
 pnpm --filter @mercury/echomq    exec vite --port 5175 --strictPort &
 pnpm --filter @mercury/docs      exec vite --port 5176 --strictPort &
+pnpm --filter @mercury/mobile    exec vite --port 5177 --strictPort &
 
 echo ""
 echo "Mercury apps:"
@@ -21,6 +22,7 @@ echo "  showcase   → http://localhost:5173"
 echo "  catalogue  → http://localhost:5174"
 echo "  echomq     → http://localhost:5175"
 echo "  docs       → http://localhost:5176"
+echo "  mobile     → http://localhost:5177"
 echo "(Ctrl-C to stop all · or run \`pnpm stop\` from another shell)"
 echo ""
 
