@@ -5,7 +5,7 @@ and a pointer flip, with no `mix release`, no `fly deploy`, and no socket drop. 
 of the [render stack](render-stack.md) that is genuinely a *hot swap*.
 
 > **TL;DR.** The board is a content-hashed ESM bundle (`board-<hash>.js`) living at
-> `static.codemoji.games`, named by a short-cached `manifest.json` pointer. `Codemojex.Edge.board_url/0`
+> `edge.codemoji.games`, named by a short-cached `manifest.json` pointer. `Codemojex.Edge.board_url/0`
 > resolves the pointer at runtime; `GameLive` renders the URL into `#board-root`; the `EdgeReact` client
 > hook dynamic-imports it and calls the bundle's `mount(el, props, bridge)`. Promotion = upload a new
 > hash + rewrite the pointer. Rollback = point at a previous hash. The contract held across a swap is
@@ -23,7 +23,7 @@ two homes:
 | Asset | Changes | Home |
 |---|---|---|
 | The **LiveView client** (`app.js`: `LiveSocket` + the `EdgeReact` hook) | rarely (only when the host wiring changes) | committed to `priv/static/assets/app.js`, served by `Plug.Static` |
-| The **React board** (the component tree) | often (every design/board iteration) | **edge** — `static.codemoji.games/board-<hash>.js` |
+| The **React board** (the component tree) | often (every design/board iteration) | **edge** — `edge.codemoji.games/board-<hash>.js` |
 
 Putting the *fast-moving* asset at the edge means a board iteration is decoupled from the engine's
 release cadence: you rebuild + upload the board, flip a pointer, and the next mount picks it up.
@@ -59,7 +59,7 @@ build: {
 A single small JSON object at the bucket root names the current board:
 
 ```json
-{ "board": "https://static.codemoji.games/board-<hash>.js" }
+{ "board": "https://edge.codemoji.games/board-<hash>.js" }
 ```
 
 It is served with a **short cache** (it is the one thing that moves). Everything it points at is
@@ -74,12 +74,12 @@ briefly caches the result, on the render path, with **no extra process and no ne
 ```elixir
 @pt_key   {__MODULE__, :board_url}
 @ttl_ms   10_000
-@pointer  "https://static.codemoji.games/manifest.json"
+@default_edge_host "edge.codemoji.games"   # pointer host; override with BOARD_EDGE_HOST
 
 def board_url do
   case cached() do
     url when is_binary(url) -> url
-    _ -> resolve_and_cache()      # fetch the pointer, else fall back
+    _ -> resolve_and_cache()      # fetch https://<host>/manifest.json, else fall back
   end
 end
 ```
@@ -138,7 +138,7 @@ edge bundle (board-<hash>.js)             the host page (app.js)
 
 ```
 1. npm run build                # vite → priv/static/board/board-<hash>.js (+ manifest)
-2. upload board-<hash>.js       # → static.codemoji.games, long immutable cache
+2. upload board-<hash>.js       # → edge.codemoji.games, long immutable cache
 3. rewrite manifest.json        # { "board": ".../board-<hash>.js" }, short cache
    └─ within ~10s (Edge TTL) every new mount imports the new bundle. No release, no socket drop.
 ```
@@ -156,12 +156,12 @@ deleted, rollback is instant and safe.
 
 ## 7. Status & the contract to keep
 
-- **The board bundle is not deployed yet.** In dev (and until the first edge deploy) the pointer
-  resolves to nothing and `BOARD_ASSET_URL` is unset, so `data-bundle` is **empty** — `/game/:gam`
-  renders the shell + server props but no React UI. This is the expected deferred state, asserted by
-  the e2e board-shell story (see [dev-and-testing.md](dev-and-testing.md)).
-- **`scripts/edge-deploy.sh` is a follow-up** (named in the roadmap, not yet on disk): build → upload
-  hashed-immutable → rewrite pointer short-cache.
+- **`scripts/edge-deploy.sh` ships the board.** Build → upload hashed-immutable → flip the pointer →
+  verify (with `--dry-run` and `--rollback`). Standing up the dedicated `edge.codemoji.games` bucket +
+  custom domain and running the first deploy is [edge-bucket-setup.md](edge-bucket-setup.md).
+- **Until the first deploy, the board is absent in dev.** The pointer resolves to nothing and
+  `BOARD_ASSET_URL` is unset, so `data-bundle` is **empty** — `/game/:gam` renders the shell + server
+  props but no React UI (the expected deferred state, asserted by the e2e board-shell story).
 - **The cross-swap contract** is the load-bearing rule. Because the edge bundle and the engine can be
   at different versions at the same instant, keep them compatible:
   - `mount(el, props, bridge)` — the signature in `index.tsx`.
@@ -175,6 +175,7 @@ deleted, rollback is instant and safe.
 ## 8. Map
 
 [render-stack.md](render-stack.md) · [rendering.md](rendering.md) · [dev-and-testing.md](dev-and-testing.md)
-· source: [`edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex),
+· [edge-bucket-setup.md](edge-bucket-setup.md) · source: [`edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex),
+[`edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh),
 [`app.js`](../../apps/codemojex/assets/js/app.js),
 [`vite.config.ts`](../../apps/codemojex/assets/vite.config.ts).

@@ -6,7 +6,7 @@ defmodule CodemojexWeb.GameLive do
   populated — no client fetch, no spinner.
 
   The component CODE is not baked into this release: `Codemojex.Edge.board_url/0`
-  resolves the current bundle on static.codemoji.games and the `EdgeReact` hook
+  resolves the current bundle on edge.codemoji.games and the `EdgeReact` hook
   dynamic-imports it, so a board change is an edge deploy, not a `fly deploy`. The
   LiveReact bridge pattern (props in, `pushEvent` out over the live socket) is
   preserved; only the bundle's origin moves.

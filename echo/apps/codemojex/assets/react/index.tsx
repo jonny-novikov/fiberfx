@@ -1,5 +1,5 @@
 // The edge bundle entry. Built by vite as an ESM library, content-hashed, uploaded
-// to static.codemoji.games, and dynamic-imported by the EdgeReact hook. It owns its
+// to edge.codemoji.games, and dynamic-imported by the EdgeReact hook. It owns its
 // own React (no shared-runtime contract with the host) — the ONLY contract is this
 // mount signature + the BoardProps shape + the Bridge.
 import { createRoot, Root } from "react-dom/client";

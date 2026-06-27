@@ -11,7 +11,7 @@ JSON API + WebSocket-channel engine, not replacing it. This is the hub for three
 
 > **TL;DR.** Tier 1 is a static welcome (no framework). Tier 2 is a server-rendered **LiveView** lobby.
 > Tier 3 is a **LiveReact** board *island*: `CodemojexWeb.GameLive` is the shell, it feeds the React
-> board props from `Codemojex.View`, and the **board bundle is fetched from `static.codemoji.games` at
+> board props from `Codemojex.View`, and the **board bundle is fetched from `edge.codemoji.games` at
 > runtime** (so it hot-swaps independently of the release). The board never scores — a guess is
 > enqueued and the score returns asynchronously over PubSub. The JSON API + `RoomChannel` engine are
 > untouched.
@@ -34,11 +34,10 @@ The dividing line is **"a fixed byte sequence vs a per-request render"**, not "f
 
 ```
                          ┌──────────────────────────────────────────────┐
-                         │  static.codemoji.games  (Tigris public bucket)│
-                         │  • welcome/  (Tier 1, fixed bytes)            │
-                         │  • board-<hash>.js + manifest.json (Tier 3    │
-                         │    React structure — the asset that changes   │
-                         │    most often → edge, content-hashed)         │
+                         │  static.codemoji.games  • welcome/ (Tier 1)   │
+                         │  edge.codemoji.games    • board-<hash>.js +    │
+                         │    manifest.json (Tier 3 React — content-hashed│
+                         │    the asset that changes most often)         │
                          └───────────────▲──────────────────────────────┘
                                          │ dynamic import (browser)
                                          │ pointer GET (server, cached 10s)
@@ -122,7 +121,7 @@ If there is no valid session at any browser route, the LiveView `mount` redirect
 ## 6. Map
 
 Deep dives: [livereact-hot-swap.md](livereact-hot-swap.md) · [rendering.md](rendering.md) ·
-[dev-and-testing.md](dev-and-testing.md). Inbound bot transport:
+[dev-and-testing.md](dev-and-testing.md) · [edge-bucket-setup.md](edge-bucket-setup.md). Inbound bot transport:
 [webhook-vs-polling.md](webhook-vs-polling.md). Source: [`apps/codemojex/`](../../apps/codemojex).
 E2E harness: [`node/codemojex-e2e/`](../../../node/codemojex-e2e). Roadmap:
 [`docs/codemojex-tma/codemojex-tma.roadmap.md`](../../../docs/codemojex-tma/codemojex-tma.roadmap.md).

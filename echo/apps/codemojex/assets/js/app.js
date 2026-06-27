@@ -1,7 +1,7 @@
 // The LiveView client for the codemojex Mini App. It is built locally and
 // committed to priv/static/assets (the Engine image has no JS build step), so the
 // machine serves it via Plug.Static. It carries NO board code: the EdgeReact hook
-// dynamic-imports the board bundle from static.codemoji.games at runtime.
+// dynamic-imports the board bundle from edge.codemoji.games at runtime.
 import { Socket } from "phoenix";
 import { LiveSocket } from "phoenix_live_view";
 

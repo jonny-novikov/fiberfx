@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 
 // Builds the board as a content-hashed ESM bundle into ../priv/static/board, with a
 // vite manifest the edge-deploy script reads. This is the artifact uploaded to
-// static.codemoji.games and dynamic-imported by the EdgeReact hook. React is bundled
+// edge.codemoji.games and dynamic-imported by the EdgeReact hook. React is bundled
 // (the board owns its runtime); the only outward contract is mount(el, props, bridge).
 export default defineConfig({
   plugins: [react()],

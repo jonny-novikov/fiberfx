@@ -20,7 +20,7 @@ defmodule CodemojexWeb.Endpoint do
 
   # Phoenix-served static files (the LiveView client runtime + the lobby CSS + the
   # welcome shell). The React BOARD bundle is NOT here — it is fetched from
-  # static.codemoji.games at runtime (see Codemojex.Edge). `welcome` is added so the
+  # edge.codemoji.games at runtime (see Codemojex.Edge). `welcome` is added so the
   # static shell can also be served from this machine in dev.
   plug Plug.Static,
     at: "/",
