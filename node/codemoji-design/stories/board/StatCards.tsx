@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 
 // Row 3 of the board's Info dashboard (Figma 94:2974 → "Info"/Frame 18): three
@@ -23,10 +24,11 @@ export function StatCards({
   bestAttempt = 0,
   className,
 }: StatCardsProps) {
+  const { t } = useTranslation();
   const items = [
-    { value: totalPlayers, label: '👥 Всего игроков' },
-    { value: totalAttempts, label: '🎯 Всего попыток' },
-    { value: bestAttempt, label: '⭐ Лучшая попытка' },
+    { value: totalPlayers, label: `👥 ${t('lobbyInfo.totalPlayers')}` },
+    { value: totalAttempts, label: `🎯 ${t('lobbyInfo.totalAttempts')}` },
+    { value: bestAttempt, label: `⭐ ${t('lobbyInfo.bestAttempt')}` },
   ];
   return (
     <div className={cn('flex gap-2', className)}>

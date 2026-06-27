@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 
 // The ranked player list under the Leaderboard tab (94:2974). Re-expresses
@@ -88,6 +89,7 @@ export function Leaderboard({
   showNotify = true,
   className,
 }: LeaderboardProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn('font-sans flex flex-col gap-1', className)}>
       {items.map((item, i) => (
@@ -97,7 +99,7 @@ export function Leaderboard({
         <div className="mt-1 flex items-center justify-between gap-2 px-2 py-2 text-sm">
           <span className="flex items-center gap-2 text-card-foreground-secondary">
             <span aria-hidden>🔔</span>
-            <span>Уведомления о смене лидеров</span>
+            <span>{t('leaderboard.notifications')}</span>
           </span>
           <span
             aria-hidden

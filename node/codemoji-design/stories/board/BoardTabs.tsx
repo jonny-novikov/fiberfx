@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 
 // The History / Leaderboard tab strip above the player list (94:2974).
@@ -22,21 +23,23 @@ export interface BoardTabsProps {
   className?: string;
 }
 
-const DEFAULT_TABS: BoardTab[] = [
-  { id: 'history', label: '📋 История' },
-  { id: 'leaderboard', label: '🏆 Лидерборд' },
-];
-
 export function BoardTabs({
-  tabs = DEFAULT_TABS,
+  tabs,
   active,
   onChange,
   children,
   className,
 }: BoardTabsProps) {
+  const { t } = useTranslation();
+  // Default strip: History / Leaderboard, labels localized (the emoji prefix + the
+  // app's game.tabs.* keys). A caller can still pass its own `tabs`.
+  const resolvedTabs: BoardTab[] = tabs ?? [
+    { id: 'history', label: `📋 ${t('game.tabs.history')}` },
+    { id: 'leaderboard', label: `🏆 ${t('game.tabs.leaderboard')}` },
+  ];
   // Uncontrolled fallback: default to the last tab (leaderboard) like the board.
   const [internal, setInternal] = React.useState(
-    () => active ?? tabs[tabs.length - 1]?.id
+    () => active ?? resolvedTabs[resolvedTabs.length - 1]?.id
   );
   const current = active ?? internal;
 
@@ -48,7 +51,7 @@ export function BoardTabs({
   return (
     <div className={cn('font-sans', className)}>
       <div className="flex w-full items-center gap-8 px-4">
-        {tabs.map((tab) => {
+        {resolvedTabs.map((tab) => {
           const isActive = tab.id === current;
           return (
             <button

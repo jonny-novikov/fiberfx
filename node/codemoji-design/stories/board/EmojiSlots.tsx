@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { SpriteEmoji } from './lib/SpriteEmoji';
 
@@ -23,6 +24,7 @@ export interface EmojiSlotsProps {
 }
 
 export function EmojiSlots({ emojis = [], total = 6, locked = [], className }: EmojiSlotsProps) {
+  const { t } = useTranslation();
   const selectedCount = emojis.filter(Boolean).length;
   // active = the first empty, unlocked slot (unless the guess is complete)
   let firstEmpty = -1;
@@ -55,7 +57,11 @@ export function EmojiSlots({ emojis = [], total = 6, locked = [], className }: E
 
               {/* locked badge (a pinned slot) */}
               {code && isEmojiLocked && (
-                <span className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-sm border-2 border-border bg-card text-[8px]">
+                <span
+                  role="img"
+                  aria-label={t('common.lock')}
+                  className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-sm border-2 border-border bg-card text-[8px]"
+                >
                   🔒
                 </span>
               )}

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { SpriteEmoji } from './lib/SpriteEmoji';
 
@@ -26,6 +27,7 @@ export function PreviousAttempt({
   onClick,
   className,
 }: PreviousAttemptProps) {
+  const { t } = useTranslation();
   return (
     <div className="flex justify-center">
       <button
@@ -37,7 +39,7 @@ export function PreviousAttempt({
           className
         )}
       >
-        <span>Предыдущая попытка:</span>
+        <span>{t('board.previousAttempt')}</span>
         <span className="inline-flex items-center gap-1">
           {emojis.map((code, i) =>
             code ? (

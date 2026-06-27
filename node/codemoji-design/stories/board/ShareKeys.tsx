@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { BoardCard } from './lib/BoardCard';
 import { Button } from '../components/Button';
@@ -15,23 +16,23 @@ export interface ShareKeysProps {
   className?: string;
 }
 
-const TIP =
-  '💡 Совет от Mr. Freeman: Вы когда-нибудь совершали что-нибудь по-настоящему из ряда вон? Никогда! И не сможете, знаете почему? Потому что всё это находится за пределами вашей зоны комфорта, вы упакованы в неё, словно полипропиленновый мешок.';
-
 export function ShareKeys({ onShare, onInvite, className }: ShareKeysProps) {
+  const { t } = useTranslation();
   return (
     <BoardCard className={cn('font-sans', className)}>
-      <h2 className="text-h1 font-bold mb-2 text-center text-dark-muted">Получи ключ бесплатно</h2>
+      <h2 className="text-h1 font-bold mb-2 text-center text-dark-muted">
+        {t('board.shareKeys.title')}
+      </h2>
       <p className="text-h5 text-card-foreground-secondary mb-4 text-center">
-        Опубликуй сторис, чтобы получить доступ к специальной комнате
+        {t('board.shareKeys.description')}
       </p>
       <Button variant="default" className="w-full mb-2" onClick={onShare}>
-        Поделиться в сторис
+        {t('share.toStories')}
       </Button>
       <Button variant="enter" className="w-full" onClick={onInvite}>
-        👥 Пригласить друга
+        👥 {t('gameRules.inviteFriend')}
       </Button>
-      <p className="mt-4 text-h5 text-muted">{TIP}</p>
+      <p className="mt-4 text-h5 text-muted">{t('board.shareKeys.tip')}</p>
     </BoardCard>
   );
 }

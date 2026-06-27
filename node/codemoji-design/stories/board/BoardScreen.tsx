@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 // Phone chrome — shared with the lobby (the master's "Header old (iOS)").
 import { NavPhonePanel } from '../lobby/NavPhonePanel';
 // Board-specific components, top to bottom.
@@ -55,6 +56,7 @@ const CURRENT_PICKS = ['0104', '0300', '0500'];
 const SCREEN_FILL = 'linear-gradient(180deg, var(--color-bg-app-from), var(--color-bg-app-to))';
 
 export function BoardScreen() {
+  const { t } = useTranslation();
   return (
     <div className="font-sans" style={{ background: SCREEN_FILL }}>
       {/* phone chrome — full-bleed (status bar to the corners), near the top */}
@@ -75,7 +77,7 @@ export function BoardScreen() {
             (bg-card rounded-2xl px-3 pt-5 pb-4), the heading, then the panel's parts
             spaced by the app's explicit margins (heading mb-3, prev mb-3, slots mb-4). */}
         <BoardCard className="px-3 pt-5 pb-4">
-          <h2 className="mb-3 text-center text-xl font-bold leading-none">Угадай код из 6 эмодзи</h2>
+          <h2 className="mb-3 text-center text-xl font-bold leading-none">{t('game.guessTheCode')}</h2>
           {/* last guess = the six animals (280 pts); tapping refills the slots */}
           <PreviousAttempt emojis={PREV_GUESS} points={280} className="mb-3" onClick={() => {}} />
           {/* now picking 🐝 🔥 💎 (3 of 6) */}
@@ -99,7 +101,7 @@ export function BoardScreen() {
         <GameRules />
         <ShareKeys />
         <p className="pt-1 text-center text-h5 text-muted">
-          Бесплатный ключ будет доступен через 15 часов
+          {t('board.freeKeyIn', { hours: 15 })}
         </p>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 
 // Row 1 of the board's Info dashboard (Figma 94:2974 → "Info"/Frame 16): a thin
@@ -17,6 +18,7 @@ export interface BalancePillProps {
 }
 
 export function BalancePill({ keys = 34, onAddKeys, className }: BalancePillProps) {
+  const { t } = useTranslation();
   return (
     <div
       className={cn(
@@ -26,10 +28,10 @@ export function BalancePill({ keys = 34, onAddKeys, className }: BalancePillProp
       style={{ boxShadow: LIFT }}
     >
       <button type="button" onClick={onAddKeys} className="font-medium">
-        Добавить ключи на баланс
+        {t('board.addKeys')}
       </button>
       <span className="flex items-center gap-1 text-card-foreground-secondary">
-        <span>Баланс</span>
+        <span>{t('lobbyInfo.balance')}</span>
         <span className="font-medium text-card-foreground">🔑 {keys}</span>
       </span>
     </div>

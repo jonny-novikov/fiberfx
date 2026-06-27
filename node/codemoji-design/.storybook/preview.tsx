@@ -1,9 +1,12 @@
 import type { Decorator, Preview } from '@storybook/react-vite';
 import React from 'react';
+import { I18nextProvider } from 'react-i18next';
+import i18n, { SUPPORTED_LANGUAGES } from '../stories/i18n/i18n';
 import '../stories/preview.css';
 
-// Global `theme` toolbar — recolors the single themeable --accent channel by
-// setting data-theme on the story container (orange | blue | green).
+// Global toolbars.
+//  - `theme` recolors the single themeable --accent channel via data-theme.
+//  - `locale` switches the i18n language live (ru | en) — see withI18n below.
 export const globalTypes = {
   theme: {
     description: 'Accent theme (recolors --accent)',
@@ -15,6 +18,19 @@ export const globalTypes = {
         { value: 'orange', title: 'Orange (default)', right: '#FF8400' },
         { value: 'blue', title: 'Blue (link)', right: '#0050FF' },
         { value: 'green', title: 'Green (success)', right: '#00D95F' },
+      ],
+      dynamicTitle: true,
+    },
+  },
+  locale: {
+    description: 'Component language (i18n)',
+    defaultValue: 'ru',
+    toolbar: {
+      title: 'Language',
+      icon: 'globe',
+      items: [
+        { value: 'ru', title: 'Русский', right: 'RU' },
+        { value: 'en', title: 'English', right: 'EN' },
       ],
       dynamicTitle: true,
     },
@@ -36,8 +52,23 @@ const withTheme: Decorator = (Story, context) => {
   );
 };
 
+// Decorator: drive the i18n language from the `locale` toolbar and provide the i18n
+// instance to every story. changeLanguage runs in an effect (not during render);
+// useTranslation's subscription re-renders each consumer when the language flips.
+const withI18n: Decorator = (Story, context) => {
+  const locale = (context.globals.locale as string) || SUPPORTED_LANGUAGES[0];
+  React.useEffect(() => {
+    if (i18n.language !== locale) i18n.changeLanguage(locale);
+  }, [locale]);
+  return (
+    <I18nextProvider i18n={i18n}>
+      <Story />
+    </I18nextProvider>
+  );
+};
+
 const preview: Preview = {
-  decorators: [withTheme],
+  decorators: [withTheme, withI18n],
   parameters: {
     controls: { matchers: { color: /(background|color)$/i, date: /Date$/i } },
     layout: 'fullscreen',

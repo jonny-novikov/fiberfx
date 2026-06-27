@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { BoardCard } from './lib/BoardCard';
 import { Button } from '../components/Button';
@@ -13,53 +14,44 @@ export interface GameRulesProps {
   className?: string;
 }
 
-// The linear scoring scale: a score keyed to how close the guess was (Figma copy).
-const SCORING: ReadonlyArray<readonly [string, string]> = [
-  ['100', 'Эмоджи на своём месте'],
-  ['80', '1 клетка от правильной позиции'],
-  ['60', '2 клетки от правильной позиции'],
-  ['40', '3 клетки от правильной позиции'],
-  ['20', '4 клетки от правильной позиции'],
-  ['0', '5 клеток от правильной позиции'],
-];
+// The linear scoring scale (score → how close the guess was), highest to lowest.
+// Labels come from the board.gameRules.scoring.<score> keys; the numbers are
+// language-neutral. The score "0" row's wording differs from the app's game-rules
+// widget — the board keeps its own copy under the board.* namespace.
+const SCORE_KEYS = ['100', '80', '60', '40', '20', '0'] as const;
 
-const RULES: readonly string[] = [
-  'Неограниченное количество попыток',
-  'Каждая попытка стоит фиксированное количество 🔑 ключей',
-  'Попытка добавляет кристаллы в призовой пул, каждый раз увеличивая его сумму',
-  'После ввода кода вы получаете результат в процентах, который рассчитывается по следующей системе',
-  'При одинаковом количестве набранных очков первое место достаётся тому, кто сделал это первым',
-];
+// The rule list, in order. Labels come from the board.gameRules.rules.<key> keys.
+const RULE_KEYS = ['unlimited', 'attemptCost', 'prizePool', 'scoring', 'firstWins'] as const;
 
 export function GameRules({ onHowToPlay, className }: GameRulesProps) {
+  const { t } = useTranslation();
   return (
     <BoardCard className={cn('font-sans', className)}>
       <h2 className="text-h1 font-bold mb-4 flex items-center gap-2">
         <span aria-hidden>🎲</span>
-        <span>Правила игры</span>
+        <span>{t('board.gameRules.title')}</span>
       </h2>
       <p className="text-h5 text-card-foreground-secondary mb-6">
-        Заполучить призовой пул, отгадав комбинацию из 6 эмодзи. Будь первым, кто наберет больше 600
-        поинтов!
+        {t('board.gameRules.description')}
       </p>
 
       <ol className="list-decimal list-inside text-h5 space-y-1 mb-4">
-        {RULES.map((rule) => (
-          <li key={rule}>{rule}</li>
+        {RULE_KEYS.map((key) => (
+          <li key={key}>{t(`board.gameRules.rules.${key}`)}</li>
         ))}
       </ol>
 
       <ul className="text-h5 space-y-1 mb-6">
-        {SCORING.map(([score, label]) => (
+        {SCORE_KEYS.map((score) => (
           <li key={score} className="flex items-baseline gap-3">
             <span className="text-dark-muted font-medium w-6 text-right shrink-0">{score}</span>
-            <span>{label}</span>
+            <span>{t(`board.gameRules.scoring.${score}`)}</span>
           </li>
         ))}
       </ul>
 
       <Button variant="outline" className="w-full" onClick={onHowToPlay}>
-        Как играть?
+        {t('board.gameRules.howToPlay')}
       </Button>
     </BoardCard>
   );

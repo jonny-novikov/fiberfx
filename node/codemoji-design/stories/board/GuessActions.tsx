@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 import { Button } from '../components/Button';
 
@@ -25,13 +26,14 @@ export function GuessActions({
   onClear,
   className,
 }: GuessActionsProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn('flex gap-3', className)}>
       <Button variant="outline" className="w-fit" onClick={onClear}>
-        Очистить
+        {t('game.actions.clear')}
       </Button>
       <Button variant="enter" className="flex-1" disabled={disabled} onClick={onCheck}>
-        Проверить 🔑 {keyCost}
+        {t('game.actions.check')} 🔑 {keyCost}
       </Button>
     </div>
   );

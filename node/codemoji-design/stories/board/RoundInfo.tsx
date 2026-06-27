@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/cn';
 
 // Row 2 of the board's Info dashboard (Figma 94:2974 → "Info"/Frame 17): the
@@ -24,6 +25,7 @@ export function RoundInfo({
   diamonds = 468,
   className,
 }: RoundInfoProps) {
+  const { t } = useTranslation();
   return (
     <div className={cn('flex gap-2', className)}>
       {/* countdown — a white card */}
@@ -32,7 +34,7 @@ export function RoundInfo({
         style={{ boxShadow: LIFT }}
       >
         <span className="text-h1 font-bold leading-none tabular-nums">{timeLeft}</span>
-        <span className="text-2xs text-card-foreground-secondary">Конец раунда</span>
+        <span className="text-2xs text-card-foreground-secondary">{t('board.roundEnds')}</span>
       </div>
       {/* prize pool — the green card */}
       <div
@@ -40,7 +42,7 @@ export function RoundInfo({
         style={{ boxShadow: LIFT }}
       >
         <span className="text-h1 font-bold leading-none tabular-nums">${prizeUsd}</span>
-        <span className="text-2xs opacity-90">Призовой пул 💎 {diamonds}</span>
+        <span className="text-2xs opacity-90">{t('lobbyInfo.prizePool')} 💎 {diamonds}</span>
       </div>
     </div>
   );
