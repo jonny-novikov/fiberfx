@@ -17,14 +17,14 @@
 ## Scenario: the top-K split the diamond pool live — no reveal, one distribution
 
 - **Given** a started Golden Room with two scored members and a known pool
-- **When** the game is closed via the live-split path
-- **Then** the whole pool drains to the top-K (dust to rank 1), a {:golden_win} fired, and NO {:revealed}
+- **When** the game is closed via the live-split path (tolerating a perfect-crack auto-close)
+- **Then** the whole pool drained to the top-K (dust to rank 1), a {:golden_win} fired, and NO {:revealed}
 
 ## Scenario: every member outside the top-K is paid a consolation clip (0 if never scored)
 
 - **Given** a started Golden Room with three members; one outside the top-K, one who never guesses
 - **When** the game closes (top_k = [100], so only rank 1 is in the split)
-- **Then** bob (outside the top-1) got max_score/10 clips; carol (never scored) got 0
+- **Then** every member outside the top-1 got max_score/10 clips; carol (never scored) got 0
 
 ## Scenario: a never-fills Golden Room voids with NO refund
 
