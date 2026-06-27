@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mercury UI · Playground</title>
+  <!-- The library's real stylesheets (token layer + components) -->
+  <link rel="stylesheet" href="../packages/mercury-ui/src/styles/tokens.css" />
+  <link rel="stylesheet" href="../packages/mercury-ui/src/styles/mercury.css" />
+  <style>
+    html, body { margin: 0; min-height: 100%; background: rgb(var(--bg-primary)); color: rgb(var(--fg-primary)); font-family: var(--font-primary); }
+    *::-webkit-scrollbar { width: 10px; height: 10px; }
+    *::-webkit-scrollbar-thumb { background: rgb(var(--slate-7)); border-radius: 6px; }
+    .pg { max-width: 980px; margin: 0 auto; padding: 28px 28px 80px; }
+    .pg-top { display: flex; align-items: center; gap: 14px; padding: 18px 28px; border-bottom: 1px solid rgb(var(--border-secondary)); position: sticky; top: 0; background: rgb(var(--bg-primary) / .9); backdrop-filter: blur(8px); z-index: 5; }
+    .pg-mark { width: 32px; height: 32px; border-radius: 8px; background: rgb(var(--bg-brand-subtle)); color: rgb(var(--fg-brand)); display: inline-flex; align-items: center; justify-content: center; }
+    .pg-sec { margin-top: 34px; }
+    .pg-sec h2 { font: 700 13px/1 var(--font-primary); letter-spacing: .14em; text-transform: uppercase; color: rgb(var(--fg-tertiary)); margin: 0 0 14px; }
+    .pg-card { background: rgb(var(--bg-secondary)); border: 1px solid rgb(var(--border-secondary)); border-radius: 16px; padding: 24px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+    .pg-note { font: 400 13px/1.6 var(--font-primary); color: rgb(var(--fg-secondary)); margin: 6px 0 0; }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/effector@23.3.0/effector.umd.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+    const { useState, useRef, useEffect } = React;
+    const { createEvent, createStore } = effector;
+    // Minimal store hook (avoids the effector-react UMD; same idea as useUnit).
+    const useStore = (store) => {
+      const [v, setV] = useState(store.getState());
+      useEffect(() => {
+        const sub = store.watch(setV);
+        return () => { if (sub && sub.unsubscribe) sub.unsubscribe(); };
+      }, []);
+      return v;
+    };
+    const cx = (...p) => p.filter(Boolean).join(" ");
+
+    /* ---- Effector: theme + toast (the "pluggable" layer) ---- */
+    const setTheme = createEvent();
+    const $theme = createStore("dark").on(setTheme, (_, t) => t);
+    const applyTheme = (t) => { document.documentElement.classList.remove("light-theme","dark-theme"); document.documentElement.classList.add(t === "dark" ? "dark-theme" : "light-theme"); };
+    applyTheme($theme.getState());
+    $theme.watch(applyTheme);
+
+    let seq = 0;
+    const showToast = createEvent();
+    const dismiss = createEvent();
+    const added = showToast.map((o) => ({ id: ++seq, tone: o.tone || "info", title: o.title, message: o.message }));
+    const $toasts = createStore([]).on(added, (s, t) => [...s, t]).on(dismiss, (s, id) => s.filter((t) => t.id !== id));
+    added.watch((t) => setTimeout(() => dismiss(t.id), 3500));
+    const toast = {
+      success: (m) => showToast({ tone: "success", message: m }),
+      error: (m) => showToast({ tone: "danger", message: m }),
+      info: (m) => showToast({ tone: "info", message: m }),
+      warning: (m) => showToast({ tone: "warning", message: m }),
+    };
+
+    /* ---- Components (className-based, identical to @mercury/ui) ---- */
+    const Icon = ({ d, size = 16, sw = 2 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>{d}</svg>
+    );
+    const Button = ({ variant = "primary", size = "md", children, leading, ...rest }) => (
+      <button className={cx("mx-btn", `mx-btn--${variant}`, `mx-btn--${size}`)} {...rest}>
+        {leading && <span className="mx-btn__icon">{leading}</span>}<span className="mx-btn__lbl">{children}</span>
+      </button>
+    );
+    const Chip = ({ variant = "neutral", size = "md", dot, children }) => (
+      <span className={cx("mx-chip", `mx-chip--${variant}`, size !== "md" && `mx-chip--${size}`)}>
+        {dot && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "currentColor" }} />}{children}
+      </span>
+    );
+    const Badge = ({ variant = "negative", children }) => <span className={cx("mx-badge", `mx-badge--${variant}`)}>{children}</span>;
+    const Avatar = ({ name = "", size = 40, status }) => {
+      const hues = ["--iris-9","--indigo-9","--green-9","--orange-9","--plum-9","--red-9"];
+      const initials = name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
+      const bg = hues[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % hues.length];
+      return (
+        <span className="mx-avatar" style={{ width: size, height: size }}>
+          <span className="mx-avatar__img" style={{ background: `rgb(var(${bg}))`, fontSize: Math.round(size * 0.38) }}>{initials}</span>
+          {status && <span className="mx-avatar__status" style={{ width: size * 0.28, height: size * 0.28, background: `rgb(var(--bg-${status}))` }} />}
+        </span>
+      );
+    };
+    const Switch = ({ checked, onChange, label }) => (
+      <label className={cx("mx-sw", !checked && "mx-sw--off")}>
+        <input type="checkbox" role="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <span className="mx-sw__track"><span className="mx-sw__thumb" /></span>{label && <span className="mx-sw__lbl">{label}</span>}
+      </label>
+    );
+    const Checkbox = ({ checked, onChange, label }) => (
+      <label className="mx-cb">
+        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+        <span className="mx-cb__box">{checked && <svg viewBox="0 0 12 12" width="12" height="12"><path d="M2.5 6.2l2.3 2.3L9.5 3.8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}</span>
+        {label && <span className="mx-cb__lbl">{label}</span>}
+      </label>
+    );
+    const Segmented = ({ segments, value, onChange, size = "md" }) => (
+      <div className={cx("mx-seg", `mx-seg--${size}`)} role="radiogroup">
+        {segments.map((s) => <button key={s.value} className={cx("mx-seg__seg", s.value === value && "is-active")} onClick={() => onChange(s.value)}>{s.label}</button>)}
+      </div>
+    );
+    const Tabs = ({ tabs, value, onChange, variant }) => (
+      <div className={cx("mx-tabs", variant === "pills" && "mx-tabs--pills")}>
+        {tabs.map((t) => <button key={t.value} className={cx("mx-tab", t.value === value && "is-active")} onClick={() => onChange(t.value)}>{t.label}</button>)}
+      </div>
+    );
+    const GLYPH = { info: "i", success: "✓", warning: "!", danger: "×" };
+    const Alert = ({ tone = "info", title, children, onDismiss }) => (
+      <div className={cx("mx-alt", `mx-alt--${tone}`)} style={{ maxWidth: "none", width: "100%" }}>
+        <span className="mx-alt__icon">{GLYPH[tone]}</span>
+        <div className="mx-alt__body">{title && <h4 className="mx-alt__h">{title}</h4>}{children && <div className="mx-alt__msg">{children}</div>}</div>
+        {onDismiss && <button className="mx-alt__x" onClick={onDismiss}>×</button>}
+      </div>
+    );
+    const Progress = ({ value, variant = "brand", size = "md" }) => (
+      <div className={cx("mx-pr", `mx-pr--${size}`, `mx-pr--${variant}`)} style={{ width: "100%" }}><div className="mx-pr__track"><div className="mx-pr__bar" style={{ width: `${value}%` }} /></div></div>
+    );
+    const Card = ({ children, style }) => <div className="mx-card" style={{ padding: 20, ...style }}>{children}</div>;
+    const Input = ({ label, ...rest }) => (
+      <label className="mx-in" style={{ maxWidth: "none" }}>{label && <span className="mx-in__lbl">{label}</span>}<span className="mx-in__field"><input className="mx-in__inp" {...rest} /></span></label>
+    );
+    const Modal = ({ open, onClose, title, footer, children }) => !open ? null : (
+      <div className="mx-modal-backdrop" onClick={onClose} style={{ position: "fixed" }}>
+        <div className="mx-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="mx-modal__head"><h3 className="mx-modal__title">{title}</h3><button className="mx-modal__x" onClick={onClose}>×</button></div>
+          <div className="mx-modal__body">{children}</div>
+          {footer && <div className="mx-modal__foot">{footer}</div>}
+        </div>
+      </div>
+    );
+    const Toaster = () => {
+      const toasts = useStore($toasts);
+      return (
+        <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 200, display: "flex", flexDirection: "column", gap: 10 }}>
+          {toasts.map((t) => <div key={t.id} style={{ width: 320, boxShadow: "var(--shadow-300)", borderRadius: "var(--radius-12)" }}><Alert tone={t.tone} onDismiss={() => dismiss(t.id)}>{t.message}</Alert></div>)}
+        </div>
+      );
+    };
+
+    function App() {
+      const theme = useStore($theme);
+      const [sw, setSw] = useState(true);
+      const [cb, setCb] = useState(true);
+      const [seg, setSeg] = useState("week");
+      const [tab, setTab] = useState("overview");
+      const [modal, setModal] = useState(false);
+      const [email, setEmail] = useState("");
+      return (
+        <React.Fragment>
+          <div className="pg-top">
+            <span className="pg-mark"><Icon d={<path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />} size={18} /></span>
+            <strong style={{ letterSpacing: "-0.01em" }}>Mercury UI</strong>
+            <Chip variant="brand" size="sm">Playground</Chip>
+            <span style={{ flex: 1 }} />
+            <Segmented size="sm" value={theme} onChange={setTheme} segments={[{ label: "Light", value: "light" }, { label: "Dark", value: "dark" }]} />
+          </div>
+          <div className="pg">
+            <p className="pg-note">Live, no-build preview of <code>@mercury/ui</code> driven by an <code>@mercury/effector</code>-style theme &amp; toast model. The full TypeScript + Vite source lives in <code>packages/</code> and <code>apps/</code>.</p>
+
+            <div className="pg-sec"><h2>Buttons</h2><div className="pg-card">
+              <Button>Primary</Button><Button variant="secondary">Secondary</Button><Button variant="outline">Outline</Button>
+              <Button variant="ghost">Ghost</Button><Button variant="destructive">Delete</Button><Button variant="inverse">Inverse</Button>
+            </div></div>
+
+            <div className="pg-sec"><h2>Selection</h2><div className="pg-card">
+              <Switch checked={sw} onChange={setSw} label="Auto-refresh" />
+              <Checkbox checked={cb} onChange={setCb} label="Group children" />
+              <Segmented value={seg} onChange={setSeg} segments={[{ label: "Day", value: "day" }, { label: "Week", value: "week" }, { label: "Month", value: "month" }]} />
+            </div></div>
+
+            <div className="pg-sec"><h2>Data display</h2><div className="pg-card">
+              <Chip variant="brand">Pro</Chip><Chip variant="positive" dot>Live</Chip><Chip variant="caution" dot>Pending</Chip>
+              <Badge variant="brand">New</Badge><Badge variant="negative">3</Badge>
+              <Avatar name="Grace Hopper" status="positive" /><Avatar name="Ada Lovelace" size={48} />
+            </div></div>
+
+            <div className="pg-sec"><h2>Feedback — toasts via Effector</h2><div className="pg-card" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Button variant="secondary" onClick={() => toast.success("Job retried")}>Success</Button>
+                <Button variant="secondary" onClick={() => toast.error("Connection lost")}>Error</Button>
+                <Button variant="secondary" onClick={() => toast.warning("Approaching limit")}>Warning</Button>
+              </div>
+              <Alert tone="info" title="Heads up">A new Mercury version is available.</Alert>
+              <Progress value={64} /><Progress value={88} variant="positive" size="lg" />
+            </div></div>
+
+            <div className="pg-sec"><h2>Overlays</h2><div className="pg-card">
+              <Button onClick={() => setModal(true)}>Open modal</Button>
+              <Tabs variant="pills" value={tab} onChange={setTab} tabs={[{ label: "Overview", value: "overview" }, { label: "Activity", value: "activity" }, { label: "Settings", value: "settings" }]} />
+            </div></div>
+
+            <div className="pg-sec"><h2>Form</h2><div className="pg-card" style={{ maxWidth: 380, flexDirection: "column", alignItems: "stretch" }}>
+              <Input label="Email" type="email" placeholder="you@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Button onClick={() => toast.success("Signed in")}>Sign in</Button>
+            </div></div>
+          </div>
+          <Modal open={modal} onClose={() => setModal(false)} title="Invite teammates" footer={<React.Fragment><Button variant="secondary" onClick={() => setModal(false)}>Cancel</Button><Button onClick={() => { setModal(false); toast.success("Invite sent"); }}>Send invite</Button></React.Fragment>}>
+            <p style={{ margin: "0 0 12px" }}>Add people to your workspace.</p>
+            <Input label="Emails" placeholder="ada@example.com" />
+          </Modal>
+          <Toaster />
+        </React.Fragment>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
