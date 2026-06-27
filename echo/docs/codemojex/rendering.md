@@ -1,13 +1,13 @@
 # Codemojex · Rendering
 
 How each tier of the [render stack](render-stack.md) produces its UI, and — the load-bearing part —
-how board state flows **server ⇆ React island** across an *asynchronous* engine.
+how game state flows **server ⇆ React island** across an *asynchronous* engine.
 
 > **TL;DR.** Tier 1 is static HTML. Tier 2 (`LobbyLive`) is server-rendered HEEx kept current with
-> LiveView diffs. Tier 3 (`GameLive`) is a shell that resolves state once and hands it to a React board
-> as props; the board keeps only *local pick state*. A guess is sent over the bridge, **enqueued** by
+> LiveView diffs. Tier 3 (`GameLive`) is a shell that resolves state once and hands it to a React game
+> as props; the game keeps only *local pick state*. A guess is sent over the bridge, **enqueued** by
 > `Codemojex.submit/3` (the engine scores on its own lane), and the score returns later as a
-> `{:scored, …}` broadcast that `GameLive` turns into a `board:update` prop diff. The board reads as
+> `{:scored, …}` broadcast that `GameLive` turns into a `game:update` prop diff. The game reads as
 > responsive across that gap: clear-now, update-later.
 
 ---
@@ -52,11 +52,11 @@ diff-patched:
 
 There is no client store on the lobby — the server holds the truth and the DOM follows it.
 
-## 3. Tier 3 — the board shell + the React island
+## 3. Tier 3 — the game shell + the React island
 
 [`GameLive`](../../apps/codemojex/lib/codemojex_web/live/game_live.ex) is the **shell**. It resolves the
 player + the `GAM`, reads the privacy-preserving view *once on the server*, and hands it to React as
-props — so the board mounts **populated**, with no client fetch and no spinner.
+props — so the game mounts **populated**, with no client fetch and no spinner.
 
 ```elixir
 def mount(%{"gam" => gam}, session, socket) do
@@ -65,25 +65,25 @@ def mount(%{"gam" => gam}, session, socket) do
        view when is_map(view) <- Codemojex.game_view(gam) do
     if connected?(socket), do: Phoenix.PubSub.subscribe(Codemojex.PubSub, "game:" <> gam)
     {:ok, assign(socket, player: plr, game: gam,
-                 board_bundle: Edge.board_url(), board_props: board_props(gam, plr, view))}
+                 game_bundle: Edge.game_url(), game_props: game_props(gam, plr, view))}
   else
     _ -> {:ok, socket |> put_flash(:error, "Room not found") |> push_navigate(to: ~p"/lobby")}
   end
 end
 ```
 
-The render emits the sealed mount point (`#board-root`, `phx-update="ignore"`) carrying
+The render emits the sealed mount point (`#game-root`, `phx-update="ignore"`) carrying
 `data-bundle` (the edge URL), `data-component`, and `data-props` (`Jason.encode!` of the props). The
 `EdgeReact` hook imports the bundle and calls `mount(el, props, bridge)` — see
 [livereact-hot-swap.md §5](livereact-hot-swap.md).
 
-### 3.1 The props — `board_props/3`
+### 3.1 The props — `game_props/3`
 
-The board's whole initial state, server-resolved (mirrors what `RoomChannel.join` returns, widened with
+The game's whole initial state, server-resolved (mirrors what `RoomChannel.join` returns, widened with
 the player's own history and the named leaderboard):
 
 ```elixir
-defp board_props(gam, plr, view) do
+defp game_props(gam, plr, view) do
   %{
     view:        view,                                    # Codemojex.View.game_view/1
     leaderboard: named(Codemojex.leaderboard(gam, 20), plr),  # [%{player, name, score, is_me}]
@@ -93,34 +93,34 @@ defp board_props(gam, plr, view) do
 end
 ```
 
-The TypeScript mirror is [`assets/react/types.ts`](../../apps/codemojex/assets/react/types.ts)
-(`BoardProps`, `GameView`, `LeaderRow`, `HistoryRow`). **Keep `types.ts` and `board_props/3` in
+The TypeScript mirror is [`assets/src/types.ts`](../../apps/codemojex/assets/src/types.ts)
+(`GameProps`, `GameView`, `LeaderRow`, `HistoryRow`). **Keep `types.ts` and `game_props/3` in
 lockstep** — they are the cross-swap contract (see hot-swap §7).
 
-### 3.2 The board entry — `mount(el, props, bridge)`
+### 3.2 The game entry — `mount(el, props, bridge)`
 
-[`assets/react/index.tsx`](../../apps/codemojex/assets/react/index.tsx):
+[`assets/src/index.tsx`](../../apps/codemojex/assets/src/index.tsx):
 
 ```tsx
-export function mount(el: HTMLElement, props: BoardProps, bridge: Bridge) {
+export function mount(el: HTMLElement, props: GameProps, bridge: Bridge) {
   const root = createRoot(el);
-  const render = (p: BoardProps) => root.render(<BoardScreen {...p} bridge={bridge} />);
+  const render = (p: GameProps) => root.render(<GameEdge {...p} bridge={bridge} />);
   render(props);
   return { update: (p) => render(p), unmount: () => root.unmount() };
 }
 ```
 
-Inside `BoardScreen`, the **picks in progress are local React state**; only a completed guess crosses
+Inside `GameEdge`, the **picks in progress are local React state**; only a completed guess crosses
 the wire.
 
 ## 4. The asynchronous submit round-trip (the core mechanic)
 
-**The board never scores.** `Codemojex.submit/3` charges the guess and enqueues a `JOB` on the player's
+**The game never scores.** `Codemojex.submit/3` charges the guess and enqueues a `JOB` on the player's
 EchoMQ lane, returning `{:ok, job}` — it does *not* compute a score. The score is produced later by the
 `Codemojex.ScoreWorker` consumer and announced over PubSub. So a guess is **two events**, not one:
 
 ```
- React board                 GameLive (LiveView)              the engine (async)
+ React game                 GameLive (LiveView)              the engine (async)
  ───────────                 ───────────────────              ──────────────────
  tap 6 emoji (local state)
  bridge.pushEvent(
@@ -132,31 +132,31 @@ EchoMQ lane, returning `{:ok, job}` — it does *not* compute a score. The score
                                                                        │ Scoring.score → GES → Board.record
                               handle_info({:scored, _}) ◄──── broadcast {:scored,…} on "game:"<>gam
                               push_props → push_event(
-                                "board:update", board_props) ─► hook → handle.update(props)
+                                "game:update", game_props) ─► hook → handle.update(props)
  (re-render with the score) ◄──────────────────────────────────────────┘
 ```
 
 - **Out (client → server):** `bridge.pushEvent("submit_guess", {emojis})` with six `"XXYY"` codes.
 - **Back (server → client), the prop diff:** on `{:scored, _}` (and on `{:revealed, _}`), `GameLive`
-  re-reads `game_view/1` and `push_event(socket, "board:update", board_props(...))`; the hook calls
-  `handle.update(props)`, which re-renders `<BoardScreen>`. Because `#board-root` is `phx-update="ignore"`,
+  re-reads `game_view/1` and `push_event(socket, "game:update", game_props(...))`; the hook calls
+  `handle.update(props)`, which re-renders `<GameEdge>`. Because `#game-root` is `phx-update="ignore"`,
   this rides `push_event` — **not** a re-render of `data-props`.
 
-This is why the board reads as responsive: the optimistic clear happens immediately on enqueue; the
-authoritative board arrives a moment later as its own event.
+This is why the game reads as responsive: the optimistic clear happens immediately on enqueue; the
+authoritative game arrives a moment later as its own event.
 
 ## 5. One-off events + the bridge
 
-Besides the `board:update` prop diff, `GameLive` forwards three one-off events the board surfaces as
+Besides the `game:update` prop diff, `GameLive` forwards three one-off events the game surfaces as
 transient UI (toasts, the reveal):
 
-| Server (`GameLive`) | Wire | Board (`bridge.onServerEvent`) |
+| Server (`GameLive`) | Wire | GameEdge (`bridge.onServerEvent`) |
 |---|---|---|
 | `push_event(socket, "guess_rejected", %{reason})` (on `submit` error) | `guess_rejected` | toast the rejection |
 | `handle_info({:revealed, payload})` → `push_event(… "revealed" …)` + `push_props` | `revealed` | reveal the secret/payouts |
 | `handle_info({:golden_win, payload})` → `push_event(… "golden_win" …)` | `golden_win` | the golden close |
 
-The **bridge** ([`types.ts`](../../apps/codemojex/assets/react/types.ts)) is the board's only handle on
+The **bridge** ([`types.ts`](../../apps/codemojex/assets/src/types.ts)) is the game's only handle on
 the socket:
 
 ```ts
@@ -169,7 +169,7 @@ interface Bridge {
 The `EdgeReact` hook implements `pushEvent` as `this.pushEvent` and fans the one-off `handleEvent`s
 out to every `onServerEvent` listener (returning an unsubscribe).
 
-There are also two per-slot events the board can send — `lock` (`%{pos, code}`) and `unlock`
+There are also two per-slot events the game can send — `lock` (`%{pos, code}`) and `unlock`
 (`%{pos}`) — handled by `GameLive` via `Codemojex.lock/4` / `unlock/3`.
 
 ## 6. The privacy / blind contract
@@ -180,16 +180,16 @@ sealed reveal:
 
 - `history` rows drop `points` pre-reveal (`HistoryRow.points` is optional in `types.ts`).
 - `leaderboard` is empty pre-reveal; `totals` carries only `{players, attempts}` (no `best`).
-- The secret arrives **only** with `{:revealed, …}` (the finished state), never on the in-progress board.
+- The secret arrives **only** with `{:revealed, …}` (the finished state), never on the in-progress game.
 
-The board must therefore tolerate a score-less view and render the blind state — never assume `points`
+The game must therefore tolerate a score-less view and render the blind state — never assume `points`
 or a populated leaderboard.
 
 ## 7. Reconnect
 
 On a LiveView reconnect, `GameLive.mount` runs again and re-sends the props; the React island is sealed
 by `phx-update="ignore"`, so the existing React tree **survives** the reconnect and is refreshed by the
-next `board:update`. Local pick state is the board's own; durable state always comes from (and returns
+next `game:update`. Local pick state is the game's own; durable state always comes from (and returns
 to) the server.
 
 ## 8. Map
@@ -198,4 +198,4 @@ to) the server.
 [dev-and-testing.md](dev-and-testing.md) · source:
 [`game_live.ex`](../../apps/codemojex/lib/codemojex_web/live/game_live.ex),
 [`lobby_live.ex`](../../apps/codemojex/lib/codemojex_web/live/lobby_live.ex),
-[`types.ts`](../../apps/codemojex/assets/react/types.ts).
+[`types.ts`](../../apps/codemojex/assets/src/types.ts).

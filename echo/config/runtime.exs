@@ -41,15 +41,15 @@ if config_env() == :prod do
   # OPTIONAL full-edge mode: when STATIC_HOST is set (e.g. static.codemoji.games), Phoenix generates
   # ~p"/assets/..." URLs against the edge host, so the LiveView client + CSS serve from Tigris too
   # (you must then also upload priv/static to the bucket). Unset by default — the LiveView client
-  # serves from this machine, and only the BOARD bundle is edge-sourced (Codemojex.Edge).
+  # serves from this machine, and only the GAME bundle is edge-sourced (Codemojex.Edge).
   if static_host = System.get_env("STATIC_HOST") do
     config :codemojex, CodemojexWeb.Endpoint,
       static_url: [host: static_host, port: 443, scheme: "https"]
   end
 
-  # Per-deploy fallback for the React board bundle if the edge pointer is unreachable. The live value
-  # comes from static.codemoji.games/manifest.json (Codemojex.Edge); this is only the safety net.
-  config :codemojex, :board_asset_url, System.get_env("BOARD_ASSET_URL")
+  # Per-deploy fallback for the React game bundle if the edge pointer is unreachable. The live value
+  # comes from edge.codemoji.games/manifest.json (Codemojex.Edge); this is only the safety net.
+  config :codemojex, :game_asset_url, System.get_env("GAME_ASSET_URL")
 
   # The shared Valkey — the EchoMQ bus + the real-time competitive state — lives on the dedicated
   # echo-valkey Fly node (private 6PN, requirepass). Wire host/port/password from the env. If

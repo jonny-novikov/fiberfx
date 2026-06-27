@@ -1,6 +1,6 @@
-// The Engine<->board contract. GameLive sends these props (from Codemojex.View);
-// the board sends "submit_guess"/"lock"/"unlock" back over bridge.pushEvent. Keep
-// this file and GameLive.board_props/3 in lockstep across an edge swap.
+// The Engine<->game contract. GameLive sends these props (from Codemojex.View);
+// the game sends "submit_guess"/"lock"/"unlock" back over bridge.pushEvent. Keep
+// this file and GameLive.game_props/3 in lockstep across an edge swap.
 
 export type Code = string; // "XXYY" — column,row, two digits each (Codemojex.EmojiSet)
 
@@ -41,7 +41,7 @@ export interface HistoryRow {
   at_ms: number;
 }
 
-export interface BoardProps {
+export interface GameProps {
   view: GameView;
   leaderboard: LeaderRow[];
   history: HistoryRow[];

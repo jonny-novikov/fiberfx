@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import type { BoardProps, Bridge, Code } from "./types";
-import { EmojiSlots } from "./components/EmojiSlots";
-import { EmojiKeyboard } from "./components/EmojiKeyboard";
-import { GuessActions } from "./components/GuessActions";
-import { Leaderboard } from "./components/Leaderboard";
-import { InfoDashboard } from "./components/InfoDashboard";
+import type { GameProps, Bridge, Code } from "@/types";
+import { EmojiSlots } from "@/components/EmojiSlots";
+import { EmojiKeyboard } from "@/components/EmojiKeyboard";
+import { GuessActions } from "@/components/GuessActions";
+import { Leaderboard } from "@/components/Leaderboard";
+import { InfoDashboard } from "@/components/InfoDashboard";
 
 const CODE_LEN = 6;
 
-// The board island. Server props are authoritative (view/leaderboard/history);
+// The game island. Server props are authoritative (view/leaderboard/history);
 // the only client-owned state is the in-flight picks. Submit, lock, and unlock go
 // out over bridge.pushEvent; scored updates arrive as fresh props (the host calls
 // update()), and one-off events (reject/reveal/win) via bridge.onServerEvent.
-export function BoardScreen(props: BoardProps & { bridge: Bridge }) {
+export function GameEdge(props: GameProps & { bridge: Bridge }) {
   const { view, leaderboard, history, me, bridge } = props;
   const [picks, setPicks] = useState<Code[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -43,10 +43,10 @@ export function BoardScreen(props: BoardProps & { bridge: Bridge }) {
   const ready = picks.length === CODE_LEN && view.status === "open";
 
   return (
-    <div className="board">
+    <div className="game">
       <InfoDashboard view={view} />
       {toast && (
-        <div className="board__toast" onClick={() => setToast(null)}>
+        <div className="game__toast" onClick={() => setToast(null)}>
           {toast}
         </div>
       )}
@@ -57,13 +57,13 @@ export function BoardScreen(props: BoardProps & { bridge: Bridge }) {
       {set ? (
         <EmojiKeyboard set={set} used={used} onTap={tap} disabled={view.status !== "open"} />
       ) : (
-        <div className="board__empty">Загрузка клавиатуры…</div>
+        <div className="game__empty">Загрузка клавиатуры…</div>
       )}
 
       <Leaderboard rows={leaderboard} me={me} hidden={view.status === "gathering"} />
 
       {history.length > 0 && (
-        <div className="board__history">
+        <div className="game__history">
           <h3>Твои попытки</h3>
           <ul>
             {history.slice(0, 8).map((h, i) => (

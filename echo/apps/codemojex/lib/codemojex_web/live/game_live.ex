@@ -1,17 +1,17 @@
 defmodule CodemojexWeb.GameLive do
   @moduledoc """
-  Tier 3 — the board. The LiveView is the shell: it resolves the player and the
+  Tier 3 — the game. The LiveView is the shell: it resolves the player and the
   `GAM`, reads the privacy-preserving `Codemojex.game_view/1` + leaderboard once on
-  the server, and hands them to the React `BoardScreen` as props. React mounts
+  the server, and hands them to the React `GameEdge` as props. React mounts
   populated — no client fetch, no spinner.
 
-  The component CODE is not baked into this release: `Codemojex.Edge.board_url/0`
+  The component CODE is not baked into this release: `Codemojex.Edge.game_url/0`
   resolves the current bundle on edge.codemoji.games and the `EdgeReact` hook
-  dynamic-imports it, so a board change is an edge deploy, not a `fly deploy`. The
+  dynamic-imports it, so a game change is an edge deploy, not a `fly deploy`. The
   LiveReact bridge pattern (props in, `pushEvent` out over the live socket) is
   preserved; only the bundle's origin moves.
 
-  The board never scores. A submitted guess is `Codemojex.submit/3`, which enqueues
+  The game never scores. A submitted guess is `Codemojex.submit/3`, which enqueues
   a `JOB` on the player's lane (the engine is async); the score lands later as a
   `{:scored, …}` broadcast on `"game:"<>game` — the same topic `RoomChannel` uses —
   and this LiveView pushes a prop diff. The secret and other players' guesses never
@@ -30,8 +30,8 @@ defmodule CodemojexWeb.GameLive do
 
       {:ok,
        socket
-       |> assign(player: plr, game: gam, page_title: "Codemoji", board_bundle: Edge.board_url())
-       |> assign(board_props: board_props(gam, plr, view))}
+       |> assign(player: plr, game: gam, page_title: "Codemoji", game_bundle: Edge.game_url())
+       |> assign(game_props: game_props(gam, plr, view))}
     else
       _ -> {:ok, socket |> put_flash(:error, "Room not found") |> push_navigate(to: ~p"/lobby")}
     end
@@ -41,13 +41,13 @@ defmodule CodemojexWeb.GameLive do
   def render(assigns) do
     ~H"""
     <div
-      id="board-root"
-      class="board-root"
+      id="game-root"
+      class="game-root"
       phx-hook="EdgeReact"
       phx-update="ignore"
-      data-bundle={@board_bundle}
-      data-component="BoardScreen"
-      data-props={Jason.encode!(@board_props)}
+      data-bundle={@game_bundle}
+      data-component="GameEdge"
+      data-props={Jason.encode!(@game_props)}
     >
     </div>
     """
@@ -88,14 +88,14 @@ defmodule CodemojexWeb.GameLive do
     %{game: gam, player: plr} = socket.assigns
 
     case Codemojex.game_view(gam) do
-      view when is_map(view) -> push_event(socket, "board:update", board_props(gam, plr, view))
+      view when is_map(view) -> push_event(socket, "game:update", game_props(gam, plr, view))
       _ -> socket
     end
   end
 
-  # The board's whole initial state, server-resolved. Mirrors what RoomChannel.join
+  # The game's whole initial state, server-resolved. Mirrors what RoomChannel.join
   # returns, widened with the player's own history and the named leaderboard.
-  defp board_props(gam, plr, view) do
+  defp game_props(gam, plr, view) do
     %{
       view: view,
       leaderboard: named(Codemojex.leaderboard(gam, 20), plr),

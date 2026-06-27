@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { GameView } from "../types";
+import type { GameView } from "@/types";
 
 // The header strip: prize (USD), live player/attempt totals, and a countdown from
 // ends_ms (absent while a Golden Room is still gathering).

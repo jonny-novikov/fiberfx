@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# edge-deploy.sh — promote (or roll back) the Codemoji React board on the edge bucket.
+# edge-deploy.sh — promote (or roll back) the Codemoji React game on the edge bucket.
 #
-# Builds the content-hashed board bundle, uploads every hashed file to the dedicated
+# Builds the content-hashed game bundle, uploads every hashed file to the dedicated
 # Tigris edge bucket under a long immutable cache, then flips the root manifest.json
-# pointer (short cache) that `Codemojex.Edge.board_url/0` reads. The bundle is uploaded
+# pointer (short cache) that `Codemojex.Edge.game_url/0` reads. The bundle is uploaded
 # BEFORE the pointer is flipped, so the pointer never names a file that isn't there.
 # No `mix release`, no `fly deploy`, no socket drop. Rollback re-points the manifest at
 # a previous (still-immutable) hash — no rebuild.
@@ -15,7 +15,7 @@
 # Usage:
 #   scripts/edge-deploy.sh                       # build + upload + flip the pointer
 #   scripts/edge-deploy.sh --dry-run             # build + show what WOULD upload/flip
-#   scripts/edge-deploy.sh --rollback board-<hash>.js   # re-point manifest only, no rebuild
+#   scripts/edge-deploy.sh --rollback game-<hash>.js   # re-point manifest only, no rebuild
 #
 # Required env (source echo/.env first — mix/this script do NOT auto-load it):
 #   TIGRIS_EDGE_BUCKET            the dedicated edge bucket name (e.g. codemojex-edge-prod)
@@ -23,7 +23,7 @@
 #   TIGRIS_EDGE_SECRET_ACCESS_KEY
 #   TIGRIS_EDGE_ENDPOINT_URL      the Tigris S3 endpoint (same as your AWS_ENDPOINT_URL_S3)
 # Optional:
-#   BOARD_EDGE_HOST              public host (default edge.codemoji.games; Codemojex.Edge reads the same)
+#   GAME_EDGE_HOST              public host (default edge.codemoji.games; Codemojex.Edge reads the same)
 #   TIGRIS_EDGE_REGION           default "auto"
 #
 # Requires: aws CLI, node, npm, curl.
@@ -36,7 +36,7 @@ ROLLBACK=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)  DRY_RUN=1 ;;
-    --rollback) ROLLBACK="${2:?--rollback needs a board-<hash>.js filename}"; shift ;;
+    --rollback) ROLLBACK="${2:?--rollback needs a game-<hash>.js filename}"; shift ;;
     -h|--help)  sed -n '2,40p' "$0"; exit 0 ;;
     *) echo "edge-deploy: unknown arg '$1' (try --help)" >&2; exit 2 ;;
   esac
@@ -44,7 +44,7 @@ while [ $# -gt 0 ]; do
 done
 
 # --- config from env ---
-HOST="${BOARD_EDGE_HOST:-edge.codemoji.games}"
+HOST="${GAME_EDGE_HOST:-edge.codemoji.games}"
 BUCKET="s3://${TIGRIS_EDGE_BUCKET:?set TIGRIS_EDGE_BUCKET (see edge-bucket-setup.md)}"
 ENDPOINT="${TIGRIS_EDGE_ENDPOINT_URL:?set TIGRIS_EDGE_ENDPOINT_URL (the Tigris S3 endpoint)}"
 
@@ -60,10 +60,10 @@ done
 
 s3() { aws s3 "$@" --endpoint-url "$ENDPOINT"; }
 
-flip_pointer() { # $1 = board entry filename (board-<hash>.js)
+flip_pointer() { # $1 = game entry filename (game-<hash>.js)
   local url="https://${HOST}/$1"
-  if [ "$DRY_RUN" = 1 ]; then echo "[dry-run] manifest.json -> {\"board\":\"$url\"}"; return; fi
-  local tmp; tmp="$(mktemp)"; printf '{"board":"%s"}\n' "$url" > "$tmp"
+  if [ "$DRY_RUN" = 1 ]; then echo "[dry-run] manifest.json -> {\"game\":\"$url\"}"; return; fi
+  local tmp; tmp="$(mktemp)"; printf '{"game":"%s"}\n' "$url" > "$tmp"
   # short cache: the pointer is the only mutable object; everything it names is immutable
   s3 cp "$tmp" "$BUCKET/manifest.json" \
     --cache-control "public,max-age=10,must-revalidate" \
@@ -76,7 +76,7 @@ verify() {
   echo "--- verify ---"
   curl -fsS  "https://${HOST}/manifest.json" && echo
   curl -fsSI "https://${HOST}/$1" | head -1
-  echo "Tip: set the per-deploy fallback -> fly secrets set BOARD_ASSET_URL=https://${HOST}/$1"
+  echo "Tip: set the per-deploy fallback -> fly secrets set GAME_ASSET_URL=https://${HOST}/$1"
 }
 
 # --- rollback: re-point only, no rebuild (old hashes are immutable + retained) ---
@@ -87,30 +87,30 @@ if [ -n "$ROLLBACK" ]; then
   exit 0
 fi
 
-# --- 1. build the content-hashed board bundle ---
+# --- 1. build the content-hashed game bundle ---
 cd "$(dirname "$0")/../assets"
-echo "--- build (vite.config.ts -> ../priv/static/board) ---"
+echo "--- build (vite.config.ts -> ../priv/static/game) ---"
 npm ci
 npm run build
-OUT="../priv/static/board"
+OUT="../priv/static/game"
 
 ENTRY="$(node -e '
   const fs=require("fs"); const dir=process.argv[1];
   for (const p of [dir+"/.vite/manifest.json", dir+"/manifest.json"]) {
     if (fs.existsSync(p)) {
       const m=JSON.parse(fs.readFileSync(p,"utf8"));
-      const e=Object.values(m).find(x=>x.isEntry) || m["react/index.tsx"];
+      const e=Object.values(m).find(x=>x.isEntry) || m["src/index.tsx"];
       if (e && e.file) { process.stdout.write(e.file); process.exit(0); }
     }
   }
   process.exit(1);
-' "$OUT")" || { echo "edge-deploy: could not read the board entry from the vite manifest" >&2; exit 1; }
-echo "built board entry: $ENTRY"
+' "$OUT")" || { echo "edge-deploy: could not read the game entry from the vite manifest" >&2; exit 1; }
+echo "built game entry: $ENTRY"
 
 # --- 2. upload every hashed file IMMUTABLY (the pointer is NOT touched yet) ---
 echo "--- upload (immutable) ---"
 shopt -s nullglob
-for f in "$OUT"/board-*; do
+for f in "$OUT"/game-*; do
   name="$(basename "$f")"
   case "$name" in
     *.js)  ct="application/javascript" ;;

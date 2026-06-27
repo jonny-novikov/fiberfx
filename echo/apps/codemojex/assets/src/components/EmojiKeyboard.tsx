@@ -1,5 +1,5 @@
-import type { EmojiSet, Code } from "../types";
-import { cellStyle } from "./sprite";
+import type { EmojiSet, Code } from "@/types";
+import { cellStyle } from "@/components/sprite";
 
 export function EmojiKeyboard(props: {
   set: EmojiSet;

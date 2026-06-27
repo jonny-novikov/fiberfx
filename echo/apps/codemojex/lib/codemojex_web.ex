@@ -2,7 +2,7 @@ defmodule CodemojexWeb do
   @moduledoc """
   The web surface for the Codemojex Mini App. The original surface is a JSON API
   and a WebSocket channel; this revision adds the three-tier render path — a
-  LiveView lobby (HEEx + streams + PubSub) and a LiveReact board island — so
+  LiveView lobby (HEEx + streams + PubSub) and a LiveReact game island — so
   `:live_view`, `:html`, and `:verified_routes` join `:controller`/`:channel`.
   """
   def static_paths, do: ~w(assets fonts images favicon.ico robots.txt welcome)

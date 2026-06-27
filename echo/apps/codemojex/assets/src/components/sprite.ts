@@ -1,4 +1,4 @@
-import type { EmojiSet, Code } from "../types";
+import type { EmojiSet, Code } from "@/types";
 
 // Render one sprite cell from an "XXYY" code, matching Codemojex.EmojiSet.bg_position:
 // the cell sits at (-x*cell_size, -y*cell_size) on the sheet. We scale the native

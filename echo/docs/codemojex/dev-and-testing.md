@@ -1,7 +1,7 @@
 # Codemojex · Developing & Testing the Render Stack in the Browser
 
 How to boot the [render stack](render-stack.md) locally, why a plain browser hitting `/lobby` bounces
-to the welcome, and how to drive the authenticated lobby/board — and screenshot it — with the
+to the welcome, and how to drive the authenticated lobby/game — and screenshot it — with the
 Playwright e2e harness, **without a Telegram client and without a dev auth bypass**.
 
 > **TL;DR.** `mix` does **not** load `.env`, so source it first:
@@ -10,7 +10,7 @@ Playwright e2e harness, **without a Telegram client and without a dev auth bypas
 > ```
 > Open **http://localhost:4000** (use `localhost`, not `127.0.0.1` — origin checks). A plain browser at
 > `/lobby` redirects to `/` because there is no Telegram session — that is the auth gate, not a bug. To
-> see the authenticated lobby/board, run the e2e harness in
+> see the authenticated lobby/game, run the e2e harness in
 > [`node/codemojex-e2e/`](../../../node/codemojex-e2e) (`npm test` / `npm run test:headed`), which forges
 > a real signed session.
 
@@ -57,10 +57,10 @@ There are **two** vite builds; only the first is needed for local dev:
 cd echo/apps/codemojex/assets
 npm install
 npm run build:client     # → priv/static/assets/app.js  (LiveSocket + EdgeReact hook; COMMIT this)
-# npm run build          # → priv/static/board/board-<hash>.js  (the EDGE board; deferred — see hot-swap)
+# npm run build          # → priv/static/game/game-<hash>.js  (the EDGE game; deferred — see hot-swap)
 ```
 
-The image has no JS build step, so `app.js` is **committed**. The board bundle is **edge-delivered** and
+The image has no JS build step, so `app.js` is **committed**. The game bundle is **edge-delivered** and
 not built/committed here — in dev it is simply absent, so `/game/:gam` renders the shell with no React
 UI (`data-bundle` empty). See [livereact-hot-swap.md](livereact-hot-swap.md).
 
@@ -75,7 +75,7 @@ To get a session you need a valid `initData`. Three ways:
 
 1. **Inside Telegram** — the real `@codemoji_bot` Mini App: the welcome forwards a real `initData`.
 2. **The e2e harness** (§6) — forges a real HMAC-signed `initData` and drives the handshake. Use
-   `npm run test:headed` to *watch* the authenticated lobby/board in a browser.
+   `npm run test:headed` to *watch* the authenticated lobby/game in a browser.
 3. **A forged dev cookie in your own browser** — sign an `initData` with the bot token (the harness's
    `lib/initData.ts` is the reference) and set it as the `tg_init` cookie, then load `/lobby`.
 
@@ -133,7 +133,7 @@ handshake and mints a real `SES`. The bot token is read from the process env, el
 | Tier 1 — welcome shell | `/welcome/index.html` renders the play link |
 | Tier 2 — auth gate | unauthenticated `/lobby` redirects to `/` |
 | **Tier 2 — authenticated lobby** | `/lobby` renders the rooms **with a real session** |
-| Tier 3 — board shell | enter room → `/game/:gam`, `#board-root` + `EdgeReact` + server props |
+| Tier 3 — game shell | enter room → `/game/:gam`, `#game-root` + `EdgeReact` + server props |
 | a11y (axe plugin) | no critical accessibility violations on the lobby |
 
 Each story attaches a full-page screenshot (`lib/shoot.ts`) plus trace + video to the report
@@ -173,7 +173,7 @@ no secret over the wire.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `/lobby` → `/` in a browser | no Telegram session (auth gate) | use the e2e harness / a forged `tg_init` cookie / open inside Telegram |
-| `/game/:gam` shows an empty board | board bundle is edge-delivered, not deployed | expected in dev; deploy the board (hot-swap §6) or set `BOARD_ASSET_URL` |
+| `/game/:gam` shows an empty game | game bundle is edge-delivered, not deployed | expected in dev; deploy the game (hot-swap §6) or set `GAME_ASSET_URL` |
 | page renders but nothing is interactive | `/live` socket rejected by `check_origin` | use `http://localhost:4000`; `dev.exs` already sets `check_origin: false` |
 | bot sends drop with `:no_token` | `.env` not sourced / token not wired | `set -a && source ../../.env && set +a` before `mix phx.server` |
 | `ECHO_BOT_HELLO_TOKEN` warning on boot | the separate echo_bot **demo** bot | benign — ignore (not `@codemoji_bot`) |

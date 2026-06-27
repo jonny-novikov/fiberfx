@@ -2,28 +2,33 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 
-// Builds the board as a content-hashed ESM bundle into ../priv/static/board, with a
-// vite manifest the edge-deploy script reads. This is the artifact uploaded to
+// Builds the game island as a content-hashed ESM bundle into ../priv/static/game, with
+// a vite manifest the edge-deploy script reads. This is the artifact uploaded to
 // edge.codemoji.games and dynamic-imported by the EdgeReact hook. React is bundled
-// (the board owns its runtime); the only outward contract is mount(el, props, bridge).
+// (the game owns its runtime); the only outward contract is mount(el, props, bridge).
+
+// Resolve a path relative to this config to an ABSOLUTE one — used for both the `@`
+// alias and the entry. Absolute paths are file-resolved regardless of cwd or vite
+// `root`, and can never be mistaken for a bare package specifier.
+const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: { "@": r("./src") },
+  },
   build: {
-    outDir: "../priv/static/board",
+    outDir: "../priv/static/game",
     emptyOutDir: true,
     manifest: true,
     target: "es2020",
     rollupOptions: {
-      // Absolute path, NOT the bare specifier "react/index.tsx": the entry dir is named
-      // `react`, which collides with the npm `react` package, so a bare string is resolved
-      // as a package subpath (→ "Missing ./index.tsx specifier in react"). fileURLToPath
-      // forces file resolution regardless of cwd or vite `root`.
-      input: fileURLToPath(new URL("./react/index.tsx", import.meta.url)),
+      input: r("./src/index.tsx"),
       output: {
         format: "es",
-        entryFileNames: "board-[hash].js",
-        chunkFileNames: "board-[hash].js",
-        assetFileNames: "board-[hash][extname]",
+        entryFileNames: "game-[hash].js",
+        chunkFileNames: "game-[hash].js",
+        assetFileNames: "game-[hash][extname]",
       },
     },
   },

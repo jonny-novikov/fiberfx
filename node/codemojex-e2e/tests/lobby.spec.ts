@@ -49,10 +49,10 @@ test.describe("Codemojex · three-tier render", () => {
     await shoot(page, testInfo, "03-lobby-authenticated");
   });
 
-  // ── Story 4 ─ Tier 3: entering a room reaches the GameLive board shell ───────
-  // The React board itself is edge-delivered (static.codemoji.games) and is NOT
+  // ── Story 4 ─ Tier 3: entering a room reaches the GameLive game shell ───────
+  // The React game itself is edge-delivered (edge.codemoji.games) and is NOT
   // loaded in dev, so we assert the LiveView shell + mount point, not React UI.
-  test("Tier 3 — entering a room navigates to the GameLive board shell", async ({
+  test("Tier 3 — entering a room navigates to the GameLive game shell", async ({
     page,
     context,
     baseURL,
@@ -71,16 +71,16 @@ test.describe("Codemojex · three-tier render", () => {
     await page.locator(".room-card__enter").first().click();
 
     await expect(page).toHaveURL(/\/game\/GAM[A-Za-z0-9]+/, { timeout: 15_000 });
-    const boardRoot = page.locator("#board-root");
-    await expect(boardRoot).toBeAttached();
+    const gameRoot = page.locator("#game-root");
+    await expect(gameRoot).toBeAttached();
     // The shell seals the React subtree (EdgeReact hook) and feeds it server props.
     // data-bundle is the edge pointer (Codemojex.Edge) and is empty in dev until the
-    // board is deployed to static.codemoji.games — so assert the shell + the
+    // game is deployed to edge.codemoji.games — so assert the shell + the
     // server-supplied props, not the (deferred) edge bundle URL.
-    await expect(boardRoot).toHaveAttribute("phx-hook", "EdgeReact");
-    await expect(boardRoot).toHaveAttribute("data-component", "BoardScreen");
-    await expect(boardRoot).toHaveAttribute("data-props", /"view"/);
-    await shoot(page, testInfo, "04-board-shell");
+    await expect(gameRoot).toHaveAttribute("phx-hook", "EdgeReact");
+    await expect(gameRoot).toHaveAttribute("data-component", "GameEdge");
+    await expect(gameRoot).toHaveAttribute("data-props", /"view"/);
+    await shoot(page, testInfo, "04-game-shell");
   });
 
   // ── Story 5 ─ a Playwright plugin in action: axe accessibility on the lobby ──

@@ -32,8 +32,8 @@ defmodule CodemojexWeb.Router do
     get "/", PageController, :home
   end
 
-  # Tier 2/3: the lobby and the board, both LiveViews. join_room returns a GAM, so
-  # the board is keyed by the game id.
+  # Tier 2/3: the lobby and the game, both LiveViews. join_room returns a GAM, so
+  # the game LiveView is keyed by the game id.
   scope "/", CodemojexWeb do
     pipe_through :browser
 

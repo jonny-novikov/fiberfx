@@ -1,4 +1,4 @@
-import type { LeaderRow } from "../types";
+import type { LeaderRow } from "@/types";
 
 export function Leaderboard(props: { rows: LeaderRow[]; me: string; hidden?: boolean }) {
   const { rows, hidden } = props;
