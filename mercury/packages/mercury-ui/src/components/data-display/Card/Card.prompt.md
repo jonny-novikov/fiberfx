@@ -10,10 +10,12 @@ content on its own surface. Import: `import { Card } from "@mercury/ui"`.
 |---|---|---|---|
 | `variant` | `"flat" \| "raised" \| "floating"` | `"flat"` | Elevation (see the enum language); `flat` is the base and emits no modifier class. |
 | `padding` | `number \| string` | `20` | Inner padding, applied as inline `style.padding` (a number is px). |
-| `children` | `ReactNode` | — | The card content. |
+| `title` | `ReactNode` | — | When present, renders a header row above `children`, left-aligned in the uppercase `.mx-card__title` label. Absent (with no `actions`) ⇒ no header (back-compat). |
+| `actions` | `ReactNode` | — | Right-aligned slot in the header row (`justify-content:space-between`, plus `margin-left:auto` so it hugs the right even when `title` is absent). Renders the header even if `title` is absent. |
+| `children` | `ReactNode` | — | The card content, below the optional header. |
 | `className` | `string` | — | Merged onto the root `<div>` via `cx`. |
 | `style` | `CSSProperties` | — | Merged after `padding` (your `style` can override it). |
-| …rest | `HTMLAttributes<HTMLDivElement>` | — | `id`, `onClick`, `aria-*`, etc. pass through to the `<div>`. |
+| …rest | `Omit<HTMLAttributes<HTMLDivElement>, "title">` | — | `id`, `onClick`, `aria-*`, etc. pass through to the `<div>`. The native `title` (tooltip) attr is dropped so the `title` header prop can be a `ReactNode`. |
 
 ## The enum language
 
@@ -53,6 +55,14 @@ never raw hex.
   <Table<RailDisplay> columns={COLS} data={rows} striped getRowKey={(r) => r.id} />
 </Card>
 // codemojex-node/apps/economy/src/components/RailPanel.tsx
+
+// A header row (title left, actions right) — the panel pattern the economy cards hand-roll
+<Card variant="raised" title="Revenue flow / guess" actions={<Segmented … />}>
+  <svg … />
+</Card>
+// absorbs codemojex-node/apps/economy/src/components/RevenueFlow.tsx (the
+// `.ecn-card-title` + flex `justify-content:space-between` header) — see also
+// MarginCurve.tsx, BalanceSimPanel, PrizePoolTable, MarginTable, RailPanel
 ```
 
 ## Notes
@@ -63,3 +73,7 @@ never raw hex.
   later `style={{ padding: 0 }}` wins.
 - `flat` is the default and emits no `--<variant>` modifier; pass `raised`/`floating` to opt into the
   elevation ramp.
+- **Header back-compat** — the header row renders **only when** `title != null || actions != null`. A
+  `<Card>` with neither prop is byte-identical to before (just `children` under the root `<div>`), so
+  no existing call site changes. `actions` carries `margin-left:auto`, so it hugs the right edge even
+  when `title` is absent.

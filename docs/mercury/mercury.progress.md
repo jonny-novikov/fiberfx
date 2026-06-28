@@ -12,8 +12,12 @@ layer (`mx.2`) — is now BUILT**: all 33 components carry a hand-authored, grou
 undisturbed), authored in 3 waves via `/mercury-ship mx.2`. **Movement III (the Storybook) has opened — `mx.3` ✅ BUILT:** the
 `apps/storybook/` host (`@storybook/react-vite` 10.4.6) resolves the packages from source, with a
 light/`dark-theme` decorator and the first three foundation stories (Icon · tokens · Button) writing
-their controls from the mx.2 contracts. **`mx.4`–`mx.6`** (component · effector · build/deploy stories)
-are the remaining frontier. Forward
+their controls from the mx.2 contracts. **`mx.4` ✅ BUILT:** every component now carries a co-located
+CSF3 story (35 component homes + the host `Foundations/Tokens` = **36** registered by `sb:build`), and
+the first additive growth landed — the **focused trio** (`Card` `title`/`actions` header props · new
+`ListRow` · new `MoneyInput`), the barrel grown additively by four export names. **`mx.5`–`mx.6`**
+(effector-powered + the apps-side Pages · build/deploy + design-sync re-align) are the remaining
+frontier. Forward
 plan: [`mercury.roadmap.md`](./mercury.roadmap.md); architecture:
 [`mercury.design.md`](./mercury.design.md).
 

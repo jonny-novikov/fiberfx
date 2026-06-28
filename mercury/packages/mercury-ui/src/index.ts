@@ -41,6 +41,7 @@ export * from "./components/inputs/Textarea";
 export * from "./components/inputs/Search";
 export * from "./components/inputs/Select";
 export * from "./components/inputs/AuthCode";
+export * from "./components/inputs/MoneyInput";
 // selection
 export * from "./components/selection/Checkbox";
 export * from "./components/selection/Radio";
@@ -62,6 +63,7 @@ export * from "./components/data-display/Table";
 export * from "./components/data-display/Stat";
 export * from "./components/data-display/Chart";
 export * from "./components/data-display/Checklist";
+export * from "./components/data-display/ListRow";
 // navigation
 export * from "./components/navigation/Tabs";
 export * from "./components/navigation/Accordion";
