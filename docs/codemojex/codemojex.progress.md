@@ -10,11 +10,18 @@ durable floor. The founding core (**cm.1**) and the blind Golden flow (**cm.3**)
 rung; the **auth floor (cm.4)** then shipped via the `cm-4` rung — verified Telegram `initData` (the pure
 `Codemojex.InitData` HMAC verifier) → a shared **`SES`-in-Valkey** session (the FIRST mutable
 `EchoStore.Table`, `:tracking` coherence + immediate revocation), with `POST /api/players` (the free-money
-mint) retired. The **one pre-launch auth gap is closed**. The **course chapter B7**
+mint) retired. The **one pre-launch auth gap is closed**. The **monetization core then shipped**: the
+**Golden Room tournament (cm.5)** — `:gathering` + `Wallet.buy_in` (the buy-in exactly-once index) +
+`close_split`/`close_void` (`22cb2cf9`); the **revenue ledger (cm.6)** — the `RVL` `revenue_ledger` +
+`Wallet.house_post`/`house_balance` (`2de57202`, the `BNK` bank's first slice); and the **KeyShop (cm.7)**
+— multi-rail key pay-in, Telegram Stars end-to-end, the `OTX (rail, external_id)` exactly-once gate that
+closed the double-mint-on-replay hazard, gross purchase revenue booked to the same ledger (`0acba290`,
+Apollo BUILD-GRADE). The **course chapter B7**
 ([`codemojex.roadmap.md`](./codemojex.roadmap.md), six modules B7.1–B7.6 of three dives each) is
-**PLANNED** — the chapter landing is written; the dives follow. **Next on the build ladder:** the
-`cm.5+` deferred systems (the `BNK` bank · `RMP` membership · commerce · growth ·
-analytics — the [feature catalog](./codemojex.roadmap.md#the-feature-catalog)).
+**PLANNED** — the chapter landing is written; the dives follow. **Next on the build ladder:** **cm.8 —
+cash-out / treasury** (withdrawals: diamonds → TON/USDT/RUB at floating rates, the negative-`delta` house
+debit cm.7 designs-for, KYC/AML + the 21-day hold; `cm-7` `D-2`), then the remaining
+`BNK`/`RMP`/growth/analytics systems in the [feature catalog](./codemojex.roadmap.md#the-feature-catalog).
 
 ---
 
@@ -114,12 +121,15 @@ rewritten). The settled spec triads are [`specs/cm.1.*`](./specs/cm.1.md) (the f
 
 ## Next
 
-The engine is whole and the **auth floor (cm.4) has shipped** — verified Telegram `initData` → a shared
-**`SES`-in-Valkey** session (the first mutable `EchoStore.Table`, immediate revocation), `POST /api/players`
-retired; the one pre-launch auth gap is closed. The forward work is the **`cm.5+` deferred systems** named
-in the roadmap's [feature catalog](./codemojex.roadmap.md#the-feature-catalog): the `BNK` bank + rake · the
-`RMP` membership + the anonymized leaderboard · commerce (`PKG`/`ORD`/`OTX`/`WHK`) · growth (`SHR`) ·
-analytics (`AEV`) · the LiveAdmin console. Each
+The engine is whole, the **auth floor (cm.4)** shipped, and the **monetization core** now ships with it: the
+**Golden Room tournament (cm.5)**, the **revenue ledger (cm.6 — the `BNK` bank's first slice)**, and the
+**KeyShop (cm.7 — multi-rail key pay-in, commerce `PKG`/`ORD`/`OTX`/`WHK`, Telegram Stars end-to-end, the
+exactly-once gate that closed the double-mint-on-replay hazard)**. The forward work is the remaining
+**`cm.8+` deferred systems** named in the roadmap's
+[feature catalog](./codemojex.roadmap.md#the-feature-catalog): **cm.8 — cash-out / treasury** (withdrawals,
+the negative-`delta` house debit cm.7 designs-for, KYC/AML + the 21-day hold) · the rest of the `BNK` bank +
+rake · the `RMP` membership + the anonymized leaderboard · growth (`SHR`) · analytics (`AEV`) · the LiveAdmin
+console. Each
 lands as its own `cm.N` rung through the Codemojex Program — a new triad under `specs/` + a per-rung
 ledger under `specs/progress/`.
 
