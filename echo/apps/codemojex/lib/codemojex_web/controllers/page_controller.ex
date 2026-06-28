@@ -8,9 +8,9 @@ defmodule CodemojexWeb.PageController do
   This is load-bearing for the auth flow: `/lobby` bounces an unauthenticated visitor
   to `/`, so `/` must be the page that can mint a session — not a dead end. The cookie
   is `path=/` on this origin (codemoji.games), so the welcome and `/lobby` MUST share
-  an origin; a welcome served from another domain (e.g. static.codemoji.games) could
-  not set a cookie `/lobby` can read. The shell's bytes (CSS, logo) load from
-  static.codemoji.games; the source is `priv/static/welcome/index.html`.
+  an origin; a welcome served from another domain could not set a cookie `/lobby` can
+  read. The shell's assets (CSS, logo) are served same-origin by `Plug.Static`
+  (static_paths: `welcome`, `assets`); the source is `priv/static/welcome/index.html`.
   """
   use CodemojexWeb, :controller
 

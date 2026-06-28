@@ -26,7 +26,7 @@ overlaying the bundle authored in
 
 | Tier | Screen | Rendering | Framework JS shipped | State origin |
 |---|---|---|---|---|
-| **1** | Welcome | Static HTML from `static.codemoji.games` | none | none |
+| **1** | Welcome | Static HTML served by the app at `/` (same-origin) | none | none |
 | **2** | Lobby + rooms | Server-rendered, diff-patched (LiveView) | LiveView client only | `Codemojex.View.lobby/0`, patched to the DOM |
 | **3** | Board | Client island, adopted from server props | LiveView client **+ edge game bundle** (loaded on entry) | `Codemojex.View.game_view/1` + leaderboard once, plus local pick state |
 
@@ -34,7 +34,6 @@ The dividing line is **"a fixed byte sequence vs a per-request render"**, not "f
 
 ```
                          ┌──────────────────────────────────────────────┐
-                         │  static.codemoji.games  • welcome/ (Tier 1)   │
                          │  edge.codemoji.games    • game-<hash>.js +    │
                          │    manifest.json (Tier 3 React — content-hashed│
                          │    the asset that changes most often)         │
@@ -43,7 +42,7 @@ The dividing line is **"a fixed byte sequence vs a per-request render"**, not "f
                                          │ pointer GET (server, cached 10s)
    browser ───────────────► ┌───────────┴───────────────────────────────┐
    (Telegram WebView)       │  the codemojex Fly machine (always-on)     │
-                            │  • PageController "/"  (legacy landing)    │
+                            │  • PageController "/"  (Tier 1 welcome)    │
                             │  • LobbyLive  /lobby   (Tier 2)            │
                             │  • GameLive   /game/:gam (Tier 3 shell)    │
                             │  • /api/*  JSON API   ·  /socket RoomChannel│

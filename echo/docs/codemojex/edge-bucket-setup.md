@@ -2,8 +2,8 @@
 
 How to stand up the **dedicated Tigris bucket** that serves the hot-swappable React game at
 `edge.codemoji.games`, wire the env, and run the first deploy with
-[`scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh). This bucket is **separate** from
-the `static.codemoji.games` bucket that serves the Tier-1 welcome — see
+[`scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh). The Tier-1 welcome is served
+**same-origin by the app** (`/` + `Plug.Static`), so this bucket serves only the Tier-3 game — see
 [livereact-hot-swap.md](livereact-hot-swap.md) for why the game lives at the edge.
 
 > **TL;DR.** Create a **public** Tigris bucket → set `TIGRIS_EDGE_*` in `echo/.env` (for the deploy
@@ -23,11 +23,11 @@ the `static.codemoji.games` bucket that serves the Tier-1 welcome — see
 
 | Bucket | Serves | Cache | Changes |
 |---|---|---|---|
-| `static.codemoji.games` (existing) | the Tier-1 welcome (`welcome/`, logo, css) | long | rarely |
-| **`edge.codemoji.games` (new)** | the **Tier-3 React game** — `game-<hash>.js` + `manifest.json` | hashed files immutable; pointer short | **often** (every game iteration) |
+| the codemojex app (`/` + `Plug.Static`) | the Tier-1 welcome (HTML, logo, css), same-origin | — | rarely |
+| **`edge.codemoji.games`** | the **Tier-3 React game** — `game-<hash>.js` + `manifest.json` | hashed files immutable; pointer short | **often** (every game iteration) |
 
-Splitting them keeps the fast-moving, frequently-promoted game on its own origin with its own
-keypair (least privilege) and its own cache policy, without touching the welcome bucket.
+Keeping the game on its own CDN origin gives it its own keypair (least privilege) and cache policy,
+separate from the app-served welcome.
 
 ## 2. Step 1 — create the bucket (public)
 

@@ -26,8 +26,8 @@ defmodule CodemojexWeb.Router do
     plug CodemojexWeb.MiniAppAuth
   end
 
-  # The welcome (HTML, not the JSON API). The static asset bytes load from
-  # static.codemoji.games; only the shell route lives here.
+  # The welcome (HTML, not the JSON API), served by PageController at /; its assets
+  # (welcome/, logo) are served same-origin by Plug.Static (static_paths).
   scope "/", CodemojexWeb do
     get "/", PageController, :home
   end
