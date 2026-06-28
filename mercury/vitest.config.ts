@@ -1,5 +1,9 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
+
+// `@` → mercury-ui/src, so package tests resolve the same alias as the build.
+const mercuryUiSrc = fileURLToPath(new URL("./packages/mercury-ui/src", import.meta.url));
 
 // One root config, two projects (vitest 3 `test.projects`):
 //   • node   — Fastify / @codemojex/* tests, run in-process via app.inject()
@@ -21,6 +25,7 @@ export default defineConfig({
       },
       {
         plugins: [react()],
+        resolve: { alias: { "@": mercuryUiSrc } },
         test: {
           name: "jsdom",
           environment: "jsdom",

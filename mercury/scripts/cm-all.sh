@@ -18,12 +18,12 @@ trap 'kill 0' EXIT INT TERM
 
 # --- Codemojex apps (add one line per new member) ---------------------------
 pnpm --filter codemojex-api dev &
-# pnpm --filter <codemoji-ai-name> exec vite --port 5180 --strictPort &   # SP-2 (proposed — app does not exist yet)
+pnpm --filter @codemojex/economy exec vite --port 5180 --strictPort &
 
 echo ""
 echo "Codemojex apps:"
 echo "  api  → http://localhost:3000  (health: /api/health · docs: /docs)"
-# echo "  ai   → http://localhost:5180"   # SP-2 (proposed)
+echo "  economy → http://localhost:5180"
 echo "(Ctrl-C to stop all · or run \`pnpm stop\` from another shell)"
 echo ""
 

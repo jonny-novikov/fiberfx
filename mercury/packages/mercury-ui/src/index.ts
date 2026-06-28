@@ -8,6 +8,10 @@ import "./styles/index.css";
 export { cx } from "./cx";
 export type { ClassValue } from "./cx";
 
+// Date formatting utilities (locale-aware Intl wrappers). Framework-agnostic;
+// `@mercury/effector` adapts these to stores via `createFormatterModel`.
+export * from "./date";
+
 export * from "./components/Icon";
 export * from "./components/Button";
 export * from "./components/Link";
@@ -25,3 +29,5 @@ export * from "./components/Overlay";
 export * from "./components/Table";
 export * from "./components/AuthCode";
 export * from "./components/AuthLayout";
+export * from "./components/Chart";
+export * from "./components/Stat";
