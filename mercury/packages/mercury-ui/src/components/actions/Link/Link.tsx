@@ -1,5 +1,5 @@
 import type { MouseEvent, ReactNode } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 export type LinkSize = "sm" | "md";
 

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 /*
  * Stat — a KPI / metric tile. A standalone token-styled box (label, big mono

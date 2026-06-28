@@ -1,4 +1,4 @@
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 export interface Tab<T extends string> {
   label: string;

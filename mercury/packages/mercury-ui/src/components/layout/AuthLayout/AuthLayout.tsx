@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 /**
  * AuthLayout — the branded split-screen shell for authentication flows.

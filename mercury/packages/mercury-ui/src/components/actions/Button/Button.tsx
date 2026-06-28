@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 export type ButtonVariant =
   | "primary"

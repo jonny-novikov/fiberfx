@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   variant?: "flat" | "raised" | "floating";

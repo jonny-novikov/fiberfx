@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 /**
  * Checklist — a list of requirements with met / unmet markers. Used for

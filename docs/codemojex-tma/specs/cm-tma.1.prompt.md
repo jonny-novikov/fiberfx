@@ -6,11 +6,11 @@
 > `echo/apps/codemojex/assets/` before editing** — the Operator changes that tree out-of-band, so every
 > "as-built" line below is labelled by migration-state, not asserted as flat truth.
 
-Repo: `/Users/jonny/dev/jonnify` · branch `echo_mq` · spec reconciled at commit `c58090f3` (unpushed).
+Repo: `/Users/jonny/dev/jonnify` · branch `echo_mq` · spec reconciled.
 
 ## State
 
-- **Spec triad RECONCILED + committed** (`c58090f3`, pathspec): `cm-tma.1.{md,stories.md,llms.md}` now
+- **Spec triad RECONCILED + committed**: `cm-tma.1.{md,stories.md,llms.md}` now
   specs a **pnpm** workspace (`@codemojex/edge`, npm retired), **TWO** vendored TS packages
   (`@echo/phoenix` + `@echo/phoenix_live_view`; `phoenix_html` **folded into LV**, not a 3rd package),
   **es2024** target, **jest→vitest**. The `.md` body is the source of truth.

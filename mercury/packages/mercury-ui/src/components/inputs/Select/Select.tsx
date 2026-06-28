@@ -1,6 +1,6 @@
 import { forwardRef, useId } from "react";
 import type { SelectHTMLAttributes } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 export interface SelectOption {
   label: string;

@@ -1,4 +1,4 @@
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 /*
  * Chart — a generic, token-driven SVG curve/area primitive. It is

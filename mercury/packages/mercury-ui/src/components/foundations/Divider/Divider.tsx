@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cx } from "../cx";
+import { cx } from "@mercury/core";
 
 /**
  * Divider — a separator rule. With a `label` it becomes the "— or —" splitter

@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       "@mercury/ui": resolve(__dirname, "../../packages/mercury-ui/src/index.ts"),
       "@mercury/effector": resolve(__dirname, "../../packages/mercury-effector/src/index.ts"),
+      "@mercury/core": resolve(__dirname, "../../packages/mercury-core/src/index.ts"),
     },
   },
 });
