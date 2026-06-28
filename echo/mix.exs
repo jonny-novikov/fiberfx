@@ -10,6 +10,7 @@ defmodule Echo.MixProject do
       # plus echo_bot and codemojex; the umbrella root itself declares no deps and no
       # listeners — each app configures its own.
       deps: deps(),
+      aliases: aliases(),
       releases: releases()
     ]
   end
@@ -34,5 +35,35 @@ defmodule Echo.MixProject do
         applications: [codemojex: :permanent]
       ]
     ]
+  end
+
+  # Umbrella task aliases.
+  #
+  # `mix codemojex.edge` wraps the edge-bundle publish (apps/codemojex/scripts/edge-deploy.sh):
+  # build the content-hashed React GAME bundle, upload it immutably to the Tigris edge bucket,
+  # then flip the short-cached `manifest.json` pointer (`{"game": url}`) that `Codemojex.Edge`
+  # reads. No `mix release`, no `fly deploy`, no socket drop — the board hot-swaps within the
+  # pointer's ~10s TTL. Args pass straight through to the script:
+  #
+  #   mix codemojex.edge                            # build → upload → flip the pointer
+  #   mix codemojex.edge --dry-run                  # build → show what WOULD upload/flip (no writes)
+  #   mix codemojex.edge --rollback game-<hash>.js  # re-point the manifest only, no rebuild
+  #
+  # Requires TIGRIS_EDGE_* + GAME_EDGE_HOST in the env — `mix` does NOT load .env, so source it
+  # first: `set -a && source .env && set +a && mix codemojex.edge`. This publishes to a LIVE
+  # bucket — the Operator runs it. Setup + boundary: echo/docs/codemojex/edge-bucket-setup.md.
+  defp aliases do
+    ["codemojex.edge": &edge_publish/1]
+  end
+
+  defp edge_publish(args) do
+    script = Path.expand("apps/codemojex/scripts/edge-deploy.sh", __DIR__)
+    unless File.exists?(script), do: Mix.raise("mix codemojex.edge: not found at #{script}")
+
+    # Mix.shell().cmd/1 streams the build/upload output live and returns the exit status.
+    case Mix.shell().cmd(Enum.join(["bash", script | args], " ")) do
+      0 -> :ok
+      status -> Mix.raise("mix codemojex.edge: edge-deploy.sh exited with status #{status}")
+    end
   end
 end
