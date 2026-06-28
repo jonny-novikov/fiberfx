@@ -3,12 +3,14 @@ import {
   CHANNEL_EVENTS
 } from "./constants"
 
+import type { Message } from "./types"
+
 export default {
   HEADER_LENGTH: 1,
   META_LENGTH: 4,
   KINDS: {push: 0, reply: 1, broadcast: 2},
 
-  encode(msg, callback){
+  encode(msg: Message, callback: (encoded: any) => void){
     if(msg.payload.constructor === ArrayBuffer){
       return callback(this.binaryEncode(msg))
     } else {
@@ -17,7 +19,7 @@ export default {
     }
   },
 
-  decode(rawPayload, callback){
+  decode(rawPayload: any, callback: (decoded: any) => void){
     if(rawPayload.constructor === ArrayBuffer){
       return callback(this.binaryDecode(rawPayload))
     } else {
@@ -28,11 +30,13 @@ export default {
 
   // private
 
-  binaryEncode(message){
+  binaryEncode(message: Message){
     let {join_ref, ref, event, topic, payload} = message
     let encoder = new TextEncoder()
-    let joinRefBytes = encoder.encode(join_ref)
-    let refBytes = encoder.encode(ref)
+    // join_ref/ref are non-null on an outgoing push being binary-encoded; the
+    // assertions are type-only (TextEncoder.encode wants `string`) — no runtime change.
+    let joinRefBytes = encoder.encode(join_ref!)
+    let refBytes = encoder.encode(ref!)
     let topicBytes = encoder.encode(topic)
     let eventBytes = encoder.encode(event)
 
@@ -64,13 +68,13 @@ export default {
     return combined.buffer
   },
 
-  assertFieldSize(size, name){
+  assertFieldSize(size: number, name: string){
     if(size > 255){
       throw new Error(`unable to convert ${name} to binary: must be less than or equal to 255 bytes, but is ${size} bytes`)
     }
   },
 
-  binaryDecode(buffer){
+  binaryDecode(buffer: ArrayBuffer){
     let view = new DataView(buffer)
     let kind = view.getUint8(0)
     let decoder = new TextDecoder()
@@ -81,7 +85,7 @@ export default {
     }
   },
 
-  decodePush(buffer, view, decoder){
+  decodePush(buffer: ArrayBuffer, view: DataView, decoder: TextDecoder){
     let joinRefSize = view.getUint8(1)
     let topicSize = view.getUint8(2)
     let eventSize = view.getUint8(3)
@@ -96,7 +100,7 @@ export default {
     return {join_ref: joinRef, ref: null, topic: topic, event: event, payload: data}
   },
 
-  decodeReply(buffer, view, decoder){
+  decodeReply(buffer: ArrayBuffer, view: DataView, decoder: TextDecoder){
     let joinRefSize = view.getUint8(1)
     let refSize = view.getUint8(2)
     let topicSize = view.getUint8(3)
@@ -115,7 +119,7 @@ export default {
     return {join_ref: joinRef, ref: ref, topic: topic, event: CHANNEL_EVENTS.reply, payload: payload}
   },
 
-  decodeBroadcast(buffer, view, decoder){
+  decodeBroadcast(buffer: ArrayBuffer, view: DataView, decoder: TextDecoder){
     let topicSize = view.getUint8(1)
     let eventSize = view.getUint8(2)
     let offset = this.HEADER_LENGTH + 2

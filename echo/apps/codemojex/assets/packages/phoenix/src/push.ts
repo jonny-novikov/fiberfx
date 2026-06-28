@@ -1,3 +1,6 @@
+import type Channel from "./channel"
+import type {PushStatus} from "./types"
+
 /**
  * Initializes the Push
  * @param {Channel} channel - The Channel
@@ -6,10 +9,26 @@
  * @param {number} timeout - The push timeout in milliseconds
  */
 export default class Push {
-  constructor(channel, event, payload, timeout){
+  channel: Channel
+  event: string
+  // Stored as a thunk: the constructor receives an `object` (per @types/phoenix)
+  // but callers always pass a function, and `send()` invokes `this.payload()`.
+  payload: () => object
+  receivedResp: any
+  timeout: number
+  // setTimeout handle (number under DOM / NodeJS.Timeout under @types/node) or null.
+  timeoutTimer: any
+  recHooks: { status: string; callback: (response?: any) => any }[]
+  sent: boolean
+  // ref / refEvent are created on `startTimeout`/`reset`, never in the constructor;
+  // `declare` keeps them type-only (emits no field) so runtime is unchanged.
+  declare ref: string | null
+  declare refEvent: string | null
+
+  constructor(channel: Channel, event: string, payload: object, timeout: number){
     this.channel = channel
     this.event = event
-    this.payload = payload || function (){ return {} }
+    this.payload = (payload || function (){ return {} }) as () => object
     this.receivedResp = null
     this.timeout = timeout
     this.timeoutTimer = null
@@ -21,7 +40,7 @@ export default class Push {
    *
    * @param {number} timeout
    */
-  resend(timeout){
+  resend(timeout: number): void{
     this.timeout = timeout
     this.reset()
     this.send()
@@ -30,7 +49,7 @@ export default class Push {
   /**
    *
    */
-  send(){
+  send(): void{
     if(this.hasReceived("timeout")){ return }
     this.startTimeout()
     this.sent = true
@@ -48,7 +67,7 @@ export default class Push {
    * @param {*} status
    * @param {*} callback
    */
-  receive(status, callback){
+  receive(status: PushStatus, callback: (response?: any) => any): this{
     if(this.hasReceived(status)){
       callback(this.receivedResp.response)
     }
@@ -60,7 +79,7 @@ export default class Push {
   /**
    * @private
    */
-  reset(){
+  reset(): void{
     this.cancelRefEvent()
     this.ref = null
     this.refEvent = null
@@ -71,7 +90,7 @@ export default class Push {
   /**
    * @private
    */
-  matchReceive({status, response, _ref}){
+  matchReceive({status, response, _ref}: {status: string; response?: any; _ref?: any}): void{
     this.recHooks.filter(h => h.status === status)
       .forEach(h => h.callback(response))
   }
@@ -79,7 +98,7 @@ export default class Push {
   /**
    * @private
    */
-  cancelRefEvent(){
+  cancelRefEvent(): void{
     if(!this.refEvent){ return }
     this.channel.off(this.refEvent)
   }
@@ -87,7 +106,7 @@ export default class Push {
   /**
    * @private
    */
-  cancelTimeout(){
+  cancelTimeout(): void{
     clearTimeout(this.timeoutTimer)
     this.timeoutTimer = null
   }
@@ -95,12 +114,12 @@ export default class Push {
   /**
    * @private
    */
-  startTimeout(){
+  startTimeout(): void{
     if(this.timeoutTimer){ this.cancelTimeout() }
     this.ref = this.channel.socket.makeRef()
     this.refEvent = this.channel.replyEventName(this.ref)
 
-    this.channel.on(this.refEvent, payload => {
+    this.channel.on(this.refEvent, (payload: any) => {
       this.cancelRefEvent()
       this.cancelTimeout()
       this.receivedResp = payload
@@ -115,14 +134,15 @@ export default class Push {
   /**
    * @private
    */
-  hasReceived(status){
+  hasReceived(status: string): boolean{
     return this.receivedResp && this.receivedResp.status === status
   }
 
   /**
    * @private
    */
-  trigger(status, response){
-    this.channel.trigger(this.refEvent, {status, response})
+  trigger(status: string, response?: any): void{
+    // refEvent is set by startTimeout before any trigger fires.
+    this.channel.trigger(this.refEvent!, {status, response})
   }
 }

@@ -16,7 +16,16 @@
  * @param {Function} timerCalc
  */
 export default class Timer {
-  constructor(callback, timerCalc){
+  callback: () => void | Promise<void>
+  timerCalc: (tries: number) => number
+  // The timer handle is an untyped implementation detail: it holds the
+  // setTimeout return (NodeJS.Timeout under @types/node, number under DOM) or
+  // null when idle. `clearTimeout` rejects the null branch under strict, so
+  // `any` here matches the untyped-handle posture without a runtime change.
+  timer: any
+  tries: number
+
+  constructor(callback: () => void | Promise<void>, timerCalc: (tries: number) => number){
     this.callback = callback
     this.timerCalc = timerCalc
     this.timer = null

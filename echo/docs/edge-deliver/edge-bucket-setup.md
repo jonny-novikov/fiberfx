@@ -88,17 +88,18 @@ image fetches the installer from this bucket instead
 immutable cache (the installer is versioned/static):
 
 ```bash
-set -a && source echo/.env && set +a   # for $TIGRIS_EDGE_BUCKET + $TIGRIS_EDGE_ENDPOINT_URL
+# set -a && source echo/.env && set +a   # for $TIGRIS_EDGE_BUCKET + $TIGRIS_EDGE_ENDPOINT_URL
+cd upload.local
 
 # x86_64 (Fly amd64 builders)
-aws s3 cp awscli-exe-linux-x86_64.zip "s3://$TIGRIS_EDGE_BUCKET/dist/awscli-x86_64.zip" \
+set -a && source .env && set +a && aws s3 cp awscli-exe-linux-x86_64.zip "s3://$TIGRIS_EDGE_BUCKET/dist/awscli-x86_64.zip" \
   --endpoint-url "$TIGRIS_EDGE_ENDPOINT_URL" \
-  --cache-control "public,max-age=31536000,immutable" --content-type application/zip
+  --cache-control "public,max-age=31536000,immutable" --content-type application/zip --acl public-read
 
 # aarch64 (Fly arm64 builders)
-aws s3 cp awscli-exe-linux-aarch64.zip "s3://$TIGRIS_EDGE_BUCKET/dist/awscli-aarch64.zip" \
+set -a && source .env && set +a && aws s3 cp awscli-exe-linux-aarch64.zip "s3://$TIGRIS_EDGE_BUCKET/dist/awscli-aarch64.zip" \
   --endpoint-url "$TIGRIS_EDGE_ENDPOINT_URL" \
-  --cache-control "public,max-age=31536000,immutable" --content-type application/zip
+  --cache-control "public,max-age=31536000,immutable" --content-type application/zip --acl public-read
 ```
 
 Fetch the source zips from AWS on any machine that can reach the origin

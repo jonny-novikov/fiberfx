@@ -5,14 +5,14 @@ import {
 
 export default class Ajax {
 
-  static request(method, endPoint, headers, body, timeout, ontimeout, callback){
-    if(global.XDomainRequest){
-      let req = new global.XDomainRequest() // IE8, IE9
+  static request(method: string, endPoint: string, headers: any, body: any, timeout?: number, ontimeout?: any, callback?: (response?: any) => void | Promise<void>): any {
+    if((global as any).XDomainRequest){
+      let req = new (global as any).XDomainRequest() // IE8, IE9
       return this.xdomainRequest(req, method, endPoint, body, timeout, ontimeout, callback)
-    } else if(global.XMLHttpRequest){
-      let req = new global.XMLHttpRequest() // IE7+, Firefox, Chrome, Opera, Safari
+    } else if((global as any).XMLHttpRequest){
+      let req = new (global as any).XMLHttpRequest() // IE7+, Firefox, Chrome, Opera, Safari
       return this.xhrRequest(req, method, endPoint, headers, body, timeout, ontimeout, callback)
-    } else if(global.fetch && global.AbortController){
+    } else if((global as any).fetch && (global as any).AbortController){
       // Fetch with AbortController for modern browsers
       return this.fetchRequest(method, endPoint, headers, body, timeout, ontimeout, callback)
     } else {
@@ -20,23 +20,23 @@ export default class Ajax {
     }
   }
 
-  static fetchRequest(method, endPoint, headers, body, timeout, ontimeout, callback){
-    let options = {
+  static fetchRequest(method: string, endPoint: string, headers: any, body: any, timeout?: number, ontimeout?: any, callback?: (response?: any) => void | Promise<void>): AbortController | null {
+    let options: {method: string, headers: any, body: any, signal?: AbortSignal} = {
       method,
       headers,
       body,
     }
-    let controller = null
+    let controller: AbortController | null = null
     if(timeout){
       controller = new AbortController()
-      const _timeoutId = setTimeout(() => controller.abort(), timeout)
+      const _timeoutId = setTimeout(() => controller!.abort(), timeout)
       options.signal = controller.signal
     }
-    global.fetch(endPoint, options)
-      .then(response => response.text())
-      .then(data => this.parseJSON(data))
-      .then(data => callback && callback(data))
-      .catch(err => {
+    ;(global as any).fetch(endPoint, options)
+      .then((response: any) => response.text())
+      .then((data: any) => this.parseJSON(data))
+      .then((data: any) => callback && callback(data))
+      .catch((err: any) => {
         if(err.name === "AbortError" && ontimeout){
           ontimeout()
         } else {
@@ -46,7 +46,7 @@ export default class Ajax {
     return controller
   }
 
-  static xdomainRequest(req, method, endPoint, body, timeout, ontimeout, callback){
+  static xdomainRequest(req: any, method: string, endPoint: string, body: any, timeout?: number, ontimeout?: any, callback?: (response?: any) => void | Promise<void>): any {
     req.timeout = timeout
     req.open(method, endPoint)
     req.onload = () => {
@@ -62,7 +62,7 @@ export default class Ajax {
     return req
   }
 
-  static xhrRequest(req, method, endPoint, headers, body, timeout, ontimeout, callback){
+  static xhrRequest(req: any, method: string, endPoint: string, headers: any, body: any, timeout?: number, ontimeout?: any, callback?: (response?: any) => void | Promise<void>): any {
     req.open(method, endPoint, true)
     req.timeout = timeout
     for(let [key, value] of Object.entries(headers)){
@@ -81,7 +81,7 @@ export default class Ajax {
     return req
   }
 
-  static parseJSON(resp){
+  static parseJSON(resp: string): any {
     if(!resp || resp === ""){ return null }
 
     try {
@@ -92,7 +92,7 @@ export default class Ajax {
     }
   }
 
-  static serialize(obj, parentKey){
+  static serialize(obj: any, parentKey?: string): string {
     let queryStr = []
     for(var key in obj){
       if(!Object.prototype.hasOwnProperty.call(obj, key)){ continue }
@@ -107,7 +107,7 @@ export default class Ajax {
     return queryStr.join("&")
   }
 
-  static appendParams(url, params){
+  static appendParams(url: string, params: any): string {
     if(Object.keys(params).length === 0){ return url }
 
     let prefix = url.match(/\?/) ? "&" : "?"

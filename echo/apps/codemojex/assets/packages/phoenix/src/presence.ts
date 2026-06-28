@@ -1,3 +1,10 @@
+import type Channel from "./channel"
+import type {
+  PresenceOnJoinCallback,
+  PresenceOnLeaveCallback,
+  PresenceOpts,
+} from "./types"
+
 /**
  * Initializes the Presence
  * @param {Channel} channel - The Channel
@@ -5,8 +12,18 @@
  *        for example `{events: {state: "state", diff: "diff"}}`
  */
 export default class Presence {
+  // The presence map is genuinely untyped wire data (arbitrary keys → metas).
+  state: any
+  pendingDiffs: any[]
+  channel: Channel
+  joinRef: string | null
+  caller: {
+    onJoin: PresenceOnJoinCallback
+    onLeave: PresenceOnLeaveCallback
+    onSync: () => void | Promise<void>
+  }
 
-  constructor(channel, opts = {}){
+  constructor(channel: Channel, opts: PresenceOpts = {}){
     let events = opts.events || {state: "presence_state", diff: "presence_diff"}
     this.state = {}
     this.pendingDiffs = []
@@ -43,15 +60,15 @@ export default class Presence {
     })
   }
 
-  onJoin(callback){ this.caller.onJoin = callback }
+  onJoin(callback: PresenceOnJoinCallback): void{ this.caller.onJoin = callback }
 
-  onLeave(callback){ this.caller.onLeave = callback }
+  onLeave(callback: PresenceOnLeaveCallback): void{ this.caller.onLeave = callback }
 
-  onSync(callback){ this.caller.onSync = callback }
+  onSync(callback: () => void | Promise<void>): void{ this.caller.onSync = callback }
 
-  list(by){ return Presence.list(this.state, by) }
+  list<T = any>(by?: (key: string, presence: any) => T): T[]{ return Presence.list(this.state, by) }
 
-  inPendingSyncState(){
+  inPendingSyncState(): boolean{
     return !this.joinRef || (this.joinRef !== this.channel.joinRef())
   }
 
@@ -65,23 +82,23 @@ export default class Presence {
    *
    * @returns {Presence}
    */
-  static syncState(currentState, newState, onJoin, onLeave){
+  static syncState(currentState: object, newState: object, onJoin?: PresenceOnJoinCallback, onLeave?: PresenceOnLeaveCallback): any{
     let state = this.clone(currentState)
-    let joins = {}
-    let leaves = {}
+    let joins: Record<string, any> = {}
+    let leaves: Record<string, any> = {}
 
     this.map(state, (key, presence) => {
-      if(!newState[key]){
+      if(!(newState as Record<string, any>)[key]){
         leaves[key] = presence
       }
     })
     this.map(newState, (key, newPresence) => {
       let currentPresence = state[key]
       if(currentPresence){
-        let newRefs = newPresence.metas.map(m => m.phx_ref)
-        let curRefs = currentPresence.metas.map(m => m.phx_ref)
-        let joinedMetas = newPresence.metas.filter(m => curRefs.indexOf(m.phx_ref) < 0)
-        let leftMetas = currentPresence.metas.filter(m => newRefs.indexOf(m.phx_ref) < 0)
+        let newRefs = newPresence.metas.map((m: any) => m.phx_ref)
+        let curRefs = currentPresence.metas.map((m: any) => m.phx_ref)
+        let joinedMetas = newPresence.metas.filter((m: any) => curRefs.indexOf(m.phx_ref) < 0)
+        let leftMetas = currentPresence.metas.filter((m: any) => newRefs.indexOf(m.phx_ref) < 0)
         if(joinedMetas.length > 0){
           joins[key] = newPresence
           joins[key].metas = joinedMetas
@@ -106,31 +123,33 @@ export default class Presence {
    *
    * @returns {Presence}
    */
-  static syncDiff(state, diff, onJoin, onLeave){
+  static syncDiff(state: object, diff: { joins: object; leaves: object }, onJoin?: PresenceOnJoinCallback, onLeave?: PresenceOnLeaveCallback): any{
     let {joins, leaves} = this.clone(diff)
     if(!onJoin){ onJoin = function (){ } }
     if(!onLeave){ onLeave = function (){ } }
 
     this.map(joins, (key, newPresence) => {
-      let currentPresence = state[key]
-      state[key] = this.clone(newPresence)
+      let currentPresence = (state as Record<string, any>)[key]
+      ;(state as Record<string, any>)[key] = this.clone(newPresence)
       if(currentPresence){
-        let joinedRefs = state[key].metas.map(m => m.phx_ref)
-        let curMetas = currentPresence.metas.filter(m => joinedRefs.indexOf(m.phx_ref) < 0)
-        state[key].metas.unshift(...curMetas)
+        let joinedRefs = (state as Record<string, any>)[key].metas.map((m: any) => m.phx_ref)
+        let curMetas = currentPresence.metas.filter((m: any) => joinedRefs.indexOf(m.phx_ref) < 0)
+        ;(state as Record<string, any>)[key].metas.unshift(...curMetas)
       }
-      onJoin(key, currentPresence, newPresence)
+      // onJoin is guaranteed defined by the guard above.
+      onJoin!(key, currentPresence, newPresence)
     })
     this.map(leaves, (key, leftPresence) => {
-      let currentPresence = state[key]
+      let currentPresence = (state as Record<string, any>)[key]
       if(!currentPresence){ return }
-      let refsToRemove = leftPresence.metas.map(m => m.phx_ref)
-      currentPresence.metas = currentPresence.metas.filter(p => {
+      let refsToRemove = leftPresence.metas.map((m: any) => m.phx_ref)
+      currentPresence.metas = currentPresence.metas.filter((p: any) => {
         return refsToRemove.indexOf(p.phx_ref) < 0
       })
-      onLeave(key, currentPresence, leftPresence)
+      // onLeave is guaranteed defined by the guard above.
+      onLeave!(key, currentPresence, leftPresence)
       if(currentPresence.metas.length === 0){
-        delete state[key]
+        delete (state as Record<string, any>)[key]
       }
     })
     return state
@@ -144,19 +163,20 @@ export default class Presence {
    *
    * @returns {Presence}
    */
-  static list(presences, chooser){
+  static list<T = any>(presences: object, chooser?: (key: string, presence: any) => T): T[]{
     if(!chooser){ chooser = function (key, pres){ return pres } }
 
     return this.map(presences, (key, presence) => {
-      return chooser(key, presence)
+      // chooser is guaranteed defined by the guard above.
+      return chooser!(key, presence)
     })
   }
 
   // private
 
-  static map(obj, func){
+  static map(obj: any, func: (key: string, value: any) => any): any[]{
     return Object.getOwnPropertyNames(obj).map(key => func(key, obj[key]))
   }
 
-  static clone(obj){ return JSON.parse(JSON.stringify(obj)) }
+  static clone(obj: any): any{ return JSON.parse(JSON.stringify(obj)) }
 }

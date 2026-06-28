@@ -7,7 +7,7 @@ import {
 
 import Ajax from "./ajax"
 
-let arrayBufferToBase64 = (buffer) => {
+let arrayBufferToBase64 = (buffer: ArrayBuffer) => {
   let binary = ""
   let bytes = new Uint8Array(buffer)
   let len = bytes.byteLength
@@ -17,7 +17,24 @@ let arrayBufferToBase64 = (buffer) => {
 
 export default class LongPoll {
 
-  constructor(endPoint, protocols){
+  authToken?: string
+  endPoint: string | null
+  token: string | null
+  skipHeartbeat: boolean
+  reqs: Set<any>
+  awaitingBatchAck: boolean
+  currentBatch: string[] | null
+  currentBatchTimer: any
+  batchBuffer: string[]
+  onopen: (msg?: any) => void
+  onerror: (reason?: any) => void
+  onmessage: (msg?: any) => void
+  onclose: (event?: any) => void
+  pollEndpoint: string
+  readyState: number
+  timeout?: number
+
+  constructor(endPoint: string, protocols?: string[]){
     // we only support subprotocols for authToken
     // ["phoenix", "base64url.bearer.phx.BASE64_ENCODED_TOKEN"]
     if(protocols && protocols.length === 2 && protocols[1].startsWith(AUTH_TOKEN_PREFIX)){
@@ -41,31 +58,31 @@ export default class LongPoll {
     setTimeout(() => this.poll(), 0)
   }
 
-  normalizeEndpoint(endPoint){
+  normalizeEndpoint(endPoint: string): string {
     return (endPoint
       .replace("ws://", "http://")
       .replace("wss://", "https://")
       .replace(new RegExp("(.*)\/" + TRANSPORTS.websocket), "$1/" + TRANSPORTS.longpoll))
   }
 
-  endpointURL(){
+  endpointURL(): string {
     return Ajax.appendParams(this.pollEndpoint, {token: this.token})
   }
 
-  closeAndRetry(code, reason, wasClean){
+  closeAndRetry(code?: any, reason?: any, wasClean?: any): void {
     this.close(code, reason, wasClean)
     this.readyState = SOCKET_STATES.connecting
   }
 
-  ontimeout(){
+  ontimeout(): void {
     this.onerror("timeout")
     this.closeAndRetry(1005, "timeout", false)
   }
 
-  isActive(){ return this.readyState === SOCKET_STATES.open || this.readyState === SOCKET_STATES.connecting }
+  isActive(): boolean { return this.readyState === SOCKET_STATES.open || this.readyState === SOCKET_STATES.connecting }
 
-  poll(){
-    const headers = {"Accept": "application/json"}
+  poll(): void {
+    const headers: Record<string, string> = {"Accept": "application/json"}
     if(this.authToken){
       headers["X-Phoenix-AuthToken"] = this.authToken
     }
@@ -86,7 +103,7 @@ export default class LongPoll {
 
       switch(status){
         case 200:
-          messages.forEach(msg => {
+          messages.forEach((msg: any) => {
             // Tasks are what things like event handlers, setTimeout callbacks,
             // promise resolves and more are run within.
             // In modern browsers, there are two different kinds of tasks,
@@ -135,7 +152,7 @@ export default class LongPoll {
   // setTimeout 0, which optimizes back-to-back procedural
   // pushes against an empty buffer
 
-  send(body){
+  send(body: any): void {
     if(typeof(body) !== "string"){ body = arrayBufferToBase64(body) }
     if(this.currentBatch){
       this.currentBatch.push(body)
@@ -144,13 +161,13 @@ export default class LongPoll {
     } else {
       this.currentBatch = [body]
       this.currentBatchTimer = setTimeout(() => {
-        this.batchSend(this.currentBatch)
+        this.batchSend(this.currentBatch!)
         this.currentBatch = null
       }, 0)
     }
   }
 
-  batchSend(messages, offset = 0){
+  batchSend(messages: string[], offset = 0): void {
     this.awaitingBatchAck = true
     const next = offset + MAX_LONGPOLL_BATCH_SIZE
     const batch = messages.slice(offset, next)
@@ -170,7 +187,7 @@ export default class LongPoll {
     })
   }
 
-  close(code, reason, wasClean){
+  close(code?: any, reason?: any, wasClean?: any): void {
     for(let req of this.reqs){ req.abort() }
     this.readyState = SOCKET_STATES.closed
     let opts = Object.assign({code: 1000, reason: undefined, wasClean: true}, {code, reason, wasClean})
@@ -184,8 +201,8 @@ export default class LongPoll {
     }
   }
 
-  ajax(method, headers, body, onCallerTimeout, callback){
-    let req
+  ajax(method: string, headers: any, body: any, onCallerTimeout: () => void, callback: (resp?: any) => void): void {
+    let req: any
     let ontimeout = () => {
       this.reqs.delete(req)
       onCallerTimeout()
