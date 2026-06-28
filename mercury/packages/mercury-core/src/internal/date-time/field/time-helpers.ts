@@ -1,4 +1,4 @@
-import { isBrowser, isNull } from "../../../internal/is.js";
+import { isBrowser, isNull } from "#internal/is.js";
 import type {
 	EditableTimeSegmentPart,
 	HourCycle,
@@ -7,15 +7,15 @@ import type {
 	TimeSegmentStateMap,
 	TimeSegmentValueObj,
 	TimeValue,
-} from "../../../shared/date/types.js";
+} from "#shared/date/types.js";
 import { CalendarDateTime, Time, ZonedDateTime } from "@internationalized/date";
-import type { TimeFormatter } from "../formatter.js";
+import type { TimeFormatter } from "#internal/date-time/formatter.js";
 import { ALL_TIME_SEGMENT_PARTS, EDITABLE_TIME_SEGMENT_PARTS } from "./parts.js";
 import { getTimeSegments } from "./segments.js";
 import type { TimeSegmentPart } from "./types.js";
-import { useId } from "../../use-id";
-import { getPlaceholder } from "../placeholders.js";
-import { isZonedDateTime } from "../utils.js";
+import { useId } from "#internal/use-id.js";
+import { getPlaceholder } from "#internal/date-time/placeholders.js";
+import { isZonedDateTime } from "#internal/date-time/utils.js";
 import { getDefaultHourCycle } from "./helpers.js";
 
 export function initializeSegmentValues() {
@@ -344,7 +344,7 @@ export function removeTimeDescriptionElement(id: string, doc: Document) {
 
 // Moved to the standalone `../time-value` leaf so the formatter can reuse it
 // without importing the whole date-field surface; re-exported here for callers.
-export { convertTimeValueToDateValue } from "../time-value";
+export { convertTimeValueToDateValue } from "#internal/date-time/time-value.js";
 
 export function convertTimeValueToTime(time: TimeValue): Time {
 	if (time instanceof Time) return time;

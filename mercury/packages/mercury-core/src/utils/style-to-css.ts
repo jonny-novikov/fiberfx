@@ -1,4 +1,4 @@
-import type { StyleProperties } from "../types";
+import type { StyleProperties } from "#types.js";
 
 function createParser(matcher: string | RegExp, replacer: (match: string) => string) {
 	const regex = RegExp(matcher, "g");

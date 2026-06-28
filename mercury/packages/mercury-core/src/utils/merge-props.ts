@@ -7,7 +7,7 @@ import { clsx } from "./clsx.js";
 import { executeCallbacks } from "./execute-callbacks.js";
 import { styleToString } from "./style.js";
 import { cssToStyleObj } from "./style-to-css.js";
-import type { StyleProperties } from "../types.js";
+import type { StyleProperties } from "#types.js";
 import { EVENT_LIST_SET } from "./event-list.js";
 
 type Props = Record<string, unknown>;

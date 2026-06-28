@@ -1,6 +1,6 @@
 import { DateFormatter, type DateValue } from "@internationalized/date";
 import { hasTime, isZonedDateTime, toDate } from "./utils";
-import type { HourCycle, TimeValue } from "../../shared/date/types";
+import type { HourCycle, TimeValue } from "#shared/date/types.js";
 import { convertTimeValueToDateValue } from "./time-value";
 
 /**

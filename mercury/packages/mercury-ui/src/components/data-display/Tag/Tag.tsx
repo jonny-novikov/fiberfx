@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Chip } from "../Chip";
-import type { ChipVariant } from "../Chip";
+import { Chip } from "#components/data-display/Chip/index.js";
+import type { ChipVariant } from "#components/data-display/Chip/index.js";
 
 export interface TagProps {
   children: ReactNode;

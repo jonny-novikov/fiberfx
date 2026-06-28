@@ -1,4 +1,4 @@
-import type { Direction } from "../shared";
+import type { Direction } from "#shared/index.js";
 
 type ArrowKeyOptions = "horizontal" | "vertical" | "both";
 

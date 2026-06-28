@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /** Any function — used where the signature is irrelevant. */
-export type { AnyFn, Without } from "../types";
+export type { AnyFn, Without } from "#types.js";
 
 /** A component's props plus the standard React `children`. */
 export type WithChildren<T = Record<never, never>> = T & { children?: ReactNode };

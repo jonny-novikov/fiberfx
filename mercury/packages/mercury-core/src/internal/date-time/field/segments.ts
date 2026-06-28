@@ -1,6 +1,6 @@
 import { isAnySegmentPart } from "./helpers.js";
-import { isHTMLElement } from "../../../internal/is.js";
-import { kbd } from "../../../internal/kbd";
+import { isHTMLElement } from "#internal/is.js";
+import { kbd } from "#internal/kbd.js";
 
 /**
  * Handles segment navigation based on the provided keyboard event and field ID.

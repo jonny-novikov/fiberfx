@@ -1,5 +1,5 @@
 import { CalendarDateTime, Time, ZonedDateTime } from "@internationalized/date";
-import type { TimeValue } from "../../shared/date/types";
+import type { TimeValue } from "#shared/date/types.js";
 
 /**
  * Normalize a {@link TimeValue} to a date-bearing value the `Intl` formatters

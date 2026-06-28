@@ -55,7 +55,7 @@ export type {
 	TimeRangeValidator,
 	TimeOnInvalid,
 } from "./date/types.js";
-export type { WithChild, Without, WithChildren } from "../internal/types";
-export { mergeProps } from "../utils/merge-props";
-export { useId } from "../internal/use-id";
+export type { WithChild, Without, WithChildren } from "#internal/types.js";
+export { mergeProps } from "#utils/merge-props.js";
+export { useId } from "#internal/use-id.js";
 export * from "./types.js";

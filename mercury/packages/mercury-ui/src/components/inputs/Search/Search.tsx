@@ -1,6 +1,6 @@
 import type { InputHTMLAttributes } from "react";
 import { cx } from "@mercury/core";
-import { Icon } from "../../foundations/Icon";
+import { Icon } from "#components/foundations/Icon/index.js";
 
 export interface SearchProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> {
   value: string;

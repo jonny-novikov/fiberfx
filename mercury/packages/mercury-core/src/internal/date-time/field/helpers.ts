@@ -1,7 +1,7 @@
 import type { DateValue } from "@internationalized/date";
-import type { Formatter } from "../formatter.js";
-import { getPlaceholder } from "../placeholders.js";
-import { hasTime, isZonedDateTime } from "../utils.js";
+import type { Formatter } from "#internal/date-time/formatter.js";
+import { getPlaceholder } from "#internal/date-time/placeholders.js";
+import { hasTime, isZonedDateTime } from "#internal/date-time/utils.js";
 import type {
 	DateAndTimeSegmentObj,
 	DateSegmentPart,
@@ -19,10 +19,10 @@ import {
 	EDITABLE_TIME_SEGMENT_PARTS,
 } from "./parts.js";
 import { getSegments } from "./segments.js";
-import { isBrowser, isNull, isNumberString } from "../../../internal/is.js";
-import { useId } from "../../../internal/use-id.js";
-import { kbd } from "../../../internal/kbd.js";
-import type { Granularity, HourCycle } from "../../../shared/date/types.js";
+import { isBrowser, isNull, isNumberString } from "#internal/is.js";
+import { useId } from "#internal/use-id.js";
+import { kbd } from "#internal/kbd.js";
+import type { Granularity, HourCycle } from "#shared/date/types.js";
 
 export function initializeSegmentValues(granularity: Granularity) {
 	const calendarDateTimeGranularities = ["hour", "minute", "second"];

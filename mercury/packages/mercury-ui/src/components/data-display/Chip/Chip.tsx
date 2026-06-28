@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cx } from "@mercury/core";
-import { Icon } from "../../foundations/Icon";
+import { Icon } from "#components/foundations/Icon/index.js";
 
 export type ChipVariant = "neutral" | "brand" | "positive" | "negative" | "caution" | "info" | "discovery";
 export interface ChipProps {

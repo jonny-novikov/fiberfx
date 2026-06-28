@@ -1,6 +1,6 @@
 import { cx } from "@mercury/core";
-import { Progress } from "../Progress";
-import type { ProgressVariant } from "../Progress";
+import { Progress } from "#components/feedback/Progress/index.js";
+import type { ProgressVariant } from "#components/feedback/Progress/index.js";
 
 /**
  * PasswordStrength — a labelled strength meter for a password field.
