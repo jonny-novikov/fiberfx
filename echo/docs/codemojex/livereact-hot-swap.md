@@ -158,7 +158,7 @@ deleted, rollback is instant and safe.
 
 - **`scripts/edge-deploy.sh` ships the game.** Build → upload hashed-immutable → flip the pointer →
   verify (with `--dry-run` and `--rollback`). Standing up the dedicated `edge.codemoji.games` bucket +
-  custom domain and running the first deploy is [edge-bucket-setup.md](edge-bucket-setup.md).
+  custom domain and running the first deploy is [edge-bucket-setup.md](../edge-deliver/edge-bucket-setup.md).
 - **Until the first deploy, the game is absent in dev.** The pointer resolves to nothing and
   `GAME_ASSET_URL` is unset, so `data-bundle` is **empty** — `/game/:gam` renders the shell + server
   props but no React UI (the expected deferred state, asserted by the e2e game-shell story).
@@ -175,7 +175,7 @@ deleted, rollback is instant and safe.
 ## 8. Map
 
 [render-stack.md](render-stack.md) · [rendering.md](rendering.md) · [dev-and-testing.md](dev-and-testing.md)
-· [edge-bucket-setup.md](edge-bucket-setup.md) · source: [`edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex),
+· [edge-bucket-setup.md](../edge-deliver/edge-bucket-setup.md) · source: [`edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex),
 [`edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh),
 [`app.js`](../../apps/codemojex/assets/js/app.js),
 [`vite.config.ts`](../../apps/codemojex/assets/vite.config.ts).

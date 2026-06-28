@@ -9,12 +9,12 @@ It talks to the live `codemojex` app **only through the bucket pointer**: the ap
 (cached ~10s), so once this job flips the pointer the new bundle goes live within ~10s with **no app
 restart, no secret write, and no Fly token**.
 
-- **What it runs:** the canonical [`scripts/edge-deploy.sh`](../scripts/edge-deploy.sh) — build →
+- **What it runs:** the canonical [`scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh) — build →
   upload immutable → flip `manifest.json` → verify. Nothing else.
 - **Design + the ruled decisions:**
-  [`docs/codemojex-tma/kb/codemojex-edge-deploy/index.md`](../../../../docs/codemojex-tma/kb/codemojex-edge-deploy/index.md).
+  [`docs/codemojex-tma/kb/codemojex-edge-deploy/index.md`](../../../docs/codemojex-tma/kb/codemojex-edge-deploy/index.md).
 - **Bucket + domain provisioning:**
-  [`echo/docs/codemojex/edge-bucket-setup.md`](../../../docs/codemojex/edge-bucket-setup.md).
+  [`echo/docs/codemojex/edge-bucket-setup.md`](edge-bucket-setup.md).
 
 > **Boundary — you (the Operator) run this, not the agent.** A deploy publishes bytes to a live origin
 > and creates infra. The agent authored these files; the steps below are yours.
@@ -37,7 +37,7 @@ fly secrets set -a codemojex-edge-deliver \
 
 > The optional `GAME_ASSET_URL` fallback on the `codemojex` app (a coarse "last known good" for when the
 > pointer is briefly unreachable) is a **one-time, setup-time** pin — see
-> [`edge-bucket-setup.md` §3b](../../../docs/codemojex/edge-bucket-setup.md). It is **not** this job's
+> [`edge-bucket-setup.md` §3b](edge-bucket-setup.md). It is **not** this job's
 > concern and is not updated per publish.
 
 ## Publish (every game iteration)

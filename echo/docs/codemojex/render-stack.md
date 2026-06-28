@@ -120,7 +120,7 @@ If there is no valid session at any browser route, the LiveView `mount` redirect
 ## 6. Map
 
 Deep dives: [livereact-hot-swap.md](livereact-hot-swap.md) · [rendering.md](rendering.md) ·
-[dev-and-testing.md](dev-and-testing.md) · [edge-bucket-setup.md](edge-bucket-setup.md). Inbound bot transport:
+[dev-and-testing.md](dev-and-testing.md) · [edge-bucket-setup.md](../edge-deliver/edge-bucket-setup.md). Inbound bot transport:
 [webhook-vs-polling.md](webhook-vs-polling.md). Source: [`apps/codemojex/`](../../apps/codemojex).
 E2E harness: [`node/codemojex-e2e/`](../../../node/codemojex-e2e). Roadmap:
 [`docs/codemojex-tma/codemojex-tma.roadmap.md`](../../../docs/codemojex-tma/codemojex-tma.roadmap.md).
