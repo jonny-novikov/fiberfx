@@ -1,7 +1,5 @@
 # Codemoji · Three-Tier Rendering on the As-Built Engine
 
-<show-structure depth="2"/>
-
 This plan revises the original three-tier rendering roadmap against the fetched `fiberfx@echo_mq` source, so every server call it names targets a function that exists in `apps/codemojex/`. The shape of the front end is unchanged — a static welcome, a LiveView lobby, and a React board — but the engine underneath is not a sketch: it is a Phoenix release whose entities are branded components, whose guesses are jobs scored asynchronously on per-player lanes, and whose reads withhold the secret by construction. The reconciliation matters most at one seam: the original plan scored a guess synchronously inside the LiveView and returned the result; the real engine enqueues the guess and the score arrives later over PubSub. The board, the routes, and the state handoffs are reworked around that fact. The full integration source ships in `codemojex-livereact.zip`.
 
 ## The engine this renders, as built

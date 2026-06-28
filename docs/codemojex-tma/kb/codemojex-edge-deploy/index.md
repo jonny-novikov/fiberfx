@@ -6,7 +6,7 @@
 > Given/When/Then acceptance for **moving the edge-bundle publish off the Operator's laptop onto a
 > one-shot Fly machine**. Every surface it names is verified at its source or written forward-tense for
 > surface not yet built (the `fly.toml` + `Dockerfile` it specifies are now built under
-> [`echo/apps/codemojex/edge-deliver/`](../../../../echo/apps/codemojex/edge-deliver/)); it **links** the
+> [`echo/apps/codemojex/edge-deliver/`](../../../../echo/apps/edge-deliver/)); it **links** the
 > contracts it cites rather than restating them.
 >
 > **Grounding note (drift).** The parent roadmap
@@ -20,7 +20,7 @@
 > **Boundary — the Operator runs this, not the agent.** A `fly deploy` / `fly machine run` **publishes
 > bytes to a live origin** and provisioning **creates infra on the Fly/Tigris account**; both are the
 > Operator's to run, per the standing rule and the same boundary
-> [`edge-bucket-setup.md`](../../../../echo/docs/codemojex/edge-bucket-setup.md) already draws. The agent
+> [`edge-bucket-setup.md`](../../../../echo/docs/edge-deliver/edge-bucket-setup.md) already draws. The agent
 > authors the `fly.toml` + `Dockerfile`, wires the existing script, and verifies afterward with a public
 > `curl`; it does not provision or deploy.
 
@@ -36,7 +36,7 @@ short-cached `manifest.json` pointer that `Codemojex.Edge.game_url/0` reads. The
 
 What it couples is **who can run it**. The script needs `aws`, `node`, `npm`, and `curl` on the host and
 the `TIGRIS_EDGE_*` keypair in the environment
-([`edge-bucket-setup.md` §3a](../../../../echo/docs/codemojex/edge-bucket-setup.md)). Today that host is
+([`edge-bucket-setup.md` §3a](../../../../echo/docs/edge-deliver/edge-bucket-setup.md)). Today that host is
 the Operator's laptop after `source echo/.env`. A UI iteration — the most frequent change in the system —
 is therefore gated on one provisioned local toolchain and a secret file on disk.
 
@@ -71,7 +71,7 @@ ruled.
   app. The running app (`Codemojex.Edge`, the read side) is unchanged and needs no new grant; it simply
   keeps polling the pointer.
 - **When** — after the edge bucket + custom domain are stood up
-  ([`edge-bucket-setup.md`](../../../../echo/docs/codemojex/edge-bucket-setup.md), already documented). It
+  ([`edge-bucket-setup.md`](../../../../echo/docs/edge-deliver/edge-bucket-setup.md), already documented). It
   is the operational successor to "run the script locally", invoked on every board iteration and on
   rollback.
 - **Where** — a new sibling under the codemojex app, e.g. `echo/apps/codemojex/edge-deliver/`
@@ -82,7 +82,7 @@ ruled.
 ## 3. The shape (as built)
 
 The pieces, now built under
-[`echo/apps/codemojex/edge-deliver/`](../../../../echo/apps/codemojex/edge-deliver/), grounded against the
+[`echo/apps/codemojex/edge-deliver/`](../../../../echo/apps/edge-deliver/), grounded against the
 umbrella [`Dockerfile`](../../../../echo/Dockerfile) / [`fly.toml`](../../../../echo/fly.toml) as the
 deploy-config precedent and against the script as the behavior of record:
 
@@ -167,7 +167,7 @@ pointer on its next render (~10s TTL), so the new bundle goes live with no resta
 > no `flyctl` in the image, no cross-app reach** — the two surfaces communicate only through the bucket
 > pointer (a message about a name). `GAME_ASSET_URL` remains a coarse, **setup-time-only** fallback for a
 > pointer outage, pinned once per
-> [`edge-bucket-setup.md` §3b](../../../../echo/docs/codemojex/edge-bucket-setup.md), outside this job.
+> [`edge-bucket-setup.md` §3b](../../../../echo/docs/edge-deliver/edge-bucket-setup.md), outside this job.
 > **CHOSEN-AGAINST — Arm C (staged secret):** real (it refreshes the fallback without a restart) but
 > needless once the poll is the live mechanism — it buys a marginally-fresher fallback at the cost of a
 > deploy-capable Fly token on the live app. **CHOSEN-AGAINST — Arm A (unstaged `fly secrets set`):**
@@ -217,7 +217,7 @@ the fallback need not track the bundle at all, because the poll is the live mech
 The agent authors `Dockerfile` + `fly.toml`, wires the existing `scripts/edge-deploy.sh`, and verifies the
 result with a public `curl` of `manifest.json` + the bundle. The **Operator** provisions the bucket/domain,
 sets the secrets, creates the `codemojex-edge-deliver` app, and runs the deploy. This mirrors the boundary
-already stated in [`edge-bucket-setup.md`](../../../../echo/docs/codemojex/edge-bucket-setup.md) and the
+already stated in [`edge-bucket-setup.md`](../../../../echo/docs/edge-deliver/edge-bucket-setup.md) and the
 [`fly.toml`](../../../../echo/fly.toml) header ("The Operator creates the app + machines and pushes to
 deploy — never `fly deploy` locally").
 
@@ -225,7 +225,7 @@ deploy — never `fly deploy` locally").
 
 The behavior of record: [`scripts/edge-deploy.sh`](../../../../echo/apps/codemojex/scripts/edge-deploy.sh) ·
 the runtime resolver: [`Codemojex.Edge`](../../../../echo/apps/codemojex/lib/codemojex/edge.ex) · the
-bucket + secrets setup: [`edge-bucket-setup.md`](../../../../echo/docs/codemojex/edge-bucket-setup.md) ·
+bucket + secrets setup: [`edge-bucket-setup.md`](../../../../echo/docs/edge-deliver/edge-bucket-setup.md) ·
 the deploy-config precedent: [`echo/Dockerfile`](../../../../echo/Dockerfile) +
 [`echo/fly.toml`](../../../../echo/fly.toml) · the design rationale for the edge split:
 [`codemoji.static-edge.md`](../../codemoji.static-edge.md) · the parent program:

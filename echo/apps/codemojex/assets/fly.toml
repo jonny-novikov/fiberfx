@@ -1,0 +1,40 @@
+# Fly.io config for codemojex-edge-deliver — the EPHEMERAL one-shot machine that
+# publishes the React game bundle to the edge.codemoji.games Tigris bucket.
+#
+# This is a TASK, not a server: no [[services]], no health check, no always-on
+# machine. It runs scripts/edge-deploy.sh (build -> upload-immutable -> flip
+# manifest.json -> verify) and exits. It NEVER touches the codemojex app: that
+# app already re-resolves manifest.json on the render path (Codemojex.Edge,
+# ~10s TTL), so the new bundle goes live with no app restart, no secret write,
+# and no Fly token. The two surfaces communicate ONLY through the bucket pointer.
+#
+# Boundary: the Operator creates the app + secrets and runs the deploy — never
+# `fly deploy` from an agent. Deploy from the umbrella root so the build context
+# includes echo/deps/phoenix* (assets/package.json's file: deps):
+#   cd echo && fly deploy --build-only --push \
+#                -c apps/codemojex/edge-deliver/fly.toml \
+#                --dockerfile apps/codemojex/edge-deliver/Dockerfile
+
+app = "codemojex-edge-deliver"
+primary_region = "fra"
+kill_signal = "SIGTERM"
+kill_timeout = "60s"
+
+[build]
+  dockerfile = "Dockerfile.edge"
+
+[env]
+  # Public host the script uploads under; matches Codemojex.Edge's default.
+  GAME_EDGE_HOST = "edge.codemoji.games"
+
+# Secrets — set by the Operator, NEVER in this file
+# (`fly secrets set -a codemojex-edge-deliver …`). Only the EDGE bucket keypair
+# (write side, least privilege); NO Fly token (the app polls the pointer):
+#   TIGRIS_EDGE_BUCKET TIGRIS_EDGE_ENDPOINT_URL TIGRIS_EDGE_ACCESS_KEY_ID
+#   TIGRIS_EDGE_SECRET_ACCESS_KEY TIGRIS_EDGE_REGION
+
+# A small builder is plenty for an npm build + an S3 upload.
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024
