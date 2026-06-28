@@ -15,9 +15,12 @@ light/`dark-theme` decorator and the first three foundation stories (Icon · tok
 their controls from the mx.2 contracts. **`mx.4` ✅ BUILT:** every component now carries a co-located
 CSF3 story (35 component homes + the host `Foundations/Tokens` = **36** registered by `sb:build`), and
 the first additive growth landed — the **focused trio** (`Card` `title`/`actions` header props · new
-`ListRow` · new `MoneyInput`), the barrel grown additively by four export names. **`mx.5`–`mx.6`**
-(effector-powered + the apps-side Pages · build/deploy + design-sync re-align) are the remaining
-frontier. Forward
+`ListRow` · new `MoneyInput`), the barrel grown additively by four export names. **`mx.5` ✅ BUILT:**
+a host-home `Effector/<Adapter>` story for all six `@mercury/effector` adapters (theme · toast ·
+createForm · strength · createCooldown · formatter) wiring live Effector state into the real
+components — **42** `sb:build` homes (36 + 6), the `@mercury/ui` surface frozen byte-identical, zero
+host-config edit. **`mx.6`–`mx.7`** (the apps-side Pages · build/deploy + design-sync re-align) are
+the remaining frontier. Forward
 plan: [`mercury.roadmap.md`](./mercury.roadmap.md); architecture:
 [`mercury.design.md`](./mercury.design.md).
 
@@ -51,9 +54,10 @@ Movement II · the authored contract layer   (laddered behind mx.1 — grounds o
 
 Movement III · the Design System Storybook   (laddered behind mx.2 — each story writes its controls from the contract)
   mx.3   ✅ BUILT     ████████████████████  Storybook host (apps/storybook · @storybook/react-vite 10.4.6) + light/dark decorator + foundations stories (Icon · tokens · Button) — gate-green 2026-06-28 (/mercury-ship mx.3)
-  mx.4   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  component stories — variants · argTypes/controls · actions — across all groups
-  mx.5   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  Effector-powered stories — theme · toast · createForm · createCooldown + decorators
-  mx.6   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  static build + deploy · regenerate the Claude-Design export · re-align .design-sync
+  mx.4   ✅ BUILT     ████████████████████  component stories (35 homes + Tokens = 36) + the focused-trio enhancement (Card title/actions · ListRow · MoneyInput; barrel +4) — gate-green 2026-06-29 (/mercury-ship mx.4)
+  mx.5   ✅ BUILT     ████████████████████  effector-powered stories — all 6 adapters (theme · toast · createForm · strength · createCooldown · formatter); 42 homes; barrel byte-identical — gate-green 2026-06-29 (/mercury-ship mx.5)
+  mx.6   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  apps-side Pages — page-level *.stories.tsx in apps/*/src/ (the 5 rewritten apps, then retired) · economy out of scope
+  mx.7   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  static build + deploy · regenerate the Claude-Design export · re-align .design-sync
 ```
 
 ---
@@ -98,13 +102,22 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   (Director-verified, independent re-run): packages typecheck+build, five apps build, barrel
   byte-identical, `sb:build` registers exactly the 3 stories, INV-8 proven load-bearing by a net-zero
   mutation spot-check.
-- **Next.** `mx.4` — component stories across all groups (variants · `argTypes`/controls · actions),
-  **and** the apps-side Pages (brand-new pages from the apps' real composed screens wiring
-  `@mercury/ui` + `@mercury/effector`) that **mandatorily enhance `@mercury/ui`** additively to cover
-  the controls/cases/pages those screens need. `mx.5`–`mx.6` (effector · build/deploy + design-sync
-  re-align) ladder behind it.
+- **Landed (mx.4).** Component stories — a co-located CSF3 `<Name>.stories.tsx` for every component
+  (35 homes + `Foundations/Tokens` = 36) + the **focused-trio** additive growth (`Card` `title`/`actions`
+  · new `ListRow` · new `MoneyInput`; barrel +4, additions-only) + the `sb:typecheck` gate addition
+  (`D-10`). Gate-green 2026-06-29 (`/mercury-ship mx.4`, commit `5d075477`).
+- **Landed (mx.5).** Effector-powered stories — a host-home `Effector/<Adapter>` story for all six
+  `@mercury/effector` adapters (`theme · toast · createForm · strength · createCooldown · formatter`),
+  each wiring live Effector state into the real `@mercury/ui` component(s); the `@mercury/ui` surface
+  **frozen byte-identical** (no barrel change), zero host-config edit, 42 `sb:build` homes (36 + 6).
+  Gate-green 2026-06-29 (`/mercury-ship mx.5`, `D-11`).
+- **Next.** `mx.6` — the **apps-side Pages**: page-level `*.stories.tsx` co-located in `apps/*/src/`
+  composing the five apps' real screens on real `@mercury/ui` + `@mercury/effector` (the host glob
+  already reaches `apps/*/src/**`). The five apps are being completely rewritten with Mercury DS and
+  retired from the workspace at program end; `codemojex-node/apps/economy` is out of scope. `mx.7`
+  (static build/deploy + the `.design-sync` re-align) ladders behind it.
 - **Deferred / open.** Widening `@mercury/core`'s public barrel beyond `cx` + `date` (the deeper
   foundation lives in core as files, surfaced when a consumer needs it); whether design tokens later
-  migrate into `@mercury/core`; the `.design-sync` pipeline re-alignment (`mx.6` — its
+  migrate into `@mercury/core`; the `.design-sync` pipeline re-alignment (`mx.7` — its
   `config.json` targets `@mercury/ui`, unaffected by the `mercury-ds` deletion). See the roadmap's
   **Seams & open decisions**.

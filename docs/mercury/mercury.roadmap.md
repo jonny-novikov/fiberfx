@@ -33,11 +33,12 @@ them all.**
   standard loop (plan → build → gate → commit-when-asked). The consumers are the five workspace
   apps (`apps/{catalogue,docs,echomq,mobile,showcase}`) — they resolve packages from **source** via
   vite alias, so a package edit is live in dev with no prebuild.
-- **When.** **Movement I + II are built; Movement III is the frontier.** `mx.0` (docs floor), `mx.1`
-  (the structural rung), and **`mx.2` — the contract layer — are built**: all 33 components carry a
-  hand-authored, grounded, cross-linked `<Name>.prompt.md`. **Movement III (the Storybook,
-  `mx.3`–`mx.6`) is now the active frontier** — each story writes its controls from the contract
-  `mx.2` fixed.
+- **When.** **Movements I + II are built; Movement III is the active frontier.** `mx.0`–`mx.2` are
+  built (docs floor · the structural rung · the contract layer — all 33 components carry a
+  hand-authored, grounded, cross-linked `<Name>.prompt.md`). In **Movement III (the Storybook, now
+  `mx.3`–`mx.7`)**, `mx.3` (host), `mx.4` (component stories + the focused-trio enhancement), and
+  `mx.5` (effector-powered stories) **are built**; `mx.6` (apps-side Pages) and `mx.7` (build/deploy +
+  design-sync) remain.
 - **Where.** Code: `mercury/packages/{mercury-core,mercury-ui,mercury-effector}`, `mercury/apps/*`.
   Specs: `docs/mercury/` (this roadmap · the design canon · the progress dashboard · the rung
   triads under [`specs/`](./specs/)).
@@ -101,15 +102,17 @@ deployable static build that re-aligns with the Claude-Design (`.design-sync`) e
 | **mx.2** | II | **The contract layer** — hand-author a co-located `<Name>.prompt.md` for all 33 components (grounded prop table · enum language · Composition cross-links · real-call-site examples); ratify the app/library split by audit | ✅ **BUILT** — 33/33 contracts, gate-green (2026-06-28; commit pending) ([`specs/mx.2/mx.2.md`](./specs/mx.2/mx.2.md)) |
 | **mx.3** | III | **Storybook host + foundations stories** — `apps/storybook/` (`@storybook/react-vite` 10.4.6), source-resolved packages, CSF3, a light/`dark-theme` decorator, first stories (Icon · tokens · Button) | ✅ **BUILT** (gate-green 2026-06-28; `/mercury-ship mx.3`) ([`specs/mx.3/mx.3.md`](./specs/mx.3/mx.3.md)) |
 | **mx.4** | III | **Component stories + the focused-trio enhancement** — a co-located `<Name>.stories.tsx` for all 33 components (CSF3, controls from the contract, variant/states grids; data-prop stories grounded in real call sites); **+ the additive `@mercury/ui` enhancement**: `Card` `title`/`actions` header props + new `ListRow` + new `MoneyInput` (barrel +4 names, additions-only) | ✅ **BUILT** (gate-green 2026-06-29; `/mercury-ship mx.4`) ([`specs/mx.4/mx.4.md`](./specs/mx.4/mx.4.md)) |
-| **mx.5** | III | **Effector-powered stories + the apps-side Pages** — stories wiring `@mercury/effector` (theme · toast · `createForm` · `createCooldown`) **and** brand-new Pages built from the apps' real composed screens (`apps/{catalogue,echomq,showcase,mobile,docs}`) wiring real `@mercury/ui` + `@mercury/effector` (the apps-side mandate re-sequenced here from mx.4 — Operator-ruled) | 📋 PLANNED |
-| **mx.6** | III | **Build/deploy + design-sync reconcile** — static Storybook build + deploy; regenerate the Claude-Design export from the grouped structure; re-align the `.design-sync` pipeline | 📋 PLANNED |
+| **mx.5** | III | **Effector-powered stories** — a host-home `Effector/<Adapter>` story for **all six** `@mercury/effector` adapters (`theme · toast · createForm · strength · createCooldown · formatter`), each wiring the adapter's live Effector state (`effector-react` hooks; models at module scope) into the real `@mercury/ui` component(s) at the real prop surface; the `@mercury/ui` surface frozen **byte-identical** (no barrel change), zero host-config edit, `sb:build` 36 → 42 homes | ✅ **BUILT** (gate-green 2026-06-29; `/mercury-ship mx.5`) ([`specs/mx.5/mx.5.md`](./specs/mx.5/mx.5.md)) |
+| **mx.6** | III | **Apps-side Pages** — brand-new page-level `*.stories.tsx` co-located in `apps/*/src/`, composing the five apps' real screens (`apps/{catalogue,echomq,showcase,mobile,docs}`) on real `@mercury/ui` + `@mercury/effector` (the apps-side mandate re-sequenced here from mx.4 — Operator-ruled). The five apps are being **completely rewritten with Mercury DS** and **retired from the workspace** when the mx program finishes; `codemojex-node/apps/economy` is out of scope | 📋 PLANNED |
+| **mx.7** | III | **Build/deploy + design-sync reconcile** — static Storybook build + deploy; regenerate the Claude-Design export from the grouped structure; re-align the `.design-sync` pipeline | 📋 PLANNED |
 
 > **Re-sequencing is Operator-ruled.** Movement II (contracts) is laddered behind `mx.1` because a
 > contract grounds in the component's source + folder; Movement III (Storybook) is laddered behind
 > `mx.2` because each story writes its controls from the contract. The ladder is fixed at this
 > checkpoint; the Operator may re-order, and rungs are revisable, not deleted. *(The contract layer
 > was inserted as Movement II on 2026-06-28, shifting the Storybook rungs from `mx.2`–`mx.5` to
-> `mx.3`–`mx.6`.)*
+> `mx.3`–`mx.6`. On 2026-06-29 `mx.5` was split — effector-powered stories stay `mx.5`; the apps-side
+> Pages re-sequenced to `mx.6`; build/deploy + design-sync to `mx.7` — Operator-ruled.)*
 
 ## How the program runs
 
@@ -146,7 +149,7 @@ Each rung is one shippable increment, run through a small fixed loop:
   Operator-revisable).
 - **S-4 · design-sync output path.** `packages/mercury-ds` appears to be a stale/relocated
   design-sync bundle; deleting it is safe (re-generable). `mx.1` confirms `.design-sync/config.json`'s
-  output target; the pipeline re-alignment is `mx.5`.
+  output target; the pipeline re-alignment is `mx.7`.
 
 ## Map
 
