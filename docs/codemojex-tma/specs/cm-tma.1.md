@@ -1,4 +1,4 @@
-# cm-tma.1 — The self-contained edge build (vendor `phoenix*` as TS under `assets/packages/` · self-contained Docker context · awscli pre-staged)
+# cm-tma.1 — The self-contained edge build (vendor `phoenix` + `phoenix_live_view` as TS under `assets/packages/` · **pnpm** workspace `@codemojex/edge` · **es2024** · **vitest** · self-contained Docker context · awscli pre-staged)
 
 > The first **codemojex-tma** (Telegram Mini App / front-end tier) spec rung. It does not touch the game
 > engine (`lib/codemojex/**`) or the always-on engine release — it makes the **edge game-bundle build**
@@ -6,10 +6,18 @@
 > umbrella into the front-end build: the `file:../../../deps/phoenix*` npm links.
 >
 > The **body wins** on any disagreement with the brief ([`cm-tma.1.llms.md`](./cm-tma.1.llms.md)) or the
-> stories ([`cm-tma.1.stories.md`](./cm-tma.1.stories.md)). **Forward-tense** for the unbuilt surface (the
-> vendored `packages/*`, the self-contained `Dockerfile`, the relocated `bin/edge-deploy.sh`).
-> **NO-INVENT:** every file/line cited below was re-probed on disk; an unbuilt path is named forward-tense,
-> never asserted as present. Framing: third person; no first-person-agent narration.
+> stories ([`cm-tma.1.stories.md`](./cm-tma.1.stories.md)). **NO-INVENT:** every file/line cited below was
+> re-probed on disk. Framing: third person; no first-person-agent narration.
+>
+> **As-built / forward-tense split (re-probed this session — the Operator has prepared the packages):**
+> The two vendored packages are **present on disk** (`assets/packages/phoenix` = `@echo/phoenix` v1.8.8,
+> `assets/packages/phoenix_live_view` = `@echo/phoenix_live_view` v1.2.3) and `assets/package.json` is already
+> renamed `@codemojex/edge` with a **pnpm** engine and `@echo/*` deps — those are stated **present-tense**.
+> What remains **forward-tense** (this rung completes it): the `pnpm-workspace.yaml` + `pnpm-lock.yaml`, the
+> **es2024** cutover of the three *root* build configs, the `@echo/phoenix_live_view` `package.json`
+> **jest→vitest + npm→pnpm** cleanup, the self-contained `Dockerfile`/`fly.toml` rewrite, the relocated
+> `assets/bin/edge-deploy.sh`, and the `dist/awscli-*` pre-stage. **npm is retired** — no `package-lock.json`,
+> no `npm ci`/`npm run` anywhere in the end state.
 >
 > **Grounding caveat (doc drift):** the narrative docs [`codemoji.static-edge.md`](../codemoji.static-edge.md)
 > and [`codemojex-tma.roadmap.md`](../codemojex-tma.roadmap.md) still say `static.codemoji.games` + `board` +
@@ -21,22 +29,25 @@
 
 The codemojex front end lives in `echo/apps/codemojex/assets/` and builds **two** independent bundles with
 vite: the **LiveView client** (`js/app.js` → `priv/static/assets`, via `vite.client.config.ts`) and the
-**edge React game** (`src/index.tsx` → `priv/static/game`, via `vite.config.ts`). `assets/package.json`
-declares `phoenix` / `phoenix_html` / `phoenix_live_view` as `file:../../../deps/phoenix*` — Elixir-managed
-dependency directories reached by climbing three levels out of `assets/`. That single fact forces the edge
-Docker build context to the **umbrella root** (so `echo/deps/` is reachable), makes `npm ci` require a prior
-`mix deps.get`, and blocks anyone from building or iterating the front end without the whole BEAM project on
-disk — even though the **edge game bundle imports none of the three** (`src/index.tsx` is pure React). This
-rung **vendors** the three Phoenix client libraries as dependency-free TypeScript packages under
-`assets/packages/`, turns `assets/` into the npm **workspace root**, and **relocates the edge build artifacts
-into `assets/`** (`Dockerfile`, `fly.toml`, `bin/edge-deploy.sh`) so the edge image builds from a
-**self-contained `assets/` context** with no umbrella, no `deps/`, and no `file:../` links. It also makes the
+**edge React game** (`src/index.tsx` → `priv/static/game`, via `vite.config.ts`). Historically
+`assets/package.json` declared `phoenix` / `phoenix_html` / `phoenix_live_view` as `file:../../../deps/phoenix*`
+— Elixir-managed dependency directories reached by climbing three levels out of `assets/`. That single fact
+forced the edge Docker build context to the **umbrella root** (so `echo/deps/` was reachable), made `npm ci`
+require a prior `mix deps.get`, and blocked anyone from building or iterating the front end without the whole
+BEAM project on disk — even though the **edge game bundle imports none of them** (`src/index.tsx` is pure
+React). This rung **vendors** the Phoenix client as dependency-pinned TypeScript packages under
+`assets/packages/` — **two** packages (`@echo/phoenix`, `@echo/phoenix_live_view`; `phoenix_html`'s surface is
+folded into LV as `src/phoenix_html.ts`, not a standalone package) — turns `assets/` into a **pnpm** workspace
+named `@codemojex/edge` (**npm retired**), moves the whole build to a **modern es2024** target, runs the
+vendored packages' own test suites on **vitest** (the upstream **jest** retired), and **relocates the edge
+build artifacts into `assets/`** (`Dockerfile`, `fly.toml`, `bin/edge-deploy.sh`) so the edge image builds from
+a **self-contained `assets/` context** with no umbrella, no `deps/`, and no `file:../` links. It also makes the
 edge image's awscli download reliable inside Fly's network by fetching a **pre-staged** bundle from the edge
 bucket itself (`edge.codemoji.games/dist/awscli-<awsarch>.zip`) instead of the public AWS origin.
 
-## 2. The problem (what is broken today)
+## 2. The problem (what the vendoring solves)
 
-`assets/package.json:11-14` (re-probed):
+The pre-rung `assets/package.json` `dependencies` (the coupling being removed):
 
 ```json
 "dependencies": {
@@ -47,137 +58,169 @@ bucket itself (`edge.codemoji.games/dist/awscli-<awsarch>.zip`) instead of the p
 }
 ```
 
-Four failures follow, each load-bearing:
+Four failures followed, each load-bearing — they are the justification for the vendoring:
 
-1. **The build context cannot be `assets/`.** `assets/Dockerfile:36-41` must `COPY deps/phoenix deps/phoenix`
-   (×3) into the image so `npm ci` resolves the `file:../../../deps/*` links, which is only possible if the
-   Docker build context is the **umbrella root** `echo/`. The Dockerfile's own comment says it plainly:
-   *"Replicate the umbrella layout so `assets/package.json`'s `file:../../../deps/*` resolve at `npm ci` time."*
-2. **`npm ci` requires the Elixir toolchain to have run.** `echo/deps/phoenix*` only exists after
-   `mix deps.get` — so the front-end build inherits a hard dependency on a BEAM step it does not use.
-3. **The front end is not developable standalone.** A designer or front-end engineer cannot
-   `cd assets && npm install && npm run dev` on a checkout without the umbrella + `mix deps.get` — `npm`
-   fails to resolve the `file:` links.
-4. **Dead weight on the hot path.** The edge **game** bundle (`src/index.tsx`, re-probed lines 5-7) imports
-   only `react-dom/client` + `@/GameEdge` + `@/types` — **no phoenix**. The three Phoenix file-deps exist
-   solely for the **LiveView client** (`js/app.js:5-6`), yet `npm ci` validates every declared dependency, so
-   they tax the game-bundle image build for nothing (the Dockerfile comment admits *"the game bundle imports
-   none of them, but `npm ci` validates every dependency"*).
+1. **The build context could not be `assets/`.** The edge `Dockerfile` had to `COPY deps/phoenix deps/phoenix`
+   (×3) into the image so `npm ci` resolved the `file:../../../deps/*` links, which is only possible if the
+   Docker build context is the **umbrella root** `echo/`.
+2. **`npm ci` required the Elixir toolchain to have run.** `echo/deps/phoenix*` only exists after
+   `mix deps.get` — so the front-end build inherited a hard dependency on a BEAM step it does not use.
+3. **The front end was not developable standalone.** A designer or front-end engineer could not
+   `cd assets && pnpm install && pnpm dev` on a checkout without the umbrella + `mix deps.get` — the package
+   manager could not resolve the `file:` links.
+4. **Dead weight on the hot path.** The edge **game** bundle (`src/index.tsx`, re-probed lines 5-9) imports
+   only `react-dom/client` + `@/GameEdge` + `@/types` — **no phoenix**. The three Phoenix file-deps existed
+   solely for the **LiveView client** (`js/app.js:5-6`), yet `npm ci` validated every declared dependency, so
+   they taxed the game-bundle image build for nothing.
 
-A fifth, independent reliability gap: `assets/Dockerfile:23-32` fetches the AWS CLI v2 zip from
+A fifth, independent reliability gap: the edge `Dockerfile` fetched the AWS CLI v2 zip from
 `https://awscli.amazonaws.com/awscli-exe-linux-<awsarch>.zip` at image-build time. That public origin is **not
 reliably reachable from inside Fly's build/runtime network**, so the edge image build is flaky for a reason
 unrelated to the app.
+
+**As-built progress (re-probed this session):** the Operator has already vendored the two packages and
+converted `assets/package.json` off the `file:` links — `assets/package.json:15-20` now reads
+`"phoenix": "@echo/phoenix"` / `"phoenix_live_view": "@echo/phoenix_live_view"` (no `file:../`), with a `pnpm`
+engine (`:6-9`) and `name "@codemojex/edge"` (`:2`). This rung **finishes** that conversion to the clean,
+shippable end state below.
 
 ## 3. Ground truth (re-probed on disk — cite the file:line; the as-built wins)
 
 | Fact | Where (re-probed) |
 |---|---|
-| The two build graphs | `assets/package.json:6-9` — `build` = `vite build` (game, `vite.config.ts`); `build:client` = `vite build --config vite.client.config.ts` (LiveView); `dev` = `build:client --watch` |
-| The game bundle | `assets/vite.config.ts` — input `src/index.tsx` (`:26`), `@`→`./src` alias (`:18`), `outDir ../priv/static/game` (`:21`), `manifest: true`, `game-[hash].js` (`:29`) |
-| The LiveView client | `assets/vite.client.config.ts` — input `js/app.js` (`:13`), `outDir ../priv/static/assets` (`:9`), iife `app.js` |
-| The ONLY phoenix consumer | `assets/js/app.js:5-6` — `import { Socket } from "phoenix"` + `import { LiveSocket } from "phoenix_live_view"`; boots `new LiveSocket("/live", Socket, { params, hooks: { EdgeReact } })` + `liveSocket.connect()` (`:62-67`) |
+| The host package | `assets/package.json` — `name "@codemojex/edge"` (`:2`), `type:"module"`, `engines.pnpm ">=10.0.0"` (`:6-9`); scripts `build`=`vite build` (`:11`), `build:client`=`vite build --config vite.client.config.ts` (`:12`), `dev`=`build:client --watch` (`:13`); deps `phoenix`/`phoenix_live_view` → `@echo/*` (`:16-17`, **no `file:`**), react/react-dom `^18.3.1` (`:18-19`) |
+| The vendored `phoenix` | `assets/packages/phoenix/package.json` — `name "@echo/phoenix"` v1.8.8, `type:"module"`, `exports "."→./src/index.ts`; `scripts.test "vitest"` (`:23`); devDeps **vitest** only (`:35`) — **no jest**. `src/*.ts` (channel/socket/serializer/…) + `test/*.test.ts` + `vite.config.ts` (`target:"es2024"`) + `vitest.config.ts` |
+| The vendored `phoenix_live_view` | `assets/packages/phoenix_live_view/package.json` — `name "@echo/phoenix_live_view"` v1.2.3; `dependencies.morphdom "2.7.8"` (`:20`); **still carries the upstream jest toolchain** — `jest`/`jest-environment-jsdom`/`ts-jest`/`@types/jest`/`eslint-plugin-jest` devDeps + `js:test`/`test` scripts calling `jest` via `npm run` (`:36-58`). `src/*.ts` (incl. `src/phoenix_html.ts`) + `test/*.test.ts` + `vite.config.ts` (`target:"es2024"`) + `vitest.config.ts` already present |
+| The ONLY phoenix consumer | `assets/js/app.js:5-6` — `import { Socket } from "@echo/phoenix"` + `import { LiveSocket } from "@echo/phoenix_live_view"` (**scoped** names); boots `new LiveSocket("/live", Socket, { params, hooks:{ EdgeReact } })` + `liveSocket.connect()` (`:62-67`) |
+| LV → phoenix (internal) | `assets/packages/phoenix_live_view/src/*.ts` import **bare** `"phoenix"` (5 sites) + `"morphdom"` (2) — so within the workspace `@echo/phoenix_live_view` resolves bare `phoenix` to the workspace `@echo/phoenix` |
 | The game = no phoenix | `assets/src/index.tsx:5-9` — `react-dom/client` + `@/GameEdge` + `@/types`; exports `mount(el, props, bridge)` returning `{update, unmount}` |
 | The swap contract | `assets/src/types.ts` — `GameProps` (`view`/`leaderboard`/`history`/`me`) + `Bridge` (`pushEvent`/`onServerEvent`); kept in lockstep with `GameLive.game_props/3` |
-| The edge Dockerfile | `assets/Dockerfile` — `node:22-bookworm-slim`; awscli from amazonaws.com (`:23-32`); `COPY deps/phoenix*` (`:39-41`); `COPY apps/codemojex/{assets,scripts}` (`:44-45`); `ENTRYPOINT ["/app/apps/codemojex/scripts/edge-deploy.sh"]` (`:51`) |
+| The build target (laggards) | `assets/tsconfig.json:3,5` — `target:"ES2020"` + `lib:["ES2020",…]`; `assets/vite.config.ts:24` + `assets/vite.client.config.ts:11` — `target:"es2020"`. (The *package* vite configs already target `es2024`.) |
+| The edge Dockerfile | `assets/Dockerfile` — `node:22-bookworm-slim`; awscli from amazonaws.com (`:23-32`); `COPY deps/phoenix*` (`:39-41`); `COPY apps/codemojex/{assets,scripts}` (`:44-45`); `ENTRYPOINT ["/app/apps/codemojex/scripts/edge-deploy.sh"]` (`:51`) — **not yet rewritten** |
 | The edge fly config | `assets/fly.toml` — app `codemojex-edge-deliver`, region `fra`, a TASK (no `[[services]]`); `[build] dockerfile = "Dockerfile.edge"` (`:24`, **stale name**); deploy-from-umbrella-root command in the header (`:12-16`) |
-| The publish script | `apps/codemojex/scripts/edge-deploy.sh` — `cd "$(dirname "$0")/../assets"` (`:91`); `npm ci && npm run build` (`:93-94`); `OUT=../priv/static/game` (`:95`); upload `game-*` immutable (`:113-128`); flip `manifest.json` short-cache LAST (`:63-73`,`:130-132`); `--dry-run` / `--rollback`; HOST default `edge.codemoji.games` (`:47`) |
+| The publish script | `apps/codemojex/scripts/edge-deploy.sh` — `cd "$(dirname "$0")/../assets"` (`:91`); `npm ci && npm run build` (`:93-94`); `OUT=../priv/static/game` (`:95`); upload `game-*` immutable (`:113-128`); flip `manifest.json` short-cache LAST (`:63-73`,`:130-132`); `--dry-run` / `--rollback`; HOST default `edge.codemoji.games` (`:47`) — **not yet moved** |
 | The runtime resolver | `lib/codemojex/edge.ex` — `Codemojex.Edge.game_url/0` GETs `https://${GAME_EDGE_HOST}/manifest.json` (`%{"game"=>url}`), `:persistent_term` 10s TTL, falls back to `GAME_ASSET_URL`. **Unchanged by this rung.** |
 | The bucket setup | `echo/docs/edge-deliver/edge-bucket-setup.md` — the public Tigris bucket at `edge.codemoji.games`; `TIGRIS_EDGE_*` env; the deploy + rollback steps |
 | The engine release (separate) | `echo/Dockerfile` + `echo/fly.toml` — the always-on `codemoji.games` machine. **Out of scope; untouched.** |
 
-**In-progress move (re-probed this session):** the Operator has begun the relocation — `assets/Dockerfile`
-and `assets/fly.toml` already exist (copied from the umbrella-root `Dockerfile.edge` / `fly.edge.toml`), and
-`assets/packages/` exists but is **empty**. But the moved files are **not yet rewritten**: `assets/Dockerfile`
-still `COPY deps/phoenix*` + still pulls awscli from amazonaws.com + still `ENTRYPOINT`s the `scripts/` path;
-`assets/fly.toml` still names `Dockerfile.edge`; `assets/package.json` still has the `file:../../../deps/*`
-links. This rung **completes** that move to the end state below.
+**Absent on disk (forward-tense — this rung creates them):** `assets/pnpm-workspace.yaml`,
+`assets/pnpm-lock.yaml`, `assets/bin/` (the relocated script). No `package-lock.json` exists (npm already
+retired in `package.json`).
 
-## 4. The target layout — `assets/` is the npm workspace root; `packages/*` are the vendored libs
+## 4. The target layout — `assets/` is the **pnpm** workspace root; `packages/*` are the vendored libs
 
 ```
-echo/apps/codemojex/assets/            ← the npm workspace ROOT + the edge Docker build context
+echo/apps/codemojex/assets/            ← the pnpm workspace ROOT (@codemojex/edge) + the edge Docker build context
+  pnpm-workspace.yaml    ← NEW: packages: ["packages/*"]
+  pnpm-lock.yaml         ← NEW: the committed lockfile (npm's package-lock.json retired)
   packages/
-    phoenix/             package.json (name "phoenix"),            src/…  (TS, dependency-free)
-    phoenix_html/        package.json (name "phoenix_html"),       src/…
-    phoenix_live_view/   package.json (name "phoenix_live_view"),  src/…
+    phoenix/             package.json (name "@echo/phoenix"),            src/… + test/*.test.ts + vitest.config.ts
+    phoenix_live_view/   package.json (name "@echo/phoenix_live_view"),  src/… (incl. phoenix_html.ts) + test/*.test.ts + vitest.config.ts
   bin/
     edge-deploy.sh       ← relocated from apps/codemojex/scripts/ (§7, APPROVED)
-  js/app.js              ← imports the vendored libs by BARE name (unchanged source)
-  src/                   ← the GameEdge React island (unchanged)
+  js/app.js              ← imports the vendored libs by their @echo/* names (as-built)
+  src/                   ← the GameEdge React island (ABI unchanged)
   Dockerfile             ← self-contained edge image (§6)
   fly.toml               ← edge task config (§6)
-  package.json           ← "workspaces": ["packages/*"]; phoenix* deps → "*" (no file:../)
-  package-lock.json      ← regenerated for the workspace
-  tsconfig.json · vite.config.ts · vite.client.config.ts
+  package.json           ← @codemojex/edge; @echo/* deps via workspace:* (no file:../)
+  tsconfig.json · vite.config.ts · vite.client.config.ts   ← es2024 (§ es-build)
 ```
 
 **Why under `assets/` and not `apps/codemojex/packages/`:** `assets/` is already the workspace root
-(`package.json`, `node_modules`, both vite configs, `tsconfig.json` live there). **npm workspaces require
-every member to be a subdirectory of the root** — so `packages/` belongs at `assets/packages/`. Placing it at
-the app root would force a `package.json` sibling to `mix.exs` (a JS workspace root jammed into the Elixir app
-root) and widen the Docker context back out to include `lib/`/`priv/`/`test/`. `assets/packages/` keeps the
-context the single self-contained `assets/` tree.
+(`package.json`, `node_modules`, both vite configs, `tsconfig.json` live there). **pnpm workspaces require
+every member to live under the directory that holds `pnpm-workspace.yaml`** — so `packages/` belongs at
+`assets/packages/`. Placing it at the app root would force a `package.json` sibling to `mix.exs` (a JS
+workspace root jammed into the Elixir app root) and widen the Docker context back out to include
+`lib/`/`priv/`/`test/`. `assets/packages/` keeps the context the single self-contained `assets/` tree.
 
-**The `package.json` conversion** (`assets/package.json:11-14`): replace the three `file:../../../deps/*`
-entries with workspace references —
+**The pnpm workspace wiring** (the npm→pnpm finish):
 
-```json
-"dependencies": {
-  "phoenix": "*", "phoenix_html": "*", "phoenix_live_view": "*",
-  "react": "^18.3.1", "react-dom": "^18.3.1"
-},
-"workspaces": ["packages/*"]
-```
-
-— so `npm install` symlinks `node_modules/{phoenix,phoenix_html,phoenix_live_view}` → `packages/*`, bare
-specifiers resolve normally, and **no path escapes `assets/`**. `package-lock.json` is regenerated so
-`npm ci` (the script + the image) installs the workspace deterministically.
+- `assets/pnpm-workspace.yaml` declares the members:
+  ```yaml
+  packages:
+    - "packages/*"
+  ```
+- `assets/package.json` `dependencies` reference the vendored libs by their **scoped names via the
+  `workspace:*` protocol** (replacing the current `"phoenix": "@echo/phoenix"` alias keys):
+  ```json
+  "dependencies": {
+    "@echo/phoenix": "workspace:*",
+    "@echo/phoenix_live_view": "workspace:*",
+    "react": "^18.3.1", "react-dom": "^18.3.1"
+  }
+  ```
+  so `js/app.js`'s `import … from "@echo/phoenix"` / `"@echo/phoenix_live_view"` resolve to `packages/*`.
+- `@echo/phoenix_live_view`'s `package.json` declares its own resolution for its **bare** internal imports —
+  `morphdom` (a normal registry dependency, `2.7.8`) and `phoenix` **aliased to the workspace package**
+  (`"phoenix": "workspace:@echo/phoenix@*"`) so its 5 `from "phoenix"` imports resolve to `@echo/phoenix`.
+- `pnpm install` writes `assets/pnpm-lock.yaml` (committed); `pnpm install --frozen-lockfile` (the script + the
+  image) installs the workspace deterministically. **No path escapes `assets/`.**
 
 ## 5. The vendored packages — the faithfulness contract (the load-bearing invariant)
 
-Each `packages/<lib>/` is a **dependency-free TypeScript** package whose `package.json` `name` matches the
-bare specifier the source imports. The rewrite is faithful when it preserves **the exact public surface
-`js/app.js` consumes** — this is the one place a green build can still ship a broken lobby, so the contract is
-pinned here, not left to the build:
+Each `packages/<lib>/` is a TypeScript package whose `package.json` `name` is the scoped specifier its
+consumers import. The rewrite is faithful when it preserves **the exact public surface `js/app.js` consumes** —
+this is the one place a green build can still ship a broken lobby, so the contract is pinned here, not left to
+the build:
 
-- **`phoenix`** — the named export **`Socket`** (the class), constructable as `new Socket("/live", opts)` and
-  behaving as the transport `LiveSocket` drives. Surface used: `app.js:62` (`new LiveSocket("/live", Socket, …)`).
-- **`phoenix_live_view`** — the named export **`LiveSocket`** (the class) with `connect()` and the **hook
+- **`@echo/phoenix`** — the named export **`Socket`** (the class), constructable as `new Socket("/live", opts)`
+  and behaving as the transport `LiveSocket` drives. Surface used: `app.js:5,62`
+  (`import { Socket } from "@echo/phoenix"`; `new LiveSocket("/live", Socket, …)`). **Dependency-free.**
+- **`@echo/phoenix_live_view`** — the named export **`LiveSocket`** (the class) with `connect()` and the **hook
   lifecycle** the `EdgeReact` hook relies on: `this.el`, `this.el.dataset`, `this.pushEvent(event, payload)`,
   `this.handleEvent(name, cb)` (returning an unsubscribe), and the `mounted()`/`destroyed()` callbacks.
-  Surface used: `app.js:11-51,62-66`.
-- **`phoenix_html`** — the import side-effects (the `data-confirm` / method-link behavior). Declared in
-  `package.json` (validated by `npm ci`) even though `app.js` does not import it directly today; the vendored
-  package must exist and be importable so the dep resolves and any future `import "phoenix_html"` works.
+  Surface used: `app.js:6,11-51,62-66`. **Depends on `morphdom` (registry) + `@echo/phoenix` (workspace
+  alias).** Carries `src/phoenix_html.ts` so the `phoenix_html` side-effects (`data-confirm` / method-link
+  behavior) exist within the LV package — **no standalone `phoenix_html` package or host dependency** (the
+  host does not import `phoenix_html`).
 
-**INV-VENDORED-FAITHFUL:** after the swap, `import { Socket } from "phoenix"` and
-`import { LiveSocket } from "phoenix_live_view"` resolve to `packages/*`, the LiveView client builds
-(`npm run build:client`), and **the LiveSocket connects and the `EdgeReact` hook mounts the game island
-exactly as before** (the lobby is live; the board loads). A build that compiles but breaks the runtime boot
-**fails** this rung. The verify therefore includes a **runtime boot smoke**, not only a compile (§10 A4).
+> **Not literally "dependency-free."** The original aim was zero deps, but the as-built keeps `morphdom`
+> (LiveView genuinely needs it for DOM patching) and the intra-workspace `phoenix` edge. The real removed
+> coupling is the **`file:../` umbrella escape**, not all dependencies — A1 (`grep file:..` → 0) is the
+> invariant, not a zero-dep count.
+
+**The vitest faithfulness layer (jest retired).** The vendored packages carry their **own ported test suites**
+(`packages/*/test/*.test.ts`) run on **vitest** (`vitest.config.ts` in each), migrated from the upstream
+**jest**. `@echo/phoenix` is the **completed reference** — `test: "vitest"`, vitest the only test devDep, no
+jest. `@echo/phoenix_live_view` has its `vitest.config.ts` + `*.test.ts` in place but its `package.json` still
+ships the upstream jest devDeps (`jest`, `jest-environment-jsdom`, `ts-jest`, `@types/jest`,
+`eslint-plugin-jest`) and the upstream `js:test`/`test`/`e2e:*` scripts that call `jest` and `mix`/`playwright`
+via `npm run`. This rung **completes the jest→vitest + npm→pnpm conversion on the LV package**: drop the jest
+devDeps, set `test: "vitest"` (+ `typecheck`), prune the upstream `e2e:*`/`mix`/`npm run` scripts to the
+vendored package's needs, and fix the `types`/`files` fields to the vendored `src/` layout. A green vitest run
+of **both** packages (`pnpm -C packages/<lib> test`) is a faithfulness proof that **complements** the runtime
+boot smoke (A4) — the suites pin the unit behavior; the smoke pins the integration.
+
+**INV-VENDORED-FAITHFUL:** after the wiring, `import { Socket } from "@echo/phoenix"` and
+`import { LiveSocket } from "@echo/phoenix_live_view"` resolve to `packages/*`, the LiveView client builds
+(`pnpm build:client`), the vendored packages' vitest suites pass, and **the LiveSocket connects and the
+`EdgeReact` hook mounts the game island exactly as before** (the lobby is live; the board loads). A build that
+compiles but breaks the runtime boot **fails** this rung. The verify therefore includes a **runtime boot
+smoke**, not only a compile (§10 A4).
 
 The basis for the rewrite is the upstream Phoenix JS client these `deps/` carry; the rung re-expresses that
-surface in TS with no external dependencies. The internal implementation is the build's to choose; the
-**contract above** is fixed.
+surface in TS. The internal implementation is the build's to choose; the **contract above** is fixed.
 
 ## 6. The self-contained edge image — `assets/Dockerfile` + `assets/fly.toml`
 
 **Build context becomes `echo/apps/codemojex/assets/`** (was the umbrella root). The rewritten
 `assets/Dockerfile` (forward-tense target):
 
-- `FROM node:22-bookworm-slim`; install `curl ca-certificates unzip bash` (as today).
+- `FROM node:22-bookworm-slim`; install `curl ca-certificates unzip bash` (as today); enable **pnpm** via
+  `corepack enable` (or a pinned `corepack prepare pnpm@<v> --activate`) — the image's package manager is
+  pnpm, **never npm**.
 - **awscli from the pre-staged bundle** (§8): `curl -fsSL "https://edge.codemoji.games/dist/awscli-${awsarch}.zip"`
   (arch-mapped `amd64→x86_64` / `arm64→aarch64`), unzip, `./aws/install`. **No** amazonaws.com.
 - **Drop** the three `COPY deps/phoenix*` lines entirely.
-- `WORKDIR /app`; `COPY . .` — the whole **self-contained** `assets/` tree (incl. `packages/` and `bin/`).
-  Nothing outside `assets/` is referenced.
+- `WORKDIR /app`; `COPY . .` — the whole **self-contained** `assets/` tree (incl. `packages/`, `bin/`,
+  `pnpm-workspace.yaml`, `pnpm-lock.yaml`). Nothing outside `assets/` is referenced.
 - `RUN chmod +x bin/edge-deploy.sh`; `ENTRYPOINT ["/app/bin/edge-deploy.sh"]`.
 
-The image runs **no `npm` itself** — the script does `npm ci && npm run build` at runtime (as today). With
-the workspace, `npm ci` resolves `phoenix*` from `packages/*` locally; nothing reaches for `deps/`. The game
-build writes to `../priv/static/game` (relative to `assets/`), a scratch path created by vite inside the
-ephemeral image, uploaded to the bucket, then discarded — so the `../priv` output never needs to pre-exist.
+The image runs **no package install itself** — the script does `pnpm install --frozen-lockfile && pnpm build`
+at runtime. With the workspace, `pnpm install` resolves `@echo/*` from `packages/*` locally; nothing reaches
+for `deps/`. The game build writes to `../priv/static/game` (relative to `assets/`), a scratch path created by
+vite inside the ephemeral image, uploaded to the bucket, then discarded — so the `../priv` output never needs
+to pre-exist.
 
 **`assets/fly.toml`** (forward-tense target): `[build] dockerfile = "Dockerfile"` (was `Dockerfile.edge`);
 the header deploy command updates to the self-contained context —
@@ -201,6 +244,8 @@ This placement is **ruled for this rung** (the Operator's directive). Required e
 - **The build `cd`** (`:91`): `cd "$(dirname "$0")/../assets"` → `cd "$(dirname "$0")/.."` (from
   `assets/bin/` up to `assets/`). All downstream paths (`OUT=../priv/static/game`, the `game-*` glob, the
   vite manifest read) are unchanged — they are already relative to `assets/`.
+- **The package manager** (`:93-94`): `npm ci && npm run build` → `pnpm install --frozen-lockfile && pnpm build`
+  (**npm retired**).
 - **The header doc-links** (`:13`,`:20`): repoint to `echo/docs/edge-deliver/edge-bucket-setup.md` (the
   current location) and note the new self-contained deploy command.
 - **The contract is otherwise byte-stable:** build → upload every `game-*` immutable
@@ -245,15 +290,36 @@ trusts.**
 - **The engine release:** `echo/Dockerfile` + `echo/fly.toml` (the always-on `codemoji.games` machine) and
   all of `lib/codemojex/**` are untouched. `mix.lock` is untouched (no Elixir dep moved).
 
+> **Changed by this rung (not in the unchanged set):** `js/app.js` (already on the `@echo/*` scoped imports);
+> `assets/tsconfig.json` + `assets/vite.config.ts` + `assets/vite.client.config.ts` (es2020 → **es2024**);
+> `assets/package.json` (the `workspace:*` finish); `@echo/phoenix_live_view`'s `package.json` (jest→vitest +
+> npm→pnpm cleanup). `src/index.tsx` + `src/types.ts` (the swap ABI) **are** byte-unchanged.
+
+## es-build — the modern es2024 target (NEW)
+
+The build moves to a **modern es2024** target. The *package* vite configs already target `es2024`
+(`packages/phoenix/vite.config.ts:13`, `packages/phoenix_live_view/vite.config.ts:13`); the three **root**
+configs are the laggards and this rung brings them up:
+
+- `assets/tsconfig.json:3` — `"target": "ES2020"` → `"ES2024"`; `:5` — `"lib": ["ES2020", …]` →
+  `["ES2024", "DOM", "DOM.Iterable"]`.
+- `assets/vite.config.ts:24` — `target: "es2020"` → `"es2024"` (the edge game bundle).
+- `assets/vite.client.config.ts:11` — `target: "es2020"` → `"es2024"` (the LiveView client).
+
+**INV-ES2024:** after the cutover, `grep -rniE 'es2020' assets/tsconfig.json assets/vite.config.ts
+assets/vite.client.config.ts` → **0**, and each of the four sites names es2024 (§10 A12). Both bundles must
+still build green (A3) and the lobby must still boot (A4) at the new target.
+
 ## 10. Acceptance (the runnable gate — each invariant a check; a no-op must not satisfy its letter)
 
-- **A1 — DEP-FREE.** `grep -nE 'file:\.\.' echo/apps/codemojex/assets/package.json` → **0 matches**; the
-  three phoenix deps are workspace references. (INV-DEP-FREE)
-- **A2 — WORKSPACE RESOLUTION.** `assets/package.json` has `"workspaces": ["packages/*"]`; after
-  `npm install`, `node_modules/{phoenix,phoenix_html,phoenix_live_view}` are symlinks into `packages/*`
-  (`npm ls phoenix phoenix_live_view phoenix_html` resolves to the workspace, not `deps/`).
+- **A1 — DEP-FREE (no umbrella escape).** `grep -nE 'file:\.\.' echo/apps/codemojex/assets/package.json` →
+  **0 matches**; the `@echo/*` deps are `workspace:*` references. (INV-DEP-FREE)
+- **A2 — WORKSPACE RESOLUTION.** `assets/pnpm-workspace.yaml` lists `packages/*`; after `pnpm install`,
+  `node_modules/.pnpm` links `@echo/phoenix` + `@echo/phoenix_live_view` to `packages/*`
+  (`pnpm why @echo/phoenix` / `pnpm ls -r` resolves to the workspace, not `deps/`); LV's bare `phoenix`
+  resolves to the workspace `@echo/phoenix`.
 - **A3 — STANDALONE BUILD (no umbrella).** From a tree with **no `echo/deps/`** present (or a fresh checkout),
-  `cd echo/apps/codemojex/assets && npm install && npm run build && npm run build:client` all succeed; nothing
+  `cd echo/apps/codemojex/assets && pnpm install && pnpm build && pnpm build:client` all succeed; nothing
   resolves a `../../../deps` path. (INV-STANDALONE-DEV)
 - **A4 — VENDORED-FAITHFUL (runtime, not just compile).** The LiveView client built from the vendored
   packages **boots**: the `LiveSocket` connects and the `EdgeReact` hook mounts the game island. Proven by a
@@ -273,36 +339,54 @@ trusts.**
 - **A8 — POINTER CONTRACT UNCHANGED.** `git diff --stat lib/codemojex/edge.ex` → empty; the script still
   writes `manifest.json = {"game": …}` with the short cache and hashed files immutable.
 - **A9 — SWAP ABI UNCHANGED.** `src/index.tsx` `mount(el,props,bridge)` + `types.ts` `GameProps`/`Bridge` +
-  the four bridge events are byte-unchanged; `npm run build` still emits `game-<hash>.js` + a vite manifest.
+  the four bridge events are byte-unchanged; `pnpm build` still emits `game-<hash>.js` + a vite manifest.
 - **A10 — ENGINE + BOUNDARY.** `echo/Dockerfile`, `echo/fly.toml`, `lib/codemojex/**`, `mix.lock`, and every
   sibling umbrella app have **zero diff**; the rung's changes are confined to
   `echo/apps/codemojex/assets/**` + `echo/docs/edge-deliver/edge-bucket-setup.md` + these specs.
 - **A11 — THE DRY-RUN RELIABILITY GATE.** The edge deploy completes end-to-end as a dry run
   (`bin/edge-deploy.sh --dry-run` green, and a fly `--build-only` of the self-contained context succeeds) —
   the canonical "the edge build is reliable" signal.
+- **A12 — ES2024 TARGET.** `grep -rniE 'es2020' assets/tsconfig.json assets/vite.config.ts
+  assets/vite.client.config.ts` → **0**; all four sites name es2024; both bundles build green at the new
+  target. (INV-ES2024)
+- **A13 — VITEST (jest retired).** `pnpm -C packages/phoenix test` and `pnpm -C packages/phoenix_live_view test`
+  run vitest and pass; `grep -rniE '\bjest\b' echo/apps/codemojex/assets/packages` → **0** (no jest devDeps,
+  scripts, or config remain); each package has a `vitest.config.ts`. (INV-VITEST)
+- **A14 — PNPM (npm retired).** `assets/pnpm-workspace.yaml` + `assets/pnpm-lock.yaml` exist; **no**
+  `package-lock.json` anywhere under `assets/`; `grep -rniE 'npm ci|npm run|npm install' assets/Dockerfile
+  assets/bin/edge-deploy.sh` → **0** (the image + script use pnpm). (INV-PNPM)
 
 ## 11. Given / When / Then (headlines — the full set is [`cm-tma.1.stories.md`](./cm-tma.1.stories.md))
 
-- **S1** — *A front-end engineer builds the bundles on a checkout with no `mix deps.get`* → `npm install` +
-  both `npm run build*` succeed (A3).
-- **S2** — *`npm ci` runs in the edge image with context `assets/`* → resolves `phoenix*` from `packages/*`,
-  copies nothing from `deps/` (A1/A2/A5).
+- **S1** — *A front-end engineer builds the bundles on a checkout with no `mix deps.get`* → `pnpm install` +
+  both `pnpm build*` succeed (A3).
+- **S2** — *`pnpm install` runs in the edge image with context `assets/`* → resolves `@echo/*` from
+  `packages/*`, copies nothing from `deps/` (A1/A2/A5/A14).
 - **S3** — *The lobby loads after the vendoring* → the `LiveSocket` connects and the board island mounts (A4).
 - **S5** — *The edge image fetches awscli inside Fly* → from `edge.codemoji.games/dist/`, never amazonaws.com
   (A6).
 - **S7** — *A player loads a game after the rung* → identical bundle behavior; `Codemojex.Edge` resolves the
   same pointer; no player-visible change (A8/A9).
+- **S9** — *The build runs at a modern target; the vendored suites run on vitest* → es2020 gone (A12); both
+  packages' vitest suites green, no jest (A13).
 
 ## 12. Scope In
 
-- Vendor `phoenix` / `phoenix_html` / `phoenix_live_view` as dependency-free TS packages under
-  `assets/packages/*` (the faithfulness contract, §5).
-- Convert `assets/package.json` to an npm workspace; drop the `file:../../../deps/*` links; regenerate
-  `package-lock.json`.
+- Vendor `phoenix` (`@echo/phoenix`) + `phoenix_live_view` (`@echo/phoenix_live_view`) as TS packages under
+  `assets/packages/*` (the faithfulness contract, §5); `phoenix_html` folded into LV as `src/phoenix_html.ts`,
+  **no standalone package**. *(The packages are present on disk; this rung completes their wiring + cleanup.)*
+- Make `assets/` a **pnpm** workspace — add `pnpm-workspace.yaml` (`packages: ["packages/*"]`); convert
+  `assets/package.json` deps to `@echo/* : workspace:*`; commit `pnpm-lock.yaml`. **npm retired** (no
+  `package-lock.json`, no `npm ci`/`npm run`).
+- Complete the **jest→vitest** migration on `@echo/phoenix_live_view`'s `package.json` (drop the jest
+  toolchain; `test: "vitest"`; prune the upstream `npm run`/`mix`/`e2e` scripts; fix `types`/`files`).
+- Move the build to **es2024** — `assets/tsconfig.json` + `assets/vite.config.ts` + `assets/vite.client.config.ts`
+  (es2020 → es2024).
 - Rewrite `assets/Dockerfile` self-contained (context `assets/`; drop the `deps/` COPYs; awscli from the edge
-  `dist/`; `ENTRYPOINT bin/edge-deploy.sh`). Update `assets/fly.toml` (`dockerfile = "Dockerfile"`; the
-  deploy command).
-- Relocate `scripts/edge-deploy.sh` → `assets/bin/edge-deploy.sh` (fix the `cd` + the header doc-links).
+  `dist/`; pnpm via corepack; `ENTRYPOINT bin/edge-deploy.sh`). Update `assets/fly.toml`
+  (`dockerfile = "Dockerfile"`; the deploy command).
+- Relocate `scripts/edge-deploy.sh` → `assets/bin/edge-deploy.sh` (fix the `cd`; `npm ci && npm run build` →
+  `pnpm install --frozen-lockfile && pnpm build`; the header doc-links).
 - Document the awscli pre-stage requirement in `edge-bucket-setup.md` (the two `dist/awscli-<awsarch>.zip`
   uploads).
 
@@ -324,40 +408,51 @@ trusts.**
 **Track:** `codemojex-tma` (the Telegram Mini App / front-end tier), rung **1** — it establishes the
 self-contained front-end build the later TMA UI rungs (the `cmd.*` design-system work) build on.
 **Risk:** **NORMAL build-tooling, with ONE high-stakes invariant.** Most acceptance is mechanical
-(grep/build/context). The load-bearing risk is **INV-VENDORED-FAITHFUL** (§5): a phoenix/phoenix_live_view
-rewrite can compile green yet break the live lobby at runtime — gate-invisible to a pure `vite build`. So the
-verify **must** include a runtime LiveSocket-boot smoke (A4), and the edge path is exercised with the
-`--dry-run` reliability gate (A11). Secondary external-facing concern: the edge **publish** path — mitigated
-because the publish contract (pointer, cache, ABI) is held byte-stable (§9) and the deploy stays the
-Operator's.
+(grep/build/context/test-runner); the npm→pnpm, es2020→es2024, and jest→vitest moves are mechanical and
+grep-checkable. The load-bearing risk is **INV-VENDORED-FAITHFUL** (§5): a phoenix/phoenix_live_view rewrite
+can compile green yet break the live lobby at runtime — gate-invisible to a pure `vite build`. So the verify
+**must** include a runtime LiveSocket-boot smoke (A4) on top of the vendored vitest suites (A13), and the edge
+path is exercised with the `--dry-run` reliability gate (A11). Secondary external-facing concern: the edge
+**publish** path — mitigated because the publish contract (pointer, cache, ABI) is held byte-stable (§9) and
+the deploy stays the Operator's.
 
 ## 15. Boundary
 
-`echo/apps/codemojex/assets/**` (the workspace, `packages/*`, `Dockerfile`, `fly.toml`, `bin/edge-deploy.sh`)
-+ `echo/docs/edge-deliver/edge-bucket-setup.md` (the awscli pre-stage step) + these specs
+`echo/apps/codemojex/assets/**` (the workspace, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `packages/*`,
+`tsconfig.json`, both vite configs, `Dockerfile`, `fly.toml`, `bin/edge-deploy.sh`) +
+`echo/docs/edge-deliver/edge-bucket-setup.md` (the awscli pre-stage step) + these specs
 (`docs/codemojex-tma/specs/cm-tma.1.*`). **Out of bounds:** `lib/codemojex/**`, the engine release
 (`echo/Dockerfile`, `echo/fly.toml`), every sibling umbrella app, `mix.lock`, and the umbrella `config/`. A
 change reaching the engine or a sibling app is out of scope — stop and re-scope.
 
 ## 16. Build brief
 
+The packages are **prepared on disk**; this rung **completes** the wiring + cleanup + relocation.
 Smallest-change-first, each step independently checkable:
 
-1. **Vendor** `assets/packages/{phoenix,phoenix_html,phoenix_live_view}/` — each a dep-free TS package whose
-   `package.json` `name` is the bare specifier, exposing the §5 surface (`Socket`; `LiveSocket` + the hook
-   lifecycle; `phoenix_html` side-effects). Basis = the upstream client in `deps/`; re-expressed in TS.
-2. **Workspace** — `assets/package.json`: `"workspaces": ["packages/*"]`; `phoenix*` → `"*"`; regenerate
-   `package-lock.json`.
-3. **Prove standalone** — `rm -rf node_modules && npm install && npm run build && npm run build:client` with
-   no `deps/` reachable (A1/A2/A3); then the **runtime boot smoke** (A4).
-4. **Self-contained image** — rewrite `assets/Dockerfile` (context `assets/`; drop `deps/` COPYs; awscli from
-   the edge `dist/`; `ENTRYPOINT bin/edge-deploy.sh`); update `assets/fly.toml` (A5/A6).
-5. **Relocate** `scripts/edge-deploy.sh` → `assets/bin/edge-deploy.sh` (fix the `cd`, the doc-links) (A7).
-6. **Pre-stage docs** — add the awscli `dist/` upload step to `edge-bucket-setup.md` (A6).
-7. **Gate** — A1–A11; the `--dry-run` reliability gate (A11) is the canonical green; the boundary check (A10)
+1. **Workspace** — add `assets/pnpm-workspace.yaml` (`packages: ["packages/*"]`); convert `assets/package.json`
+   deps to `@echo/* : workspace:*`; ensure `@echo/phoenix_live_view` declares `morphdom` + `phoenix`
+   (`workspace:@echo/phoenix@*`); `pnpm install` → commit `pnpm-lock.yaml`. (A1/A2/A14)
+2. **jest→vitest** — on `@echo/phoenix_live_view`'s `package.json`: drop the jest devDeps; `test: "vitest"`;
+   prune the upstream `npm run`/`mix`/`e2e`/playwright scripts; fix `types`/`files`. `pnpm -C packages/* test`
+   green; `grep jest packages` → 0. (A13)
+3. **es2024** — `assets/tsconfig.json` (`target`+`lib`) + `assets/vite.config.ts` + `assets/vite.client.config.ts`
+   (es2020 → es2024); `grep es2020` → 0. (A12)
+4. **Prove standalone** — `rm -rf node_modules && pnpm install && pnpm build && pnpm build:client` with no
+   `deps/` reachable (A1/A2/A3); then the **runtime boot smoke** (A4).
+5. **Self-contained image** — rewrite `assets/Dockerfile` (context `assets/`; corepack/pnpm; drop `deps/`
+   COPYs; awscli from the edge `dist/`; `ENTRYPOINT bin/edge-deploy.sh`); update `assets/fly.toml` (A5/A6).
+6. **Relocate** `scripts/edge-deploy.sh` → `assets/bin/edge-deploy.sh` (fix the `cd`; npm→pnpm; the doc-links)
+   (A7).
+7. **Pre-stage docs** — add the awscli `dist/` upload step to `edge-bucket-setup.md` (A6); the upload itself
+   is the Operator's.
+8. **Gate** — A1–A14; the `--dry-run` reliability gate (A11) is the canonical green; the boundary check (A10)
    confirms the engine + `lib/` + `mix.lock` are untouched.
 
-**Files (boundary `echo/apps/codemojex/assets/**` + the bucket doc + these specs):** `packages/*` (new) ·
-`package.json` + `package-lock.json` (workspace) · `Dockerfile` (rewrite) · `fly.toml` (rewrite) ·
-`bin/edge-deploy.sh` (moved from `scripts/`) · `echo/docs/edge-deliver/edge-bucket-setup.md` (the pre-stage
-step). **Unchanged:** `js/app.js`, `src/**`, both `vite.*.config.ts`, `tsconfig.json`, `lib/codemojex/edge.ex`.
+**Files (boundary `echo/apps/codemojex/assets/**` + the bucket doc + these specs):** `pnpm-workspace.yaml` +
+`pnpm-lock.yaml` (new) · `package.json` (workspace finish) · `packages/phoenix_live_view/package.json`
+(jest→vitest + pnpm) · `tsconfig.json` + `vite.config.ts` + `vite.client.config.ts` (es2024) · `Dockerfile`
+(rewrite) · `fly.toml` (rewrite) · `bin/edge-deploy.sh` (moved from `scripts/`) ·
+`echo/docs/edge-deliver/edge-bucket-setup.md` (the pre-stage step). **Unchanged:** `js/app.js` (already on the
+`@echo/*` imports), `src/**` (the swap ABI), `lib/codemojex/edge.ex`, `echo/Dockerfile`, `echo/fly.toml`,
+`mix.lock`.
