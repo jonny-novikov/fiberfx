@@ -4,8 +4,8 @@ describe("EntryUploader", () => {
   test("passes channel-error reply reason as string to entry.error", () => {
     let errorCb;
     let fakeChannel = {
-      onError: jest.fn(),
-      leave: jest.fn(),
+      onError: vi.fn(),
+      leave: vi.fn(),
       join: () => ({
         receive(kind, cb) {
           if (kind === "error") errorCb = cb;
@@ -14,7 +14,7 @@ describe("EntryUploader", () => {
       }),
     };
     let fakeLiveSocket = { channel: () => fakeChannel };
-    let entry = { ref: "0", metadata: () => ({}), error: jest.fn() };
+    let entry = { ref: "0", metadata: () => ({}), error: vi.fn() };
     let config = { chunk_size: 1024, chunk_timeout: 5000 };
 
     new EntryUploader(entry, config, fakeLiveSocket).upload();

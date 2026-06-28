@@ -10,8 +10,8 @@ describe("InfiniteScroll", () => {
     test("does not throw when scrollContainer is null (window scrolls)", () => {
       const ctx = {
         scrollContainer: null,
-        destroyed: jest.fn(),
-        mounted: jest.fn(),
+        destroyed: vi.fn(),
+        mounted: vi.fn(),
       };
 
       expect(() =>
@@ -25,8 +25,8 @@ describe("InfiniteScroll", () => {
       const container = document.createElement("div");
       const ctx = {
         scrollContainer: container,
-        destroyed: jest.fn(),
-        mounted: jest.fn(),
+        destroyed: vi.fn(),
+        mounted: vi.fn(),
       };
 
       Hooks.InfiniteScroll.updated!.call(ctx as any);
@@ -40,8 +40,8 @@ describe("InfiniteScroll", () => {
       document.body.appendChild(container);
       const ctx = {
         scrollContainer: container,
-        destroyed: jest.fn(),
-        mounted: jest.fn(),
+        destroyed: vi.fn(),
+        mounted: vi.fn(),
       };
 
       Hooks.InfiniteScroll.updated!.call(ctx as any);

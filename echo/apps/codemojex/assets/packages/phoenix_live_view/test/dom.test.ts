@@ -337,7 +337,7 @@ describe("DOM", () => {
       const div = tag("div", { "phx-update": "append" }, content);
 
       let errorCount = 0;
-      jest.spyOn(console, "error").mockImplementation(() => (errorCount += 1));
+      vi.spyOn(console, "error").mockImplementation(() => (errorCount += 1));
       DOM.cleanChildNodes(div, "phx-update");
 
       expect(div.innerHTML).toBe('<div id="1">1</div>');

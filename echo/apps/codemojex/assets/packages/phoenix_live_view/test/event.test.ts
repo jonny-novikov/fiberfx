@@ -2,8 +2,8 @@ import { Socket } from "phoenix";
 import LiveSocket from "phoenix_live_view/live_socket";
 import View from "phoenix_live_view/view";
 
-import { version as liveview_version } from "../../package.json";
-import { HooksOptions } from "phoenix_live_viewview_hook";
+import { version as liveview_version } from "../package.json";
+import { HooksOptions } from "phoenix_live_view/view_hook";
 
 let containerId = 0;
 
@@ -200,7 +200,7 @@ describe("pushEvent replies", () => {
     processedReplies = [];
   });
 
-  test("reply", (done) => {
+  test("reply", () => new Promise<void>((done) => {
     let view;
     let liveSocket = new LiveSocket("/live", Socket, {
       hooks: <HooksOptions>{
@@ -236,9 +236,9 @@ describe("pushEvent replies", () => {
       ]);
       done();
     });
-  });
+  }));
 
-  test("promise", (done) => {
+  test("promise", () => new Promise<void>((done) => {
     let view;
     let liveSocket = new LiveSocket("/live", Socket, {
       hooks: <HooksOptions>{
@@ -272,9 +272,9 @@ describe("pushEvent replies", () => {
       expect(processedReplies).toEqual([{ transactionID: "1001" }]);
       done();
     });
-  });
+  }));
 
-  test("rejects with error", (done) => {
+  test("rejects with error", () => new Promise<void>((done) => {
     let view;
     let liveSocket = new LiveSocket("/live", Socket, {
       hooks: <HooksOptions>{
@@ -301,9 +301,9 @@ describe("pushEvent replies", () => {
       },
       [],
     );
-  });
+  }));
 
-  test("pushEventTo - promise with multiple targets", (done) => {
+  test("pushEventTo - promise with multiple targets", () => new Promise<void>((done) => {
     let view;
     let liveSocket = new LiveSocket("/live", Socket, {
       hooks: <HooksOptions>{
@@ -343,11 +343,11 @@ describe("pushEvent replies", () => {
       },
       [],
     );
-  });
+  }));
 
-  test("pushEvent without connection noops", (done) => {
+  test("pushEvent without connection noops", () => new Promise<void>((done) => {
     let view;
-    const spy = jest.fn();
+    const spy = vi.fn();
     let liveSocket = new LiveSocket("/live", Socket, {
       hooks: <HooksOptions>{
         Gateway: {
@@ -380,5 +380,5 @@ describe("pushEvent replies", () => {
       expect(spy).not.toHaveBeenCalled();
       done();
     });
-  });
+  }));
 });

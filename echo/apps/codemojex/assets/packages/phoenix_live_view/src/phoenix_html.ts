@@ -3,10 +3,10 @@
 (function() {
   var PolyfillEvent = eventConstructor();
 
-  function eventConstructor() {
+  function eventConstructor(): any {
     if (typeof window.CustomEvent === "function") return window.CustomEvent;
     // IE<=9 Support
-    function CustomEvent(event, params) {
+    function CustomEvent(event: string, params?: any) {
       params = params || {bubbles: false, cancelable: false, detail: undefined};
       var evt = document.createEvent('CustomEvent');
       evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
@@ -16,15 +16,15 @@
     return CustomEvent;
   }
 
-  function buildHiddenInput(name, value) {
+  function buildHiddenInput(name: string, value: string | null) {
     var input = document.createElement("input");
     input.type = "hidden";
     input.name = name;
-    input.value = value;
+    input.value = value as string;
     return input;
   }
 
-  function handleClick(element, targetModifierKey) {
+  function handleClick(element: HTMLElement, targetModifierKey: boolean) {
     var to = element.getAttribute("data-to"),
         method = buildHiddenInput("_method", element.getAttribute("data-method")),
         csrf = buildHiddenInput("_csrf_token", element.getAttribute("data-csrf")),
@@ -33,7 +33,7 @@
         target = element.getAttribute("target");
 
     form.method = (element.getAttribute("data-method") === "get") ? "get" : "post";
-    form.action = to;
+    form.action = to as string;
     form.style.display = "none";
 
     if (target) form.target = target;
@@ -51,7 +51,7 @@
   }
 
   window.addEventListener("click", function(e) {
-    var element = e.target;
+    var element: any = e.target;
     if (e.defaultPrevented) return;
 
     while (element && element.getAttribute) {
@@ -76,7 +76,7 @@
   }, false);
 
   window.addEventListener('phoenix.link.click', function (e) {
-    var message = e.target.getAttribute("data-confirm");
+    var message = (e.target as any).getAttribute("data-confirm");
     if(message && !window.confirm(message)) {
       e.preventDefault();
     }

@@ -52,7 +52,7 @@ describe("LiveSocket", () => {
   });
 
   test("viewLogger", async () => {
-    const viewLogger = jest.fn();
+    const viewLogger = vi.fn();
     liveSocket = new LiveSocket("/live", Socket, { viewLogger });
     expect(liveSocket.viewLogger).toBe(viewLogger);
     liveSocket.connect();
@@ -242,7 +242,7 @@ describe("LiveSocket", () => {
     beforeEach(() => {
       global.document.body.innerHTML = "";
       prepareLiveViewDOM(global.document);
-      jest.useFakeTimers();
+      vi.useFakeTimers();
 
       liveSocket = new LiveSocket("/live", Socket);
       view = simulateJoinedView(
@@ -254,7 +254,7 @@ describe("LiveSocket", () => {
     afterEach(() => {
       liveSocket && liveSocket.destroyAllViews();
       liveSocket = null;
-      jest.useRealTimers();
+      vi.useRealTimers();
     });
 
     afterAll(() => {
@@ -272,7 +272,7 @@ describe("LiveSocket", () => {
 
       expect(el.getAttribute("open")).toBeNull();
       liveSocket.execJS(el, el.getAttribute("data-test"));
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(el.getAttribute("open")).toEqual("true");
     });
 
@@ -283,7 +283,7 @@ describe("LiveSocket", () => {
 
       expect(el.getAttribute("open")).toBeNull();
       liveSocket.execJS(el, [["toggle_attr", { attr: ["open", "true"] }]]);
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(el.getAttribute("open")).toEqual("true");
     });
   });
@@ -295,7 +295,7 @@ describe("liveSocket.js()", () => {
   beforeEach(() => {
     global.document.body.innerHTML = "";
     prepareLiveViewDOM(global.document);
-    jest.useFakeTimers();
+    vi.useFakeTimers();
 
     liveSocket = new LiveSocket("/live", Socket);
     view = simulateJoinedView(
@@ -308,7 +308,7 @@ describe("liveSocket.js()", () => {
   afterEach(() => {
     liveSocket && liveSocket.destroyAllViews();
     liveSocket = null;
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   afterAll(() => {
@@ -326,7 +326,7 @@ describe("liveSocket.js()", () => {
 
     expect(el.getAttribute("open")).toBeNull();
     js.exec(el, el.getAttribute("data-test"));
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.getAttribute("open")).toEqual("true");
   });
 
@@ -337,11 +337,11 @@ describe("liveSocket.js()", () => {
 
     expect(el.getAttribute("open")).toBeNull();
     js.exec(el, [["toggle_attr", { attr: ["open", "true"] }]]);
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.getAttribute("open")).toEqual("true");
   });
 
-  test("show and hide", (done) => {
+  test("show and hide", () => new Promise<void>((done) => {
     const el = document.createElement("div");
     el.setAttribute("id", "test-visibility");
     view.el.appendChild(el);
@@ -349,16 +349,16 @@ describe("liveSocket.js()", () => {
 
     expect(el.style.display).toBe("");
     js.hide(el);
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.style.display).toBe("none");
 
     js.show(el);
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.style.display).toBe("block");
     done();
-  });
+  }));
 
-  test("toggle", (done) => {
+  test("toggle", () => new Promise<void>((done) => {
     const el = document.createElement("div");
     el.setAttribute("id", "test-toggle");
     view.el.appendChild(el);
@@ -366,67 +366,67 @@ describe("liveSocket.js()", () => {
 
     expect(el.style.display).toBe("");
     js.toggle(el);
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.style.display).toBe("none");
 
     js.toggle(el);
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.style.display).toBe("block");
     done();
-  });
+  }));
 
-  test("addClass, removeClass and toggleClass", (done) => {
+  test("addClass, removeClass and toggleClass", () => new Promise<void>((done) => {
     const el = document.createElement("div");
     el.setAttribute("id", "test-classes");
     el.className = "initial-class";
     view.el.appendChild(el);
 
     js.addClass(el, "test-class");
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.classList.contains("test-class")).toBe(true);
     expect(el.classList.contains("initial-class")).toBe(true);
 
     js.addClass(el, ["multiple", "classes"]);
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.classList.contains("multiple")).toBe(true);
     expect(el.classList.contains("classes")).toBe(true);
 
     js.removeClass(el, "test-class");
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.classList.contains("test-class")).toBe(false);
     expect(el.classList.contains("initial-class")).toBe(true);
 
     js.removeClass(el, ["multiple", "classes"]);
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.classList.contains("multiple")).toBe(false);
     expect(el.classList.contains("classes")).toBe(false);
 
     js.toggleClass(el, "toggle-class");
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.classList.contains("toggle-class")).toBe(true);
 
     js.toggleClass(el, "toggle-class");
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(el.classList.contains("toggle-class")).toBe(false);
     done();
-  });
+  }));
 
-  test("transition", (done) => {
+  test("transition", () => new Promise<void>((done) => {
     const el = document.createElement("div");
     el.setAttribute("id", "test-transition");
     view.el.appendChild(el);
 
     js.transition(el, "fade-in");
-    jest.advanceTimersByTime(100);
+    vi.advanceTimersByTime(100);
     expect(el.classList.contains("fade-in")).toBe(true);
 
     js.transition(el, ["ease-out duration-300", "opacity-0", "opacity-100"]);
-    jest.advanceTimersByTime(100);
+    vi.advanceTimersByTime(100);
     expect(el.classList.contains("ease-out")).toBe(true);
     expect(el.classList.contains("duration-300")).toBe(true);
     expect(el.classList.contains("opacity-100")).toBe(true);
     done();
-  });
+  }));
 
   test("setAttribute, removeAttribute and toggleAttribute", () => {
     const el = document.createElement("div");
@@ -457,7 +457,7 @@ describe("liveSocket.js()", () => {
     };
 
     const originalExec = JS.exec;
-    JS.exec = jest.fn();
+    JS.exec = vi.fn();
 
     js.push(el, "custom-event", { value: { key: "value" } });
 
@@ -469,7 +469,7 @@ describe("liveSocket.js()", () => {
 
   test("navigate", () => {
     const originalHistoryRedirect = liveSocket.historyRedirect;
-    liveSocket.historyRedirect = jest.fn();
+    liveSocket.historyRedirect = vi.fn();
 
     js.navigate("/test-url");
     expect(liveSocket.historyRedirect).toHaveBeenCalledWith(
@@ -494,7 +494,7 @@ describe("liveSocket.js()", () => {
 
   test("patch", () => {
     const originalPushHistoryPatch = liveSocket.pushHistoryPatch;
-    liveSocket.pushHistoryPatch = jest.fn();
+    liveSocket.pushHistoryPatch = vi.fn();
 
     js.patch("/test-url");
     expect(liveSocket.pushHistoryPatch).toHaveBeenCalledWith(

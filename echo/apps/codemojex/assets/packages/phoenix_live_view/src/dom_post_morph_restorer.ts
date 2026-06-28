@@ -62,10 +62,10 @@ export default class DOMPostMorphRestorer {
       if (elementToModify.previousElementId) {
         maybe(
           document.getElementById(elementToModify.previousElementId),
-          (previousElem) => {
+          (previousElem: Element) => {
             maybe(
               document.getElementById(elementToModify.elementId),
-              (elem) => {
+              (elem: Element) => {
                 const isInRightPlace =
                   elem.previousElementSibling &&
                   elem.previousElementSibling.id == previousElem.id;
@@ -78,7 +78,7 @@ export default class DOMPostMorphRestorer {
         );
       } else {
         // This is the first element in the container
-        maybe(document.getElementById(elementToModify.elementId), (elem) => {
+        maybe(document.getElementById(elementToModify.elementId), (elem: Element) => {
           const isInRightPlace = elem.previousElementSibling == null;
           if (!isInRightPlace) {
             container.insertAdjacentElement("afterbegin", elem);
@@ -89,7 +89,7 @@ export default class DOMPostMorphRestorer {
 
     if (this.updateType == "prepend") {
       this.elementIdsToAdd.reverse().forEach((elemId) => {
-        maybe(document.getElementById(elemId), (elem) =>
+        maybe(document.getElementById(elemId), (elem: Element) =>
           container.insertAdjacentElement("afterbegin", elem),
         );
       });

@@ -29,9 +29,14 @@ import View from "./view";
 import LiveSocket from "./live_socket";
 
 type Stream = Set<any>;
-type MorphdomOptions = Parameters<typeof morphdom>[2] & {
-  // morphdom's types are outdated
-  onBeforeElUpdated: (fromEl: Element, toEl: Element) => boolean | Element;
+// morphdom's published types are outdated and stricter than its runtime
+// contract (the callback may also return void to skip an update). We override
+// onBeforeElUpdated with the real shape and cast at the morphdom() call site.
+type MorphdomOptions = Omit<
+  NonNullable<Parameters<typeof morphdom>[2]>,
+  "onBeforeElUpdated"
+> & {
+  onBeforeElUpdated: (fromEl: any, toEl: any) => boolean | Element | void;
 };
 type BeforeUpdatedCallback = (fromEl: Element, toEl: Element) => void;
 type AfterAddedCallback = (el: Node) => void;
@@ -134,7 +139,7 @@ export default class DOMPatch {
     );
   }
 
-  perform(isJoinPatch) {
+  perform(isJoinPatch: boolean) {
     const { view, liveSocket, html, container } = this;
     let targetContainer = this.targetContainer;
 
@@ -180,8 +185,8 @@ export default class DOMPatch {
     let externalFormTriggered: Element | null = null;
 
     const morph = (
-      targetContainer,
-      source,
+      targetContainer: Element,
+      source: any,
       withChildren = this.withChildren,
     ) => {
       const morphCallbacks: MorphdomOptions = {
@@ -293,7 +298,7 @@ export default class DOMPatch {
           // nested view handling
           if (
             (DOM.isPhxChild(el) && view.ownsElement(el)) ||
-            (DOM.isPhxSticky(el) && view.ownsElement(el.parentNode))
+            (DOM.isPhxSticky(el) && view.ownsElement(el.parentNode as Element))
           ) {
             this.trackAfterPhxChildAdded(el);
           }
@@ -503,14 +508,18 @@ export default class DOMPatch {
         },
       };
 
-      morphdom(targetContainer, source, morphCallbacks);
+      morphdom(
+        targetContainer,
+        source,
+        morphCallbacks as Parameters<typeof morphdom>[2],
+      );
     };
 
     this.trackBeforeUpdated(container, container);
 
     liveSocket.time("morphdom", () => {
       this.streams.forEach(([ref, inserts, deleteIds, reset]) => {
-        inserts.forEach(([key, streamAt, limit, updateOnly]) => {
+        inserts.forEach(([key, streamAt, limit, updateOnly]: any[]) => {
           this.streamInserts[key] = { ref, streamAt, limit, reset, updateOnly };
         });
         if (reset !== undefined) {
@@ -518,7 +527,7 @@ export default class DOMPatch {
             this.removeStreamChildElement(child);
           });
         }
-        deleteIds.forEach((id) => {
+        deleteIds.forEach((id: string) => {
           const child = document.getElementById(id);
           if (child) {
             this.removeStreamChildElement(child);
@@ -654,7 +663,7 @@ export default class DOMPatch {
     this.afterTransitionsDiscardedCallbacks.forEach((cb) => cb(els));
   }
 
-  private onNodeDiscarded(el) {
+  private onNodeDiscarded(el: any) {
     // nested view handling
     if (DOM.isPhxChild(el) || DOM.isPhxSticky(el)) {
       this.liveSocket.destroyViewByEl(el);
@@ -662,7 +671,7 @@ export default class DOMPatch {
     this.trackAfterDiscarded(el);
   }
 
-  private maybePendingRemove(node) {
+  private maybePendingRemove(node: Element) {
     if (node.getAttribute && node.getAttribute(this.phxRemove) !== null) {
       this.pendingRemoves.push(node);
       return true;
@@ -671,7 +680,7 @@ export default class DOMPatch {
     }
   }
 
-  private removeStreamChildElement(child, force = false) {
+  private removeStreamChildElement(child: Element, force = false) {
     // make sure to only remove elements owned by the current view
     // see https://github.com/phoenixframework/phoenix_live_view/issues/3047
     // and https://github.com/phoenixframework/phoenix_live_view/issues/3681
@@ -693,12 +702,12 @@ export default class DOMPatch {
     }
   }
 
-  private getStreamInsert(el) {
+  private getStreamInsert(el: Element) {
     const insert = el.id ? this.streamInserts[el.id] : {};
     return insert || {};
   }
 
-  private setStreamRef(el, ref) {
+  private setStreamRef(el: Element, ref: any) {
     DOM.putSticky(el, PHX_STREAM_REF, (el) =>
       el.setAttribute(PHX_STREAM_REF, ref),
     );
@@ -760,7 +769,7 @@ export default class DOMPatch {
   // are not disconnected and reconnected by the move. Falls back to
   // insertBefore otherwise. Passing `ref === null` moves to the end.
   // See also https://github.com/phoenixframework/phoenix_live_view/issues/4212.
-  private moveOrInsertBefore(parent, child, ref) {
+  private moveOrInsertBefore(parent: any, child: any, ref: any) {
     if (typeof parent.moveBefore === "function") {
       try {
         parent.moveBefore(child, ref);
@@ -773,10 +782,10 @@ export default class DOMPatch {
     parent.insertBefore(child, ref);
   }
 
-  private maybeLimitStream(el) {
+  private maybeLimitStream(el: Element) {
     const { limit } = this.getStreamInsert(el);
     if (limit !== null) {
-      const children = Array.from(el.parentElement.children);
+      const children = Array.from(el.parentElement!.children);
       if (limit < 0 && children.length > limit * -1) {
         children
           .slice(0, children.length + limit)
@@ -805,7 +814,7 @@ export default class DOMPatch {
     }
   }
 
-  private isChangedSelect(fromEl, toEl) {
+  private isChangedSelect(fromEl: Element, toEl: any) {
     if (!(fromEl instanceof HTMLSelectElement) || fromEl.multiple) {
       return false;
     }
@@ -821,11 +830,11 @@ export default class DOMPatch {
     return !fromEl.isEqualNode(toEl);
   }
 
-  private skipCIDSibling(el) {
+  private skipCIDSibling(el: Element) {
     return el.nodeType === Node.ELEMENT_NODE && el.hasAttribute(PHX_SKIP);
   }
 
-  private maybeCloneLockedElement(fromEl, isFocusedFormEl) {
+  private maybeCloneLockedElement(fromEl: any, isFocusedFormEl: any) {
     if (!fromEl.hasAttribute(PHX_REF_SRC)) return fromEl;
 
     const ref = new ElementRef(fromEl);
@@ -848,7 +857,7 @@ export default class DOMPatch {
     return isFocusedFormEl ? fromEl : clone;
   }
 
-  private copyNestedPrivateLock(fromEl, toEl) {
+  private copyNestedPrivateLock(fromEl: any, toEl: any) {
     // During unlock morphs, toEl may be the private clone that accumulated a
     // nested locked subtree. Copy that private clone back to fromEl before the
     // outer unlock finishes so the nested element can apply its own ack later.
@@ -858,11 +867,11 @@ export default class DOMPatch {
     DOM.putPrivate(fromEl, PHX_REF_LOCK, DOM.private(toEl, PHX_REF_LOCK));
   }
 
-  private indexOf(parent, child) {
+  private indexOf(parent: Element, child: any) {
     return Array.from(parent.children).indexOf(child);
   }
 
-  private teleport(el, morph) {
+  private teleport(el: any, morph: (...args: any[]) => any) {
     const targetSelector = el.getAttribute(PHX_PORTAL);
     const portalContainer = document.querySelector(targetSelector);
     if (!portalContainer) {

@@ -123,7 +123,7 @@ const InfiniteScroll: Hook = {
 export { InfiniteScroll };
 
 // This file is primarily for compile-time type checking via `npm run typecheck:tests`.
-// The dummy test below satisfies Jest's requirement for at least one test.
+// The dummy test below satisfies the runner's requirement for at least one test.
 test("hook types compile correctly", () => {
   expect(hooks).toBeDefined();
   expect(hooksWithRequiredProps).toBeDefined();

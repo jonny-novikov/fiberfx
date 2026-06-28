@@ -1,5 +1,5 @@
 import View from "phoenix_live_view/view";
-import { version as liveview_version } from "../../package.json";
+import { version as liveview_version } from "../package.json";
 
 export const appendTitle = (opts, innerHTML?: string) => {
   Array.from(document.head.querySelectorAll("title")).forEach((el) =>

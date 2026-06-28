@@ -12,13 +12,13 @@ import {
 import DOM from "./dom";
 
 export default class ElementRef {
-  static onUnlock(el, callback) {
+  static onUnlock(el: Element, callback: () => void) {
     if (!DOM.isLocked(el) && !el.closest(`[${PHX_REF_LOCK}]`)) {
       return callback();
     }
-    const closestLock = el.closest(`[${PHX_REF_LOCK}]`);
+    const closestLock = el.closest(`[${PHX_REF_LOCK}]`)!;
     const ref = closestLock
-      .closest(`[${PHX_REF_LOCK}]`)
+      .closest(`[${PHX_REF_LOCK}]`)!
       .getAttribute(PHX_REF_LOCK);
     closestLock.addEventListener(
       `phx:undo-lock:${ref}`,
@@ -45,11 +45,15 @@ export default class ElementRef {
 
   // public
 
-  maybeUndo(ref, phxEvent, eachCloneCallback) {
+  maybeUndo(
+    ref: number,
+    phxEvent: string,
+    eachCloneCallback: (clonedTree: any) => void,
+  ) {
     if (!this.isWithin(ref)) {
       // we cannot undo the lock / loading now, as there is a newer one already set;
       // we need to store the original ref we tried to send the undo event later
-      DOM.updatePrivate(this.el, PHX_PENDING_REFS, [], (pendingRefs) => {
+      DOM.updatePrivate(this.el, PHX_PENDING_REFS, [], (pendingRefs: number[]) => {
         pendingRefs.push(ref);
         return pendingRefs;
       });
@@ -64,8 +68,8 @@ export default class ElementRef {
 
     // ensure undo events are fired for pending refs that
     // are resolved by the current ref, otherwise we'd leak event listeners
-    DOM.updatePrivate(this.el, PHX_PENDING_REFS, [], (pendingRefs) => {
-      return pendingRefs.filter((pendingRef) => {
+    DOM.updatePrivate(this.el, PHX_PENDING_REFS, [], (pendingRefs: number[]) => {
+      return pendingRefs.filter((pendingRef: number) => {
         let opts = {
           detail: { ref: pendingRef, event: phxEvent },
           bubbles: true,
@@ -93,7 +97,7 @@ export default class ElementRef {
 
   // private
 
-  private isWithin(ref) {
+  private isWithin(ref: number) {
     return !(
       this.loadingRef !== null &&
       this.loadingRef > ref &&
@@ -108,7 +112,11 @@ export default class ElementRef {
   //
   //   1. execute pending mounted hooks for nodes now in the DOM
   //   2. undo any ref inside the cloned tree that has since been ack'd
-  private undoLocks(ref, phxEvent, eachCloneCallback) {
+  private undoLocks(
+    ref: number,
+    phxEvent: string,
+    eachCloneCallback: (clonedTree: any) => void,
+  ) {
     if (!this.isLockUndoneBy(ref)) {
       return;
     }
@@ -130,7 +138,7 @@ export default class ElementRef {
     );
   }
 
-  private undoLoading(ref, phxEvent) {
+  private undoLoading(ref: number, phxEvent: string) {
     if (!this.isLoadingUndoneBy(ref)) {
       if (
         this.canUndoLoading(ref) &&
@@ -179,16 +187,16 @@ export default class ElementRef {
     });
   }
 
-  private isLoadingUndoneBy(ref) {
+  private isLoadingUndoneBy(ref: number) {
     return this.loadingRef === null ? false : this.loadingRef <= ref;
   }
 
   /** @internal */
-  isLockUndoneBy(ref) {
+  isLockUndoneBy(ref: number) {
     return this.lockRef === null ? false : this.lockRef <= ref;
   }
 
-  private isFullyResolvedBy(ref) {
+  private isFullyResolvedBy(ref: number) {
     return (
       (this.loadingRef === null || this.loadingRef <= ref) &&
       (this.lockRef === null || this.lockRef <= ref)
@@ -196,7 +204,7 @@ export default class ElementRef {
   }
 
   // only remove the phx-submit-loading class if we are not locked
-  private canUndoLoading(ref) {
+  private canUndoLoading(ref: number) {
     return this.lockRef === null || this.lockRef <= ref;
   }
 }

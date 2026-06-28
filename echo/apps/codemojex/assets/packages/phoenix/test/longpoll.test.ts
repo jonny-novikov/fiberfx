@@ -1,8 +1,7 @@
-import {jest} from "@jest/globals"
 import {LongPoll} from "../src"
 import {Socket} from "../src"
 import {AUTH_TOKEN_PREFIX} from "../src/constants"
-import Ajax from "../src"
+import Ajax from "../src/ajax"
 
 describe("LongPoll", () => {
   let originalXHR
@@ -11,12 +10,12 @@ describe("LongPoll", () => {
     originalXHR = global.XMLHttpRequest
     
     // Mock XMLHttpRequest
-    const mockOpen = jest.fn()
-    const mockSend = jest.fn()
-    const mockAbort = jest.fn()
-    const mockSetRequestHeader = jest.fn()
+    const mockOpen = vi.fn()
+    const mockSend = vi.fn()
+    const mockAbort = vi.fn()
+    const mockSetRequestHeader = vi.fn()
     
-    global.XMLHttpRequest = jest.fn(() => ({
+    global.XMLHttpRequest = vi.fn(function (){ return ({
       open: mockOpen,
       send: mockSend,
       abort: mockAbort,
@@ -25,17 +24,17 @@ describe("LongPoll", () => {
       status: 200,
       responseText: JSON.stringify({status: 200, token: "token123", messages: []}),
       onreadystatechange: null,
-    }))
+    }) })
 
     // Spy on Ajax.request
-    jest.spyOn(Ajax, "request").mockImplementation(() => {
-      return {abort: jest.fn()}
+    vi.spyOn(Ajax, "request").mockImplementation(() => {
+      return {abort: vi.fn()}
     })
   })
 
   afterEach(() => {
     global.XMLHttpRequest = originalXHR
-    jest.restoreAllMocks()
+    vi.restoreAllMocks()
   })
 
   describe("constructor", () => {
@@ -122,14 +121,14 @@ describe("LongPoll", () => {
       longpoll.timeout = 1000
       longpoll.token = "existing-token"
 
-      const mockOnerror = jest.fn()
-      const mockCloseAndRetry = jest.fn()
+      const mockOnerror = vi.fn()
+      const mockCloseAndRetry = vi.fn()
       longpoll.onerror = mockOnerror
       longpoll.closeAndRetry = mockCloseAndRetry
 
       Ajax.request.mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
         callback({status: 410, token: "new-token", messages: []})
-        return {abort: jest.fn()}
+        return {abort: vi.fn()}
       })
 
       longpoll.poll()
@@ -160,17 +159,17 @@ describe("LongPoll", () => {
     })
 
     it("coalesces rapid send() calls and buffers sends made during an in-flight batch", () => {
-      jest.useFakeTimers()
+      vi.useFakeTimers()
       try {
         const longpoll = new LongPoll("http://localhost/socket/longpoll", undefined)
         longpoll.timeout = 1000
         // suppress the initial poll() that the constructor schedules via setTimeout(0)
-        longpoll.poll = jest.fn()
+        longpoll.poll = vi.fn()
 
         const calls = []
         Ajax.request.mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
           calls.push({method, body, callback})
-          return {abort: jest.fn()}
+          return {abort: vi.fn()}
         })
 
         // Three sends in the same tick should collapse into one currentBatch
@@ -182,7 +181,7 @@ describe("LongPoll", () => {
         expect(longpoll.currentBatch).toEqual(["a", "b", "c"])
 
         // Flush the setTimeout(0) — currentBatch becomes one POST
-        jest.runOnlyPendingTimers()
+        vi.runOnlyPendingTimers()
 
         expect(calls).toHaveLength(1)
         expect(calls[0].method).toBe("POST")
@@ -209,27 +208,27 @@ describe("LongPoll", () => {
         expect(calls).toHaveLength(2)
         expect(longpoll.awaitingBatchAck).toBe(false)
       } finally {
-        jest.useRealTimers()
+        vi.useRealTimers()
       }
     })
 
     it("splits 150 rapid send() calls into two requests in order", () => {
-      jest.useFakeTimers()
+      vi.useFakeTimers()
       try {
         const longpoll = new LongPoll("http://localhost/socket/longpoll", undefined)
         longpoll.timeout = 1000
-        longpoll.poll = jest.fn()
+        longpoll.poll = vi.fn()
 
         const calls = []
         Ajax.request.mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
           calls.push({body, callback})
-          return {abort: jest.fn()}
+          return {abort: vi.fn()}
         })
 
         for(let i = 0; i < 150; i++){ longpoll.send(`m${i}`) }
 
         // Flush the setTimeout(0) so batchSend runs on the full 150-entry batch
-        jest.runOnlyPendingTimers()
+        vi.runOnlyPendingTimers()
 
         expect(calls).toHaveLength(1)
         const firstLines = calls[0].body.split("\n")
@@ -250,7 +249,7 @@ describe("LongPoll", () => {
         expect(calls).toHaveLength(2)
         expect(longpoll.awaitingBatchAck).toBe(false)
       } finally {
-        jest.useRealTimers()
+        vi.useRealTimers()
       }
     })
   })
@@ -262,12 +261,12 @@ describe("Socket with LongPoll", () => {
       const socket = new Socket("/socket", {transport: LongPoll})
       
       // Mock the transport to capture the protocols argument
-      socket.transport = jest.fn(() => ({
-        onopen: jest.fn(),
-        onerror: jest.fn(),
-        onmessage: jest.fn(),
-        onclose: jest.fn()
-      }))
+      socket.transport = vi.fn(function (){ return ({
+        onopen: vi.fn(),
+        onerror: vi.fn(),
+        onmessage: vi.fn(),
+        onclose: vi.fn()
+      }) })
       
       socket.transportConnect()
       
@@ -289,12 +288,12 @@ describe("Socket with LongPoll", () => {
       socket.authToken = authToken
       
       // Mock the transport to capture the protocols argument
-      socket.transport = jest.fn(() => ({
-        onopen: jest.fn(),
-        onerror: jest.fn(),
-        onmessage: jest.fn(),
-        onclose: jest.fn()
-      }))
+      socket.transport = vi.fn(function (){ return ({
+        onopen: vi.fn(),
+        onerror: vi.fn(),
+        onmessage: vi.fn(),
+        onclose: vi.fn()
+      }) })
       
       socket.transportConnect()
       
@@ -316,24 +315,24 @@ describe("Ajax.request", () => {
     originalAbortController = global.AbortController
 
     // Mock AbortController
-    global.AbortController = jest.fn(() => ({
-      abort: jest.fn(),
+    global.AbortController = vi.fn(function (){ return ({
+      abort: vi.fn(),
       signal: {}
-    }))
+    }) })
 
     // Mock XMLHttpRequest
-    global.XMLHttpRequest = jest.fn(() => ({
-      open: jest.fn(),
-      send: jest.fn(),
-      setRequestHeader: jest.fn(),
+    global.XMLHttpRequest = vi.fn(function (){ return ({
+      open: vi.fn(),
+      send: vi.fn(),
+      setRequestHeader: vi.fn(),
       onreadystatechange: null,
       readyState: 4,
       status: 200,
       responseText: JSON.stringify({success: true})
-    }))
+    }) })
 
     // Mock fetch
-    global.fetch = jest.fn(() =>
+    global.fetch = vi.fn(() =>
       Promise.resolve({
         text: () => Promise.resolve(JSON.stringify({success: true}))
       })
@@ -344,7 +343,7 @@ describe("Ajax.request", () => {
     global.XMLHttpRequest = originalXMLHttpRequest
     global.fetch = originalFetch
     global.AbortController = originalAbortController
-    jest.restoreAllMocks()
+    vi.restoreAllMocks()
   })
 
   it("should use XMLHttpRequest by default", () => {

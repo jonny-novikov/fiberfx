@@ -1,12 +1,19 @@
 import DOM from "./dom";
 import ARIA from "./aria";
 
-const focusStack = [];
+const focusStack: HTMLElement[] = [];
 const default_transition_time = 200;
 
 const JS = {
   // private
-  exec(e, eventType, phxEvent, view, sourceEl, defaults) {
+  exec(
+    e: any,
+    eventType: string | null,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    defaults?: any,
+  ) {
     const [defaultKind, defaultArgs] = defaults || [
       null,
       { callback: defaults && defaults.callback },
@@ -17,19 +24,29 @@ const JS = {
         ? JSON.parse(phxEvent)
         : [[defaultKind, defaultArgs]];
 
-    commands.forEach(([kind, args]) => {
+    commands.forEach(([kind, args]: [string, any]) => {
       if (kind === defaultKind) {
         // always prefer the args, but keep existing keys from the defaultArgs
         args = { ...defaultArgs, ...args };
         args.callback = args.callback || defaultArgs.callback;
       }
-      this.filterToEls(view.liveSocket, sourceEl, args).forEach((el) => {
-        this[`exec_${kind}`](e, eventType, phxEvent, view, sourceEl, el, args);
-      });
+      this.filterToEls(view.liveSocket, sourceEl, args).forEach(
+        (el: HTMLElement) => {
+          (this as any)[`exec_${kind}`](
+            e,
+            eventType,
+            phxEvent,
+            view,
+            sourceEl,
+            el,
+            args,
+          );
+        },
+      );
     });
   },
 
-  isVisible(el) {
+  isVisible(el: HTMLElement) {
     return !!(
       el.offsetWidth ||
       el.offsetHeight ||
@@ -38,7 +55,7 @@ const JS = {
   },
 
   // returns true if any part of the element is inside the viewport
-  isInViewport(el) {
+  isInViewport(el: HTMLElement) {
     const rect = el.getBoundingClientRect();
     const windowHeight =
       window.innerHeight || document.documentElement.clientHeight;
@@ -57,7 +74,15 @@ const JS = {
 
   // commands
 
-  exec_exec(e, eventType, phxEvent, view, sourceEl, el, { attr, to }) {
+  exec_exec(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { attr, to }: any,
+  ) {
     const encodedJS = el.getAttribute(attr);
     if (!encodedJS) {
       throw new Error(`expected ${attr} to contain JS command on "${to}"`);
@@ -66,13 +91,13 @@ const JS = {
   },
 
   exec_dispatch(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { event, detail, bubbles, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { event, detail, bubbles, blocking }: any,
   ) {
     detail = detail || {};
     detail.dispatcher = sourceEl;
@@ -85,7 +110,15 @@ const JS = {
     DOM.dispatchEvent(el, event, { detail, bubbles });
   },
 
-  exec_push(e, eventType, phxEvent, view, sourceEl, el, args) {
+  exec_push(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    args: any,
+  ) {
     const {
       event,
       data,
@@ -96,7 +129,7 @@ const JS = {
       dispatcher,
       callback,
     } = args;
-    const pushOpts = {
+    const pushOpts: any = {
       loading,
       value,
       target,
@@ -107,7 +140,7 @@ const JS = {
       eventType === "change" && dispatcher ? dispatcher : sourceEl;
     const phxTarget =
       target || targetSrc.getAttribute(view.binding("target")) || targetSrc;
-    const handler = (targetView, targetCtx) => {
+    const handler = (targetView: any, targetCtx: any) => {
       if (!targetView.isConnected()) {
         return;
       }
@@ -115,7 +148,9 @@ const JS = {
         let { newCid, _target } = args;
         _target =
           _target ||
-          (DOM.isFormAssociated(sourceEl) ? sourceEl.name : undefined);
+          (DOM.isFormAssociated(sourceEl)
+            ? (sourceEl as HTMLInputElement).name
+            : undefined);
         if (_target) {
           pushOpts._target = _target;
         }
@@ -158,7 +193,15 @@ const JS = {
     }
   },
 
-  exec_navigate(e, eventType, phxEvent, view, sourceEl, el, { href, replace }) {
+  exec_navigate(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { href, replace }: any,
+  ) {
     view.liveSocket.historyRedirect(
       e,
       href,
@@ -168,7 +211,15 @@ const JS = {
     );
   },
 
-  exec_patch(e, eventType, phxEvent, view, sourceEl, el, { href, replace }) {
+  exec_patch(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { href, replace }: any,
+  ) {
     view.liveSocket.pushHistoryPatch(
       e,
       href,
@@ -177,7 +228,14 @@ const JS = {
     );
   },
 
-  exec_focus(e, eventType, phxEvent, view, sourceEl, el) {
+  exec_focus(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+  ) {
     ARIA.attemptFocus(el);
     // in case the JS.focus command is in a JS.show/hide/toggle chain, for show we need
     // to wait for JS.show to have updated the element's display property (see exec_toggle)
@@ -187,7 +245,14 @@ const JS = {
     });
   },
 
-  exec_focus_first(e, eventType, phxEvent, view, sourceEl, el) {
+  exec_focus_first(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+  ) {
     ARIA.focusFirstInteractive(el) || ARIA.focusFirst(el);
     // if you wonder about the nested animation frames, see exec_focus
     window.requestAnimationFrame(() => {
@@ -197,11 +262,25 @@ const JS = {
     });
   },
 
-  exec_push_focus(e, eventType, phxEvent, view, sourceEl, el) {
+  exec_push_focus(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+  ) {
     focusStack.push(el || sourceEl);
   },
 
-  exec_pop_focus(_e, _eventType, _phxEvent, _view, _sourceEl, _el) {
+  exec_pop_focus(
+    _e: any,
+    _eventType: string,
+    _phxEvent: any,
+    _view: any,
+    _sourceEl: HTMLElement,
+    _el: HTMLElement,
+  ) {
     const el = focusStack.pop();
     if (el) {
       el.focus();
@@ -213,124 +292,140 @@ const JS = {
   },
 
   exec_add_class(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { names, transition, time, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { names, transition, time, blocking }: any,
   ) {
     this.addOrRemoveClasses(el, names, [], transition, time, view, blocking);
   },
 
   exec_remove_class(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { names, transition, time, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { names, transition, time, blocking }: any,
   ) {
     this.addOrRemoveClasses(el, [], names, transition, time, view, blocking);
   },
 
   exec_toggle_class(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { names, transition, time, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { names, transition, time, blocking }: any,
   ) {
     this.toggleClasses(el, names, transition, time, view, blocking);
   },
 
   exec_toggle_attr(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { attr: [attr, val1, val2] },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { attr: [attr, val1, val2] }: any,
   ) {
     this.toggleAttr(el, attr, val1, val2);
   },
 
-  exec_ignore_attrs(e, eventType, phxEvent, view, sourceEl, el, { attrs }) {
+  exec_ignore_attrs(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { attrs }: any,
+  ) {
     this.ignoreAttrs(el, attrs);
   },
 
   exec_transition(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { time, transition, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { time, transition, blocking }: any,
   ) {
     this.addOrRemoveClasses(el, [], [], transition, time, view, blocking);
   },
 
   exec_toggle(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { display, ins, outs, time, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { display, ins, outs, time, blocking }: any,
   ) {
     this.toggle(eventType, view, el, display, ins, outs, time, blocking);
   },
 
   exec_show(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { display, transition, time, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { display, transition, time, blocking }: any,
   ) {
     this.show(eventType, view, el, display, transition, time, blocking);
   },
 
   exec_hide(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { display, transition, time, blocking },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { display, transition, time, blocking }: any,
   ) {
     this.hide(eventType, view, el, display, transition, time, blocking);
   },
 
   exec_set_attr(
-    e,
-    eventType,
-    phxEvent,
-    view,
-    sourceEl,
-    el,
-    { attr: [attr, val] },
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { attr: [attr, val] }: any,
   ) {
     this.setOrRemoveAttrs(el, [[attr, val]], []);
   },
 
-  exec_remove_attr(e, eventType, phxEvent, view, sourceEl, el, { attr }) {
+  exec_remove_attr(
+    e: any,
+    eventType: string,
+    phxEvent: any,
+    view: any,
+    sourceEl: HTMLElement,
+    el: HTMLElement,
+    { attr }: any,
+  ) {
     this.setOrRemoveAttrs(el, [], [attr]);
   },
 
-  ignoreAttrs(el, attrs) {
+  ignoreAttrs(el: HTMLElement, attrs: any) {
     DOM.putPrivate(el, "JS:ignore_attrs", {
-      apply: (fromEl, toEl) => {
+      apply: (fromEl: HTMLElement, toEl: HTMLElement) => {
         let fromAttributes = Array.from(fromEl.attributes);
         let fromAttributeNames = fromAttributes.map((attr) => attr.name);
         Array.from(toEl.attributes)
@@ -351,7 +446,7 @@ const JS = {
     });
   },
 
-  onBeforeElUpdated(fromEl, toEl) {
+  onBeforeElUpdated(fromEl: HTMLElement, toEl: HTMLElement) {
     const ignoreAttrs = DOM.private(fromEl, "JS:ignore_attrs");
     if (ignoreAttrs) {
       ignoreAttrs.apply(fromEl, toEl);
@@ -360,7 +455,15 @@ const JS = {
 
   // utils for commands
 
-  show(eventType, view, el, display, transition, time, blocking) {
+  show(
+    eventType: string | null,
+    view: any,
+    el: HTMLElement,
+    display: any,
+    transition: any,
+    time: any,
+    blocking: any,
+  ) {
     if (!this.isVisible(el)) {
       this.toggle(
         eventType,
@@ -375,7 +478,15 @@ const JS = {
     }
   },
 
-  hide(eventType, view, el, display, transition, time, blocking) {
+  hide(
+    eventType: string | null,
+    view: any,
+    el: HTMLElement,
+    display: any,
+    transition: any,
+    time: any,
+    blocking: any,
+  ) {
     if (this.isVisible(el)) {
       this.toggle(
         eventType,
@@ -390,7 +501,16 @@ const JS = {
     }
   },
 
-  toggle(eventType, view, el, display, ins, outs, time, blocking) {
+  toggle(
+    eventType: string | null,
+    view: any,
+    el: HTMLElement,
+    display: any,
+    ins: any,
+    outs: any,
+    time: any,
+    blocking: any,
+  ) {
     time = time || default_transition_time;
     const [inClasses, inStartClasses, inEndClasses] = ins || [[], [], []];
     const [outClasses, outStartClasses, outEndClasses] = outs || [[], [], []];
@@ -414,7 +534,7 @@ const JS = {
           DOM.putSticky(
             el,
             "toggle",
-            (currentEl) => (currentEl.style.display = "none"),
+            (currentEl: HTMLElement) => (currentEl.style.display = "none"),
           );
           el.dispatchEvent(new Event("phx:hide-end"));
         };
@@ -448,7 +568,7 @@ const JS = {
               DOM.putSticky(
                 el,
                 "toggle",
-                (currentEl) => (currentEl.style.display = stickyDisplay),
+                (currentEl: HTMLElement) => (currentEl.style.display = stickyDisplay),
               );
               this.addOrRemoveClasses(el, inEndClasses, inStartClasses);
             });
@@ -473,7 +593,7 @@ const JS = {
           DOM.putSticky(
             el,
             "toggle",
-            (currentEl) => (currentEl.style.display = "none"),
+            (currentEl: HTMLElement) => (currentEl.style.display = "none"),
           );
           el.dispatchEvent(new Event("phx:hide-end"));
         });
@@ -484,7 +604,7 @@ const JS = {
           DOM.putSticky(
             el,
             "toggle",
-            (currentEl) => (currentEl.style.display = stickyDisplay),
+            (currentEl: HTMLElement) => (currentEl.style.display = stickyDisplay),
           );
           el.dispatchEvent(new Event("phx:show-end"));
         });
@@ -492,7 +612,14 @@ const JS = {
     }
   },
 
-  toggleClasses(el, classes, transition, time, view, blocking) {
+  toggleClasses(
+    el: HTMLElement,
+    classes: string[],
+    transition: any,
+    time: any,
+    view: any,
+    blocking: any,
+  ) {
     window.requestAnimationFrame(() => {
       const [prevAdds, prevRemoves] = DOM.getSticky(el, "classes", [[], []]);
       const newAdds = classes.filter(
@@ -513,7 +640,7 @@ const JS = {
     });
   },
 
-  toggleAttr(el, attr, val1, val2) {
+  toggleAttr(el: HTMLElement, attr: string, val1: string, val2?: string) {
     if (el.hasAttribute(attr)) {
       if (val2 !== undefined) {
         // toggle between val1 and val2
@@ -531,7 +658,15 @@ const JS = {
     }
   },
 
-  addOrRemoveClasses(el, adds, removes, transition, time, view, blocking) {
+  addOrRemoveClasses(
+    el: HTMLElement,
+    adds: string[],
+    removes: string[],
+    transition?: any,
+    time?: any,
+    view?: any,
+    blocking?: any,
+  ) {
     time = time || default_transition_time;
     const [transitionRun, transitionStart, transitionEnd] = transition || [
       [],
@@ -576,13 +711,13 @@ const JS = {
         (name) => prevRemoves.indexOf(name) < 0 && el.classList.contains(name),
       );
       const newAdds = prevAdds
-        .filter((name) => removes.indexOf(name) < 0)
+        .filter((name: string) => removes.indexOf(name) < 0)
         .concat(keepAdds);
       const newRemoves = prevRemoves
-        .filter((name) => adds.indexOf(name) < 0)
+        .filter((name: string) => adds.indexOf(name) < 0)
         .concat(keepRemoves);
 
-      DOM.putSticky(el, "classes", (currentEl) => {
+      DOM.putSticky(el, "classes", (currentEl: HTMLElement) => {
         currentEl.classList.remove(...newRemoves);
         currentEl.classList.add(...newAdds);
         return [newAdds, newRemoves];
@@ -590,15 +725,19 @@ const JS = {
     });
   },
 
-  setOrRemoveAttrs(el, sets, removes) {
+  setOrRemoveAttrs(
+    el: HTMLElement,
+    sets: [string, string][],
+    removes: string[],
+  ) {
     const [prevSets, prevRemoves] = DOM.getSticky(el, "attrs", [[], []]);
 
     const alteredAttrs = sets.map(([attr, _val]) => attr).concat(removes);
     const newSets = prevSets
-      .filter(([attr, _val]) => !alteredAttrs.includes(attr))
+      .filter(([attr, _val]: [string, string]) => !alteredAttrs.includes(attr))
       .concat(sets);
     const newRemoves = prevRemoves
-      .filter((attr) => !alteredAttrs.includes(attr))
+      .filter((attr: string) => !alteredAttrs.includes(attr))
       .concat(removes);
 
     // If element ID is touched via JavaScript, mark it for cheap lookup during morphdom
@@ -606,22 +745,24 @@ const JS = {
       DOM.putPrivate(el, "clientsideIdAttribute", true);
     }
 
-    DOM.putSticky(el, "attrs", (currentEl) => {
-      newRemoves.forEach((attr) => currentEl.removeAttribute(attr));
-      newSets.forEach(([attr, val]) => currentEl.setAttribute(attr, val));
+    DOM.putSticky(el, "attrs", (currentEl: HTMLElement) => {
+      newRemoves.forEach((attr: string) => currentEl.removeAttribute(attr));
+      newSets.forEach(([attr, val]: [string, string]) =>
+        currentEl.setAttribute(attr, val),
+      );
       return [newSets, newRemoves];
     });
   },
 
-  hasAllClasses(el, classes) {
+  hasAllClasses(el: HTMLElement, classes: string[]) {
     return classes.every((name) => el.classList.contains(name));
   },
 
-  isToggledOut(el, outClasses) {
+  isToggledOut(el: HTMLElement, outClasses: string[]) {
     return !this.isVisible(el) || this.hasAllClasses(el, outClasses);
   },
 
-  filterToEls(liveSocket, sourceEl, { to }) {
+  filterToEls(liveSocket: any, sourceEl: HTMLElement, { to }: any) {
     const defaultQuery = () => {
       if (typeof to === "string") {
         return document.querySelectorAll(to);
@@ -637,13 +778,15 @@ const JS = {
       : [sourceEl];
   },
 
-  defaultDisplay(el) {
+  defaultDisplay(el: HTMLElement) {
     return (
-      { tr: "table-row", td: "table-cell" }[el.tagName.toLowerCase()] || "block"
+      ({ tr: "table-row", td: "table-cell" } as { [tag: string]: string })[
+        el.tagName.toLowerCase()
+      ] || "block"
     );
   },
 
-  transitionClasses(val) {
+  transitionClasses(val: any) {
     if (!val) {
       return null;
     }

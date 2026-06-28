@@ -37,7 +37,11 @@ const VOID_TAGS = new Set([
 ]);
 const quoteChars = new Set(["'", '"']);
 
-export const modifyRoot = (html, attrs, clearInnerHTML) => {
+export const modifyRoot = (
+  html: string,
+  attrs: { [key: string]: any },
+  clearInnerHTML?: boolean,
+): [string, string, string] => {
   let i = 0;
   let insideComment = false;
   let beforeTag, afterTag, tag, tagNameEndsAt, id, newHTML;
@@ -121,7 +125,11 @@ export const modifyRoot = (html, attrs, clearInnerHTML) => {
 
 /** @internal */
 export default class Rendered {
-  static extract(diff) {
+  viewId: string;
+  rendered: any;
+  magicId: number;
+
+  static extract(diff: any) {
     const { [REPLY]: reply, [EVENTS]: events, [TITLE]: title } = diff;
     delete diff[REPLY];
     delete diff[EVENTS];
@@ -129,7 +137,7 @@ export default class Rendered {
     return { diff, title, reply: reply || null, events: events || [] };
   }
 
-  constructor(viewId, rendered) {
+  constructor(viewId: string, rendered: any) {
     this.viewId = viewId;
     this.rendered = {};
     this.magicId = 0;
@@ -140,7 +148,7 @@ export default class Rendered {
     return this.viewId;
   }
 
-  toString(onlyCids) {
+  toString(onlyCids?: any) {
     const { buffer: str, streams: streams } = this.recursiveToString(
       this.rendered,
       this.rendered[COMPONENTS],
@@ -152,11 +160,11 @@ export default class Rendered {
   }
 
   recursiveToString(
-    rendered,
-    components = rendered[COMPONENTS],
-    onlyCids,
-    changeTracking,
-    rootAttrs,
+    rendered: any,
+    components: any = rendered[COMPONENTS],
+    onlyCids?: any,
+    changeTracking?: any,
+    rootAttrs?: any,
   ) {
     onlyCids = onlyCids ? new Set(onlyCids) : null;
     const output = {
@@ -169,22 +177,22 @@ export default class Rendered {
     return { buffer: output.buffer, streams: output.streams };
   }
 
-  componentCIDs(diff) {
+  componentCIDs(diff: any) {
     return Object.keys(diff[COMPONENTS] || {}).map((i) => parseInt(i));
   }
 
-  isComponentOnlyDiff(diff) {
+  isComponentOnlyDiff(diff: any) {
     if (!diff[COMPONENTS]) {
       return false;
     }
     return Object.keys(diff).length === 1;
   }
 
-  getComponent(diff, cid) {
+  getComponent(diff: any, cid: any) {
     return diff[COMPONENTS][cid];
   }
 
-  resetRender(cid) {
+  resetRender(cid: any) {
     // we are racing a component destroy, it could not exist, so
     // make sure that we don't try to set reset on undefined
     if (this.rendered[COMPONENTS][cid]) {
@@ -192,7 +200,7 @@ export default class Rendered {
     }
   }
 
-  mergeDiff(diff) {
+  mergeDiff(diff: any) {
     const newc = diff[COMPONENTS];
     const cache = {};
     delete diff[COMPONENTS];
@@ -213,7 +221,7 @@ export default class Rendered {
     }
   }
 
-  cachedFindComponent(cid, cdiff, oldc, newc, cache) {
+  cachedFindComponent(cid: any, cdiff: any, oldc: any, newc: any, cache: any) {
     if (cache[cid]) {
       return cache[cid];
     } else {
@@ -247,7 +255,7 @@ export default class Rendered {
     }
   }
 
-  mutableMerge(target, source) {
+  mutableMerge(target: any, source: any) {
     if (source[STATIC] !== undefined) {
       return source;
     } else {
@@ -256,7 +264,7 @@ export default class Rendered {
     }
   }
 
-  doMutableMerge(target, source) {
+  doMutableMerge(target: any, source: any) {
     if (source[KEYED]) {
       this.mergeKeyed(target, source);
     } else {
@@ -276,17 +284,17 @@ export default class Rendered {
     }
   }
 
-  clone(diff) {
+  clone(diff: any) {
     if ("structuredClone" in window) {
       return structuredClone(diff);
     } else {
-      // fallback for jest
+      // fallback for non-DOM environments
       return JSON.parse(JSON.stringify(diff));
     }
   }
 
   // keyed comprehensions
-  mergeKeyed(target, source) {
+  mergeKeyed(target: any, source: any) {
     // we need to clone the target since elements can move and otherwise
     // it could happen that we modify an element that we'll need to refer to
     // later
@@ -340,7 +348,7 @@ export default class Rendered {
   // mutableMerge, where we set newRender to true if there is a root
   // (effectively forcing the new version to be rendered instead of skipped)
   //
-  cloneMerge(target, source, pruneMagicId) {
+  cloneMerge(target: any, source: any, pruneMagicId: boolean) {
     let merged;
     if (source[KEYED]) {
       merged = this.clone(target);
@@ -366,7 +374,7 @@ export default class Rendered {
     return merged;
   }
 
-  componentToString(cid) {
+  componentToString(cid: any) {
     const { buffer: str, streams } = this.recursiveCIDToString(
       this.rendered[COMPONENTS],
       cid,
@@ -376,7 +384,7 @@ export default class Rendered {
     return { buffer: strippedHTML, streams: streams };
   }
 
-  pruneCIDs(cids) {
+  pruneCIDs(cids: any[]) {
     cids.forEach((cid) => delete this.rendered[COMPONENTS][cid]);
   }
 
@@ -386,11 +394,11 @@ export default class Rendered {
     return this.rendered;
   }
 
-  isNewFingerprint(diff = {}) {
+  isNewFingerprint(diff: any = {}) {
     return !!diff[STATIC];
   }
 
-  templateStatic(part, templates) {
+  templateStatic(part: any, templates: any) {
     if (typeof part === "number") {
       return templates[part];
     } else {
@@ -406,7 +414,13 @@ export default class Rendered {
   // Converts rendered tree to output buffer.
   //
   // changeTracking controls if we can apply the PHX_SKIP optimization.
-  toOutputBuffer(rendered, templates, output, changeTracking, rootAttrs = {}) {
+  toOutputBuffer(
+    rendered: any,
+    templates: any,
+    output: any,
+    changeTracking: any,
+    rootAttrs: any = {},
+  ) {
     if (rendered[KEYED]) {
       return this.comprehensionToBuffer(
         rendered,
@@ -479,7 +493,12 @@ export default class Rendered {
     }
   }
 
-  comprehensionToBuffer(rendered, templates, output, changeTracking) {
+  comprehensionToBuffer(
+    rendered: any,
+    templates: any,
+    output: any,
+    changeTracking: any,
+  ) {
     const keyedTemplates = templates || rendered[TEMPLATES];
     const statics = this.templateStatic(rendered[STATIC], templates);
     rendered[STATIC] = statics;
@@ -513,7 +532,12 @@ export default class Rendered {
     }
   }
 
-  dynamicToBuffer(rendered, templates, output, changeTracking) {
+  dynamicToBuffer(
+    rendered: any,
+    templates: any,
+    output: any,
+    changeTracking: any,
+  ) {
     if (typeof rendered === "number") {
       const { buffer: str, streams } = this.recursiveCIDToString(
         output.components,
@@ -529,7 +553,7 @@ export default class Rendered {
     }
   }
 
-  recursiveCIDToString(components, cid, onlyCids) {
+  recursiveCIDToString(components: any, cid: any, onlyCids?: any) {
     const component =
       components[cid] || logError(`no component for CID ${cid}`, components);
     const attrs = { [PHX_COMPONENT]: cid, [PHX_VIEW_REF]: this.viewId };

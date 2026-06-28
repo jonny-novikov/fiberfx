@@ -2,7 +2,8 @@ import { PHX_VIEW_SELECTOR } from "./constants";
 
 import EntryUploader from "./entry_uploader";
 
-export const logError = (msg, obj?) => console.error && console.error(msg, obj);
+export const logError = (msg: any, obj?: any) =>
+  console.error && console.error(msg, obj);
 
 // Live navigation can only stay within the current origin, as it joins the
 // target over the existing socket. A full URL to a different origin (or a
@@ -28,7 +29,7 @@ export const ensureSameOrigin = (
   }
 };
 
-export const isCid = (cid): cid is number | string => {
+export const isCid = (cid: any): cid is number | string => {
   const type = typeof cid;
   return type === "number" || (type === "string" && /^(0|[1-9]\d*)$/.test(cid));
 };
@@ -47,7 +48,7 @@ export function detectDuplicateIds() {
   }
 }
 
-export function detectInvalidStreamInserts(inserts) {
+export function detectInvalidStreamInserts(inserts: any) {
   const errors = new Set();
   Object.keys(inserts).forEach((id) => {
     const streamEl = document.getElementById(id);
@@ -64,21 +65,21 @@ export function detectInvalidStreamInserts(inserts) {
   errors.forEach((error) => console.error(error));
 }
 
-export const debug = (view, kind, msg, obj) => {
+export const debug = (view: any, kind: string, msg: string, obj: any) => {
   if (view.liveSocket.isDebugEnabled()) {
     console.log(`${view.id} ${kind}: ${msg} - `, obj);
   }
 };
 
 // wraps value in closure or returns closure
-export const closure = (val?) =>
+export const closure = (val?: any) =>
   typeof val === "function"
     ? val
     : function () {
         return val;
       };
 
-export const clone = (obj) => {
+export const clone = (obj: any) => {
   return JSON.parse(JSON.stringify(obj));
 };
 
@@ -101,30 +102,35 @@ export const closestPhxBinding = (
   return null;
 };
 
-export const isObject = (obj) => {
+export const isObject = (obj: any) => {
   return obj !== null && typeof obj === "object" && !(obj instanceof Array);
 };
 
-export const isEqualObj = (obj1, obj2) =>
+export const isEqualObj = (obj1: any, obj2: any) =>
   JSON.stringify(obj1) === JSON.stringify(obj2);
 
-export const isEmpty = (obj) => {
+export const isEmpty = (obj: any) => {
   for (const x in obj) {
     return false;
   }
   return true;
 };
 
-export const maybe = (el, callback) => el && callback(el);
+export const maybe = (el: any, callback: any) => el && callback(el);
 
-export const channelUploader = function (entries, onError, resp, liveSocket) {
-  entries.forEach((entry) => {
+export const channelUploader = function (
+  entries: any,
+  onError: any,
+  resp: any,
+  liveSocket: any,
+) {
+  entries.forEach((entry: any) => {
     const entryUploader = new EntryUploader(entry, resp.config, liveSocket);
     entryUploader.upload();
   });
 };
 
-export const eventContainsFiles = (e) => {
+export const eventContainsFiles = (e: any) => {
   if (e.dataTransfer.types) {
     for (let i = 0; i < e.dataTransfer.types.length; i++) {
       if (e.dataTransfer.types[i] === "Files") {

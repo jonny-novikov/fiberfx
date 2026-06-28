@@ -118,7 +118,7 @@ describe("debounce", function () {
     expect(el.value).toBe("two");
   });
 
-  test("triggers on timeout", (done) => {
+  test("triggers on timeout", () => new Promise<void>((done) => {
     let calls = 0;
     const el: HTMLInputElement = container().querySelector(
       "input[name=debounce-200]",
@@ -158,9 +158,9 @@ describe("debounce", function () {
         });
       });
     });
-  });
+  }));
 
-  test("uses default when value is blank", (done) => {
+  test("uses default when value is blank", () => new Promise<void>((done) => {
     let calls = 0;
     const el: HTMLInputElement = container().querySelector(
       "input[name=debounce-200]",
@@ -194,9 +194,9 @@ describe("debounce", function () {
         done();
       });
     });
-  });
+  }));
 
-  test("cancels trigger on submit", (done) => {
+  test("cancels trigger on submit", () => new Promise<void>((done) => {
     let calls = 0;
     const parent = container();
     const el: HTMLInputElement = parent.querySelector(
@@ -230,11 +230,11 @@ describe("debounce", function () {
         done();
       });
     });
-  });
+  }));
 });
 
 describe("throttle", function () {
-  test("triggers immediately, then on timeout", (done) => {
+  test("triggers immediately, then on timeout", () => new Promise<void>((done) => {
     let calls = 0;
     const el: HTMLButtonElement = container().querySelector("#throttle-200")!;
 
@@ -270,9 +270,9 @@ describe("throttle", function () {
         done();
       });
     });
-  });
+  }));
 
-  test("uses default when value is blank", (done) => {
+  test("uses default when value is blank", () => new Promise<void>((done) => {
     let calls = 0;
     const el: HTMLButtonElement = container().querySelector("#throttle-200")!;
     el.setAttribute("phx-throttle", "");
@@ -309,9 +309,9 @@ describe("throttle", function () {
         done();
       });
     });
-  });
+  }));
 
-  test("cancels trigger on submit", (done) => {
+  test("cancels trigger on submit", () => new Promise<void>((done) => {
     let calls = 0;
     const el: HTMLInputElement = container().querySelector(
       "input[name=throttle-200]",
@@ -343,9 +343,9 @@ describe("throttle", function () {
       expect(el.value).toBe("changed3");
       done();
     });
-  });
+  }));
 
-  test("triggers only once when there is only one event", (done) => {
+  test("triggers only once when there is only one event", () => new Promise<void>((done) => {
     let calls = 0;
     const el: HTMLButtonElement = container().querySelector("#throttle-200")!;
 
@@ -371,9 +371,9 @@ describe("throttle", function () {
       expect(calls).toBe(1);
       done();
     });
-  });
+  }));
 
-  test("sends value on blur when phx-blur dispatches change", (done) => {
+  test("sends value on blur when phx-blur dispatches change", () => new Promise<void>((done) => {
     let calls = 0;
     const el: HTMLInputElement = container().querySelector(
       "input[name=throttle-range-with-blur]",
@@ -416,11 +416,11 @@ describe("throttle", function () {
       expect(el.innerText).toBe("now:2");
       done();
     });
-  });
+  }));
 });
 
 describe("throttle keydown", function () {
-  test("when the same key is pressed triggers immediately, then on timeout", (done) => {
+  test("when the same key is pressed triggers immediately, then on timeout", () => new Promise<void>((done) => {
     const keyPresses = {};
     const el: HTMLDivElement = container().querySelector("#throttle-keydown")!;
 
@@ -453,9 +453,9 @@ describe("throttle keydown", function () {
       expect(keyPresses["a"]).toBe(2);
       done();
     });
-  });
+  }));
 
-  test("when different key is pressed triggers immediately", (done) => {
+  test("when different key is pressed triggers immediately", () => new Promise<void>((done) => {
     const keyPresses = {};
     const el: HTMLDivElement = container().querySelector("#throttle-keydown")!;
 
@@ -485,5 +485,5 @@ describe("throttle keydown", function () {
     expect(keyPresses["a"]).toBe(2);
     expect(keyPresses["b"]).toBe(2);
     done();
-  });
+  }));
 });

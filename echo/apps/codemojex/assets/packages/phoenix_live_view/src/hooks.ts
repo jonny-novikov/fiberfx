@@ -11,13 +11,13 @@ import type { Hook } from "./view_hook";
 import LiveUploader from "./live_uploader";
 import ARIA from "./aria";
 
-const findScrollContainer = (el): HTMLElement | null => {
+const findScrollContainer = (el: HTMLElement): HTMLElement | null => {
   // the scroll event won't be fired on the html/body element even if overflow is set
   // therefore we return null to instead listen for scroll events on document
   if (["HTML", "BODY"].indexOf(el.nodeName.toUpperCase()) >= 0) return null;
   if (["scroll", "auto"].indexOf(getComputedStyle(el).overflowY) >= 0)
     return el;
-  return findScrollContainer(el.parentElement);
+  return findScrollContainer(el.parentElement!);
 };
 
 const scrollTop = (scrollContainer: HTMLElement | null) => {
@@ -90,7 +90,7 @@ const InfiniteScroll: Hook<
 
     const onTopOverrun = this.throttle(
       throttleInterval,
-      (topEvent, firstChild) => {
+      (topEvent: string, firstChild: Element) => {
         pendingOp = () => true;
         this.liveSocket.js().push(this.el, topEvent, {
           value: { id: firstChild.id, _overran: true },
@@ -103,7 +103,7 @@ const InfiniteScroll: Hook<
 
     const onFirstChildAtTop = this.throttle(
       throttleInterval,
-      (topEvent, firstChild) => {
+      (topEvent: string, firstChild: Element) => {
         pendingOp = () => firstChild.scrollIntoView({ block: "start" });
         this.liveSocket.js().push(this.el, topEvent, {
           value: { id: firstChild.id },
@@ -122,7 +122,7 @@ const InfiniteScroll: Hook<
 
     const onLastChildAtBottom = this.throttle(
       throttleInterval,
-      (bottomEvent, lastChild) => {
+      (bottomEvent: string, lastChild: Element) => {
         pendingOp = () => lastChild.scrollIntoView({ block: "end" });
         this.liveSocket.js().push(this.el, bottomEvent, {
           value: { id: lastChild.id },
@@ -209,11 +209,11 @@ const InfiniteScroll: Hook<
     }
   },
 
-  throttle(interval, callback) {
+  throttle(interval: number, callback: (...args: any[]) => void) {
     let lastCallAt = 0;
-    let timer;
+    let timer: ReturnType<typeof setTimeout> | null | undefined;
 
-    return (...args) => {
+    return (...args: any[]) => {
       const now = Date.now();
       const remainingTime = interval - (now - lastCallAt);
 
@@ -304,7 +304,7 @@ const Hooks: Record<string, Hook<any, any>> = {
     mounted() {
       this.focusStart = this.el.firstElementChild;
       this.focusEnd = this.el.lastElementChild;
-      this.focusStart.addEventListener("focus", (e) => {
+      this.focusStart.addEventListener("focus", (e: any) => {
         if (!e.relatedTarget || !this.el.contains(e.relatedTarget)) {
           // Handle focus entering from outside (e.g. Tab when body is focused)
           // https://github.com/phoenixframework/phoenix_live_view/issues/3636
@@ -314,7 +314,7 @@ const Hooks: Record<string, Hook<any, any>> = {
           ARIA.focusLast(this.el);
         }
       });
-      this.focusEnd.addEventListener("focus", (e) => {
+      this.focusEnd.addEventListener("focus", (e: any) => {
         if (!e.relatedTarget || !this.el.contains(e.relatedTarget)) {
           // Handle focus entering from outside (e.g. Shift+Tab when body is focused)
           // https://github.com/phoenixframework/phoenix_live_view/issues/3636

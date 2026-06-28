@@ -1,20 +1,23 @@
-import {jest} from "@jest/globals"
+/**
+ * @vitest-environment jsdom
+ * @vitest-environment-options {"url": "https://example.com/"}
+ */
 import {WebSocket, Server as WebSocketServer} from "mock-socket"
 import {encode} from "./serializer"
-import {Socket, LongPoll} from "../js/phoenix"
-import {SOCKET_STATES} from "../js/phoenix/constants"
+import {Socket, LongPoll} from "../src"
+import {SOCKET_STATES} from "../src/constants"
 
 let socket
 
 describe("with transports", function (){
   beforeAll(() => {
     window.WebSocket = WebSocket
-    const mockOpen = jest.fn()
-    const mockSend = jest.fn()
-    const mockAbort = jest.fn()
-    const mockSetRequestHeader = jest.fn()
+    const mockOpen = vi.fn()
+    const mockSend = vi.fn()
+    const mockAbort = vi.fn()
+    const mockSetRequestHeader = vi.fn()
     
-    global.XMLHttpRequest = jest.fn(() => ({
+    global.XMLHttpRequest = vi.fn(function (){ return ({
       open: mockOpen,
       send: mockSend,
       abort: mockAbort,
@@ -23,7 +26,7 @@ describe("with transports", function (){
       status: 200,
       responseText: JSON.stringify({}),
       onreadystatechange: null,
-    }))
+    }) })
   })
 
   describe("constructor", function (){
@@ -76,19 +79,19 @@ describe("with transports", function (){
     })
 
     describe("with Websocket", function (){
-      it("defaults to Websocket transport if available", function (done){
+      it("defaults to Websocket transport if available", () => new Promise<void>((done) => {
         let mockServer = new WebSocketServer("wss://example.com/")
         socket = new Socket("/socket")
         expect(socket.transport).toBe(WebSocket)
         mockServer.stop(() => done())
-      })
+      }))
     })
 
     describe("longPollFallbackMs", function (){
-      it("falls back to longpoll when set after primary transport failure", function (done){
+      it("falls back to longpoll when set after primary transport failure", () => new Promise<void>((done) => {
         let mockServer
         socket = new Socket("/socket", {longPollFallbackMs: 20})
-        const replaceSpy = jest.spyOn(socket, "replaceTransport")
+        const replaceSpy = vi.spyOn(socket, "replaceTransport")
         mockServer = new WebSocketServer("wss://example.test/")
         mockServer.stop(() => {
           expect(socket.transport).toBe(WebSocket)
@@ -100,14 +103,14 @@ describe("with transports", function (){
           })
           socket.connect()
         })
-      })
+      }))
     })
   })
 
   describe("visibilitychange", function (){
     it("does not connect a socket that was never connected", function (){
       socket = new Socket("/socket")
-      const teardownSpy = jest.spyOn(socket, "teardown")
+      const teardownSpy = vi.spyOn(socket, "teardown")
 
       Object.defineProperty(document, "visibilityState", {value: "hidden", writable: true})
       window.dispatchEvent(new Event("visibilitychange"))
@@ -121,7 +124,7 @@ describe("with transports", function (){
     it("reconnects on visibility change after unclean close", function (){
       socket = new Socket("/socket")
       socket.closeWasClean = false
-      const teardownSpy = jest.spyOn(socket, "teardown")
+      const teardownSpy = vi.spyOn(socket, "teardown")
 
       Object.defineProperty(document, "visibilityState", {value: "visible", writable: true})
       window.dispatchEvent(new Event("visibilitychange"))
@@ -132,7 +135,7 @@ describe("with transports", function (){
     it("does not reconnect on visibility change after clean close", function (){
       socket = new Socket("/socket")
       socket.closeWasClean = true
-      const teardownSpy = jest.spyOn(socket, "teardown")
+      const teardownSpy = vi.spyOn(socket, "teardown")
 
       Object.defineProperty(document, "visibilityState", {value: "visible", writable: true})
       window.dispatchEvent(new Event("visibilitychange"))
@@ -175,9 +178,9 @@ describe("with transports", function (){
       mockServer = new WebSocketServer("wss://example.com/")
     })
 
-    afterAll(function (done){
+    afterAll(() => new Promise<void>((done) => {
       mockServer.stop(() => done())
-    })
+    }))
 
     beforeEach(function (){
       socket = new Socket("/socket")
@@ -281,24 +284,24 @@ describe("with transports", function (){
       mockServer = new WebSocketServer("wss://example.com/")
     })
 
-    afterAll(function (done){
+    afterAll(() => new Promise<void>((done) => {
       mockServer.stop(() => done())
-    })
+    }))
 
     beforeEach(function (){
       socket = new Socket("/socket")
     })
 
-    it("removes existing connection", function (done){
+    it("removes existing connection", () => new Promise<void>((done) => {
       socket.connect()
       socket.disconnect()
       socket.disconnect(() => {
         expect(socket.conn).toBeNull()
         done()
       })
-    })
+    }))
 
-    it("calls callback", function (done){
+    it("calls callback", () => new Promise<void>((done) => {
       let count = 0
       socket.connect()
       socket.disconnect(() => {
@@ -306,17 +309,17 @@ describe("with transports", function (){
         expect(count).toBe(1)
         done()
       })
-    })
+    }))
 
-    it("calls connection close callback", function (done){
+    it("calls connection close callback", () => new Promise<void>((done) => {
       socket.connect()
-      const closeSpy = jest.spyOn(socket.conn, "close")
+      const closeSpy = vi.spyOn(socket.conn, "close")
 
       socket.disconnect(() => {
         expect(closeSpy).toHaveBeenCalledWith(1000, "reason")
         done()
       }, 1000, "reason")
-    })
+    }))
 
     it("does not throw when no connection", function (){
       expect(() => {
@@ -348,7 +351,7 @@ describe("with transports", function (){
         return conn
       }
 
-      jest.useFakeTimers()
+      vi.useFakeTimers()
 
       socket = new Socket("/socket", {
         heartbeatIntervalMs: 30000,
@@ -361,19 +364,19 @@ describe("with transports", function (){
 
       // Disconnect triggers teardown, which waits for bufferedAmount to be zero or 2250ms,
       // then awaits SOCKET_STATES.closed before calling the callback.
-      const disconnected = jest.fn()
+      const disconnected = vi.fn()
       socket.disconnect(disconnected)
 
       // For now, the conn is still set.
       expect(socket.conn).toBeTruthy()
 
       // Advance time by > 2250ms, which means we are waiting for socket to transition to closed
-      jest.advanceTimersByTime(3000)
+      vi.advanceTimersByTime(3000)
 
       // Now we call connect, while the teardown is still running
       socket.connect()
       // By now, waitForSocketClosed should be done, but now there's a new conn!
-      jest.advanceTimersByTime(3000)
+      vi.advanceTimersByTime(3000)
       expect(socket.conn).not.toBe(originalConn)
 
       const openConns = connections.filter(c => c.readyState === SOCKET_STATES.open)
@@ -385,7 +388,7 @@ describe("with transports", function (){
       // the original disconnected should have been called
       expect(disconnected).toHaveBeenCalled()
 
-      jest.useRealTimers()
+      vi.useRealTimers()
     })
 
     it("properly tears down old connection when disconnecting twice", function (){
@@ -412,7 +415,7 @@ describe("with transports", function (){
         return conn
       }
 
-      jest.useFakeTimers()
+      vi.useFakeTimers()
 
       socket = new Socket("/socket", {
         heartbeatIntervalMs: 30000,
@@ -422,20 +425,20 @@ describe("with transports", function (){
       })
       socket.connect()
 
-      const disconnected = jest.fn()
+      const disconnected = vi.fn()
       socket.disconnect(disconnected)
 
       // For now, the conn is still set.
       expect(socket.conn).toBeTruthy()
 
       // Advance time by > 2250ms, which means we are waiting for socket to transition to closed
-      jest.advanceTimersByTime(3000)
+      vi.advanceTimersByTime(3000)
 
       // Now we call disconnect again, while the teardown is still running
-      const disconnected2 = jest.fn()
+      const disconnected2 = vi.fn()
       socket.disconnect(disconnected2)
 
-      jest.advanceTimersByTime(10000)
+      vi.advanceTimersByTime(10000)
 
       const openConns = connections.filter(c => c.readyState === SOCKET_STATES.open)
       expect(openConns.length).toBe(0)
@@ -445,7 +448,7 @@ describe("with transports", function (){
       expect(disconnected).toHaveBeenCalled()
       expect(disconnected2).toHaveBeenCalled()
 
-      jest.useRealTimers()
+      vi.useRealTimers()
     })
   })
 
@@ -522,8 +525,8 @@ describe("with transports", function (){
       const channel1 = socket.channel("topic-1")
       const channel2 = socket.channel("topic-2")
 
-      jest.spyOn(channel1, "joinRef").mockReturnValue(1)
-      jest.spyOn(channel2, "joinRef").mockReturnValue(2)
+      vi.spyOn(channel1, "joinRef").mockReturnValue(1)
+      vi.spyOn(channel2, "joinRef").mockReturnValue(2)
 
       expect(socket.stateChangeCallbacks.open.length).toBe(2)
 
@@ -550,7 +553,7 @@ describe("with transports", function (){
       socket.connect()
       socket.conn.readyState = 1 // open
 
-      const sendSpy = jest.spyOn(socket.conn, "send")
+      const sendSpy = vi.spyOn(socket.conn, "send")
 
       socket.push(data)
 
@@ -561,7 +564,7 @@ describe("with transports", function (){
       socket.connect()
       socket.conn.readyState = 0 // connecting
 
-      const sendSpy = jest.spyOn(socket.conn, "send").mockImplementation(() => {})
+      const sendSpy = vi.spyOn(socket.conn, "send").mockImplementation(() => {})
 
       expect(socket.sendBuffer.length).toBe(0)
 
@@ -602,28 +605,28 @@ describe("with transports", function (){
       socket.connect()
     })
 
-    it("closes socket when heartbeat is not ack'd within heartbeat window", function (done){
-      jest.useFakeTimers()
+    it("closes socket when heartbeat is not ack'd within heartbeat window", () => new Promise<void>((done) => {
+      vi.useFakeTimers()
       let closed = false
       socket.conn.readyState = 1 // open
       socket.conn.close = () => closed = true
       socket.sendHeartbeat()
       expect(closed).toBe(false)
 
-      jest.advanceTimersByTime(10000)
+      vi.advanceTimersByTime(10000)
       expect(closed).toBe(false)
 
-      jest.advanceTimersByTime(20010)
+      vi.advanceTimersByTime(20010)
       expect(closed).toBe(true)
 
-      jest.useRealTimers()
+      vi.useRealTimers()
       done()
-    })
+    }))
 
     it("pushes heartbeat data when connected", function (){
       socket.conn.readyState = 1 // open
 
-      const sendSpy = jest.spyOn(socket.conn, "send")
+      const sendSpy = vi.spyOn(socket.conn, "send")
       const data = "[null,\"1\",\"phoenix\",\"heartbeat\",{}]"
 
       socket.sendHeartbeat()
@@ -633,7 +636,7 @@ describe("with transports", function (){
     it("no ops when not connected", function (){
       socket.conn.readyState = 0 // connecting
 
-      const sendSpy = jest.spyOn(socket.conn, "send")
+      const sendSpy = vi.spyOn(socket.conn, "send")
       const data = encode({topic: "phoenix", event: "heartbeat", payload: {}, ref: "1"})
 
       socket.sendHeartbeat()
@@ -649,8 +652,8 @@ describe("with transports", function (){
 
     it("calls callbacks in buffer when connected", function (){
       socket.conn.readyState = 1 // open
-      const spy1 = jest.fn()
-      const spy2 = jest.fn()
+      const spy1 = vi.fn()
+      const spy2 = vi.fn()
       socket.sendBuffer.push(spy1)
       socket.sendBuffer.push(spy2)
 
@@ -677,9 +680,9 @@ describe("with transports", function (){
       mockServer = new WebSocketServer("wss://example.com/")
     })
 
-    afterAll(function (done){
+    afterAll(() => new Promise<void>((done) => {
       mockServer.stop(() => done())
-    })
+    }))
 
     beforeEach(function (){
       socket = new Socket("/socket", {
@@ -690,7 +693,7 @@ describe("with transports", function (){
 
     it("flushes the send buffer", function (){
       socket.conn.readyState = 1 // open
-      const spy = jest.fn()
+      const spy = vi.fn()
       socket.sendBuffer.push(spy)
 
       socket.onConnOpen()
@@ -699,13 +702,13 @@ describe("with transports", function (){
     })
 
     it("resets reconnectTimer", function (){
-      const resetSpy = jest.spyOn(socket.reconnectTimer, "reset")
+      const resetSpy = vi.spyOn(socket.reconnectTimer, "reset")
       socket.onConnOpen()
       expect(resetSpy).toHaveBeenCalledTimes(1)
     })
 
     it("triggers onOpen callback", function (){
-      const spy = jest.fn()
+      const spy = vi.fn()
       socket.onOpen(spy)
       socket.onConnOpen()
       expect(spy).toHaveBeenCalledTimes(1)
@@ -719,9 +722,9 @@ describe("with transports", function (){
       mockServer = new WebSocketServer("wss://example.com/")
     })
 
-    afterAll(function (done){
+    afterAll(() => new Promise<void>((done) => {
       mockServer.stop(() => done())
-    })
+    }))
 
     beforeEach(function (){
       socket = new Socket("/socket", {
@@ -731,34 +734,34 @@ describe("with transports", function (){
     })
 
     it("does not schedule reconnectTimer if normal close", function (){
-      const scheduleSpy = jest.spyOn(socket.reconnectTimer, "scheduleTimeout")
+      const scheduleSpy = vi.spyOn(socket.reconnectTimer, "scheduleTimeout")
       const event = {code: 1000}
       socket.onConnClose(event)
       expect(scheduleSpy).not.toHaveBeenCalled()
     })
 
     it("schedules reconnectTimer timeout if abnormal close", function (){
-      const scheduleSpy = jest.spyOn(socket.reconnectTimer, "scheduleTimeout")
+      const scheduleSpy = vi.spyOn(socket.reconnectTimer, "scheduleTimeout")
       const event = {code: 1006}
       socket.onConnClose(event)
       expect(scheduleSpy).toHaveBeenCalledTimes(1)
     })
 
     it("does not schedule reconnectTimer timeout if normal close after explicit disconnect", function (){
-      const scheduleSpy = jest.spyOn(socket.reconnectTimer, "scheduleTimeout")
+      const scheduleSpy = vi.spyOn(socket.reconnectTimer, "scheduleTimeout")
       socket.disconnect()
       expect(scheduleSpy).not.toHaveBeenCalled()
     })
 
     it("schedules reconnectTimer timeout if not normal close", function (){
-      const scheduleSpy = jest.spyOn(socket.reconnectTimer, "scheduleTimeout")
+      const scheduleSpy = vi.spyOn(socket.reconnectTimer, "scheduleTimeout")
       const event = {code: 1001}
       socket.onConnClose(event)
       expect(scheduleSpy).toHaveBeenCalledTimes(1)
     })
 
-    it("schedules reconnectTimer timeout if connection cannot be made after a previous clean disconnect", function (done){
-      const scheduleSpy = jest.spyOn(socket.reconnectTimer, "scheduleTimeout")
+    it("schedules reconnectTimer timeout if connection cannot be made after a previous clean disconnect", () => new Promise<void>((done) => {
+      const scheduleSpy = vi.spyOn(socket.reconnectTimer, "scheduleTimeout")
       socket.disconnect(() => {
         socket.connect()
         const event = {code: 1001}
@@ -766,10 +769,10 @@ describe("with transports", function (){
         expect(scheduleSpy).toHaveBeenCalledTimes(1)
         done()
       })
-    })
+    }))
 
     it("triggers onClose callback", function (){
-      const spy = jest.fn()
+      const spy = vi.fn()
       socket.onClose(spy)
       socket.onConnClose("event")
       expect(spy).toHaveBeenCalledWith("event")
@@ -777,7 +780,7 @@ describe("with transports", function (){
 
     it("triggers channel error if joining", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join()
       expect(channel.state).toBe("joining")
       socket.onConnClose()
@@ -786,7 +789,7 @@ describe("with transports", function (){
 
     it("triggers channel error if joined", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join().trigger("ok", {})
       expect(channel.state).toBe("joined")
       socket.onConnClose()
@@ -795,7 +798,7 @@ describe("with transports", function (){
 
     it("does not trigger channel error after leave", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join().trigger("ok", {})
       channel.leave()
       expect(channel.state).toBe("closed")
@@ -803,27 +806,27 @@ describe("with transports", function (){
       expect(triggerSpy).not.toHaveBeenCalledWith("phx_error")
     })
 
-    it("does not send heartbeat after explicit disconnect", function (done){
-      jest.useFakeTimers()
-      const sendHeartbeatSpy = jest.spyOn(socket, "sendHeartbeat")
+    it("does not send heartbeat after explicit disconnect", () => new Promise<void>((done) => {
+      vi.useFakeTimers()
+      const sendHeartbeatSpy = vi.spyOn(socket, "sendHeartbeat")
       socket.onConnOpen()
       socket.disconnect()
-      jest.advanceTimersByTime(30000)
+      vi.advanceTimersByTime(30000)
       expect(sendHeartbeatSpy).not.toHaveBeenCalled()
-      jest.useRealTimers()
+      vi.useRealTimers()
       done()
-    })
+    }))
 
-    it("does not timeout the heartbeat after explicit disconnect", function (done){
-      jest.useFakeTimers()
-      const heartbeatTimeoutSpy = jest.spyOn(socket, "heartbeatTimeout")
+    it("does not timeout the heartbeat after explicit disconnect", () => new Promise<void>((done) => {
+      vi.useFakeTimers()
+      const heartbeatTimeoutSpy = vi.spyOn(socket, "heartbeatTimeout")
       socket.onConnOpen()
       socket.disconnect()
-      jest.advanceTimersByTime(60000)
+      vi.advanceTimersByTime(60000)
       expect(heartbeatTimeoutSpy).not.toHaveBeenCalled()
-      jest.useRealTimers()
+      vi.useRealTimers()
       done()
-    })
+    }))
   })
 
   describe("onConnError", function (){
@@ -833,9 +836,9 @@ describe("with transports", function (){
       mockServer = new WebSocketServer("wss://example.com/")
     })
 
-    afterAll(function (done){
+    afterAll(() => new Promise<void>((done) => {
       mockServer.stop(() => done())
-    })
+    }))
 
     beforeEach(function (){
       socket = new Socket("/socket", {
@@ -845,7 +848,7 @@ describe("with transports", function (){
     })
 
     it("triggers onClose callback", function (){
-      const spy = jest.fn()
+      const spy = vi.fn()
       socket.onError(spy)
       socket.onConnError("error")
       expect(spy).toHaveBeenCalledWith("error", expect.any(Function), 0)
@@ -853,7 +856,7 @@ describe("with transports", function (){
 
     it("triggers channel error if joining with open connection", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join()
       socket.onConnOpen()
       expect(channel.state).toBe("joining")
@@ -863,7 +866,7 @@ describe("with transports", function (){
 
     it("triggers channel error if joining with no connection", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join()
       expect(channel.state).toBe("joining")
       socket.onConnError("error")
@@ -872,7 +875,7 @@ describe("with transports", function (){
 
     it("triggers channel error if joined", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join().trigger("ok", {})
       socket.onConnOpen()
       expect(channel.state).toBe("joined")
@@ -893,7 +896,7 @@ describe("with transports", function (){
 
     it("does not trigger channel error after leave", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join().trigger("ok", {})
       channel.leave()
       expect(channel.state).toBe("closed")
@@ -903,7 +906,7 @@ describe("with transports", function (){
 
     it("does not trigger channel error if transport replaced with no previous connection", function (){
       const channel = socket.channel("topic")
-      const triggerSpy = jest.spyOn(channel, "trigger")
+      const triggerSpy = vi.spyOn(channel, "trigger")
       channel.join()
       expect(channel.state).toBe("joining")
 
@@ -929,9 +932,9 @@ describe("with transports", function (){
       mockServer = new WebSocketServer("wss://example.com/")
     })
 
-    afterAll(function (done){
+    afterAll(() => new Promise<void>((done) => {
       mockServer.stop(() => done())
-    })
+    }))
 
     beforeEach(function (){
       socket = new Socket("/socket", {
@@ -947,8 +950,8 @@ describe("with transports", function (){
       const targetChannel = socket.channel("topic")
       const otherChannel = socket.channel("off-topic")
 
-      const targetSpy = jest.spyOn(targetChannel, "trigger")
-      const otherSpy = jest.spyOn(otherChannel, "trigger")
+      const targetSpy = vi.spyOn(targetChannel, "trigger")
+      const otherSpy = vi.spyOn(otherChannel, "trigger")
 
       socket.onConnMessage(data)
 
@@ -959,7 +962,7 @@ describe("with transports", function (){
 
     it("triggers onMessage callback", function (){
       const message = {"topic": "topic", "event": "event", "payload": "payload", "ref": "ref"}
-      const spy = jest.fn()
+      const spy = vi.fn()
       socket.onMessage(spy)
       socket.onConnMessage({data: encode(message)})
 
@@ -979,7 +982,7 @@ describe("with transports", function (){
       socket.connect()
     })
 
-    it("pushes when connected", function (done){
+    it("pushes when connected", () => new Promise<void>((done) => {
       let latency = 100
       socket.conn.readyState = 1 // open
       expect(socket.isConnected()).toBe(true)
@@ -995,7 +998,7 @@ describe("with transports", function (){
         done()
       })
       expect(result).toBe(true)
-    })
+    }))
 
     it("returns false when disconnected", function (){
       socket.conn.readyState = 0
@@ -1065,5 +1068,5 @@ describe("with transports", function (){
   })
 })
 
-window.XMLHttpRequest = jest.fn()
+window.XMLHttpRequest = vi.fn()
 window.WebSocket = WebSocket

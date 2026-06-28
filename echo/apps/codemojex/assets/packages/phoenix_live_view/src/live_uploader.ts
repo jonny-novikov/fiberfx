@@ -9,10 +9,19 @@ import {} from "./utils";
 import DOM from "./dom";
 import UploadEntry from "./upload_entry";
 
+import type View from "./view";
+import type LiveSocket from "./live_socket";
+
 let liveUploaderFileRef = 0;
 
 export default class LiveUploader {
-  static genFileRef(file) {
+  autoUpload: boolean;
+  view: View;
+  onComplete: () => void;
+  _entries: UploadEntry[];
+  numEntriesInProgress: number;
+
+  static genFileRef(file: LiveViewFile): string {
     const ref = file._phxRef;
     if (ref !== undefined) {
       return ref;
@@ -22,17 +31,17 @@ export default class LiveUploader {
     }
   }
 
-  static getEntryDataURL(inputEl, ref) {
+  static getEntryDataURL(inputEl: HTMLElement, ref: string) {
     const file = this.activeFiles(inputEl).find(
-      (file) => this.genFileRef(file) === ref,
+      (file: LiveViewFile) => this.genFileRef(file) === ref,
     );
     if (!file) return null;
     return URL.createObjectURL(file);
   }
 
-  static hasUploadsInProgress(formEl) {
+  static hasUploadsInProgress(formEl: HTMLElement) {
     let active = 0;
-    DOM.findUploadInputs(formEl).forEach((input) => {
+    DOM.findUploadInputs(formEl).forEach((input: HTMLElement) => {
       if (
         input.getAttribute(PHX_PREFLIGHTED_REFS) !==
         input.getAttribute(PHX_DONE_REFS)
@@ -43,12 +52,12 @@ export default class LiveUploader {
     return active > 0;
   }
 
-  static serializeUploads(inputEl) {
+  static serializeUploads(inputEl: HTMLInputElement) {
     const files = this.activeFiles(inputEl);
-    const fileData = {};
-    files.forEach((file) => {
-      const entry = { path: inputEl.name };
-      const uploadRef = inputEl.getAttribute(PHX_UPLOAD_REF);
+    const fileData: { [ref: string]: any[] } = {};
+    files.forEach((file: LiveViewFile) => {
+      const entry: any = { path: inputEl.name };
+      const uploadRef = inputEl.getAttribute(PHX_UPLOAD_REF)!;
       fileData[uploadRef] = fileData[uploadRef] || [];
       entry.ref = this.genFileRef(file);
       entry.last_modified = file.lastModified;
@@ -64,31 +73,34 @@ export default class LiveUploader {
     return fileData;
   }
 
-  static clearFiles(inputEl) {
-    inputEl.value = null;
+  static clearFiles(inputEl: HTMLInputElement) {
+    // runtime-neutral: upstream assigns null; cast keeps the exact runtime value
+    inputEl.value = null as unknown as string;
     inputEl.removeAttribute(PHX_UPLOAD_REF);
     DOM.putPrivate(inputEl, "files", []);
   }
 
-  static untrackFile(inputEl, file) {
+  static untrackFile(inputEl: HTMLInputElement, file: LiveViewFile) {
     DOM.putPrivate(
       inputEl,
       "files",
-      DOM.private(inputEl, "files").filter((f) => !Object.is(f, file)),
+      DOM.private(inputEl, "files").filter((f: LiveViewFile) => !Object.is(f, file)),
     );
   }
 
-  /**
-   * @param {HTMLInputElement} inputEl
-   * @param {Array<File|Blob>} files
-   * @param {DataTransfer} [dataTransfer]
-   */
-  static trackFiles(inputEl, files, dataTransfer) {
+  static trackFiles(
+    inputEl: HTMLInputElement,
+    files: LiveViewFile[],
+    dataTransfer?: DataTransfer,
+  ) {
     if (inputEl.getAttribute("multiple") !== null) {
       const newFiles = files.filter(
-        (file) => !this.activeFiles(inputEl).find((f) => Object.is(f, file)),
+        (file) =>
+          !this.activeFiles(inputEl).find((f: LiveViewFile) =>
+            Object.is(f, file),
+          ),
       );
-      DOM.updatePrivate(inputEl, "files", [], (existing) =>
+      DOM.updatePrivate(inputEl, "files", [], (existing: LiveViewFile[]) =>
         existing.concat(newFiles),
       );
       inputEl.value = "";
@@ -101,39 +113,39 @@ export default class LiveUploader {
     }
   }
 
-  static activeFileInputs(formEl) {
+  static activeFileInputs(formEl: HTMLElement) {
     const fileInputs = DOM.findUploadInputs(formEl);
     return Array.from(fileInputs).filter(
-      (el) => el.files && this.activeFiles(el).length > 0,
+      (el: HTMLInputElement) => el.files && this.activeFiles(el).length > 0,
     );
   }
 
-  static activeFiles(input) {
-    return (DOM.private(input, "files") || []).filter((f) =>
-      UploadEntry.isActive(input, f),
+  static activeFiles(input: HTMLElement): LiveViewFile[] {
+    return (DOM.private(input, "files") || []).filter((f: LiveViewFile) =>
+      UploadEntry.isActive(input as HTMLInputElement, f),
     );
   }
 
-  static inputsAwaitingPreflight(formEl) {
+  static inputsAwaitingPreflight(formEl: HTMLElement) {
     const fileInputs = DOM.findUploadInputs(formEl);
     return Array.from(fileInputs).filter(
-      (input) => this.filesAwaitingPreflight(input).length > 0,
+      (input: HTMLElement) => this.filesAwaitingPreflight(input).length > 0,
     );
   }
 
-  static filesAwaitingPreflight(input) {
+  static filesAwaitingPreflight(input: HTMLElement) {
     return this.activeFiles(input).filter(
-      (f) =>
-        !UploadEntry.isPreflighted(input, f) &&
+      (f: LiveViewFile) =>
+        !UploadEntry.isPreflighted(input as HTMLInputElement, f) &&
         !UploadEntry.isPreflightInProgress(f),
     );
   }
 
-  static markPreflightInProgress(entries) {
+  static markPreflightInProgress(entries: UploadEntry[]) {
     entries.forEach((entry) => UploadEntry.markPreflightInProgress(entry.file));
   }
 
-  constructor(inputEl, view, onComplete) {
+  constructor(inputEl: HTMLInputElement, view: View, onComplete: () => void) {
     this.autoUpload = DOM.isAutoUpload(inputEl);
     this.view = view;
     this.onComplete = onComplete;
@@ -155,7 +167,7 @@ export default class LiveUploader {
     return this._entries;
   }
 
-  initAdapterUpload(resp, onError, liveSocket) {
+  initAdapterUpload(resp: any, onError: any, liveSocket: LiveSocket) {
     this._entries = this._entries.map((entry) => {
       if (entry.isCancelled()) {
         this.numEntriesInProgress--;
@@ -174,15 +186,18 @@ export default class LiveUploader {
       return entry;
     });
 
-    const groupedEntries = this._entries.reduce((acc, entry) => {
-      if (!entry.meta) {
+    const groupedEntries = this._entries.reduce(
+      (acc: { [name: string]: { callback: any; entries: UploadEntry[] } }, entry) => {
+        if (!entry.meta) {
+          return acc;
+        }
+        const { name, callback } = entry.uploader(liveSocket.uploaders);
+        acc[name] = acc[name] || { callback: callback, entries: [] };
+        acc[name].entries.push(entry);
         return acc;
-      }
-      const { name, callback } = entry.uploader(liveSocket.uploaders);
-      acc[name] = acc[name] || { callback: callback, entries: [] };
-      acc[name].entries.push(entry);
-      return acc;
-    }, {});
+      },
+      {},
+    );
 
     for (const name in groupedEntries) {
       const { callback, entries } = groupedEntries[name];

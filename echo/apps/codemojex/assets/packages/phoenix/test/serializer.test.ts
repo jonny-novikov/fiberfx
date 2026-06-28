@@ -1,9 +1,9 @@
 /**
- * @jest-environment node
+ * @vitest-environment node
  */
 
 import {TextEncoder, TextDecoder} from "util"
-import {Serializer} from "../js/phoenix"
+import {Serializer} from "../src"
 
 let exampleMsg = {join_ref: "0", ref: "1", topic: "t", event: "e", payload: {foo: 1}}
 
@@ -14,23 +14,23 @@ let binPayload = () => {
 }
 
 describe("JSON", () => {
-  it("encodes general pushes", (done) => {
+  it("encodes general pushes", () => new Promise<void>((done) => {
     Serializer.encode(exampleMsg, (result) => {
       expect(result).toBe("[\"0\",\"1\",\"t\",\"e\",{\"foo\":1}]")
       done()
     })
-  })
+  }))
 
-  it("decodes", (done) => {
+  it("decodes", () => new Promise<void>((done) => {
     Serializer.decode("[\"0\",\"1\",\"t\",\"e\",{\"foo\":1}]", (result) => {
       expect(result).toEqual(exampleMsg)
       done()
     })
-  })
+  }))
 })
 
 describe("binary", () => {
-  it("encodes", (done) => {
+  it("encodes", () => new Promise<void>((done) => {
     let buffer = binPayload()
     let bin = "\0\x01\x01\x01\x0101te\x01"
     let decoder = new TextDecoder()
@@ -38,9 +38,9 @@ describe("binary", () => {
       expect(decoder.decode(result)).toBe(bin)
       done()
     })
-  })
+  }))
 
-  it("encodes variable length segments", (done) => {
+  it("encodes variable length segments", () => new Promise<void>((done) => {
     let buffer = binPayload()
     let bin = "\0\x02\x01\x03\x02101topev\x01"
     let decoder = new TextDecoder()
@@ -48,9 +48,9 @@ describe("binary", () => {
       expect(decoder.decode(result)).toBe(bin)
       done()
     })
-  })
+  }))
 
-  it("decodes push", (done) => {
+  it("decodes push", () => new Promise<void>((done) => {
     let bin = "\0\x03\x03\n123topsome-event\x01\x01"
     let buffer = new TextEncoder().encode(bin).buffer
     let decoder = new TextDecoder()
@@ -63,9 +63,9 @@ describe("binary", () => {
       expect(decoder.decode(result.payload)).toBe("\x01\x01")
       done()
     })
-  })
+  }))
 
-  it("decodes reply", (done) => {
+  it("decodes reply", () => new Promise<void>((done) => {
     let bin = "\x01\x03\x02\x03\x0210012topok\x01\x01"
     let buffer = new TextEncoder().encode(bin).buffer
     let decoder = new TextDecoder()
@@ -79,9 +79,9 @@ describe("binary", () => {
       expect(decoder.decode(result.payload.response)).toBe("\x01\x01")
       done()
     })
-  })
+  }))
 
-  it("encodes non-ASCII metadata as UTF-8", (done) => {
+  it("encodes non-ASCII metadata as UTF-8", () => new Promise<void>((done) => {
     let buffer = binPayload()
     let topic = "room:café"
     let event = "π"
@@ -113,7 +113,7 @@ describe("binary", () => {
       expect(bytes[offset]).toBe(1) // payload byte
       done()
     })
-  })
+  }))
 
   it("throws when a metadata field exceeds 255 UTF-8 bytes", () => {
     let buffer = binPayload()
@@ -123,7 +123,7 @@ describe("binary", () => {
     }).toThrow(/topic/)
   })
 
-  it("decodes broadcast", (done) => {
+  it("decodes broadcast", () => new Promise<void>((done) => {
     let bin = "\x02\x03\ntopsome-event\x01\x01"
     let buffer = new TextEncoder().encode(bin).buffer
     let decoder = new TextDecoder()
@@ -136,5 +136,5 @@ describe("binary", () => {
       expect(decoder.decode(result.payload)).toBe("\x01\x01")
       done()
     })
-  })
+  }))
 })

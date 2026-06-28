@@ -122,7 +122,7 @@ export default class UploadEntry {
 
   //private
 
-  onDone(callback) {
+  onDone(callback: () => void) {
     this._onDone = () => {
       this.fileEl.removeEventListener(PHX_LIVE_FILE_UPDATED, this._onElUpdated);
       callback();
@@ -131,7 +131,7 @@ export default class UploadEntry {
 
   onElUpdated() {
     const activeRefs = this.fileEl
-      .getAttribute(PHX_ACTIVE_ENTRY_REFS)
+      .getAttribute(PHX_ACTIVE_ENTRY_REFS)!
       .split(",");
     if (activeRefs.indexOf(this.ref) === -1) {
       LiveUploader.untrackFile(this.fileEl, this.file);
@@ -151,7 +151,7 @@ export default class UploadEntry {
     };
   }
 
-  uploader(uploaders) {
+  uploader(uploaders: { [key: string]: any }) {
     if (this.meta.uploader) {
       const callback =
         uploaders[this.meta.uploader] ||
@@ -162,7 +162,7 @@ export default class UploadEntry {
     }
   }
 
-  zipPostFlight(resp) {
+  zipPostFlight(resp: any) {
     this.meta = resp.entries[this.ref];
     if (!this.meta) {
       logError(`no preflight upload response returned with ref ${this.ref}`, {

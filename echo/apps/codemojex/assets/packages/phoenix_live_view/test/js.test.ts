@@ -21,11 +21,11 @@ const event = new CustomEvent("phx:exec");
 describe("JS", () => {
   beforeEach(() => {
     global.document.body.innerHTML = "";
-    jest.useFakeTimers();
+    vi.useFakeTimers();
   });
 
   afterEach(() => {
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   describe("hook.js()", () => {
@@ -42,7 +42,7 @@ describe("JS", () => {
       simulateVisibility(modal);
       expect(modal.style.display).toBe("");
       js.exec('[["toggle", {"to": "#modal"}]]');
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(modal.style.display).toBe("none");
     });
 
@@ -50,93 +50,93 @@ describe("JS", () => {
       simulateVisibility(modal);
       expect(modal.style.display).toBe("");
       js.exec([["toggle", { to: "#modal" }]]);
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(modal.style.display).toBe("none");
     });
 
-    test("show and hide", (done) => {
+    test("show and hide", () => new Promise<void>((done) => {
       simulateVisibility(modal);
       expect(modal.style.display).toBe("");
       js.hide(modal);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(modal.style.display).toBe("none");
       js.show(modal);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(modal.style.display).toBe("block");
       done();
-    });
+    }));
 
-    test("toggle", (done) => {
+    test("toggle", () => new Promise<void>((done) => {
       simulateVisibility(modal);
       expect(modal.style.display).toBe("");
       js.toggle(modal);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(modal.style.display).toBe("none");
       js.toggle(modal);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(modal.style.display).toBe("block");
       done();
-    });
+    }));
 
-    test("addClass and removeClass", (done) => {
+    test("addClass and removeClass", () => new Promise<void>((done) => {
       expect(Array.from(modal.classList)).toEqual([]);
       js.addClass(modal, "class1 class2");
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual(["class1", "class2"]);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       js.removeClass(modal, "class1");
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual(["class2"]);
       js.addClass(modal, ["class3", "class4"]);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual([
         "class2",
         "class3",
         "class4",
       ]);
       js.removeClass(modal, ["class3", "class4"]);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual(["class2"]);
       done();
-    });
+    }));
 
-    test("toggleClass", (done) => {
+    test("toggleClass", () => new Promise<void>((done) => {
       expect(Array.from(modal.classList)).toEqual([]);
       js.toggleClass(modal, "class1 class2");
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual(["class1", "class2"]);
       js.toggleClass(modal, ["class1"]);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual(["class2"]);
       done();
-    });
+    }));
 
-    test("transition", (done) => {
+    test("transition", () => new Promise<void>((done) => {
       js.transition(modal, "shake", { time: 150 });
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual(["shake"]);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(modal.classList)).toEqual([]);
       js.transition(modal, ["shake", "opacity-50", "opacity-100"], {
         time: 150,
       });
-      jest.advanceTimersByTime(10);
+      vi.advanceTimersByTime(10);
       expect(Array.from(modal.classList)).toEqual(["opacity-50"]);
-      jest.advanceTimersByTime(200);
+      vi.advanceTimersByTime(200);
       expect(Array.from(modal.classList)).toEqual(["opacity-100"]);
       done();
-    });
+    }));
 
-    test("setAttribute and removeAttribute", (done) => {
+    test("setAttribute and removeAttribute", () => new Promise<void>((done) => {
       js.removeAttribute(modal, "works");
       js.setAttribute(modal, "works", "123");
       expect(modal.getAttribute("works")).toBe("123");
       js.removeAttribute(modal, "works");
       expect(modal.getAttribute("works")).toBe(null);
       done();
-    });
+    }));
 
-    test("toggleAttr", (done) => {
+    test("toggleAttr", () => new Promise<void>((done) => {
       js.toggleAttribute(modal, "works", "on", "off");
       expect(modal.getAttribute("works")).toBe("on");
       js.toggleAttribute(modal, "works", "on", "off");
@@ -144,16 +144,16 @@ describe("JS", () => {
       js.toggleAttribute(modal, "works", "on", "off");
       expect(modal.getAttribute("works")).toBe("on");
       done();
-    });
+    }));
 
-    test("push", (done) => {
+    test("push", () => new Promise<void>((done) => {
       const originalWithinOwners = view.liveSocket.withinOwners;
       view.liveSocket.withinOwners = (el, callback) => {
         callback(view);
       };
 
       const originalExec = JS.exec;
-      JS.exec = jest.fn();
+      JS.exec = vi.fn();
 
       js.push(modal, "custom-event", { value: { key: "value" } });
 
@@ -162,11 +162,11 @@ describe("JS", () => {
       view.liveSocket.withinOwners = originalWithinOwners;
       JS.exec = originalExec;
       done();
-    });
+    }));
 
-    test("navigate", (done) => {
+    test("navigate", () => new Promise<void>((done) => {
       const originalHistoryRedirect = view.liveSocket.historyRedirect;
-      view.liveSocket.historyRedirect = jest.fn();
+      view.liveSocket.historyRedirect = vi.fn();
 
       js.navigate("/test-url");
       expect(view.liveSocket.historyRedirect).toHaveBeenCalledWith(
@@ -188,11 +188,11 @@ describe("JS", () => {
 
       view.liveSocket.historyRedirect = originalHistoryRedirect;
       done();
-    });
+    }));
 
-    test("patch", (done) => {
+    test("patch", () => new Promise<void>((done) => {
       const originalPushHistoryPatch = view.liveSocket.pushHistoryPatch;
-      view.liveSocket.pushHistoryPatch = jest.fn();
+      view.liveSocket.pushHistoryPatch = vi.fn();
 
       js.patch("/test-url");
       expect(view.liveSocket.pushHistoryPatch).toHaveBeenCalledWith(
@@ -212,13 +212,13 @@ describe("JS", () => {
 
       view.liveSocket.pushHistoryPatch = originalPushHistoryPatch;
       done();
-    });
+    }));
 
     test("navigate and patch throw for a different origin", () => {
       const originalHistoryRedirect = view.liveSocket.historyRedirect;
       const originalPushHistoryPatch = view.liveSocket.pushHistoryPatch;
-      view.liveSocket.historyRedirect = jest.fn();
-      view.liveSocket.pushHistoryPatch = jest.fn();
+      view.liveSocket.historyRedirect = vi.fn();
+      view.liveSocket.pushHistoryPatch = vi.fn();
 
       expect(() => js.navigate("https://other.example.com/foo")).toThrow(
         /origin does not match/,
@@ -244,7 +244,7 @@ describe("JS", () => {
   });
 
   describe("exec_toggle", () => {
-    test("with defaults", (done) => {
+    test("with defaults", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal">modal</div>
       <div id="click" phx-click='[["toggle", {"to": "#modal"}]]'></div>
@@ -262,12 +262,12 @@ describe("JS", () => {
 
       expect(modal.style.display).toEqual("");
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(modal.style.display).toEqual("none");
 
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(modal.style.display).toEqual("block");
       expect(showEndCalled).toBe(true);
@@ -276,9 +276,9 @@ describe("JS", () => {
       expect(hideStartCalled).toBe(true);
 
       done();
-    });
+    }));
 
-    test("with display", (done) => {
+    test("with display", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal">modal</div>
       <div id="click" phx-click='[["toggle", {"to": "#modal", "display": "inline-block"}]]'></div>
@@ -296,12 +296,12 @@ describe("JS", () => {
 
       expect(modal.style.display).toEqual("");
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(modal.style.display).toEqual("none");
 
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(modal.style.display).toEqual("inline-block");
       expect(showEndCalled).toBe(true);
@@ -309,7 +309,7 @@ describe("JS", () => {
       expect(showStartCalled).toBe(true);
       expect(hideStartCalled).toBe(true);
       done();
-    });
+    }));
 
     test("with in and out classes", async () => {
       const view = setupView(`
@@ -335,27 +335,27 @@ describe("JS", () => {
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
       expect(hideStartCalled).toBe(true);
       // first tick: waiting for start classes to be set
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(modal.classList.contains("fade-out-start")).toBe(true);
       expect(modal.classList.contains("fade-out")).toBe(false);
       // second tick: waiting for out classes to be set
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(modal.classList.contains("fade-out-start")).toBe(true);
       expect(modal.classList.contains("fade-out")).toBe(true);
       // third tick: waiting for outEndClasses
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(modal.classList.contains("fade-out-start")).toBe(false);
       expect(modal.classList.contains("fade-out")).toBe(true);
       expect(modal.classList.contains("fade-out-end")).toBe(true);
       // wait for onEnd
-      jest.runAllTimers();
-      jest.advanceTimersToNextFrame();
+      vi.runAllTimers();
+      vi.advanceTimersToNextFrame();
       // fifth tick: display: none
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(hideEndCalled).toBe(true);
       expect(modal.style.display).toEqual("none");
       // sixth tick, removed end classes
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(modal.classList.contains("fade-out-start")).toBe(false);
       expect(modal.classList.contains("fade-out")).toBe(false);
       expect(modal.classList.contains("fade-out-end")).toBe(false);
@@ -364,24 +364,24 @@ describe("JS", () => {
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
       expect(showStartCalled).toBe(true);
       // first tick: waiting for start classes to be set
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(modal.classList.contains("fade-in-start")).toBe(true);
       expect(modal.classList.contains("fade-in")).toBe(false);
       expect(modal.style.display).toEqual("none");
       // second tick: waiting for in classes to be set
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(modal.classList.contains("fade-in-start")).toBe(true);
       expect(modal.classList.contains("fade-in")).toBe(true);
       expect(modal.classList.contains("fade-in-end")).toBe(false);
       expect(modal.style.display).toEqual("block");
       // third tick: waiting for inEndClasses
-      jest.advanceTimersToNextFrame();
+      vi.advanceTimersToNextFrame();
       expect(modal.classList.contains("fade-in-start")).toBe(false);
       expect(modal.classList.contains("fade-in")).toBe(true);
       expect(modal.classList.contains("fade-in-end")).toBe(true);
       // wait for onEnd
-      jest.runAllTimers();
-      jest.advanceTimersToNextFrame();
+      vi.runAllTimers();
+      vi.advanceTimersToNextFrame();
       expect(showEndCalled).toBe(true);
       // sixth tick, removed end classes
       expect(modal.classList.contains("fade-in-start")).toBe(false);
@@ -391,7 +391,7 @@ describe("JS", () => {
   });
 
   describe("exec_transition", () => {
-    test("with defaults", (done) => {
+    test("with defaults", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-click='[["transition", {"to": "#modal", "transition": [["fade-out"],[],[]]}]]'></div>
@@ -402,16 +402,16 @@ describe("JS", () => {
       expect(Array.from(modal.classList)).toEqual(["modal"]);
 
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       expect(Array.from(modal.classList)).toEqual(["modal", "fade-out"]);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal.classList)).toEqual(["modal"]);
       done();
-    });
+    }));
 
-    test("with multiple selector", (done) => {
+    test("with multiple selector", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal1" class="modal">modal</div>
       <div id="modal2" class="modal">modal</div>
@@ -425,22 +425,22 @@ describe("JS", () => {
       expect(Array.from(modal2.classList)).toEqual(["modal"]);
 
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
 
       expect(Array.from(modal1.classList)).toEqual(["modal", "fade-out"]);
       expect(Array.from(modal2.classList)).toEqual(["modal", "fade-out"]);
 
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal1.classList)).toEqual(["modal"]);
       expect(Array.from(modal2.classList)).toEqual(["modal"]);
 
       done();
-    });
+    }));
   });
 
   describe("exec_dispatch", () => {
-    test("with defaults", (done) => {
+    test("with defaults", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal">modal</div>
       <div id="click" phx-click='[["dispatch", {"to": "#modal", "event": "click"}]]'></div>
@@ -452,9 +452,9 @@ describe("JS", () => {
         done();
       });
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-    });
+    }));
 
-    test("with to scope inner", (done) => {
+    test("with to scope inner", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="click" phx-click='[["dispatch", {"to": {"inner": ".modal"}, "event": "click"}]]'>
         <div class="modal">modal</div>
@@ -465,9 +465,9 @@ describe("JS", () => {
 
       modal.addEventListener("click", () => done());
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-    });
+    }));
 
-    test("with to scope closest", (done) => {
+    test("with to scope closest", () => new Promise<void>((done) => {
       const view = setupView(`
       <div class="modal">
         <div>
@@ -480,9 +480,9 @@ describe("JS", () => {
 
       modal.addEventListener("click", () => done());
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-    });
+    }));
 
-    test("with details", (done) => {
+    test("with details", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal">modal</div>
       <div id="click" phx-click='[["dispatch", {"to": "#modal", "event": "click"}]]'></div>
@@ -501,9 +501,9 @@ describe("JS", () => {
         JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
       });
       JS.exec(event, "close", close.getAttribute("phx-click"), view, close);
-    });
+    }));
 
-    test("with multiple selector", (done) => {
+    test("with multiple selector", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal1" class="modal">modal1</div>
       <div id="modal2" class="modal">modal2</div>
@@ -526,9 +526,9 @@ describe("JS", () => {
       });
 
       JS.exec(event, "close", close.getAttribute("phx-click"), view, close);
-    });
+    }));
 
-    test("blocking blocks DOM updates until done", (done) => {
+    test("blocking blocks DOM updates until done", () => new Promise<void>((done) => {
       let view = setupView(`
       <div id="modal">modal</div>
       <div id="click" phx-click='[["dispatch", {"to": "#modal", "event": "custom", "blocking": true}]]'></div>
@@ -552,11 +552,11 @@ describe("JS", () => {
         doneCalled = true;
       });
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-    });
+    }));
   });
 
   describe("exec_add_class and exec_remove_class", () => {
-    test("with defaults", (done) => {
+    test("with defaults", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <div id="add" phx-click='[["add_class", {"to": "#modal", "names": ["class1"]}]]'></div>
@@ -569,18 +569,18 @@ describe("JS", () => {
       JS.exec(event, "click", add.getAttribute("phx-click"), view, add);
       JS.exec(event, "click", add.getAttribute("phx-click"), view, add);
       JS.exec(event, "click", add.getAttribute("phx-click"), view, add);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal.classList)).toEqual(["modal", "class1"]);
 
       JS.exec(event, "click", remove.getAttribute("phx-click"), view, remove);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal.classList)).toEqual(["modal"]);
       done();
-    });
+    }));
 
-    test("with multiple selector", (done) => {
+    test("with multiple selector", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal1" class="modal">modal</div>
       <div id="modal2" class="modal">modal</div>
@@ -593,22 +593,22 @@ describe("JS", () => {
       const remove = document.querySelector("#remove")!;
 
       JS.exec(event, "click", add.getAttribute("phx-click"), view, add);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal1.classList)).toEqual(["modal", "class1"]);
       expect(Array.from(modal2.classList)).toEqual(["modal", "class1"]);
 
       JS.exec(event, "click", remove.getAttribute("phx-click"), view, remove);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal1.classList)).toEqual(["modal"]);
       expect(Array.from(modal2.classList)).toEqual(["modal"]);
       done();
-    });
+    }));
   });
 
   describe("exec_toggle_class", () => {
-    test("with defaults", (done) => {
+    test("with defaults", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <div id="toggle" phx-click='[["toggle_class", {"to": "#modal", "names": ["class1"]}]]'></div>
@@ -617,18 +617,18 @@ describe("JS", () => {
       const toggle = document.querySelector("#toggle")!;
 
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal.classList)).toEqual(["modal", "class1"]);
 
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal.classList)).toEqual(["modal"]);
       done();
-    });
+    }));
 
-    test("with multiple selector", (done) => {
+    test("with multiple selector", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal1" class="modal">modal</div>
       <div id="modal2" class="modal">modal</div>
@@ -639,19 +639,19 @@ describe("JS", () => {
       const toggle = document.querySelector("#toggle")!;
 
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal1.classList)).toEqual(["modal", "class1"]);
       expect(Array.from(modal2.classList)).toEqual(["modal", "class1"]);
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(Array.from(modal1.classList)).toEqual(["modal"]);
       expect(Array.from(modal2.classList)).toEqual(["modal"]);
       done();
-    });
+    }));
 
-    test("with transition", (done) => {
+    test("with transition", () => new Promise<void>((done) => {
       const view = setupView(`
       <button phx-click='[["toggle_class",{"names":["t"],"transition":[["a"],["b"],["c"]]}]]'></button>
       `);
@@ -661,18 +661,18 @@ describe("JS", () => {
 
       JS.exec(event, "click", button.getAttribute("phx-click"), view, button);
 
-      jest.advanceTimersByTime(100);
+      vi.advanceTimersByTime(100);
       expect(Array.from(button.classList)).toEqual(["a", "c"]);
 
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(Array.from(button.classList)).toEqual(["c", "t"]);
 
       done();
-    });
+    }));
   });
 
   describe("push", () => {
-    test("regular event", (done) => {
+    test("regular event", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-click='[["push", {"event": "clicked"}]]'></div>
@@ -685,9 +685,9 @@ describe("JS", () => {
         done();
       };
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-    });
+    }));
 
-    test("form change event with JS command", (done) => {
+    test("form change event with JS command", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <form id="my-form" phx-change='[["push", {"event": "validate", "_target": "username"}]]' phx-submit="submit">
@@ -718,9 +718,9 @@ describe("JS", () => {
         input,
         args,
       );
-    });
+    }));
 
-    test("form change event with phx-value and JS command value", (done) => {
+    test("form change event with phx-value and JS command value", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <form id="my-form"
@@ -760,9 +760,9 @@ describe("JS", () => {
         input,
         args,
       );
-    });
+    }));
 
-    test("form change event prefers JS.push value over phx-value-* over input value", (done) => {
+    test("form change event prefers JS.push value over phx-value-* over input value", () => new Promise<void>((done) => {
       const view = setupView(`
         <form id="my-form" phx-value-name="value from phx-value param" phx-change="[[&quot;push&quot;,{&quot;value&quot;:{&quot;name&quot;:&quot;value from push opts&quot;},&quot;event&quot;:&quot;change&quot;}]]">
           <input id="textField" name="name" value="input value" />
@@ -793,9 +793,9 @@ describe("JS", () => {
         input,
         args,
       );
-    });
+    }));
 
-    test("form change event prefers phx-value-* over input value", (done) => {
+    test("form change event prefers phx-value-* over input value", () => new Promise<void>((done) => {
       const view = setupView(`
         <form id="my-form" phx-value-name="value from phx-value param" phx-change="change">
           <input id="textField" name="name" value="input value" />
@@ -826,9 +826,9 @@ describe("JS", () => {
         input,
         args,
       );
-    });
+    }));
 
-    test("form change event with string event", (done) => {
+    test("form change event with string event", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <form id="my-form" phx-change='validate' phx-submit="submit">
@@ -873,9 +873,9 @@ describe("JS", () => {
         input,
         args,
       );
-    });
+    }));
 
-    test("input change event with JS command", (done) => {
+    test("input change event with JS command", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <form id="my-form" phx-change='validate' phx-submit="submit">
@@ -919,9 +919,9 @@ describe("JS", () => {
         input,
         args,
       );
-    });
+    }));
 
-    test("input change event with string event", (done) => {
+    test("input change event with string event", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <form id="my-form" phx-change='validate' phx-submit="submit">
@@ -965,9 +965,9 @@ describe("JS", () => {
         input,
         args,
       );
-    });
+    }));
 
-    test("submit event", (done) => {
+    test("submit event", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <form id="my-form" phx-change="validate" phx-submit='[["push", {"event": "save"}]]'>
@@ -991,9 +991,9 @@ describe("JS", () => {
         "push",
         {},
       ]);
-    });
+    }));
 
-    test("submit event with phx-value and JS command value", (done) => {
+    test("submit event with phx-value and JS command value", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <form id="my-form"
@@ -1027,9 +1027,9 @@ describe("JS", () => {
         "push",
         {},
       ]);
-    });
+    }));
 
-    test("page_loading", (done) => {
+    test("page_loading", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-click='[["push", {"event": "clicked", "page_loading": true}]]'></div>
@@ -1040,7 +1040,7 @@ describe("JS", () => {
         done();
       };
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-    });
+    }));
 
     test("loading", () => {
       const view = setupView(`
@@ -1057,7 +1057,7 @@ describe("JS", () => {
       expect(Array.from(click.classList)).toEqual(["phx-click-loading"]);
     });
 
-    test("value", (done) => {
+    test("value", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-value-three="3" phx-click='[["push", {"event": "clicked", "value": {"one": 1, "two": 2}}]]'></div>
@@ -1069,11 +1069,11 @@ describe("JS", () => {
         return Promise.resolve({ resp: done(), reply: null, ref: null });
       };
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-    });
+    }));
   });
 
   describe("multiple instructions", () => {
-    test("push and toggle", (done) => {
+    test("push and toggle", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal">modal</div>
       <div id="click" phx-click='[["push", {"event": "clicked"}], ["toggle", {"to": "#modal"}]]'></div>
@@ -1088,10 +1088,10 @@ describe("JS", () => {
 
       expect(modal.style.display).toEqual("");
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
-      jest.runAllTimers();
+      vi.runAllTimers();
 
       expect(modal.style.display).toEqual("none");
-    });
+    }));
   });
 
   describe("exec_set_attr and exec_remove_attr", () => {
@@ -1168,7 +1168,7 @@ describe("JS", () => {
   });
 
   describe("exec", () => {
-    test("executes command", (done) => {
+    test("executes command", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" phx-remove='[["push", {"event": "clicked"}]]'>modal</div>
       <div id="click" phx-click='[["exec",{"attr": "phx-remove", "to": "#modal"}]]'></div>
@@ -1180,9 +1180,9 @@ describe("JS", () => {
         done();
       };
       JS.exec(event, "exec", click.getAttribute("phx-click"), view, click);
-    });
+    }));
 
-    test("with command array", (done) => {
+    test("with command array", () => new Promise<void>((done) => {
       const view = setupView(`
       <div id="modal" phx-remove='[["push", {"event": "clicked"}]]'>modal</div>
       `);
@@ -1193,7 +1193,7 @@ describe("JS", () => {
         done();
       };
       JS.exec(event, "exec", [["exec", { attr: "phx-remove" }]], view, modal);
-    });
+    }));
 
     test("with no selector", () => {
       const view = setupView(`
@@ -1363,11 +1363,11 @@ describe("JS", () => {
       JS.exec(event, "click", push2.getAttribute("phx-click"), view, push2);
 
       JS.exec(event, "click", pop.getAttribute("phx-click"), view, pop);
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(document.activeElement).toBe(modal2);
 
       JS.exec(event, "click", pop.getAttribute("phx-click"), view, pop);
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(document.activeElement).toBe(modal1);
     });
   });
@@ -1387,7 +1387,7 @@ describe("JS", () => {
 
       JS.exec(event, "click", push.getAttribute("phx-click"), view, push);
 
-      jest.runAllTimers();
+      vi.runAllTimers();
       expect(document.activeElement).toBe(modal2);
     });
   });

@@ -38,8 +38,8 @@ export type FormInputLike = HTMLElement & {
 export type QueryableNode = Element | Document | DocumentFragment;
 
 const DOM = {
-  byId(id) {
-    return document.getElementById(id) || logError(`no id found for ${id}`);
+  byId(id: string | null) {
+    return document.getElementById(id!) || logError(`no id found for ${id}`);
   },
 
   elementFromTarget(target: EventTarget): Element | null {
@@ -53,7 +53,7 @@ const DOM = {
     }
   },
 
-  removeClass(el, className) {
+  removeClass(el: Element, className: string) {
     el.classList.remove(className);
     if (el.classList.length === 0) {
       el.removeAttribute("class");
@@ -75,21 +75,24 @@ const DOM = {
     return array;
   },
 
-  childNodeLength(html) {
+  childNodeLength(html: string) {
     const template = document.createElement("template");
     template.innerHTML = html;
     return template.content.childElementCount;
   },
 
-  isUploadInput(el): el is HTMLInputElement {
-    return el.type === "file" && el.getAttribute(PHX_UPLOAD_REF) !== null;
+  isUploadInput(el: Element): el is HTMLInputElement {
+    return (
+      (el as HTMLInputElement).type === "file" &&
+      el.getAttribute(PHX_UPLOAD_REF) !== null
+    );
   },
 
-  isAutoUpload(inputEl) {
+  isAutoUpload(inputEl: Element) {
     return inputEl.hasAttribute("data-phx-auto-upload");
   },
 
-  findUploadInputs(node): HTMLInputElement[] {
+  findUploadInputs(node: Element): HTMLInputElement[] {
     const formId = node.id;
     const inputsOutsideForm = this.all(
       document,
@@ -124,11 +127,11 @@ const DOM = {
     return el;
   },
 
-  isPhxDestroyed(node) {
+  isPhxDestroyed(node: Element) {
     return node.id && DOM.private(node, "destroyed") ? true : false;
   },
 
-  wantsNewTab(e) {
+  wantsNewTab(e: any) {
     const wantsNewTab =
       e.ctrlKey || e.shiftKey || e.metaKey || (e.button && e.button === 1);
     const isDownload =
@@ -143,7 +146,7 @@ const DOM = {
     return wantsNewTab || isTargetBlank || isDownload || isTargetNamedTab;
   },
 
-  isUnloadableFormSubmit(e) {
+  isUnloadableFormSubmit(e: any) {
     // Ignore form submissions intended to close a native <dialog> element
     // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog#usage_notes
     const isDialogSubmit =
@@ -157,7 +160,7 @@ const DOM = {
     }
   },
 
-  isNewPageClick(e, currentLocation) {
+  isNewPageClick(e: any, currentLocation: any) {
     const href =
       e.target instanceof HTMLAnchorElement
         ? e.target.getAttribute("href")
@@ -199,41 +202,41 @@ const DOM = {
     return url.protocol.startsWith("http");
   },
 
-  markPhxChildDestroyed(el) {
+  markPhxChildDestroyed(el: Element) {
     if (this.isPhxChild(el)) {
       el.setAttribute(PHX_SESSION, "");
     }
     this.putPrivate(el, "destroyed", true);
   },
 
-  findPhxChildrenInFragment(html, parentId) {
+  findPhxChildrenInFragment(html: string, parentId: string) {
     const template = document.createElement("template");
     template.innerHTML = html;
     return this.findPhxChildren(template.content, parentId);
   },
 
-  isIgnored(el, phxUpdate) {
+  isIgnored(el: Element, phxUpdate: string) {
     return (
       (el.getAttribute(phxUpdate) || el.getAttribute("data-phx-update")) ===
       "ignore"
     );
   },
 
-  isPhxUpdate(el, phxUpdate, updateTypes) {
+  isPhxUpdate(el: any, phxUpdate: string, updateTypes: string[]) {
     return (
       el.getAttribute && updateTypes.indexOf(el.getAttribute(phxUpdate)) >= 0
     );
   },
 
-  findPhxSticky(el) {
+  findPhxSticky(el: Element) {
     return this.all(el, `[${PHX_STICKY}]`);
   },
 
-  findPhxChildren(el, parentId) {
+  findPhxChildren(el: QueryableNode, parentId: string) {
     return this.all(el, `${PHX_VIEW_SELECTOR}[${PHX_PARENT_ID}="${parentId}"]`);
   },
 
-  findExistingParentCIDs(viewId, cids) {
+  findExistingParentCIDs(viewId: string, cids: number[]) {
     // we only want to find parents that exist on the page
     // if a cid is not on the page, the only way it can be added back to the page
     // is if a parent adds it back, therefore if a cid does not exist on the page,
@@ -259,22 +262,22 @@ const DOM = {
     return parentCids;
   },
 
-  private(el, key) {
+  private(el: any, key: string) {
     return el[PHX_PRIVATE] && el[PHX_PRIVATE][key];
   },
 
-  deletePrivate(el, key) {
+  deletePrivate(el: any, key: string) {
     el[PHX_PRIVATE] && delete el[PHX_PRIVATE][key];
   },
 
-  putPrivate(el, key, value) {
+  putPrivate(el: any, key: string, value: any) {
     if (!el[PHX_PRIVATE]) {
       el[PHX_PRIVATE] = {};
     }
     el[PHX_PRIVATE][key] = value;
   },
 
-  updatePrivate(el, key, defaultVal, updateFunc) {
+  updatePrivate(el: any, key: string, defaultVal: any, updateFunc: (val: any) => any) {
     const existing = this.private(el, key);
     if (existing === undefined) {
       this.putPrivate(el, key, updateFunc(defaultVal));
@@ -283,7 +286,7 @@ const DOM = {
     }
   },
 
-  syncPendingAttrs(fromEl, toEl) {
+  syncPendingAttrs(fromEl: any, toEl: Element) {
     if (!fromEl.hasAttribute(PHX_REF_SRC)) {
       return;
     }
@@ -297,13 +300,13 @@ const DOM = {
     );
   },
 
-  copyPrivates(target, source) {
+  copyPrivates(target: any, source: any) {
     if (source[PHX_PRIVATE]) {
       target[PHX_PRIVATE] = source[PHX_PRIVATE];
     }
   },
 
-  putTitle(str) {
+  putTitle(str: string) {
     const titleEl = document.querySelector("title");
     if (titleEl) {
       const { prefix, suffix, default: defaultTitle } = titleEl.dataset;
@@ -320,14 +323,14 @@ const DOM = {
   },
 
   debounce(
-    el,
-    event,
-    phxDebounce,
-    defaultDebounce,
-    phxThrottle,
-    defaultThrottle,
-    asyncFilter,
-    callback,
+    el: any,
+    event: any,
+    phxDebounce: string,
+    defaultDebounce: string,
+    phxThrottle: string,
+    defaultThrottle: string,
+    asyncFilter: () => any,
+    callback: () => any,
   ) {
     let debounce = el.getAttribute(phxDebounce);
     let throttle = el.getAttribute(phxThrottle);
@@ -419,7 +422,7 @@ const DOM = {
     }
   },
 
-  triggerCycle(el, key, currentCycle?) {
+  triggerCycle(el: any, key: string, currentCycle?: any) {
     const [cycle, trigger] = this.private(el, key);
     if (!currentCycle) {
       currentCycle = cycle;
@@ -430,7 +433,7 @@ const DOM = {
     }
   },
 
-  once(el, key) {
+  once(el: any, key: string) {
     if (this.private(el, key) === true) {
       return false;
     }
@@ -438,7 +441,7 @@ const DOM = {
     return true;
   },
 
-  incCycle(el, key, trigger = function () {}) {
+  incCycle(el: any, key: string, trigger = function () {}) {
     let [currentCycle] = this.private(el, key) || [0, trigger];
     currentCycle++;
     this.putPrivate(el, key, [currentCycle, trigger]);
@@ -448,7 +451,12 @@ const DOM = {
   // maintains or adds privately used hook information
   // fromEl and toEl can be the same element in the case of a newly added node
   // fromEl and toEl can be any HTML node type, so we need to check if it's an element node
-  maintainPrivateHooks(fromEl, toEl, phxViewportTop, phxViewportBottom) {
+  maintainPrivateHooks(
+    fromEl: any,
+    toEl: Element,
+    phxViewportTop: string,
+    phxViewportBottom: string,
+  ) {
     // maintain the hooks created with createHook
     if (
       fromEl.hasAttribute &&
@@ -467,7 +475,7 @@ const DOM = {
     }
   },
 
-  putCustomElHook(el, hook) {
+  putCustomElHook(el: Element, hook: any) {
     if (el.isConnected) {
       el.setAttribute("data-phx-hook", "");
     } else {
@@ -479,45 +487,45 @@ const DOM = {
     this.putPrivate(el, "custom-el-hook", hook);
   },
 
-  getCustomElHook(el) {
+  getCustomElHook(el: Element) {
     return this.private(el, "custom-el-hook");
   },
 
-  isUsedInput(el) {
+  isUsedInput(el: Element) {
     return (
       el.nodeType === Node.ELEMENT_NODE &&
       (this.private(el, PHX_HAS_FOCUSED) || this.private(el, PHX_HAS_SUBMITTED))
     );
   },
 
-  resetForm(form) {
+  resetForm(form: HTMLFormElement) {
     Array.from(form.elements).forEach((input) => {
       this.deletePrivate(input, PHX_HAS_FOCUSED);
       this.deletePrivate(input, PHX_HAS_SUBMITTED);
     });
   },
 
-  isPhxChild(node) {
+  isPhxChild(node: any) {
     return node.getAttribute && node.getAttribute(PHX_PARENT_ID);
   },
 
-  isPhxSticky(node) {
+  isPhxSticky(node: any) {
     return node.getAttribute && node.getAttribute(PHX_STICKY) !== null;
   },
 
-  isChildOfAny(el, parents) {
+  isChildOfAny(el: Element, parents: Element[]) {
     return !!parents.find((parent) => parent.contains(el));
   },
 
-  firstPhxChild(el) {
+  firstPhxChild(el: Element) {
     return this.isPhxChild(el) ? el : this.all(el, `[${PHX_PARENT_ID}]`)[0];
   },
 
-  isPortalTemplate(el): el is HTMLTemplateElement {
+  isPortalTemplate(el: Element): el is HTMLTemplateElement {
     return el.tagName === "TEMPLATE" && el.hasAttribute(PHX_PORTAL);
   },
 
-  closestViewEl(el) {
+  closestViewEl(el: Element) {
     // find the closest portal or view element, whichever comes first
     const portalOrViewEl = el.closest(
       `[${PHX_TELEPORTED_REF}],${PHX_VIEW_SELECTOR}`,
@@ -534,7 +542,11 @@ const DOM = {
     return null;
   },
 
-  dispatchEvent(target, name, opts: { bubbles?: boolean; detail?: any } = {}) {
+  dispatchEvent(
+    target: any,
+    name: string,
+    opts: { bubbles?: boolean; detail?: any } = {},
+  ) {
     let defaultBubble = true;
     const isUploadTarget =
       target.nodeName === "INPUT" && target.type === "file";
@@ -554,7 +566,7 @@ const DOM = {
     target.dispatchEvent(event);
   },
 
-  cloneNode(node, html) {
+  cloneNode(node: any, html?: string) {
     if (typeof html === "undefined") {
       return node.cloneNode(true);
     } else {
@@ -568,8 +580,8 @@ const DOM = {
   // if an element is ignored, we only merge data attributes
   // including removing data attributes that are no longer in the source
   mergeAttrs(
-    target,
-    source,
+    target: any,
+    source: any,
     opts: { exclude?: string[]; isIgnored?: boolean } = {},
   ) {
     const exclude = new Set(opts.exclude || []);
@@ -622,7 +634,7 @@ const DOM = {
     }
   },
 
-  mergeFocusedInput(target, source) {
+  mergeFocusedInput(target: any, source: any) {
     // skip selects because FF will reset highlighted index for any setAttribute
     if (!(target instanceof HTMLSelectElement)) {
       DOM.mergeAttrs(target, source, { exclude: ["value"] });
@@ -635,13 +647,13 @@ const DOM = {
     }
   },
 
-  hasSelectionRange(el): el is HTMLInputElement | HTMLTextAreaElement {
+  hasSelectionRange(el: any): el is HTMLInputElement | HTMLTextAreaElement {
     return (
       el.setSelectionRange && (el.type === "text" || el.type === "textarea")
     );
   },
 
-  restoreFocus(focused, selectionStart, selectionEnd) {
+  restoreFocus(focused: any, selectionStart: any, selectionEnd: any) {
     if (focused instanceof HTMLSelectElement) {
       focused.focus();
     }
@@ -696,7 +708,7 @@ const DOM = {
     );
   },
 
-  syncAttrsToProps(el) {
+  syncAttrsToProps(el: Element) {
     if (
       el instanceof HTMLInputElement &&
       CHECKABLE_INPUTS.indexOf(el.type.toLocaleLowerCase()) >= 0
@@ -705,11 +717,11 @@ const DOM = {
     }
   },
 
-  isTextualInput(el) {
+  isTextualInput(el: any) {
     return FOCUSABLE_INPUTS.indexOf(el.type) >= 0;
   },
 
-  isNowTriggerFormExternal(el, phxTriggerExternal) {
+  isNowTriggerFormExternal(el: Element, phxTriggerExternal: string) {
     return (
       el.getAttribute &&
       el.getAttribute(phxTriggerExternal) !== null &&
@@ -781,9 +793,9 @@ const DOM = {
     }
   },
 
-  getSticky(el, name, defaultVal) {
+  getSticky(el: any, name: string, defaultVal: any) {
     const op = (DOM.private(el, "sticky") || []).find(
-      ([existingName]) => name === existingName,
+      ([existingName]: any[]) => name === existingName,
     );
     if (op) {
       const [_name, _op, stashedResult] = op;
@@ -793,17 +805,17 @@ const DOM = {
     }
   },
 
-  deleteSticky(el, name) {
+  deleteSticky(el: any, name: string) {
     this.updatePrivate(el, "sticky", [], (ops) => {
-      return ops.filter(([existingName, _]) => existingName !== name);
+      return ops.filter(([existingName, _]: any[]) => existingName !== name);
     });
   },
 
-  putSticky(el, name, op) {
+  putSticky(el: any, name: string, op: (el: any) => any) {
     const stashedResult = op(el);
     this.updatePrivate(el, "sticky", [], (ops) => {
       const existingIndex = ops.findIndex(
-        ([existingName]) => name === existingName,
+        ([existingName]: any[]) => name === existingName,
       );
       if (existingIndex >= 0) {
         ops[existingIndex] = [name, op, stashedResult];
@@ -814,22 +826,22 @@ const DOM = {
     });
   },
 
-  applyStickyOperations(el) {
+  applyStickyOperations(el: any) {
     const ops = DOM.private(el, "sticky");
     if (!ops) {
       return;
     }
 
-    ops.forEach(([name, op, _stashed]) => this.putSticky(el, name, op));
+    ops.forEach(([name, op, _stashed]: any[]) => this.putSticky(el, name, op));
   },
 
-  isLocked(el) {
+  isLocked(el: any) {
     return el.hasAttribute && el.hasAttribute(PHX_REF_LOCK);
   },
 
-  attributeIgnored(attribute, ignoredAttributes) {
+  attributeIgnored(attribute: any, ignoredAttributes: any[]) {
     return ignoredAttributes.some(
-      (toIgnore) =>
+      (toIgnore: any) =>
         attribute.name == toIgnore ||
         toIgnore === "*" ||
         (toIgnore.includes("*") && attribute.name.match(toIgnore) != null),

@@ -31,14 +31,14 @@ describe("Browser", () => {
 
   describe("redirect", () => {
     test("redirects to a new URL", () => {
-      const navigate = jest.fn();
+      const navigate = vi.fn();
       const targetUrl = "https://phoenixframework.com";
       Browser.redirect(targetUrl, null, navigate);
       expect(navigate).toHaveBeenCalledWith(targetUrl);
     });
 
     test("sets a flash cookie before redirecting", () => {
-      const navigate = jest.fn();
+      const navigate = vi.fn();
       const targetUrl = "https://phoenixframework.com";
       const flashMessage = "mango";
       Browser.redirect(targetUrl, flashMessage, navigate);

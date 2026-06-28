@@ -5,7 +5,7 @@ import DOM from "phoenix_live_view/dom";
 import View from "phoenix_live_view/view";
 import ViewHook, { HooksOptions } from "phoenix_live_view/view_hook";
 
-import { version as liveview_version } from "../../package.json";
+import { version as liveview_version } from "../package.json";
 
 import {
   PHX_LOADING_CLASS,
@@ -661,7 +661,7 @@ describe("View + DOM", function () {
   });
 
   describe("phx-trigger-action", () => {
-    test("triggers external submit on updated DOM el", (done) => {
+    test("triggers external submit on updated DOM el", () => new Promise<void>((done) => {
       const liveSocket = new LiveSocket("/live", Socket);
       const el = liveViewDOM();
       const view = simulateJoinedView(el, liveSocket);
@@ -685,9 +685,9 @@ describe("View + DOM", function () {
       expect(view.el.innerHTML).toBe(
         '<form id="form" phx-submit="submit" phx-trigger-action=""><input type="text"></form>',
       );
-    });
+    }));
 
-    test("triggers external submit on added DOM el", (done) => {
+    test("triggers external submit on added DOM el", () => new Promise<void>((done) => {
       const liveSocket = new LiveSocket("/live", Socket);
       const el = liveViewDOM();
       const view = simulateJoinedView(el, liveSocket);
@@ -709,7 +709,7 @@ describe("View + DOM", function () {
       expect(view.el.innerHTML).toBe(
         '<form id="form" phx-submit="submit" phx-trigger-action=""><input type="text"></form>',
       );
-    });
+    }));
   });
 
   describe("phx-update", function () {
@@ -1166,7 +1166,7 @@ describe("View", function () {
     liveSocket && liveSocket.destroyAllViews();
     liveSocket = null;
     HTMLFormElement.prototype.submit = submitBefore;
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 
   afterAll(() => {
@@ -1227,8 +1227,8 @@ describe("View", function () {
     expect(el.classList.contains("phx-connected")).toBeTruthy();
   });
 
-  test("displayError and hideLoader", (done) => {
-    jest.useFakeTimers();
+  test("displayError and hideLoader", () => new Promise<void>((done) => {
+    vi.useFakeTimers();
     liveSocket = new LiveSocket("/live", Socket);
     const loader = document.createElement("span");
     const phxView = document.querySelector("[data-phx-session]")!;
@@ -1248,14 +1248,14 @@ describe("View", function () {
     expect(el.classList.contains("phx-error")).toBeTruthy();
     expect(el.classList.contains("phx-connected")).toBeFalsy();
     expect(el.classList.contains("user-implemented-class")).toBeTruthy();
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(status.style.display).toBe("block");
     simulateVisibility(status);
     view.hideLoader();
-    jest.runAllTimers();
+    vi.runAllTimers();
     expect(status.style.display).toBe("none");
     done();
-  });
+  }));
 
   test("join", async () => {
     liveSocket = new LiveSocket("/live", Socket);
@@ -1277,7 +1277,7 @@ describe("View", function () {
       payloads.push((e as CustomEvent).detail);
     });
 
-    const redirectSpy = jest
+    const redirectSpy = vi
       .spyOn(view, "onRedirect")
       .mockImplementation(() => undefined);
 
@@ -1348,7 +1348,7 @@ describe("View Hooks", function () {
     global.document.body.innerHTML = "";
   });
 
-  test("phx-mounted", (done) => {
+  test("phx-mounted", () => new Promise<void>((done) => {
     liveSocket = new LiveSocket("/live", Socket);
     const el = liveViewDOM();
 
@@ -1389,7 +1389,7 @@ describe("View Hooks", function () {
         done();
       });
     });
-  });
+  }));
 
   test("hooks", async () => {
     let upcaseWasDestroyed = false;
@@ -1523,7 +1523,7 @@ describe("View Hooks", function () {
     expect(Object.keys(view["viewHooks"])).toEqual([]);
   });
 
-  test("createHook", (done) => {
+  test("createHook", () => new Promise<void>((done) => {
     const liveSocket = new LiveSocket("/live", Socket, {});
     const el = liveViewDOM();
     customElements.define(
@@ -1546,7 +1546,7 @@ describe("View Hooks", function () {
     customEl.id = "foo";
     el.appendChild(customEl);
     simulateJoinedView(el, liveSocket);
-  });
+  }));
 
   test("view destroyed", async () => {
     const values: Array<string> = [];
@@ -1637,7 +1637,7 @@ describe("View Hooks", function () {
 
     const recorderHook = view.getHook(view.el.querySelector("#rec"));
     const fileEl = view.el.querySelector("#uploads0");
-    const dispatchEventSpy = jest.spyOn(fileEl as any, "dispatchEvent");
+    const dispatchEventSpy = vi.spyOn(fileEl as any, "dispatchEvent");
 
     const contents = { hello: "world" };
     const blob = new Blob([JSON.stringify(contents, null, 2)], {
@@ -1685,7 +1685,7 @@ describe("View Hooks", function () {
     const Hooks = <HooksOptions>{
       Upcase: {
         mounted() {
-          this.handleEvent = jest
+          this.handleEvent = vi
             .fn()
             .mockImplementation(() => (customHandleEventCalled = true));
           this.el.innerHTML = this.el.innerHTML.toUpperCase();
@@ -1767,7 +1767,7 @@ describe("View + Component", function () {
     expect(view.targetComponentID(form, targetCtx)).toBe(0);
   });
 
-  test("pushEvent", (done) => {
+  test("pushEvent", () => new Promise<void>((done) => {
     expect.assertions(17);
 
     liveSocket = new LiveSocket("/live", Socket);
@@ -1832,9 +1832,9 @@ describe("View + Component", function () {
     });
 
     view.pushEvent("keyup", input, targetCtx, "myevent", {});
-  });
+  }));
 
-  test("pushInput", function (done) {
+  test("pushInput", () => new Promise<void>(function (done) {
     const html = `<form id="form" phx-change="validate">
       <label for="first_name">First Name</label>
       <input id="first_name" value="" name="user[first_name]" />
@@ -1918,7 +1918,7 @@ describe("View + Component", function () {
         done();
       });
     });
-  });
+  }));
 
   test("adds auto ID to prevent teardown/re-add", () => {
     const liveSocket = new LiveSocket("/live", Socket);
