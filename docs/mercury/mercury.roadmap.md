@@ -9,8 +9,9 @@ Design System Storybook** standing on a clean three-package topology.
 
 ## The epic
 
-**One design system, two movements: a UI-free `@mercury/core`, a Claude-Design-structured
-`@mercury/ui`, and a Storybook that documents every component.**
+**One design system, three movements: a UI-free `@mercury/core`; a Claude-Design-structured
+`@mercury/ui` with a hand-authored contract beside every component; and a Storybook that documents
+them all.**
 
 - **Why.** Mercury's reusable foundation — the headless primitives (`internal/`), the reuse barrel
   (`shared/`), the helpers (`utils/`), and `cx`/`date`/`types` — is **trapped inside
@@ -24,18 +25,19 @@ Design System Storybook** standing on a clean three-package topology.
   foundation: utils, types, headless hooks; zero components), **`@mercury/ui`** (components,
   re-organized the Claude-Design way — `src/components/<group>/<Name>/`), and **`@mercury/effector`**
   (the state adapters, unchanged role). `packages/mercury-ds` is **salvaged then deleted**. Then a
-  **Storybook** that renders every component with its variants, controls, actions, and
-  Effector-wired live state. Every structural move is **internal** — `@mercury/ui`'s public export
-  surface never changes (the master invariant).
+  **hand-authored contract** (`<Name>.prompt.md`) beside every component — the authoritative usage
+  surface, grounded in real call sites and cross-linked. Then a **Storybook** that renders every
+  component with its variants, controls, actions, and Effector-wired live state. Every structural
+  move is **internal** — `@mercury/ui`'s public export surface never changes (the master invariant).
 - **Who.** The Operator owns the goal and the forks; Claude Code ships the rungs through the
   standard loop (plan → build → gate → commit-when-asked). The consumers are the five workspace
   apps (`apps/{catalogue,docs,echomq,mobile,showcase}`) — they resolve packages from **source** via
   vite alias, so a package edit is live in dev with no prebuild.
-- **When.** **Movement I opens now.** `mx.0` (this docs floor) is authored;
-  **`mx.1` — the structural rung — is the active next delivery** (extract `@mercury/core`, regroup
-  `@mercury/ui`, salvage + delete `mercury-ds`). Movement II (the Storybook, `mx.2`–`mx.5`) is
-  **laddered behind `mx.1`** — it gates on the grouped structure existing, so it opens once `mx.1`
-  ships.
+- **When.** **Movement I + II are built; Movement III is the frontier.** `mx.0` (docs floor), `mx.1`
+  (the structural rung), and **`mx.2` — the contract layer — are built**: all 33 components carry a
+  hand-authored, grounded, cross-linked `<Name>.prompt.md`. **Movement III (the Storybook,
+  `mx.3`–`mx.6`) is now the active frontier** — each story writes its controls from the contract
+  `mx.2` fixed.
 - **Where.** Code: `mercury/packages/{mercury-core,mercury-ui,mercury-effector}`, `mercury/apps/*`.
   Specs: `docs/mercury/` (this roadmap · the design canon · the progress dashboard · the rung
   triads under [`specs/`](./specs/)).
@@ -74,27 +76,40 @@ Hoist the foundation into `@mercury/core`, re-organize `@mercury/ui` one-folder-
 grouped by category, fold the salvage out of the ephemeral `mercury-ds`, and delete it — all behind
 a stable public barrel. This is the floor the Storybook stands on.
 
-### Movement II · The Design System Storybook
+### Movement II · The authored contract layer
+
+Hand-author a `<Name>.prompt.md` beside every component — the authoritative usage contract the canon
+promised (§4, §6): a grounded prop table, the enum language tied to the token families, a Composition
+section that cross-links the siblings it feeds, and Examples drawn from real call sites. The contracts
+feed each other and are reconciled against source + the reference apps (the contract-set method,
+[`../aaw/aaw.architect-approach.md`](../aaw/aaw.architect-approach.md)). This is the surface the
+Storybook renders and the Claude Design agent builds from — authored, not extracted.
+
+### Movement III · The Design System Storybook
 
 A `@storybook/react-vite` host that resolves `@mercury/ui` + `@mercury/core` from source (mirroring
 the apps), with a global theme decorator, per-component stories across all groups (variants,
-`argTypes`/controls, actions), Effector-powered live-state stories, and a deployable static build
-that re-aligns with the Claude-Design (`.design-sync`) export.
+`argTypes`/controls written from the contract, actions), Effector-powered live-state stories, and a
+deployable static build that re-aligns with the Claude-Design (`.design-sync`) export.
 
 ## The rung ladder
 
 | Rung | Movement | Ships (scope) | Status |
 |---|---|---|---|
 | **mx.0** | I | **Program docs floor** — this roadmap · the design canon · the progress dashboard · the program manual · the `mx.1` spec triad | ✅ **SHIPPED** (2026-06-28) |
-| **mx.1** | I | **The structural rung** — extract `@mercury/core` (utils/types/hooks); regroup `@mercury/ui` into `src/components/<group>/<Name>/` (split the 5 aggregates); salvage `mercury-ds`'s real source (`Accordion`/`Toggle`/`Pagination`) + per-component contracts; **delete `mercury-ds`**. Public barrel byte-stable. | 📋 **PLANNED** — triad authored ([`specs/mx.1/mx.1.md`](./specs/mx.1/mx.1.md)) |
-| **mx.2** | II | **Storybook host + foundations stories** — `.storybook/` (`@storybook/react-vite`), source-resolved packages, CSF3, a light/`dark-theme` decorator, first stories (Icon · tokens · Button) | 📋 PLANNED |
-| **mx.3** | II | **Component stories — variants + actions** — per-component `<Name>.stories.tsx` across all groups; `argTypes`/controls for every variant/size/tone; actions (interaction logging) on event props; variant-grid stories | 📋 PLANNED |
-| **mx.4** | II | **Effector-powered stories** — stories wiring `@mercury/effector` (theme · toast · `createForm` · `createCooldown`); the live-state stories + decorators | 📋 PLANNED |
-| **mx.5** | II | **Build/deploy + design-sync reconcile** — static Storybook build + deploy; regenerate the Claude-Design export from the grouped structure; re-align the `.design-sync` pipeline | 📋 PLANNED |
+| **mx.1** | I | **The structural rung** — extract `@mercury/core` (utils/types/hooks); regroup `@mercury/ui` into `src/components/<group>/<Name>/` (split the 5 aggregates); salvage `mercury-ds`'s real source (`Accordion`/`Toggle`/`Pagination`); **delete `mercury-ds`**. Public barrel byte-stable (91 → 103, additive). | ✅ **BUILT** (gate-green 2026-06-28; commit pending) |
+| **mx.2** | II | **The contract layer** — hand-author a co-located `<Name>.prompt.md` for all 33 components (grounded prop table · enum language · Composition cross-links · real-call-site examples); ratify the app/library split by audit | ✅ **BUILT** — 33/33 contracts, gate-green (2026-06-28; commit pending) ([`specs/mx.2/mx.2.md`](./specs/mx.2/mx.2.md)) |
+| **mx.3** | III | **Storybook host + foundations stories** — `.storybook/` (`@storybook/react-vite`), source-resolved packages, CSF3, a light/`dark-theme` decorator, first stories (Icon · tokens · Button) | 📋 PLANNED |
+| **mx.4** | III | **Component stories — variants + actions** — per-component `<Name>.stories.tsx` across all groups; `argTypes`/controls (from the contract) for every variant/size/tone; actions on event props; variant-grid stories | 📋 PLANNED |
+| **mx.5** | III | **Effector-powered stories** — stories wiring `@mercury/effector` (theme · toast · `createForm` · `createCooldown`); the live-state stories + decorators | 📋 PLANNED |
+| **mx.6** | III | **Build/deploy + design-sync reconcile** — static Storybook build + deploy; regenerate the Claude-Design export from the grouped structure; re-align the `.design-sync` pipeline | 📋 PLANNED |
 
-> **Re-sequencing is Operator-ruled.** Movement II is laddered behind `mx.1` because each Storybook
-> rung assumes the grouped `<group>/<Name>/` structure exists. The ladder is fixed at this
-> checkpoint; the Operator may re-order, and rungs are revisable, not deleted.
+> **Re-sequencing is Operator-ruled.** Movement II (contracts) is laddered behind `mx.1` because a
+> contract grounds in the component's source + folder; Movement III (Storybook) is laddered behind
+> `mx.2` because each story writes its controls from the contract. The ladder is fixed at this
+> checkpoint; the Operator may re-order, and rungs are revisable, not deleted. *(The contract layer
+> was inserted as Movement II on 2026-06-28, shifting the Storybook rungs from `mx.2`–`mx.5` to
+> `mx.3`–`mx.6`.)*
 
 ## How the program runs
 

@@ -3,9 +3,9 @@
 > The method of record for how a **spec-steward** (the architect, Venus) frames and argues a **design fork**
 > before the Operator rules it. Companion to [aaw.framework.md](aaw.framework.md) (the roles),
 > [aaw.rules.md](aaw.rules.md) (the Decisions fence and the formations), and
-> [specs.approach.md](../elixir/specs/specs.approach.md) (the triad templates). This document owns one fact —
-> the *structure of a surfaced fork* — and quotes and links the rest; it does not re-own a contract defined
-> elsewhere.
+> [specs.approach.md](../elixir/specs/specs.approach.md) (the triad templates). This document owns two facts —
+> the *structure of a surfaced fork* and the *discipline of an authored contract set* — and quotes and links
+> the rest; it does not re-own a contract defined elsewhere.
 
 ## Purpose of this document
 
@@ -101,6 +101,47 @@ stay separate: the architects argue, the Director synthesizes, the Operator rule
 arms and pre-empts the strongest objection from the opposing lens, so the synthesis inherits a rebuttal already
 on the page instead of a second round.
 
+## The contract set — surfaces authored as hypotheses that feed each other
+
+A fork chooses an approach; many rungs then require the architect to **author a set of contracts** — the
+per-unit documents that define a surface for the people and agents who build on it: a component library's
+co-located `<Name>.prompt.md`, a command catalogue's per-command slices, an API's per-endpoint briefs. A
+contract set is not a fork — there is no choice to rule, only a surface to get right — so it is argued in no
+arms. It is the **second instrument** of the architect's design step, and it has its own discipline.
+
+- **A contract is a hypothesis.** Each one states how a unit is used — its inputs, its variants, its
+  composition — as a claim the implementation and the real call sites can falsify. It is authored against the
+  source, never from memory. An unverified contract is the most expensive kind of wrong, because a consumer —
+  a developer, or an agent generating UI from it — acts on it as fact (the Grounded value,
+  [aaw.framework.md](aaw.framework.md)).
+- **A generated stub is not a contract.** An extractor — a design-sync converter, a `.d.ts` emitter — reflects
+  the *runtime shape* ("use via `window.X.Button`"), not the architect's intent. It carries no rationale, no
+  cross-reference, and no grounding in how the surface is actually composed. A generated stub is a seed at
+  most; the authoritative contract is hand-authored and verified.
+- **The set feeds itself.** A contract references its siblings and its foundation — it composes
+  (`leading={<Icon/>}`, "wrap a `Button`", "place under `AuthLayout`") and it draws on a shared vocabulary (the
+  token families, the common prop kit). A cross-reference is a **link, never a restatement** — One Authority
+  applied to the contract layer: a concept is defined in one contract and pointed to from the rest, so the set
+  stays consistent as it grows and a reader can traverse it. The cross-references also surface gaps for free —
+  a composition that names a sibling with no contract yet is a missing rung made visible.
+- **Feedback closes against three truths.** A contract is reconciled against (1) the **implementation** — do
+  the documented inputs and arities match the source; (2) the **real call sites** — is every example a usage
+  that exists, not one invented to read well; (3) the **sibling contracts** — do the cross-references resolve
+  and the vocabulary agree. A mismatch edits the contract; when the mismatch is in the implementation, it
+  surfaces as a delta to the Operator — never silently smoothed. This is the reconcile pass
+  ([aaw.framework.md](aaw.framework.md), the artifact-truth event) applied to an authored surface rather than
+  to code.
+- **Author the exemplar first, then fan out.** Efficiency takes the shape of the fan-out formation
+  ([aaw.rules.md](aaw.rules.md)): the architect senior-authors **one** contract to the bar the rest imitate —
+  fixing the section order, the depth, and the grounding standard — then the siblings are authored in waves,
+  each applying the exemplar, each grounded and verified, the concurrency cadence (at most two heavy authors at
+  once) unchanged. The exemplar is what makes a set of thirty contracts read as one surface rather than thirty
+  voices.
+
+The contract set is part of the spec layer's deliverable: the brief instructs the implementor or an author
+wave to produce each contract grounded and cross-linked, and the stories accept the set by sampling its
+reconciliation. The fork rules the approach; the contract set documents the surface that approach exposes.
+
 ## Voice and grounding
 
 The design doc obeys the corpus voice and grounding ([aaw.rules.md](aaw.rules.md), Voice): plain specific
@@ -113,11 +154,12 @@ a surface that does not exist is the most expensive kind of wrong, because it is
 ## How it composes
 
 The approach is the first half of a rung's design layer; the triad is the second. The arc: the architect
-surfaces the fork in four-part arms → the Operator rules → [specs.approach.md](../elixir/specs/specs.approach.md)
-governs the triad authored for the chosen arm → the lead-team builds it → the reconcile pass checks the build
-against the spec ([aaw.rules.md](aaw.rules.md), the lag-1 reconcile). This document defines only the fork; once
-the arm is chosen, authority passes to the triad contract, and the fork's record survives in the roadmap and
-the ledger.
+surfaces the fork in four-part arms → the Operator rules → the architect authors the chosen arm's **contract
+set** (above) → [specs.approach.md](../elixir/specs/specs.approach.md) governs the triad → the lead-team builds
+it → the reconcile pass checks the build against the spec ([aaw.rules.md](aaw.rules.md), the lag-1 reconcile).
+This document defines the architect's two design-step instruments — the fork and the contract set; once the arm
+is chosen and its surface documented, authority passes to the triad contract, and the fork's record survives in
+the roadmap and the ledger.
 
 ## References
 

@@ -76,15 +76,20 @@ mercury-ui/src/components/
   <group>/
     <Name>/
       <Name>.tsx         the component (forwardRef, HTML-attr extension, .mx-* className styling)
-      <Name>.prompt.md   the usage contract (ported from mercury-ds) — props, variants, examples
+      <Name>.prompt.md   the usage contract (hand-authored, mx.2) — props · variants · composition · examples
       index.ts           re-exports <Name>
 ```
 
 This replaces the **flat aggregate files** (`Selection.tsx`, `Overlay.tsx`, `DataDisplay.tsx`,
 `Feedback.tsx`, `Input.tsx` each hold several components). The grouping makes the library browsable,
-co-locates each component's contract beside its source, and gives Movement II a 1:1 home for
+co-locates each component's contract beside its source, and gives Movement III a 1:1 home for
 `<Name>.stories.tsx`. The eight groups are inherited from the `mercury-ds` taxonomy, with one added
 (`layout`).
+
+The contract beside each component is **hand-authored** (Movement II / `mx.2`, `D-7`) via the AAW
+*contract-set* method ([`../aaw/aaw.architect-approach.md`](../aaw/aaw.architect-approach.md)) — each
+contract a hypothesis fed by its siblings and reconciled against source + the real call sites. A
+generated stub is a seed for the prop list, never the contract.
 
 ### §4.1 · The component → group mapping (verified against source)
 
@@ -119,7 +124,10 @@ Notes (from the forensic inventory):
 
 1. **Real source** — `mercury-components/{Accordion,Toggle,Pagination}.tsx` (+ `mercury-additions.css`)
    → their `@mercury/ui` groups, then exported.
-2. **Contracts** — each generated `<Name>.prompt.md` → co-located beside its component (§4).
+2. **Contracts** — *deferred* in `mx.1`: the generated `<Name>.prompt.md` were extractor output (a
+   `window.MercuryUI` runtime note), not authored contracts, so they were **not** ported. The
+   co-located contract is **hand-authored in `mx.2`** (the contract layer, `D-7`). The generated
+   seeds survive in `mercury/ds-bundle/components/<group>/<Name>/` for their prop lists.
 3. **Tokens** — `handoff/tokens.css` diffed against `mercury-ui/src/styles/tokens.css`; newer tokens
    folded in do-no-harm (`S-3`).
 
@@ -156,6 +164,8 @@ The enum-prop language per family: `Button` `variant=primary|secondary|outline|g
 | **D-4** | Group placement (final): `PasswordStrength`→`feedback`, `AuthLayout`→`layout` (new group), `Accordion`/`Pagination`→`navigation`, `Toggle`→`selection`. Placement only, not correctness. | ✅ ruled in `mx.1` |
 | **D-5** | `@mercury/core`'s **public barrel is minimal** — `cx`/`ClassValue` + the `date` formatters (exactly what crosses into `@mercury/ui`'s surface); `@mercury/ui` re-exports them **explicitly** so the barrel stays decoupled from core's breadth. The moved foundation's `@/` imports were converted to **relative** so vite (no `@` alias in apps) bundles the date chain through the package boundary. | ✅ ruled in `mx.1` |
 | **D-6** | `mercury-ds/handoff/tokens.css` **not folded** — its only delta vs `@mercury/ui`'s `tokens.css` was `/* @kind color */` design-sync annotations (identical values, zero net-new tokens); do-no-harm. The salvaged `mercury-additions.css` (the Accordion/Toggle/Pagination styles) became `styles/additions.css`, `@import`ed by `styles/index.css`. The salvaged `Accordion` was hardened to React 19's nullable `useRef().current`. | ✅ ruled in `mx.1` |
+| **D-7** | The **component contract** is a co-located, **hand-authored** `<Name>.prompt.md` (never the design-sync stub) with a fixed six-section shape (role · Props · enum language · Composition · Examples · Notes), grounded in the `.tsx` + ≥1 real call site, cross-linked to siblings by relative path. Template frozen at [`contracts.md`](./contracts.md) from the `Button` exemplar. The contract-set method is [`../aaw/aaw.architect-approach.md`](../aaw/aaw.architect-approach.md). | ✅ ruled in `mx.2` |
+| **D-8** | The **app/library split holds by audit** — the reference apps (`showcase`, `economy`) are pure composers; the marginal hoist candidates (`showcase` `Demo`/`PropsTable`, `economy` `Mono`) stay **internal** (app-specific, or too thin to earn a public surface). A future genuinely-reusable element hoists **additively** with its own contract; an app never houses a reusable component (§2 corollary). | ✅ ruled in `mx.2` |
 
 ## Map
 
