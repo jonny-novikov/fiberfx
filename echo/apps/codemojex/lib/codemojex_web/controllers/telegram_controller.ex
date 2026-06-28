@@ -25,12 +25,59 @@ defmodule CodemojexWeb.TelegramController do
   @doc "Webhook receiver: 200 on an authenticated update (bridged to the bus); 401 otherwise."
   def webhook(conn, _params) do
     if authorized?(conn) do
-      _ = bridge(conn.body_params)
+      _ = handle_update(conn.body_params)
       send_resp(conn, 200, "")
     else
       send_resp(conn, 401, "")
     end
   end
+
+  # cm.7 — the Stars payment updates are handled SYNCHRONOUSLY here: Telegram requires a
+  # pre_checkout answer within ~10s, and successful_payment must settle exactly-once on the
+  # hot path. Every other update is bridged onto the bus as before (durable, replayable).
+  defp handle_update(%{"pre_checkout_query" => q}) when is_map(q), do: handle_pre_checkout(q)
+
+  defp handle_update(%{"message" => %{"successful_payment" => sp}}) when is_map(sp),
+    do: handle_successful_payment(sp)
+
+  defp handle_update(other), do: bridge(other)
+
+  # The pre_checkout tamper guard (fail-closed, cm.7 §7 step 2). Answer ok: true only when
+  # the order is still `created` and the presented amount equals the pinned price_minor; a
+  # mismatch / a non-created / absent order -> ok: false (the charge is refused).
+  defp handle_pre_checkout(%{"id" => qid, "invoice_payload" => order_id, "total_amount" => amount}) do
+    ok = Codemojex.KeyShop.valid_pre_checkout?(order_id, amount)
+    opts = if ok, do: [], else: [error_message: "This order is no longer valid."]
+    _ = Codemojex.Telegram.answer_pre_checkout_query(qid, ok, opts)
+    :ok
+  end
+
+  defp handle_pre_checkout(_), do: :ok
+
+  # Telegram's successful_payment IS the order-coupled confirmation (cm-7 D-5). Settle
+  # exactly-once via the OTX (rail, external_id) gate — a redelivered update no-ops (the
+  # suppressed OTX insert mints nothing / books nothing). The full receipt is preserved in
+  # raw_payload. external_id = the Telegram charge id; amount = the gross XTR credited.
+  defp handle_successful_payment(
+         %{
+           "invoice_payload" => order_id,
+           "telegram_payment_charge_id" => charge_id,
+           "total_amount" => amount
+         } = sp
+       ) do
+    _ =
+      Codemojex.KeyShop.settle_payment(%{
+        order_id: order_id,
+        rail: "stars",
+        external_id: charge_id,
+        amount_minor: amount,
+        payload: sp
+      })
+
+    :ok
+  end
+
+  defp handle_successful_payment(_), do: :ok
 
   # Constant-time compare of the presented secret-token header against the configured secret.
   # Fail-closed: no configured secret, or no header present, is unauthorized.

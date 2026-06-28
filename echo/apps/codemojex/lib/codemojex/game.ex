@@ -200,7 +200,7 @@ defmodule Codemojex do
   Startup is `Codemojex.Application`'s job — the Repo, PubSub, the EchoMQ bus and
   consumers, and the Phoenix endpoint come up there.
   """
-  alias Codemojex.{Rooms, Guesses, Settle, View, Wallet}
+  alias Codemojex.{Rooms, Guesses, Settle, View, Wallet, KeyShop}
 
   # players & wallet
   def create_player(name, opts \\ []), do: Wallet.create(name, opts)
@@ -209,8 +209,16 @@ defmodule Codemojex do
   # request before minting a SES.
   def resolve_player_by_tg(tg_user_id, opts \\ []), do: Wallet.resolve_by_tg(tg_user_id, opts)
   defdelegate balance(player), to: Wallet
-  defdelegate purchase_keys(player, keys, ref), to: Wallet
   defdelegate convert_to_keys(player, diamonds), to: Wallet
+
+  # commerce — the KeyShop (cm.7). The client-facing surface is create_order (the price +
+  # the keys are server-derived and pinned — the route takes {package_id, rail} only) and
+  # the catalog read; minting is reachable ONLY from settle_payment/1 (the OTX-gated
+  # fulfilment). The pre-cm.7 Codemojex.purchase_keys/3 facade is RETIRED (the double-mint
+  # client path, cm.7 §9 / S6) — keys are no longer minted from a client-supplied count.
+  defdelegate key_packages, to: KeyShop
+  defdelegate create_order(player, package_id, rail), to: KeyShop
+  defdelegate settle_payment(params), to: KeyShop
 
   # rooms & games
   def create_room(name, set, opts \\ []), do: Rooms.create_room(name, set, opts)

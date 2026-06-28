@@ -64,6 +64,21 @@ if config_env() == :prod do
 
   config :codemojex, valkey_port: String.to_integer(System.get_env("VALKEY_PORT") || "6390")
 
+  # The KeyShop pay-in rates (cm.7, cm-7 D-4) — the LAUNCH source is config, read once at
+  # order creation and PINNED on the order (the cm.8 rates table upgrades the source without
+  # reshaping the order). Each value is an integer (no float money, F-8):
+  #   * stars_usd: hundredths-of-a-cent per Star ($0.013/Star = 130, economy.packages.md);
+  #   * <rail>:    the rail's minor units per ONE USD cent (nanoTON / micro-USDT / kopeck).
+  # Stars needs no rate (the base price IS Stars). The non-Stars rails are SHAPED this rung
+  # (D-5) — their verifier adapters land later; the defaults track ~$2.60/TON, ~$1.00/USDT,
+  # ~90 RUB/USD and are env-tunable without a deploy edit.
+  config :codemojex, :key_shop_rates, %{
+    "stars_usd" => String.to_integer(System.get_env("KEYSHOP_STARS_USD") || "130"),
+    "ton" => String.to_integer(System.get_env("KEYSHOP_TON_MINOR_PER_CENT") || "3846154"),
+    "usdt" => String.to_integer(System.get_env("KEYSHOP_USDT_MINOR_PER_CENT") || "10000"),
+    "rub" => String.to_integer(System.get_env("KEYSHOP_RUB_MINOR_PER_CENT") || "90")
+  }
+
   # The Codemoji Telegram bot (@codemoji_bot). CODEMOJI_BOT_TOKEN arms the OUTBOUND send path —
   # Codemojex.Bot resolves it so the notification worker can deliver. Unset → every send drops with
   # :no_token and the app still boots (the bot is simply idle).

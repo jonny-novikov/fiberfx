@@ -146,6 +146,29 @@ defmodule Codemojex.Wallet do
   @doc "Buy keys (paid externally via Telegram Stars); `ref` is the payment id."
   def purchase_keys(player, keys, ref), do: credit(player, :keys, keys, "purchase", ref)
 
+  @doc """
+  Mint purchased keys into the player's wallet (cm.7) — a `+keys` credit keyed on the
+  `ORD` id, called INSIDE the caller's `Repo.transaction` (`KeyShop.settle_payment/1`) so
+  it is atomic with the OTX receipt + the revenue booking (INV-ATOMIC-PURCHASE). Unlike
+  `purchase_keys/3` (which opens its OWN transaction and rode the weak `"stars"` ref), this
+  rides the settlement transaction and keys the `transactions` `ref` on the ORD id (the
+  per-order reconciliation key, the cm.7 fix for the double-mint). The mint is a credit, so
+  it is always non-negative — a mint never breaches `players_non_negative` (A-7). Returns
+  `{:ok, new_keys}`; rolls the CALLER's transaction back on a missing player. This is the
+  additive cm.7 seam — `house_post/5` and the cm.6 booking sites stay byte-frozen.
+  """
+  def credit_purchase(player, keys, order_id) when is_integer(keys) and keys >= 0 do
+    case lock(player) do
+      nil ->
+        Repo.rollback(:no_player)
+
+      p ->
+        update!(p, %{keys: p.keys + keys})
+        txn!(player, :keys, keys, "purchase", order_id)
+        {:ok, p.keys + keys}
+    end
+  end
+
   @doc "Deposit a diamond prize for a game win."
   def deposit_prize(player, diamonds, ref), do: credit(player, :diamonds, diamonds, "prize", ref)
 

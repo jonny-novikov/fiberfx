@@ -41,12 +41,18 @@ defmodule CodemojexWeb.GameController do
     json(conn, %{leaderboard: rows(Codemojex.leaderboard(game, 20))})
   end
 
-  def buy_keys(conn, params) do
-    with keys when is_integer(keys) <- int(params["keys"], {:error, :bad_amount}),
-         {:ok, balance} <- Codemojex.purchase_keys(conn.assigns.player, keys, params["ref"] || "stars") do
-      json(conn, %{balance: balance})
+  # cm.7 — the KeyShop create-order route. The client supplies ONLY {package_id, rail};
+  # the key count, the price, and the payment ref are server-derived and pinned on the ORD
+  # (the double-mint hazard of params["keys"]/params["ref"] is closed — S6/A6). Minting
+  # happens later, only via KeyShop.settle_payment/1 (the OTX-gated fulfilment). For the
+  # Stars rail an XTR invoice link is returned when a bot token is configured.
+  def buy_keys(conn, %{"package_id" => package_id, "rail" => rail}) do
+    with {:ok, order} <- Codemojex.create_order(conn.assigns.player, package_id, rail) do
+      json(conn, %{order: order_json(order), invoice: invoice_for(order)})
     end
   end
+
+  def buy_keys(_conn, _params), do: {:error, :bad_request}
 
   def convert(conn, params) do
     with diamonds when is_integer(diamonds) <- int(params["diamonds"], {:error, :bad_amount}),
@@ -57,6 +63,33 @@ defmodule CodemojexWeb.GameController do
 
   # --- helpers ---
   defp rows(pairs), do: Enum.map(pairs, fn {p, s} -> %{player: p, score: s} end)
+
+  # The order, projected to the client (no internal rate provenance leaks).
+  defp order_json(o) do
+    %{id: o.id, rail: o.rail, keys: o.keys, currency: o.currency, price_minor: o.price_minor, status: o.status}
+  end
+
+  # A Stars XTR invoice link when a bot token is configured (else nil — the order is still
+  # created; the Mini App can re-request the link once a token is wired). Keyed by the ORD
+  # id as the invoice payload, so pre_checkout / successful_payment resolve back to it.
+  defp invoice_for(%{rail: "stars"} = order) do
+    if telegram_token?() do
+      case Codemojex.Telegram.create_invoice_link(%{
+             "title" => "#{order.keys} keys",
+             "description" => "Codemoji key bundle",
+             "payload" => order.id,
+             "prices" => [%{"label" => "#{order.keys} keys", "amount" => order.price_minor}]
+           }) do
+        {:ok, link} -> link
+        _ -> nil
+      end
+    end
+  end
+
+  defp invoice_for(_order), do: nil
+
+  defp telegram_token?,
+    do: is_binary(Keyword.get(Application.get_env(:codemojex, Codemojex.Telegram, []), :token))
 
   defp int(nil, default), do: default
   defp int(v, _default) when is_integer(v), do: v

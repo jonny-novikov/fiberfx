@@ -18,6 +18,11 @@ defmodule Codemojex.Application do
 
   @impl true
   def start(_type, _args) do
+    # cm.7 — the KeyShop boot vector: assert each rail's factor == 10**decimals before any
+    # order can be priced, so a mis-scaling money constant (a fat-fingered nanoTON factor)
+    # fails the boot, not the first booked order (the EchoData.BrandedId.self_check! pattern).
+    :ok = Codemojex.Rails.self_check!()
+
     conn = conn_opts()
 
     children =

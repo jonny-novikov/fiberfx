@@ -683,14 +683,18 @@ table first (§2.4), then calls this same primitive:
 # OTX insert, so a doubly-delivered/duplicate payment mints once, books once. Returns
 # {:ok, :fulfilled} (wrote) | {:ok, :already_fulfilled} (suppressed) | {:error, reason}.
 def settle_payment(%{order_id: order_id, rail: rail, external_id: external_id,
-                     amount_minor: amount_minor, payload: payload}) do
-  Repo.transaction(fn ->
-    order = lock_order(order_id)                                  # SELECT ... FOR UPDATE (the per-order serialize)
+                     amount_minor: amount_minor} = params) do
+  payload = Map.get(params, :payload)
 
-    cond do
-      is_nil(order) -> Repo.rollback(:no_order)
-      order.status == "paid" -> :already_fulfilled               # fast idempotency (the order is settled)
-      true ->
+  Repo.transaction(fn ->
+    case lock_order(order_id) do                                 # SELECT ... FOR UPDATE (the per-order serialize)
+      nil -> Repo.rollback(:no_order)
+      order ->
+        # NO `order.status == "paid"` fast-path (L-5c): the (rail, external_id) partial-unique
+        # index is the SOLE, race-safe exactly-once authority (D-5). A status read-then-act would
+        # (i) MASK the index from the A1 net-zero mutation guard — dropping the index would NOT
+        # fail the test if a status check short-circuits first — and (ii) add a TOCTOU
+        # read-then-act window the index closes. The index alone decides exactly-once.
         case insert_otx(order_id, rail, external_id, amount_minor, payload) do
           :suppressed -> :already_fulfilled                       # the (rail, external_id) dedup fired — mint NOTHING
           :wrote ->

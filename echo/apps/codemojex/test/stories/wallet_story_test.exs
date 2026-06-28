@@ -71,7 +71,9 @@ defmodule Codemojex.Stories.WalletStoryTest do
     end
 
     when_ "they buy 5 keys (paid externally via Stars)" do
-      assert {:ok, _} = Codemojex.purchase_keys(p, 5, "PMTstars000001")
+      # cm.7 retired the Codemojex.purchase_keys facade (the double-mint client path, S6);
+      # the wallet credit primitive still proves a keys purchase credits the balance.
+      assert {:ok, _} = Codemojex.Wallet.purchase_keys(p, 5, "PMTstars000001")
     end
 
     then_ "the key balance reflects the purchase" do

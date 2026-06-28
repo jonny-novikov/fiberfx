@@ -34,6 +34,30 @@ defmodule Codemojex.Telegram do
     call("answerCallbackQuery", body)
   end
 
+  @doc """
+  Answer a `pre_checkout_query` (cm.7 — the Stars payment tamper gate). `ok: true` lets
+  the charge proceed; `ok: false` refuses it (carry `error_message:` in `opts`). Telegram
+  requires this answer within ~10s, so the webhook handler calls it synchronously.
+  """
+  @spec answer_pre_checkout_query(binary(), boolean(), keyword()) :: {:ok, map()} | {:error, term()}
+  def answer_pre_checkout_query(id, ok, opts \\ []) do
+    body = Enum.into(opts, %{"pre_checkout_query_id" => id, "ok" => ok})
+    call("answerPreCheckoutQuery", body)
+  end
+
+  @doc """
+  Create an invoice link for a Stars (XTR) purchase (cm.7 §7 step 1). `params` carries
+  `"title"`, `"description"`, `"payload"` (the ORD id Telegram echoes on pre_checkout /
+  successful_payment), and `"prices"` (a list of `%{"label" => ..., "amount" => stars}` —
+  XTR is integer, no sub-unit). `currency` defaults to `"XTR"` and `provider_token` to `""`
+  (the Stars convention). Returns `{:ok, link}`.
+  """
+  @spec create_invoice_link(map()) :: {:ok, binary()} | {:error, term()}
+  def create_invoice_link(params) when is_map(params) do
+    body = Map.merge(%{"currency" => "XTR", "provider_token" => ""}, params)
+    call("createInvoiceLink", body)
+  end
+
   # --- transport -------------------------------------------------------------
 
   defp call(method, body) do
