@@ -11,7 +11,8 @@
 Make the **edge game-bundle build self-contained and the front end developable on its own** by removing the
 `file:../../../deps/phoenix*` coupling. **Vendor** the Phoenix client as TypeScript packages under
 `assets/packages/*` — **two** packages, **`@echo/phoenix`** + **`@echo/phoenix_live_view`** (`phoenix_html`
-folded into LV as `src/phoenix_html.ts`, **no standalone package**) — make `assets/` a **pnpm** workspace
+folded into LV as `src/phoenix_html.ts`, resolved via the subpath export `@echo/phoenix_live_view/phoenix_html`,
+**no standalone package**) — make `assets/` a **pnpm** workspace
 (`@codemojex/edge`), move the build to a modern **es2024** target, run the vendored packages' suites on
 **vitest** (the upstream **jest** retired), and **relocate the edge build into `assets/`** (`Dockerfile`,
 `fly.toml`, `bin/edge-deploy.sh`) so the edge image builds from a **self-contained `assets/` context** — no
@@ -53,13 +54,15 @@ Dockerfile/fly.toml rewrite, the `bin/` relocation, and the awscli docs.
 
 1. Vendor `@echo/phoenix` + `@echo/phoenix_live_view` under `assets/packages/*`, preserving the §5 public
    surface (`Socket`; `LiveSocket` + the hook lifecycle; `phoenix_html` side-effects via LV's
-   `src/phoenix_html.ts`). → S3 / A4 (INV-VENDORED-FAITHFUL — the load-bearing one).
+   `src/phoenix_html.ts`, exposed as the subpath `@echo/phoenix_live_view/phoenix_html` — kept inert, `app.js`
+   unchanged). → S3 / A4 (INV-VENDORED-FAITHFUL — the load-bearing one).
 2. Make `assets/` a **pnpm** workspace — add `pnpm-workspace.yaml` (`packages: ["packages/*"]`); convert
    `assets/package.json` deps to `@echo/* : workspace:*`; commit `pnpm-lock.yaml`; no `package-lock.json`. →
    S1, S2, S4 / A1, A2, A3, A14 (INV-DEP-FREE, INV-STANDALONE-DEV, INV-PNPM).
 3. Complete the **jest→vitest** migration on `@echo/phoenix_live_view`'s `package.json` (drop jest devDeps;
-   `test: "vitest"`; prune the `npm run`/`mix`/`e2e` scripts; fix `types`/`files`); both packages' vitest
-   suites green. → S9 / A13 (INV-VITEST).
+   `test: "vitest"`; prune the `npm run`/`mix`/`e2e` scripts; fix `types`/`files`). **Shipped:** the package.json
+   is jest-free; **A13 (both suites green) is DEFERRED to cm-tma.2** — the `test/*.test.ts` files remain unported
+   upstream jest. → S9 / A13 (INV-VITEST).
 4. Move the build to **es2024** — `assets/tsconfig.json` (`target`+`lib`) + `assets/vite.config.ts` +
    `assets/vite.client.config.ts` (es2020 → es2024). → S9 / A12 (INV-ES2024).
 5. Rewrite `assets/Dockerfile` self-contained — context `assets/`; corepack/pnpm; drop the three
@@ -109,7 +112,7 @@ on `@echo/*`), `src/**` (the swap ABI), `lib/codemojex/edge.ex`, `echo/Dockerfil
 | the host workspace | `assets/package.json:2` (`@codemojex/edge`), `:6-9` (pnpm engine), `:16-17` (`@echo/*` deps) |
 | the vendored libs | `assets/packages/phoenix` (`@echo/phoenix` v1.8.8, vitest) · `assets/packages/phoenix_live_view` (`@echo/phoenix_live_view` v1.2.3, `morphdom`+bare `phoenix`, `src/phoenix_html.ts`, jest→vitest pending) |
 | the only phoenix consumer | `assets/js/app.js:5-6` (`@echo/phoenix`/`@echo/phoenix_live_view` imports), `:62-67` (`new LiveSocket("/live", Socket, {hooks:{EdgeReact}})` + `connect`) |
-| LV → phoenix (internal) | `packages/phoenix_live_view/src/*.ts` bare `from "phoenix"` (5) + `from "morphdom"` (2) |
+| LV → phoenix (internal) | `packages/phoenix_live_view/src/*.ts` bare `from "phoenix"` — **2 real imports** (`view.ts:1` value `Channel` + `live_socket.ts:1` type-only `Socket`; 3 JSDoc) + `from "morphdom"` (2 files) |
 | the game bundle (no phoenix) | `assets/src/index.tsx:5-9` (`mount(el,props,bridge)`); the ABI `assets/src/types.ts` (`GameProps`/`Bridge`) |
 | the es2024 laggards | `assets/tsconfig.json:3,5` · `assets/vite.config.ts:24` · `assets/vite.client.config.ts:11` (all `es2020`) |
 | the edge image | `assets/Dockerfile` (`:23-32` awscli, `:39-41` `COPY deps/`, `:51` ENTRYPOINT) |
@@ -124,8 +127,8 @@ on `@echo/*`), `src/**` (the swap ABI), `lib/codemojex/edge.ex`, `echo/Dockerfil
 `@echo/*` to `packages/*`, no `package-lock.json` (A2/A14) · `pnpm build` + `pnpm build:client` green with **no
 `echo/deps/` present** (A3) · the **runtime boot smoke** — the `LiveSocket` connects + the game island mounts
 (A4, the load-bearing check; a green `vite build` is **not** sufficient) · `grep -rniE 'es2020' tsconfig.json
-vite.config.ts vite.client.config.ts` → **0** (A12) · `pnpm -C packages/* test` green + `grep -rniE '\bjest\b'
-packages` → **0** (A13) · `grep -nE 'COPY +deps/|\.\./' Dockerfile` → **0** + a build with context
+vite.config.ts vite.client.config.ts` → **0** (A12) · (A13 — **DEFERRED to cm-tma.2**: package.json jest-free but `test/*.test.ts` unported; target `pnpm -C
+packages/* test` green + `grep '\bjest\b' packages` → 0) · `grep -nE 'COPY +deps/|\.\./' Dockerfile` → **0** + a build with context
 `apps/codemojex/assets` succeeds (A5) · `grep awscli.amazonaws.com Dockerfile` → **0**, `grep
 edge.codemoji.games/dist/awscli Dockerfile` → present (A6) · `bin/edge-deploy.sh --dry-run` green + the old
 `scripts/edge-deploy.sh` gone (A7/A11) · `grep -rniE 'npm ci|npm run|npm install' Dockerfile bin/` → **0**

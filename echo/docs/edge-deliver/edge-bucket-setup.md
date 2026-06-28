@@ -4,7 +4,7 @@ How to stand up the **dedicated Tigris bucket** that serves the hot-swappable Re
 `edge.codemoji.games`, wire the env, and run the first deploy with
 [`scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh). The Tier-1 welcome is served
 **same-origin by the app** (`/` + `Plug.Static`), so this bucket serves only the Tier-3 game — see
-[livereact-hot-swap.md](livereact-hot-swap.md) for why the game lives at the edge.
+[livereact-hot-swap.md](../codemojex/livereact-hot-swap.md) for why the game lives at the edge.
 
 > **TL;DR.** Create a **public** Tigris bucket → set `TIGRIS_EDGE_*` in `echo/.env` (for the deploy
 > script) → point `edge.codemoji.games` at it (custom domain + CNAME) → `source echo/.env && bash
@@ -79,6 +79,40 @@ fly secrets set GAME_EDGE_HOST=edge.codemoji.games        # optional — the cod
 fly secrets set GAME_ASSET_URL=https://edge.codemoji.games/game-<hash>.js
 ```
 
+### c. Pre-stage the awscli installer (one-time — the edge image fetches it from here)
+
+The edge image installs the AWS CLI v2 at build time. The public AWS origin
+(`awscli.amazonaws.com`) is **not reliably reachable from Fly's build/runtime network**, so the
+image fetches the installer from this bucket instead
+(`edge.codemoji.games/dist/awscli-<arch>.zip`). Upload **both** architectures once, under a long
+immutable cache (the installer is versioned/static):
+
+```bash
+set -a && source echo/.env && set +a   # for $TIGRIS_EDGE_BUCKET + $TIGRIS_EDGE_ENDPOINT_URL
+
+# x86_64 (Fly amd64 builders)
+aws s3 cp awscli-exe-linux-x86_64.zip "s3://$TIGRIS_EDGE_BUCKET/dist/awscli-x86_64.zip" \
+  --endpoint-url "$TIGRIS_EDGE_ENDPOINT_URL" \
+  --cache-control "public,max-age=31536000,immutable" --content-type application/zip
+
+# aarch64 (Fly arm64 builders)
+aws s3 cp awscli-exe-linux-aarch64.zip "s3://$TIGRIS_EDGE_BUCKET/dist/awscli-aarch64.zip" \
+  --endpoint-url "$TIGRIS_EDGE_ENDPOINT_URL" \
+  --cache-control "public,max-age=31536000,immutable" --content-type application/zip
+```
+
+Fetch the source zips from AWS on any machine that can reach the origin
+(`https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip` and `…-aarch64.zip`), then upload as
+above. Confirm public reachability over the custom domain:
+
+```bash
+curl -fsSI https://edge.codemoji.games/dist/awscli-x86_64.zip   # 200
+curl -fsSI https://edge.codemoji.games/dist/awscli-aarch64.zip  # 200
+```
+
+The upload is the Operator's (like the bucket creation). The edge `Dockerfile` then does
+`curl -fsSL https://edge.codemoji.games/dist/awscli-${awsarch}.zip` — never `amazonaws.com`.
+
 ## 4. Step 3 — the custom domain `edge.codemoji.games`
 
 1. In the **Tigris dashboard** (`fly storage dashboard`, or the Tigris console), add the custom domain
@@ -105,7 +139,7 @@ bash apps/codemojex/scripts/edge-deploy.sh --dry-run   # build + show what would
 bash apps/codemojex/scripts/edge-deploy.sh             # build → upload immutable → flip pointer → verify
 ```
 
-The script (full contract in its header and in [livereact-hot-swap.md §6](livereact-hot-swap.md)):
+The script (full contract in its header and in [livereact-hot-swap.md §6](../codemojex/livereact-hot-swap.md)):
 
 1. `npm ci && npm run build` → `priv/static/game/game-<hash>.js` (+ vite manifest).
 2. uploads every `game-*` file with `Cache-Control: public,max-age=31536000,immutable`.
@@ -151,8 +185,8 @@ render path:
 
 ## 9. Map
 
-[livereact-hot-swap.md](livereact-hot-swap.md) · [render-stack.md](render-stack.md) ·
-[dev-and-testing.md](dev-and-testing.md) · the script:
+[livereact-hot-swap.md](../codemojex/livereact-hot-swap.md) · [render-stack.md](../codemojex/render-stack.md) ·
+[dev-and-testing.md](../codemojex/dev-and-testing.md) · the script:
 [`apps/codemojex/scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh) · the resolver:
 [`apps/codemojex/lib/codemojex/edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex) · env template:
 [`echo/.env.example`](../../.env.example).

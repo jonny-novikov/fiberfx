@@ -21,7 +21,7 @@ export default defineConfig({
     outDir: "../priv/static/game",
     emptyOutDir: true,
     manifest: true,
-    target: "es2020",
+    target: "es2024",
     rollupOptions: {
       input: r("./src/index.tsx"),
       output: {

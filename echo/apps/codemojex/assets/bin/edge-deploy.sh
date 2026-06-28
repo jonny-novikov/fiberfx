@@ -10,14 +10,18 @@
 # a previous (still-immutable) hash — no rebuild.
 #
 # Setup, the env vars below, and the boundary (this publishes to a live bucket — the
-# Operator runs it): echo/docs/codemojex/edge-bucket-setup.md
+# Operator runs it): echo/docs/edge-deliver/edge-bucket-setup.md
 #
-# Usage:
-#   scripts/edge-deploy.sh                       # build + upload + flip the pointer
-#   scripts/edge-deploy.sh --dry-run             # build + show what WOULD upload/flip
-#   scripts/edge-deploy.sh --rollback game-<hash>.js   # re-point manifest only, no rebuild
+# Canonical path: echo/apps/codemojex/assets/bin/edge-deploy.sh — run from a checkout
+# (cd assets && bin/edge-deploy.sh), or as the self-contained edge image ENTRYPOINT
+# (../Dockerfile + ../fly.toml; the image build context is assets/ only).
 #
-# Required env (source echo/.env first — mix/this script do NOT auto-load it):
+# Usage (from assets/):
+#   bin/edge-deploy.sh                       # build + upload + flip the pointer
+#   bin/edge-deploy.sh --dry-run             # build + show what WOULD upload/flip
+#   bin/edge-deploy.sh --rollback game-<hash>.js   # re-point manifest only, no rebuild
+#
+# Required env (source echo/.env first — this script does NOT auto-load it):
 #   TIGRIS_EDGE_BUCKET            the dedicated edge bucket name (e.g. codemojex-edge-prod)
 #   TIGRIS_EDGE_ACCESS_KEY_ID     the bucket's keypair (from `fly storage create`)
 #   TIGRIS_EDGE_SECRET_ACCESS_KEY
@@ -26,7 +30,7 @@
 #   GAME_EDGE_HOST              public host (default edge.codemoji.games; Codemojex.Edge reads the same)
 #   TIGRIS_EDGE_REGION           default "auto"
 #
-# Requires: aws CLI, node, npm, curl.
+# Requires: aws CLI, node, pnpm, curl.
 
 set -euo pipefail
 
@@ -54,7 +58,7 @@ export AWS_ACCESS_KEY_ID="${TIGRIS_EDGE_ACCESS_KEY_ID:?set TIGRIS_EDGE_ACCESS_KE
 export AWS_SECRET_ACCESS_KEY="${TIGRIS_EDGE_SECRET_ACCESS_KEY:?set TIGRIS_EDGE_SECRET_ACCESS_KEY}"
 export AWS_REGION="${TIGRIS_EDGE_REGION:-auto}"
 
-for bin in aws node curl; do
+for bin in aws node pnpm curl; do
   command -v "$bin" >/dev/null 2>&1 || { echo "edge-deploy: '$bin' not found on PATH" >&2; exit 1; }
 done
 
@@ -88,10 +92,10 @@ if [ -n "$ROLLBACK" ]; then
 fi
 
 # --- 1. build the content-hashed game bundle ---
-cd "$(dirname "$0")/../assets"
+cd "$(dirname "$0")/.."
 echo "--- build (vite.config.ts -> ../priv/static/game) ---"
-npm ci
-npm run build
+pnpm install --frozen-lockfile
+pnpm build
 OUT="../priv/static/game"
 
 ENTRY="$(node -e '

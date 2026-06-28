@@ -177,7 +177,8 @@ the always-on engine.*
 *As a front-end engineer, I want the build at a modern es2024 target and the vendored packages tested on
 vitest, so that the toolchain is current and the package behavior is pinned without the upstream jest.*
 
-**Exercises:** INV-ES2024 (A12); INV-VITEST (A13). **Surface:** `assets/tsconfig.json` (`target`/`lib`) +
+**Exercises:** INV-ES2024 (A12 — SHIPPED); INV-VITEST (A13 — **DEFERRED to cm-tma.2**; see the body §10 A13).
+**Surface:** `assets/tsconfig.json` (`target`/`lib`) +
 `assets/vite.config.ts` + `assets/vite.client.config.ts` (es2024); `packages/*/vitest.config.ts` +
 `packages/*/test/*.test.ts`; `@echo/phoenix_live_view`'s cleaned `package.json`.
 
@@ -185,6 +186,8 @@ vitest, so that the toolchain is current and the package behavior is pinned with
 - **When** `grep -rniE 'es2020' assets/tsconfig.json assets/vite.config.ts assets/vite.client.config.ts` runs,
   and `pnpm -C packages/phoenix test` + `pnpm -C packages/phoenix_live_view test` run, and
   `grep -rniE '\bjest\b' assets/packages` runs
-- **Then** the es2020 grep returns **0** (all four sites name es2024), both vitest suites **pass**, and the
-  jest grep returns **0** (no jest devDeps, scripts, or config remain — each package has a `vitest.config.ts`),
+- **Then** the es2020 grep returns **0** (all four sites name es2024 — **A12 SHIPPED**); and — **A13 DEFERRED
+  to cm-tma.2** — the package.json end-state is jest-free (no jest devDeps/scripts/config; each package has a
+  `vitest.config.ts`) while the vendored `test/*.test.ts` files remain unported upstream jest, so both suites do
+  not yet run and the `grep '\bjest\b'` over the test files is non-zero,
 - **And** both bundles still build green at the new target (A3) and the lobby still boots (A4).

@@ -19,6 +19,13 @@
 > `assets/bin/edge-deploy.sh`, and the `dist/awscli-*` pre-stage. **npm is retired** — no `package-lock.json`,
 > no `npm ci`/`npm run` anywhere in the end state.
 >
+> **Shipped status (cm-tma.1 — backward-reconciled to the as-built after the build):** cm-tma.1 **shipped at
+> 13/14 front-end gates green** (A1–A12, A14 + the load-bearing A4 runtime boot-smoke, mutation-proven). **A13
+> is DEFERRED to cm-tma.2** — the `package.json` end-state is jest-free, but the vendored `test/*.test.ts` files
+> are still upstream-jest-shaped and do not yet run (§10 A13). Two toolchain facts were folded back from the
+> build: the es2024 target **forced `vite ^5.4.0 → ^6.0.0`** (§es-build · §9), and the rebuilt served LiveView
+> bundle `priv/static/assets/app.js` was **left unrefreshed** (outside the `assets/**` boundary; §9).
+>
 > **Grounding caveat (doc drift):** the narrative docs [`codemoji.static-edge.md`](../codemoji.static-edge.md)
 > and [`codemojex-tma.roadmap.md`](../codemojex-tma.roadmap.md) still say `static.codemoji.games` + `board` +
 > `assets/react/`. The **as-built** (and this rung) use `edge.codemoji.games` + the **game** bundle
@@ -90,9 +97,9 @@ shippable end state below.
 |---|---|
 | The host package | `assets/package.json` — `name "@codemojex/edge"` (`:2`), `type:"module"`, `engines.pnpm ">=10.0.0"` (`:6-9`); scripts `build`=`vite build` (`:11`), `build:client`=`vite build --config vite.client.config.ts` (`:12`), `dev`=`build:client --watch` (`:13`); deps `phoenix`/`phoenix_live_view` → `@echo/*` (`:16-17`, **no `file:`**), react/react-dom `^18.3.1` (`:18-19`) |
 | The vendored `phoenix` | `assets/packages/phoenix/package.json` — `name "@echo/phoenix"` v1.8.8, `type:"module"`, `exports "."→./src/index.ts`; `scripts.test "vitest"` (`:23`); devDeps **vitest** only (`:35`) — **no jest**. `src/*.ts` (channel/socket/serializer/…) + `test/*.test.ts` + `vite.config.ts` (`target:"es2024"`) + `vitest.config.ts` |
-| The vendored `phoenix_live_view` | `assets/packages/phoenix_live_view/package.json` — `name "@echo/phoenix_live_view"` v1.2.3; `dependencies.morphdom "2.7.8"` (`:20`); **still carries the upstream jest toolchain** — `jest`/`jest-environment-jsdom`/`ts-jest`/`@types/jest`/`eslint-plugin-jest` devDeps + `js:test`/`test` scripts calling `jest` via `npm run` (`:36-58`). `src/*.ts` (incl. `src/phoenix_html.ts`) + `test/*.test.ts` + `vite.config.ts` (`target:"es2024"`) + `vitest.config.ts` already present |
+| The vendored `phoenix_live_view` (at reconcile) | `assets/packages/phoenix_live_view/package.json` — `name "@echo/phoenix_live_view"` v1.2.3; `dependencies.morphdom "2.7.8"` (`:20`); at reconcile it **still carried the upstream jest toolchain** — `jest`/`jest-environment-jsdom`/`ts-jest`/`@types/jest`/`eslint-plugin-jest` devDeps + a registry `"phoenix":"1.7.21"` devDep (`:40`) + `js:test`/`test` scripts calling `jest` via `npm run` (`:36-58`). `src/*.ts` (incl. `src/phoenix_html.ts`) + `test/*.test.ts` + `vite.config.ts` (`target:"es2024"`) + `vitest.config.ts` already present. **Shipped:** the build dropped the jest devDeps + the registry `phoenix` shadow, added `phoenix` (`workspace:@echo/phoenix@*`) + the `./phoenix_html` subpath export, set `test:"vitest"`, fixed `types`/`files` — **but the `test/*.test.ts` files remain unported upstream jest, so A13 is DEFERRED to cm-tma.2** (§10 A13) |
 | The ONLY phoenix consumer | `assets/js/app.js:5-6` — `import { Socket } from "@echo/phoenix"` + `import { LiveSocket } from "@echo/phoenix_live_view"` (**scoped** names); boots `new LiveSocket("/live", Socket, { params, hooks:{ EdgeReact } })` + `liveSocket.connect()` (`:62-67`) |
-| LV → phoenix (internal) | `assets/packages/phoenix_live_view/src/*.ts` import **bare** `"phoenix"` (5 sites) + `"morphdom"` (2) — so within the workspace `@echo/phoenix_live_view` resolves bare `phoenix` to the workspace `@echo/phoenix` |
+| LV → phoenix (internal) | `assets/packages/phoenix_live_view/src/*.ts` import **bare** `"phoenix"` — **2 real imports** (`view.ts:1` a value `import { Channel }`; `live_socket.ts:1` a type-only `import { type Socket }`; the other 3 `"phoenix"` strings are JSDoc at `live_socket.ts:311,314,329`) + `"morphdom"` (2 files) — so within the workspace `@echo/phoenix_live_view` resolves bare `phoenix` to the workspace `@echo/phoenix`. The `view.ts` **value** import is load-bearing: it is why dropping the registry `"phoenix":"1.7.21"` LV devDep (so it cannot shadow `workspace:@echo/phoenix@*`) matters |
 | The game = no phoenix | `assets/src/index.tsx:5-9` — `react-dom/client` + `@/GameEdge` + `@/types`; exports `mount(el, props, bridge)` returning `{update, unmount}` |
 | The swap contract | `assets/src/types.ts` — `GameProps` (`view`/`leaderboard`/`history`/`me`) + `Bridge` (`pushEvent`/`onServerEvent`); kept in lockstep with `GameLive.game_props/3` |
 | The build target (laggards) | `assets/tsconfig.json:3,5` — `target:"ES2020"` + `lib:["ES2020",…]`; `assets/vite.config.ts:24` + `assets/vite.client.config.ts:11` — `target:"es2020"`. (The *package* vite configs already target `es2024`.) |
@@ -171,8 +178,14 @@ the build:
   `this.handleEvent(name, cb)` (returning an unsubscribe), and the `mounted()`/`destroyed()` callbacks.
   Surface used: `app.js:6,11-51,62-66`. **Depends on `morphdom` (registry) + `@echo/phoenix` (workspace
   alias).** Carries `src/phoenix_html.ts` so the `phoenix_html` side-effects (`data-confirm` / method-link
-  behavior) exist within the LV package — **no standalone `phoenix_html` package or host dependency** (the
-  host does not import `phoenix_html`).
+  behavior) exist within the LV package, **resolved via a subpath export** — `@echo/phoenix_live_view`'s
+  `package.json` declares `"exports": { ".": "./src/index.ts", "./phoenix_html": "./src/phoenix_html.ts" }`,
+  imported as `import "@echo/phoenix_live_view/phoenix_html"` for its side effect **only where
+  `data-method`/`data-confirm` links exist** (mirroring upstream's explicit `import "phoenix_html"`). There is
+  **no standalone `phoenix_html` package or host dependency**; the decision is unchanged — this states the
+  resolution mechanism. The host keeps it **inert today** (`app.js` does **not** import the subpath, and stays
+  byte-unchanged); the import line is added the day such links appear. Grounding:
+  [`phoenix-client-resolution.md §4`](../../../echo/docs/codemojex/phoenix-client-resolution.md).
 
 > **Not literally "dependency-free."** The original aim was zero deps, but the as-built keeps `morphdom`
 > (LiveView genuinely needs it for DOM patching) and the intra-workspace `phoenix` edge. The real removed
@@ -181,15 +194,20 @@ the build:
 
 **The vitest faithfulness layer (jest retired).** The vendored packages carry their **own ported test suites**
 (`packages/*/test/*.test.ts`) run on **vitest** (`vitest.config.ts` in each), migrated from the upstream
-**jest**. `@echo/phoenix` is the **completed reference** — `test: "vitest"`, vitest the only test devDep, no
-jest. `@echo/phoenix_live_view` has its `vitest.config.ts` + `*.test.ts` in place but its `package.json` still
+**jest**. `@echo/phoenix`'s `package.json` is the **cleaned reference** — `test: "vitest"`, vitest the only test devDep,
+no jest *(backward-reconcile: the package.json is jest-free, but the `test/*.test.ts` files in **both** packages
+remain upstream-jest-shaped and do not yet run — see the A13 deferral below)*. `@echo/phoenix_live_view` has its `vitest.config.ts` + `*.test.ts` in place but its `package.json` still
 ships the upstream jest devDeps (`jest`, `jest-environment-jsdom`, `ts-jest`, `@types/jest`,
 `eslint-plugin-jest`) and the upstream `js:test`/`test`/`e2e:*` scripts that call `jest` and `mix`/`playwright`
 via `npm run`. This rung **completes the jest→vitest + npm→pnpm conversion on the LV package**: drop the jest
 devDeps, set `test: "vitest"` (+ `typecheck`), prune the upstream `e2e:*`/`mix`/`npm run` scripts to the
 vendored package's needs, and fix the `types`/`files` fields to the vendored `src/` layout. A green vitest run
-of **both** packages (`pnpm -C packages/<lib> test`) is a faithfulness proof that **complements** the runtime
-boot smoke (A4) — the suites pin the unit behavior; the smoke pins the integration.
+of **both** packages (`pnpm -C packages/<lib> test`) is the **A13** faithfulness proof that **complements** the
+runtime boot smoke (A4) — the suites pin the unit behavior; the smoke pins the integration. **As shipped, A13 is
+DEFERRED to cm-tma.2:** the package.json config is jest-free, but the `test/*.test.ts` files in both packages
+remain upstream-jest-shaped (both suites collect 0 and fail) — porting the ~320 jest call-sites (the `../src`
+import paths, the `test/tsconfig.json` `extends`, the jsdom env) is a separable concern, so cm-tma.1 ships with
+**A4 as the load-bearing faithfulness proof** (mutation-proven) and the unit suites following in cm-tma.2.
 
 **INV-VENDORED-FAITHFUL:** after the wiring, `import { Socket } from "@echo/phoenix"` and
 `import { LiveSocket } from "@echo/phoenix_live_view"` resolve to `packages/*`, the LiveView client builds
@@ -292,8 +310,17 @@ trusts.**
 
 > **Changed by this rung (not in the unchanged set):** `js/app.js` (already on the `@echo/*` scoped imports);
 > `assets/tsconfig.json` + `assets/vite.config.ts` + `assets/vite.client.config.ts` (es2020 → **es2024**);
-> `assets/package.json` (the `workspace:*` finish); `@echo/phoenix_live_view`'s `package.json` (jest→vitest +
-> npm→pnpm cleanup). `src/index.tsx` + `src/types.ts` (the swap ABI) **are** byte-unchanged.
+> `assets/package.json` (the `workspace:*` finish **+ the forced `vite ^5.4.0 → ^6.0.0`** bump, §es-build);
+> `@echo/phoenix_live_view`'s `package.json` (jest→vitest + npm→pnpm cleanup). `src/index.tsx` + `src/types.ts`
+> (the swap ABI) **are** byte-unchanged.
+>
+> **Deferred — the served LiveView bundle is not refreshed by this rung.** `pnpm build:client` rebuilds the
+> **committed** served bundle `priv/static/assets/app.js` at the new es2024/vite-6 bytes, but `priv/` is
+> **outside** the `assets/**` boundary (§15), so the rebuilt artifact was **reverted** — the rung's diff is the
+> source + build config, not the rebuilt output. Consequence: the engine serves the **previous**
+> es2020/file-dep-built `priv/static/assets/app.js` until it is deliberately rebuilt and committed on the new
+> toolchain (an Operator step at deploy; `js/app.js` **source** is byte-unchanged, so the old bundle stays
+> functionally valid in the meantime).
 
 ## es-build — the modern es2024 target (NEW)
 
@@ -309,6 +336,14 @@ configs are the laggards and this rung brings them up:
 **INV-ES2024:** after the cutover, `grep -rniE 'es2020' assets/tsconfig.json assets/vite.config.ts
 assets/vite.client.config.ts` → **0**, and each of the four sites names es2024 (§10 A12). Both bundles must
 still build green (A3) and the lobby must still boot (A4) at the new target.
+
+> **Shipped consequence — the forced `vite` bump (D-3).** es2024 is not reachable on the as-prepped toolchain:
+> root `vite ^5.4.0` bundles `esbuild 0.21.5`, which rejects `target: "es2024"` (esbuild added es2024 in 0.24.0;
+> vite 6 bundles esbuild 0.25.x; the pinned `vitest ^4` peer also requires vite 6). So the build bumped
+> `assets/package.json` devDeps **`vite ^5.4.0 → ^6.0.0`** (the lockfile resolves `vite@6.4.3` + `esbuild@0.25.12`
+> + `vitest@4.1.9`; `@vitejs/plugin-react ^4.3.1` supports vite 6). **es2024 ⟹ vite 6** — a necessary
+> consequence of an in-spec requirement, not a new arbitrary dependency; A9 holds (game/client bundle shapes
+> unchanged) and `mix.lock` is untouched.
 
 ## 10. Acceptance (the runnable gate — each invariant a check; a no-op must not satisfy its letter)
 
@@ -349,9 +384,17 @@ still build green (A3) and the lobby must still boot (A4) at the new target.
 - **A12 — ES2024 TARGET.** `grep -rniE 'es2020' assets/tsconfig.json assets/vite.config.ts
   assets/vite.client.config.ts` → **0**; all four sites name es2024; both bundles build green at the new
   target. (INV-ES2024)
-- **A13 — VITEST (jest retired).** `pnpm -C packages/phoenix test` and `pnpm -C packages/phoenix_live_view test`
-  run vitest and pass; `grep -rniE '\bjest\b' echo/apps/codemojex/assets/packages` → **0** (no jest devDeps,
-  scripts, or config remain); each package has a `vitest.config.ts`. (INV-VITEST)
+- **A13 — VITEST (jest retired). [DEFERRED to cm-tma.2 — cm-tma.1 ships 13/14.]** Target:
+  `pnpm -C packages/phoenix test` and `pnpm -C packages/phoenix_live_view test` run vitest and pass;
+  `grep -rniE '\bjest\b' echo/apps/codemojex/assets/packages` → **0**; each package has a `vitest.config.ts`.
+  (INV-VITEST) **As shipped:** the `package.json` end-state is jest-free for **both** packages (devDeps,
+  scripts, and config cleaned), **but** the vendored `test/*.test.ts` files remain upstream-jest-shaped — both
+  suites collect 0 and fail (`@echo/phoenix`: `@jest/globals` + a stale `../js/phoenix`; `@echo/phoenix_live_view`:
+  the jest API + a broken `test/tsconfig.json` `extends` + a missing jsdom env), so the `grep '\bjest\b'` over
+  the **test files** is non-zero. The Operator ruled A13 DEFERRED (the rung's value — the self-contained edge
+  build — is complete, and A4, the §14-primary faithfulness gate, is mutation-proven). **cm-tma.2** ports both
+  suites jest→vitest: rewrite the ~320 jest call-sites, fix the `../src` import paths + the `test/tsconfig.json`
+  `extends` + add the jsdom env; then both `pnpm -C packages/* test` green and `grep '\bjest\b' packages` → 0.
 - **A14 — PNPM (npm retired).** `assets/pnpm-workspace.yaml` + `assets/pnpm-lock.yaml` exist; **no**
   `package-lock.json` anywhere under `assets/`; `grep -rniE 'npm ci|npm run|npm install' assets/Dockerfile
   assets/bin/edge-deploy.sh` → **0** (the image + script use pnpm). (INV-PNPM)
@@ -373,8 +416,9 @@ still build green (A3) and the lobby must still boot (A4) at the new target.
 ## 12. Scope In
 
 - Vendor `phoenix` (`@echo/phoenix`) + `phoenix_live_view` (`@echo/phoenix_live_view`) as TS packages under
-  `assets/packages/*` (the faithfulness contract, §5); `phoenix_html` folded into LV as `src/phoenix_html.ts`,
-  **no standalone package**. *(The packages are present on disk; this rung completes their wiring + cleanup.)*
+  `assets/packages/*` (the faithfulness contract, §5); `phoenix_html` folded into LV as `src/phoenix_html.ts`
+  and resolved via the **subpath export** `@echo/phoenix_live_view/phoenix_html` (§5), **no standalone package**
+  (kept inert — `app.js` unchanged). *(The packages are present on disk; this rung completes their wiring + cleanup.)*
 - Make `assets/` a **pnpm** workspace — add `pnpm-workspace.yaml` (`packages: ["packages/*"]`); convert
   `assets/package.json` deps to `@echo/* : workspace:*`; commit `pnpm-lock.yaml`. **npm retired** (no
   `package-lock.json`, no `npm ci`/`npm run`).
@@ -411,8 +455,10 @@ self-contained front-end build the later TMA UI rungs (the `cmd.*` design-system
 (grep/build/context/test-runner); the npm→pnpm, es2020→es2024, and jest→vitest moves are mechanical and
 grep-checkable. The load-bearing risk is **INV-VENDORED-FAITHFUL** (§5): a phoenix/phoenix_live_view rewrite
 can compile green yet break the live lobby at runtime — gate-invisible to a pure `vite build`. So the verify
-**must** include a runtime LiveSocket-boot smoke (A4) on top of the vendored vitest suites (A13), and the edge
-path is exercised with the `--dry-run` reliability gate (A11). Secondary external-facing concern: the edge
+**must** include a runtime LiveSocket-boot smoke (A4), and the edge path is exercised with the `--dry-run`
+reliability gate (A11). **As shipped (13/14):** A4 is the load-bearing gate and was mutation-proven; the
+vendored vitest suites (A13) are **DEFERRED to cm-tma.2** (the `test/*.test.ts` files are unported upstream
+jest — §10 A13), so A4 carries the INV-VENDORED-FAITHFUL faithfulness for this rung. Secondary external-facing concern: the edge
 **publish** path — mitigated because the publish contract (pointer, cache, ABI) is held byte-stable (§9) and
 the deploy stays the Operator's.
 
@@ -433,9 +479,13 @@ Smallest-change-first, each step independently checkable:
 1. **Workspace** — add `assets/pnpm-workspace.yaml` (`packages: ["packages/*"]`); convert `assets/package.json`
    deps to `@echo/* : workspace:*`; ensure `@echo/phoenix_live_view` declares `morphdom` + `phoenix`
    (`workspace:@echo/phoenix@*`); `pnpm install` → commit `pnpm-lock.yaml`. (A1/A2/A14)
-2. **jest→vitest** — on `@echo/phoenix_live_view`'s `package.json`: drop the jest devDeps; `test: "vitest"`;
-   prune the upstream `npm run`/`mix`/`e2e`/playwright scripts; fix `types`/`files`. `pnpm -C packages/* test`
-   green; `grep jest packages` → 0. (A13)
+2. **jest→vitest + the subpath export** — on `@echo/phoenix_live_view`'s `package.json`: drop the jest
+   devDeps **and the registry `"phoenix": "1.7.21"` devDep** (line 40 — it shadows the `workspace:@echo/phoenix@*`
+   dependency added in step 1); extend `exports` to `{ ".": "./src/index.ts", "./phoenix_html": "./src/phoenix_html.ts" }`
+   (the subpath that resolves `phoenix_html`, §5); set `test: "vitest"`; prune the upstream
+   `npm run`/`mix`/`e2e`/playwright scripts; fix `types`/`files` to the vendored `src/` layout.
+   the package.json end-state jest-free (`grep jest` over devDeps/scripts/config → 0). **A13 (both suites
+   green) is DEFERRED to cm-tma.2** — the `test/*.test.ts` files remain unported upstream jest (§10 A13).
 3. **es2024** — `assets/tsconfig.json` (`target`+`lib`) + `assets/vite.config.ts` + `assets/vite.client.config.ts`
    (es2020 → es2024); `grep es2020` → 0. (A12)
 4. **Prove standalone** — `rm -rf node_modules && pnpm install && pnpm build && pnpm build:client` with no
@@ -446,8 +496,8 @@ Smallest-change-first, each step independently checkable:
    (A7).
 7. **Pre-stage docs** — add the awscli `dist/` upload step to `edge-bucket-setup.md` (A6); the upload itself
    is the Operator's.
-8. **Gate** — A1–A14; the `--dry-run` reliability gate (A11) is the canonical green; the boundary check (A10)
-   confirms the engine + `lib/` + `mix.lock` are untouched.
+8. **Gate** — A1–A12 + A14 (**A13 DEFERRED to cm-tma.2**); the `--dry-run` reliability gate (A11) is the
+   canonical green; the boundary check (A10) confirms the engine + `lib/` + `mix.lock` are untouched.
 
 **Files (boundary `echo/apps/codemojex/assets/**` + the bucket doc + these specs):** `pnpm-workspace.yaml` +
 `pnpm-lock.yaml` (new) · `package.json` (workspace finish) · `packages/phoenix_live_view/package.json`

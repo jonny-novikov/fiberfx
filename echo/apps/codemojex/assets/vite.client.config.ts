@@ -8,7 +8,7 @@ export default defineConfig({
   build: {
     outDir: "../priv/static/assets",
     emptyOutDir: false,
-    target: "es2020",
+    target: "es2024",
     rollupOptions: {
       input: "js/app.js",
       output: {
