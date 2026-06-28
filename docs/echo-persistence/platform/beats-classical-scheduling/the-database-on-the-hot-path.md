@@ -1,16 +1,16 @@
 ---
 title: "Dive 13.1 — The database on the hot path"
-id: ep-m13-d1
+id: ep-m14-d1
 status: established
 route: "/echo-persistence/platform/beats-classical-scheduling/the-database-on-the-hot-path"
-kind: "module 13 · dive 13.1"
+kind: "module 14 · dive 13.1"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive job-lifecycle round-trip SVG; single-machine job/s flagged indicative."
 grounded-in: "docs/graft/graft.design.md (records-per-fsync; single-insert vs insert_all) · docs/graft/graft.engine-split.design.md (the hot path Oban puts every dequeue/heartbeat/ack through)"
 renders-to: "platform/beats-classical-scheduling/the-database-on-the-hot-path.html"
 ---
 
-# The database on the hot path { id="ep-m13-d1" }
+# The database on the hot path { id="ep-m14-d1" }
 
 > _A classical durable queue earns its reliability by routing the whole job lifecycle through the database. Enqueue is an insert; claiming a job is an update; the heartbeat that keeps a long job's lease alive is an update; the ack that finishes it is an update or delete. Every one is a round-trip to PostgreSQL, and every commit is an fsync._
 
@@ -39,4 +39,4 @@ External:
 
 ---
 
-_Pager: ← Module 13 — Why it beats classical scheduling · Dive 13.2 — The commit log is the outbox →_
+_Pager: ← Module 14 — Why it beats classical scheduling · Dive 13.2 — The commit log is the outbox →_

@@ -1,6 +1,8 @@
 const ARIA = {
   anyOf(
     instance: unknown,
+    // any[] is the standard constructor-args idiom: matches any class against
+    // `instanceof` regardless of its constructor signature (params are contravariant).
     classes: (new (...args: any[]) => unknown)[],
   ): boolean {
     return classes.some((name) => instance instanceof name);

@@ -1,24 +1,24 @@
 ---
 title: "Dive 11.3 — The Stream Tier ladder"
-id: ep-m11-d3
+id: ep-m12-d3
 status: established
 route: "/echo-persistence/platform/echomq-bus/the-stream-tier-ladder"
-kind: "module 11 · dive 11.3 (closes the bus arc)"
+kind: "module 12 · dive 11.3 (closes the bus arc)"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive archive merge-read SVG; no machine numbers."
 grounded-in: "docs/echo_mq/emq.streams.md (emq3.1–3.6) + docs/echo_mq/kb/streams-tier/streams.synthesis.md"
 renders-to: "platform/echomq-bus/the-stream-tier-ladder.html"
 ---
 
-# The Stream Tier ladder { id="ep-m11-d3" }
+# The Stream Tier ladder { id="ep-m12-d3" }
 
-> _EchoMQ 3.0 is not a rewrite; it is six small rungs that add a log tier beside the job tier, each shipping under the same wire. The reason it is cheap to build is that the two hardest pieces already exist from Chapter IV: the sequence is already minted (a branded id's byte order is its mint order) and latest-per-key is already law (the staleness fence plus newer-wins). What is left is mostly naming where order holds._
+> _The Stream Tier is not a rewrite; it is six small rungs that add a log tier beside the job tier, each shipping under the same wire. The reason it is cheap to build is that the two hardest pieces already exist from Chapter IV: the sequence is already minted (a branded id's byte order is its mint order) and latest-per-key is already law (the staleness fence plus newer-wins). What is left is mostly naming where order holds._
 
 **Interactive figure.** Two horizontal bands aligned by mint id: the top is the live stream tail, the bottom is durable segments in object storage. Each id column has a cell in exactly one band — ids below the watermark `W` are segments, ids at or above `W` are the live tail. `XADD` appends a cell to the tail; `fold + trim` advances `W`, moving one column down to segments; a `deep read` across `W` highlights the segment portion and the tail portion, which concatenate with no gap or overlap.
 
 ## §1 Six rungs, one wire { id="ladder" }
 
-The verbs register as an **additive minor** on `EchoMQ.Connector` — the same connector that carries jobs — so a deployment can mix an old job-only node and a new stream-aware node on the same bus (`echomq:2.6.x`); only the eventual `echomq:3.0.0` is a major, and that cutover is deliberately deferred because a shared fence-climb would brick co-tenants. The order theorem underwrites everything: a stream's order is the branded-id sort, which is the mint order, with one named exception — a re-claimed pending entry returns out of real-time order, so the spec says exactly where order holds (the stream) and where it does not (re-claim).
+The verbs register as an **additive minor** on `EchoMQ.Connector` — the same connector that carries jobs — so the stream tier landed without a wire break, a job-only node and a stream-aware node on the same bus. The bus now speaks `echomq:3.0.0`: a major version is a coordinated cutover, taken once the tier was whole, because a shared fence-climb would brick co-tenants. The order theorem underwrites everything: a stream's order is the branded-id sort, which is the mint order, with one named exception — a re-claimed pending entry returns out of real-time order, so the spec says exactly where order holds (the stream) and where it does not (re-claim).
 
 - **emq3.1** — The verbs: `XADD` / `XRANGE` / `XREADGROUP` / `XACK` / `XAUTOCLAIM` registered as a no-break minor. Shipped.
 - **emq3.2** — The writer law: hash-tagged streams, branded ids, `append == mint` so byte order is time order. Shipped.
@@ -46,4 +46,4 @@ External:
 
 ---
 
-_Pager: ← Dive 11.2 — Retention & the never-deleted problem · Module 12 — EchoBus + Echo Persistence →_
+_Pager: ← Dive 11.2 — Retention & the never-deleted problem · Module 13 — EchoBus + Echo Persistence →_

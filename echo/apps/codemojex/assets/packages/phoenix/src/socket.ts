@@ -50,6 +50,19 @@ type TransportCtor = new (endpoint: string) => object
 // `any` (matching @types/phoenix's untyped wire surface).
 type Coder = (payload: any, callback: (data: any) => void) => void
 
+// A timer handle as returned by setTimeout (NodeJS.Timeout under @types/node) or
+// null when idle/reset. `clearTimeout` rejects the null arm, so call sites cast
+// to the non-null handle — a type-only cast over the runtime `clearTimeout(null)`
+// no-op (the same pattern timer.ts uses).
+type TimerHandle = ReturnType<typeof setTimeout> | null
+
+// A Storage-compatible store (sessionStorage or a custom in-memory shim). Only
+// getItem/setItem are exercised; `SocketConnectOption.sessionStorage` is `object`.
+interface SessionStore {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+}
+
 /** Initializes the Socket *
  *
  * For IE8 support use an ES5-shim (https://github.com/es-shims/es5-shim)
@@ -154,8 +167,8 @@ export default class Socket {
   conn: any
   primaryPassedHealthCheck: boolean
   longPollFallbackMs: number | undefined
-  fallbackTimer: any
-  sessionStore: any
+  fallbackTimer: TimerHandle
+  sessionStore: SessionStore | null
   establishedConnections: number
   defaultEncoder: Coder
   defaultDecoder: Coder
@@ -171,11 +184,11 @@ export default class Socket {
   reconnectAfterMs: (tries: number) => number
   logger: ((kind: string, msg: string, data: any) => void) | null
   longpollerTimeout: number
-  params: () => any
+  params: () => object
   endPoint: string
   vsn: string
-  heartbeatTimeoutTimer: any
-  heartbeatTimer: any
+  heartbeatTimeoutTimer: TimerHandle
+  heartbeatTimer: TimerHandle
   pendingHeartbeatRef: MessageRef | null
   reconnectTimer: Timer
   authToken: string | undefined
@@ -191,7 +204,9 @@ export default class Socket {
     this.primaryPassedHealthCheck = false
     this.longPollFallbackMs = opts.longPollFallbackMs
     this.fallbackTimer = null
-    this.sessionStore = opts.sessionStorage || (global && global.sessionStorage)
+    // opts.sessionStorage is typed `object` upstream but is contractually a
+    // Storage-compatible store; cast to the getItem/setItem shape (type-only).
+    this.sessionStore = (opts.sessionStorage || (global && global.sessionStorage)) as SessionStore | null
     this.establishedConnections = 0
     this.defaultEncoder = Serializer.encode.bind(Serializer)
     this.defaultDecoder = Serializer.decode.bind(Serializer)
@@ -287,7 +302,7 @@ export default class Socket {
   replaceTransport(newTransport: TransportCtor){
     this.connectClock++
     this.closeWasClean = true
-    clearTimeout(this.fallbackTimer)
+    clearTimeout(this.fallbackTimer as ReturnType<typeof setTimeout>)
     this.reconnectTimer.reset()
     if(this.conn){
       this.conn.close()
@@ -330,7 +345,7 @@ export default class Socket {
     this.connectClock++
     this.disconnecting = true
     this.closeWasClean = true
-    clearTimeout(this.fallbackTimer)
+    clearTimeout(this.fallbackTimer as ReturnType<typeof setTimeout>)
     this.reconnectTimer.reset()
     this.teardown(() => {
       this.disconnecting = false
@@ -345,7 +360,7 @@ export default class Socket {
    * Passing params to connect is deprecated; pass them in the Socket constructor instead:
    * `new Socket("/socket", {params: {user_id: userToken}})`.
    */
-  connect(params?: any){
+  connect(params?: object){
     if(params){
       console && console.log("passing params to connect is deprecated. Instead pass :params to the Socket constructor")
       this.params = closure(params)
@@ -364,6 +379,7 @@ export default class Socket {
    * @param {string} msg
    * @param {Object} data
    */
+  // `data` is heterogeneous diagnostic payload (matches SocketConnectOption.logger).
   log(kind: string, msg?: string, data?: any){ this.logger && this.logger(kind, msg as string, data) }
 
   /**
@@ -450,7 +466,7 @@ export default class Socket {
    *
    * @param {Function}
    */
-  transportName(transport: any): string {
+  transportName(transport: TransportCtor): string {
     // JavaScript minification, enabled by default in production in Phoenix
     // projects, renames symbols to reduce code size.
     // See https://esbuild.github.io/api/#keep-names.
@@ -479,8 +495,10 @@ export default class Socket {
     this.conn.binaryType = this.binaryType
     this.conn.timeout = this.longpollerTimeout
     this.conn.onopen = () => this.onConnOpen()
-    this.conn.onerror = (error: any) => this.onConnError(error)
-    this.conn.onmessage = (event: any) => this.onConnMessage(event)
+    // Transport callbacks cross the pluggable WS|LongPoll|custom boundary: the
+    // error is a union, the message/close events are transport-shaped envelopes.
+    this.conn.onerror = (error: Event | string | number) => this.onConnError(error)
+    this.conn.onmessage = (event: {data: any}) => this.onConnMessage(event)
     this.conn.onclose = (event: any) => this.onConnClose(event)
   }
 
@@ -488,14 +506,16 @@ export default class Socket {
 
   storeSession(key: string, val: string){ this.sessionStore && this.sessionStore.setItem(key, val) }
 
-  connectWithFallback(fallbackTransport: any, fallbackThreshold = 2500){
-    clearTimeout(this.fallbackTimer)
+  connectWithFallback(fallbackTransport: TransportCtor, fallbackThreshold = 2500){
+    clearTimeout(this.fallbackTimer as ReturnType<typeof setTimeout>)
     let established = false
     let primaryTransport = true
     // openRef is referenced only inside the fallback closure (never assigned in
     // this scope — preserved as-is); both hold refs once registered below.
     let openRef: MessageRef | undefined, errorRef: MessageRef
     let fallbackTransportName = this.transportName(fallbackTransport)
+    // `reason` is a heterogeneous fallback cause: "memorized", a transport error
+    // event, or undefined — flows only to the logger.
     let fallback = (reason?: any) => {
       this.log("transport", `falling back to ${fallbackTransportName}...`, reason)
       this.off([openRef, errorRef] as MessageRef[])
@@ -510,7 +530,7 @@ export default class Socket {
     errorRef = this.onError(reason => {
       this.log("transport", "error", reason)
       if(primaryTransport && !established){
-        clearTimeout(this.fallbackTimer)
+        clearTimeout(this.fallbackTimer as ReturnType<typeof setTimeout>)
         fallback(reason)
       }
     })
@@ -526,20 +546,20 @@ export default class Socket {
         return this.log("transport", `established ${fallbackTransportName} fallback`)
       }
       // if we've established primary, give the fallback a new period to attempt ping
-      clearTimeout(this.fallbackTimer)
+      clearTimeout(this.fallbackTimer as ReturnType<typeof setTimeout>)
       this.fallbackTimer = setTimeout(fallback, fallbackThreshold)
       this.ping(rtt => {
         this.log("transport", "connected to primary after", rtt)
         this.primaryPassedHealthCheck = true
-        clearTimeout(this.fallbackTimer)
+        clearTimeout(this.fallbackTimer as ReturnType<typeof setTimeout>)
       })
     })
     this.transportConnect()
   }
 
   clearHeartbeats(){
-    clearTimeout(this.heartbeatTimer)
-    clearTimeout(this.heartbeatTimeoutTimer)
+    clearTimeout(this.heartbeatTimer as ReturnType<typeof setTimeout>)
+    clearTimeout(this.heartbeatTimeoutTimer as ReturnType<typeof setTimeout>)
   }
 
   onConnOpen(){
@@ -600,6 +620,8 @@ export default class Socket {
     })
   }
 
+  // `conn` is the live pluggable transport (WS|LongPoll|custom) — `any` matches
+  // `this.conn`; @types models no internal connection object.
   waitForBufferDone(conn: any, callback: () => void, tries = 1){
     if(tries === 5 || !conn.bufferedAmount){
       callback()
@@ -611,6 +633,7 @@ export default class Socket {
     }, 150 * tries)
   }
 
+  // `conn` is the live pluggable transport (WS|LongPoll|custom) — see above.
   waitForSocketClosed(conn: any, callback: () => void, tries = 1){
     if(tries === 5 || conn.readyState === SOCKET_STATES.closed){
       callback()
@@ -622,6 +645,8 @@ export default class Socket {
     }, 150 * tries)
   }
 
+  // `event` is a CloseEvent from WS or a plain {code,reason,wasClean} from
+  // LongPoll's no-CloseEvent fallback — a cross-transport close envelope.
   onConnClose(event: any){
     if(this.conn) this.conn.onclose = () => {} // noop to prevent recursive calls in teardown
     let closeCode = event && event.code
@@ -637,7 +662,7 @@ export default class Socket {
   /**
    * @private
    */
-  onConnError(error: any){
+  onConnError(error: Event | string | number){
     if(this.hasLogger()) this.log("transport", "error", error)
     let transportBefore = this.transport
     let establishedBefore = this.establishedConnections
@@ -757,9 +782,11 @@ export default class Socket {
     }
   }
 
-  onConnMessage(rawMessage: any){
+  // `rawMessage` is the transport message-event envelope; `.data` is the raw
+  // wire frame (string | ArrayBuffer) handed to the decoder — genuinely dynamic.
+  onConnMessage(rawMessage: {data: any}){
     this.decode(rawMessage.data, msg => {
-      let {topic, event, payload, ref, join_ref} = msg
+      let {topic, event, payload, ref, join_ref} = msg as Message
       if(ref && ref === this.pendingHeartbeatRef){
         this.clearHeartbeats()
         this.pendingHeartbeatRef = null

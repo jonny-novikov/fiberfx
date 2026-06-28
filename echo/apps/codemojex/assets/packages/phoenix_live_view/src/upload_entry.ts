@@ -15,6 +15,8 @@ export default class UploadEntry {
   fileEl: HTMLInputElement;
   file: LiveViewFile;
   view: View;
+  // preflight metadata returned by the server (resp.entries[ref]); opaque wire
+  // JSON probed for `.uploader` and forwarded as the channel token.
   meta: any;
   _isCancelled: boolean;
   _isDone: boolean;
@@ -108,7 +110,7 @@ export default class UploadEntry {
     return this._isDone;
   }
 
-  error(reason = "failed") {
+  error(reason: unknown = "failed") {
     this.fileEl.removeEventListener(PHX_LIVE_FILE_UPDATED, this._onElUpdated);
     this.view.pushFileProgress(this.fileEl, this.ref, { error: reason });
     if (!this.isAutoUpload()) {
@@ -151,6 +153,8 @@ export default class UploadEntry {
     };
   }
 
+  // uploaders is the host application's registry of custom uploader callbacks,
+  // whose shapes are app-defined; values stay `any`.
   uploader(uploaders: { [key: string]: any }) {
     if (this.meta.uploader) {
       const callback =
@@ -162,6 +166,7 @@ export default class UploadEntry {
     }
   }
 
+  // resp is the opaque preflight response; we index resp.entries by ref.
   zipPostFlight(resp: any) {
     this.meta = resp.entries[this.ref];
     if (!this.meta) {

@@ -1,16 +1,16 @@
 ---
 title: "Dive 11.2 — Retention & the never-deleted problem"
-id: ep-m11-d2
+id: ep-m12-d2
 status: established
 route: "/echo-persistence/platform/echomq-bus/retention-and-the-never-deleted-problem"
-kind: "module 11 · dive 11.2"
+kind: "module 12 · dive 11.2"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive retention-window / trim-cadence SVG; no machine numbers."
 grounded-in: "docs/echo_mq/emq.streams.md (emq3.4) + docs/echo_mq/kb/streams-tier/streams.synthesis.md (fork F3.4-A)"
 renders-to: "platform/echomq-bus/retention-and-the-never-deleted-problem.html"
 ---
 
-# Retention & the never-deleted problem { id="ep-m11-d2" }
+# Retention & the never-deleted problem { id="ep-m12-d2" }
 
 > _A stream is a log, and `XACK` does not delete — it only clears an entry from a group's pending list. So a busy stream grows forever unless something trims it, and trimming a log is exactly where you can lose data you meant to keep. EchoMQ makes retention a declared policy, not a side effect, and it has one open design question worth seeing in motion: when do you trim?_
 

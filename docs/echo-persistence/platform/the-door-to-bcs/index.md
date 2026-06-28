@@ -1,16 +1,16 @@
 ---
-title: "Module 14 — The door to BCS with Echo Persistence"
-id: ep-m14-hub
+title: "Module 15 — The door to BCS with Echo Persistence"
+id: ep-m15-hub
 status: established
 route: "/echo-persistence/platform/the-door-to-bcs"
-kind: "module 14 hub — Chapter IV finale, 3 dives"
+kind: "module 15 hub — Chapter IV finale, 3 dives"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive substrate-to-BCS stack SVG; no machine numbers."
 grounded-in: "docs/echo/mesh/mesh.8.1.md (the BCS law) · docs/codemojex/notifications/notifications.design.md §2 (entity/component model) · echo_data/bcs (PropertyStore, Archetypes, EdgeStore) · graft.engine-split.design.md (EchoStore.Table + Coherence)"
 renders-to: "platform/the-door-to-bcs/index.html"
 ---
 
-# The door to BCS with Echo Persistence { id="ep-m14-hub" }
+# The door to BCS with Echo Persistence { id="ep-m15-hub" }
 
 > _Thirteen modules built a durable floor: a versioned log, an L1 read cache, newer-wins coherence, replication, a bus — all keyed by one 14-byte branded id. That floor was never the point; it was the threshold. Step through it and the same primitives stop being plumbing for a queue and become the substrate for a way of building systems — the Branded Component System: entities are identities, components are data, and a system is a process that lets only identities cross its boundary._
 
@@ -34,7 +34,7 @@ The Branded Component System is the successor to the Entity-Component-System pat
 
 - **The course map** — all fourteen modules are built; open the full map and revisit any module or dive. → `/echo-persistence#map`
 - **Begin again · Module 1 · The durability spectrum** — start over from the foundations, the one mechanism (records per fsync), now that you have seen where it leads. → `/echo-persistence/foundations/durability-spectrum`
-- **Revisit · Module 13 · Why it beats classical scheduling** — the commit-log-as-outbox that made the substrate worth standing on. → `/echo-persistence/platform/beats-classical-scheduling`
+- **Revisit · Module 14 · Why it beats classical scheduling** — the commit-log-as-outbox that made the substrate worth standing on. → `/echo-persistence/platform/beats-classical-scheduling`
 
 ## §5 References & sources { id="refs" }
 
@@ -49,4 +49,4 @@ External:
 
 ---
 
-_Pager: ← Module 13 — Why it beats classical scheduling · Dive 14.1 — Tables & Properties →_
+_Pager: ← Module 14 — Why it beats classical scheduling · Dive 14.1 — Tables & Properties →_

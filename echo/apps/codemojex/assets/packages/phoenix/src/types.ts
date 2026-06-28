@@ -15,6 +15,8 @@ export interface Message {
   ref: string | null
   topic: string
   event: string
+  // Raw decoded wire JSON: a reply `{status, response}`, a broadcast body, or an
+  // `ArrayBuffer` (binary frames). Genuinely dynamic across the wire — kept `any`.
   payload: any
   status?: string
 }
@@ -36,8 +38,12 @@ export interface SocketConnectOption {
   heartbeatIntervalMs: number
   longPollFallbackMs: number
   longpollerTimeout: number
-  encode: (payload: object, callback: (encoded: any) => void | Promise<void>) => void
-  decode: (payload: string, callback: (decoded: any) => void | Promise<void>) => void
+  // The encoded frame handed to the continuation is the serialized wire form
+  // (a JSON string or a binary `ArrayBuffer`); the decoded value is a Message.
+  encode: (payload: object, callback: (encoded: string | ArrayBuffer) => void | Promise<void>) => void
+  decode: (payload: string, callback: (decoded: Message) => void | Promise<void>) => void
+  // `data` is arbitrary diagnostic context attached to a log line — genuinely
+  // heterogeneous (a Message, an error, a raw frame, …), so kept `any`.
   logger: (kind: string, message: string, data: any) => void
   reconnectAfterMs: (tries: number) => number
   rejoinAfterMs: (tries: number) => number
@@ -52,6 +58,10 @@ export interface SocketConnectOption {
 // matches @types/phoenix's untyped-payload posture.
 export type StateChangeCallback = (...args: any[]) => void
 
+// The presence values handed to the user callbacks carry user-attached metadata
+// (the `PresenceEntry`/`PresenceMeta` shape in presence.ts is itself open-ended,
+// `[key: string]: any`), so they stay `any` here — matching @types/phoenix and
+// avoiding an inverted import of the presence module into this leaf types file.
 export type PresenceOnJoinCallback = (
   key?: string,
   currentPresence?: any,

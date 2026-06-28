@@ -1,16 +1,16 @@
 ---
 title: "Dive 12.2 — The outbox beside the bus"
-id: ep-m12-d2
+id: ep-m13-d2
 status: established
 route: "/echo-persistence/platform/bus-and-persistence/the-outbox-beside-the-bus"
-kind: "module 12 · dive 12.2"
+kind: "module 13 · dive 12.2"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive bus-vs-outbox SVG (hot path + replay); no machine numbers."
 grounded-in: "docs/graft/graft.engine-split.design.md (EchoStore.Durability — the low-volume outbox beside the bus; SQLite/Memory adapters; Durability.Graft)"
 renders-to: "platform/bus-and-persistence/the-outbox-beside-the-bus.html"
 ---
 
-# The outbox beside the bus { id="ep-m12-d2" }
+# The outbox beside the bus { id="ep-m13-d2" }
 
 > _Make a durable record and enqueue a job, and you have written to two systems that cannot commit together — the classic dual-write trap, where a crash between the two leaves them disagreeing. The usual fix folds the enqueue into the database transaction via an outbox, but that risks putting a durable write on the hot path. EchoMQ's move is sharper: keep the bus on Valkey for speed, and stand the outbox beside it as a small, mostly-idle dependency that only the crash window ever reads._
 

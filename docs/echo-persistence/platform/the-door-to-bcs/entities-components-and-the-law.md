@@ -1,16 +1,16 @@
 ---
 title: "Dive 14.2 — Entities, components & the law"
-id: ep-m14-d2
+id: ep-m15-d2
 status: established
 route: "/echo-persistence/platform/the-door-to-bcs/entities-components-and-the-law"
-kind: "module 14 · dive 14.2"
+kind: "module 15 · dive 14.2"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive reference-by-id-vs-embed SVG (the boundary law); no machine numbers."
 grounded-in: "docs/echo/mesh/mesh.8.1.md (the law) · echo_data/bcs/archetypes.ex (components-as-data, :extends fold) · echo_data/bcs/edge_store.ex (relation as a system) · notifications.design.md §2 (RGP ref, never embed)"
 renders-to: "platform/the-door-to-bcs/entities-components-and-the-law.html"
 ---
 
-# Entities, components & the law { id="ep-m14-d2" }
+# Entities, components & the law { id="ep-m15-d2" }
 
 > _With storage settled, BCS is a discipline about shape, and it is short. A thing is an identity — a branded id, nothing embedded. Its state is data — plain property bundles, never behaviour modules, so even an archetype is just a bundle composed at read time. And a system is a process that owns its private state and obeys one rule at its boundary: only identities and messages about identities may cross. Reference by id, never embed._
 

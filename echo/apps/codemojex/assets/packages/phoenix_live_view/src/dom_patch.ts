@@ -28,10 +28,25 @@ import morphdom from "morphdom";
 import View from "./view";
 import LiveSocket from "./live_socket";
 
+// A stream entry is the raw diff tuple [ref, inserts, deleteIds, reset]; it is
+// destructured positionally from the wire, so the element type stays `any`.
 type Stream = Set<any>;
+// Per-element stream bookkeeping derived from the diff's insert tuples
+// [key, streamAt, limit, updateOnly]; limit/updateOnly carry the raw wire
+// values (null/undefined), so they stay loosely typed.
+interface StreamInsert {
+  ref?: string;
+  streamAt?: number;
+  limit?: number | null;
+  reset?: boolean;
+  updateOnly?: boolean;
+}
 // morphdom's published types are outdated and stricter than its runtime
 // contract (the callback may also return void to skip an update). We override
 // onBeforeElUpdated with the real shape and cast at the morphdom() call site.
+// fromEl/toEl stay `any`: the body duck-types across Element subtypes
+// (input .type/.validity, form .form, template .content) that a single DOM
+// type cannot express without runtime-altering casts at every access.
 type MorphdomOptions = Omit<
   NonNullable<Parameters<typeof morphdom>[2]>,
   "onBeforeElUpdated"
@@ -52,10 +67,10 @@ export default class DOMPatch {
   private rootID: string;
   private html: string | Node;
   private streams: Stream;
-  private streamInserts: Record<string, any>;
-  private streamComponentRestore: Record<string, any>;
+  private streamInserts: Record<string, StreamInsert>;
+  private streamComponentRestore: Record<string, Element>;
   private targetCID: number | null;
-  private pendingRemoves: any[];
+  private pendingRemoves: Element[];
   private phxRemove: string;
   private targetContainer: Element;
   private beforeUpdatedCallbacks: BeforeUpdatedCallback[];
@@ -186,7 +201,7 @@ export default class DOMPatch {
 
     const morph = (
       targetContainer: Element,
-      source: any,
+      source: string | Node,
       withChildren = this.withChildren,
     ) => {
       const morphCallbacks: MorphdomOptions = {
@@ -241,8 +256,9 @@ export default class DOMPatch {
             } else {
               parent.appendChild(child);
             }
-          } else if (streamAt > 0) {
-            const sibling = Array.from(parent.children)[streamAt];
+          } else if (streamAt! > 0) {
+            // streamAt is defined whenever ref is (guarded above)
+            const sibling = Array.from(parent.children)[streamAt!];
             parent.insertBefore(child, sibling);
           }
         },
@@ -305,7 +321,8 @@ export default class DOMPatch {
 
           // data-phx-runtime-hook
           if (el.nodeName === "SCRIPT" && el.hasAttribute(PHX_RUNTIME_HOOK)) {
-            this.handleRuntimeHook(el as HTMLScriptElement, source);
+            // runtime-hook scripts only appear in the HTML-string source branch
+            this.handleRuntimeHook(el as HTMLScriptElement, source as string);
           }
 
           added.push(el);
@@ -519,9 +536,22 @@ export default class DOMPatch {
 
     liveSocket.time("morphdom", () => {
       this.streams.forEach(([ref, inserts, deleteIds, reset]) => {
-        inserts.forEach(([key, streamAt, limit, updateOnly]: any[]) => {
-          this.streamInserts[key] = { ref, streamAt, limit, reset, updateOnly };
-        });
+        inserts.forEach(
+          ([key, streamAt, limit, updateOnly]: [
+            string,
+            number,
+            number | null,
+            boolean,
+          ]) => {
+            this.streamInserts[key] = {
+              ref,
+              streamAt,
+              limit,
+              reset,
+              updateOnly,
+            };
+          },
+        );
         if (reset !== undefined) {
           DOM.all(document, `[${PHX_STREAM_REF}="${ref}"]`, (child) => {
             this.removeStreamChildElement(child);
@@ -605,7 +635,11 @@ export default class DOMPatch {
     }
 
     liveSocket.silenceEvents(() =>
-      DOM.restoreFocus(focused, selectionStart, selectionEnd),
+      DOM.restoreFocus(
+        focused,
+        selectionStart as number | undefined,
+        selectionEnd as number | undefined,
+      ),
     );
     DOM.dispatchEvent(document, "phx:update");
     added.forEach((el) => this.trackAfterAdded(el));
@@ -663,10 +697,12 @@ export default class DOMPatch {
     this.afterTransitionsDiscardedCallbacks.forEach((cb) => cb(els));
   }
 
-  private onNodeDiscarded(el: any) {
-    // nested view handling
-    if (DOM.isPhxChild(el) || DOM.isPhxSticky(el)) {
-      this.liveSocket.destroyViewByEl(el);
+  private onNodeDiscarded(el: Node) {
+    // nested view handling. morphdom hands us a Node (text nodes can be
+    // discarded too); the phx-child/sticky helpers duck-type element attrs, so
+    // we narrow with casts that are erased at runtime.
+    if (DOM.isPhxChild(el as Element) || DOM.isPhxSticky(el as Element)) {
+      this.liveSocket.destroyViewByEl(el as Element);
     }
     this.trackAfterDiscarded(el);
   }
@@ -707,9 +743,11 @@ export default class DOMPatch {
     return insert || {};
   }
 
-  private setStreamRef(el: Element, ref: any) {
+  private setStreamRef(el: Element, ref: string | undefined) {
     DOM.putSticky(el, PHX_STREAM_REF, (el) =>
-      el.setAttribute(PHX_STREAM_REF, ref),
+      // ref is always defined at the call sites (they guard on streamAt/ref);
+      // the cast is erased at runtime.
+      el.setAttribute(PHX_STREAM_REF, ref as string),
     );
   }
 
@@ -769,10 +807,18 @@ export default class DOMPatch {
   // are not disconnected and reconnected by the move. Falls back to
   // insertBefore otherwise. Passing `ref === null` moves to the end.
   // See also https://github.com/phoenixframework/phoenix_live_view/issues/4212.
-  private moveOrInsertBefore(parent: any, child: any, ref: any) {
-    if (typeof parent.moveBefore === "function") {
+  private moveOrInsertBefore(parent: Element, child: Node, ref: Node | null) {
+    // moveBefore is not yet in the DOM lib types; the inline casts reach it
+    // without emitting any runtime code.
+    if (
+      typeof (parent as { moveBefore?: unknown }).moveBefore === "function"
+    ) {
       try {
-        parent.moveBefore(child, ref);
+        (
+          parent as Element & {
+            moveBefore: (node: Node, ref: Node | null) => void;
+          }
+        ).moveBefore(child, ref);
         return;
       } catch {
         // moveBefore can throw (e.g. HierarchyRequestError) in cases where
@@ -786,13 +832,15 @@ export default class DOMPatch {
     const { limit } = this.getStreamInsert(el);
     if (limit !== null) {
       const children = Array.from(el.parentElement!.children);
-      if (limit < 0 && children.length > limit * -1) {
+      // when a numeric limit is present it is a real number; the `{}`-fallback
+      // (limit undefined) makes both comparisons false and skips the body.
+      if (limit! < 0 && children.length > limit! * -1) {
         children
-          .slice(0, children.length + limit)
+          .slice(0, children.length + limit!)
           .forEach((child) => this.removeStreamChildElement(child));
-      } else if (limit >= 0 && children.length > limit) {
+      } else if (limit! >= 0 && children.length > limit!) {
         children
-          .slice(limit)
+          .slice(limit!)
           .forEach((child) => this.removeStreamChildElement(child));
       }
     }
@@ -814,7 +862,7 @@ export default class DOMPatch {
     }
   }
 
-  private isChangedSelect(fromEl: Element, toEl: any) {
+  private isChangedSelect(fromEl: Element, toEl: HTMLSelectElement) {
     if (!(fromEl instanceof HTMLSelectElement) || fromEl.multiple) {
       return false;
     }
@@ -834,7 +882,7 @@ export default class DOMPatch {
     return el.nodeType === Node.ELEMENT_NODE && el.hasAttribute(PHX_SKIP);
   }
 
-  private maybeCloneLockedElement(fromEl: any, isFocusedFormEl: any) {
+  private maybeCloneLockedElement(fromEl: Element, isFocusedFormEl: boolean) {
     if (!fromEl.hasAttribute(PHX_REF_SRC)) return fromEl;
 
     const ref = new ElementRef(fromEl);
@@ -857,7 +905,7 @@ export default class DOMPatch {
     return isFocusedFormEl ? fromEl : clone;
   }
 
-  private copyNestedPrivateLock(fromEl: any, toEl: any) {
+  private copyNestedPrivateLock(fromEl: Element, toEl: Element) {
     // During unlock morphs, toEl may be the private clone that accumulated a
     // nested locked subtree. Copy that private clone back to fromEl before the
     // outer unlock finishes so the nested element can apply its own ack later.
@@ -867,12 +915,20 @@ export default class DOMPatch {
     DOM.putPrivate(fromEl, PHX_REF_LOCK, DOM.private(toEl, PHX_REF_LOCK));
   }
 
-  private indexOf(parent: Element, child: any) {
+  private indexOf(parent: Element, child: Element) {
     return Array.from(parent.children).indexOf(child);
   }
 
-  private teleport(el: any, morph: (...args: any[]) => any) {
-    const targetSelector = el.getAttribute(PHX_PORTAL);
+  private teleport(
+    el: HTMLTemplateElement,
+    morph: (
+      targetContainer: Element,
+      source: string | Node,
+      withChildren?: boolean,
+    ) => void,
+  ) {
+    // a portal template always carries the PHX_PORTAL selector attribute
+    const targetSelector = el.getAttribute(PHX_PORTAL) as string;
     const portalContainer = document.querySelector(targetSelector);
     if (!portalContainer) {
       throw new Error(
@@ -883,7 +939,7 @@ export default class DOMPatch {
     // the case here
     const toTeleport = el.content.firstElementChild;
     // the PHX_SKIP optimization can also apply inside of the <template> elements
-    if (this.skipCIDSibling(toTeleport)) {
+    if (this.skipCIDSibling(toTeleport as Element)) {
       return;
     }
     if (!toTeleport?.id) {

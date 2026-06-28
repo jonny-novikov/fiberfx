@@ -9,6 +9,7 @@ import { ensureSameOrigin } from "./utils";
  * The underlying primitive type is considered opaque, and may change in future
  * versions.
  */
+// Array<any> is intentional: the encoded-JS op tuples are an opaque server-built wire format (see doc above).
 export type EncodedJS = string | Array<any>;
 
 type Transition = string | string[];
@@ -67,12 +68,12 @@ type TransitionCommandOpts = {
 
 type PushOpts = {
   /** Data to be merged into the event payload. */
-  value?: any;
+  value?: any; // arbitrary user-supplied JSON payload merged onto the event — genuinely dynamic.
   /** For targeting a LiveComponent by its ID, a component ID (number), or a CSS selector string. */
   target?: HTMLElement | number | string;
   /** Indicates if a page loading state should be shown. */
   page_loading?: boolean;
-  [key: string]: any; // Allow other properties like 'cid', 'redirect', etc.
+  [key: string]: any; // Allow other properties like 'cid', 'redirect', etc. — open-ended metadata bag.
 };
 
 type NavigationOpts = {

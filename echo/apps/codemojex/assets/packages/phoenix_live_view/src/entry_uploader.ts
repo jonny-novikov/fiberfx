@@ -37,7 +37,7 @@ export default class EntryUploader {
     });
   }
 
-  error(reason?: any) {
+  error(reason?: unknown) {
     if (this.errored) {
       return;
     }
@@ -48,11 +48,14 @@ export default class EntryUploader {
   }
 
   upload() {
-    this.uploadChannel.onError((reason?: any) => this.error(reason));
+    this.uploadChannel.onError((reason?: unknown) => this.error(reason));
     this.uploadChannel
       .join()
-      .receive("ok", (_data?: any) => this.readNextChunk())
-      .receive("error", ({ reason }: { reason?: any }) => this.error(reason));
+      .receive("ok", (_data?: unknown) => this.readNextChunk())
+      // server error payload is opaque wire JSON
+      .receive("error", ({ reason }: { reason?: unknown }) =>
+        this.error(reason),
+      );
   }
 
   isDone() {
@@ -91,6 +94,9 @@ export default class EntryUploader {
           );
         }
       })
-      .receive("error", ({ reason }: { reason?: any }) => this.error(reason));
+      // server error payload is opaque wire JSON
+      .receive("error", ({ reason }: { reason?: unknown }) =>
+        this.error(reason),
+      );
   }
 }

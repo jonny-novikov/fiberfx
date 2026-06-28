@@ -131,26 +131,29 @@ const DOM = {
     return node.id && DOM.private(node, "destroyed") ? true : false;
   },
 
-  wantsNewTab(e: any) {
+  wantsNewTab(e: Event) {
     const wantsNewTab =
-      e.ctrlKey || e.shiftKey || e.metaKey || (e.button && e.button === 1);
+      (e as MouseEvent).ctrlKey ||
+      (e as MouseEvent).shiftKey ||
+      (e as MouseEvent).metaKey ||
+      ((e as MouseEvent).button && (e as MouseEvent).button === 1);
     const isDownload =
       e.target instanceof HTMLAnchorElement &&
       e.target.hasAttribute("download");
     const isTargetBlank =
-      e.target.hasAttribute("target") &&
-      e.target.getAttribute("target").toLowerCase() === "_blank";
+      (e.target as Element).hasAttribute("target") &&
+      (e.target as Element).getAttribute("target")!.toLowerCase() === "_blank";
     const isTargetNamedTab =
-      e.target.hasAttribute("target") &&
-      !e.target.getAttribute("target").startsWith("_");
+      (e.target as Element).hasAttribute("target") &&
+      !(e.target as Element).getAttribute("target")!.startsWith("_");
     return wantsNewTab || isTargetBlank || isDownload || isTargetNamedTab;
   },
 
-  isUnloadableFormSubmit(e: any) {
+  isUnloadableFormSubmit(e: SubmitEvent) {
     // Ignore form submissions intended to close a native <dialog> element
     // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/dialog#usage_notes
     const isDialogSubmit =
-      (e.target && e.target.getAttribute("method") === "dialog") ||
+      (e.target && (e.target as Element).getAttribute("method") === "dialog") ||
       (e.submitter && e.submitter.getAttribute("formmethod") === "dialog");
 
     if (isDialogSubmit) {
@@ -160,7 +163,7 @@ const DOM = {
     }
   },
 
-  isNewPageClick(e: any, currentLocation: any) {
+  isNewPageClick(e: MouseEvent, currentLocation: Location) {
     const href =
       e.target instanceof HTMLAnchorElement
         ? e.target.getAttribute("href")
@@ -173,7 +176,7 @@ const DOM = {
     if (href.startsWith("mailto:") || href.startsWith("tel:")) {
       return false;
     }
-    if (e.target.isContentEditable) {
+    if ((e.target as HTMLElement).isContentEditable) {
       return false;
     }
 
@@ -181,7 +184,7 @@ const DOM = {
       url = new URL(href);
     } catch {
       try {
-        url = new URL(href, currentLocation);
+        url = new URL(href, currentLocation as unknown as string);
       } catch {
         // bad URL, fallback to let browser try it as external
         return true;
@@ -222,9 +225,9 @@ const DOM = {
     );
   },
 
-  isPhxUpdate(el: any, phxUpdate: string, updateTypes: string[]) {
+  isPhxUpdate(el: Element, phxUpdate: string, updateTypes: string[]) {
     return (
-      el.getAttribute && updateTypes.indexOf(el.getAttribute(phxUpdate)) >= 0
+      el.getAttribute && updateTypes.indexOf(el.getAttribute(phxUpdate)!) >= 0
     );
   },
 
@@ -262,22 +265,31 @@ const DOM = {
     return parentCids;
   },
 
-  private(el: any, key: string) {
-    return el[PHX_PRIVATE] && el[PHX_PRIVATE][key];
+  // el carries a `phxPrivate` bag of arbitrary, dynamically-keyed values
+  // (cycles, hooks, timers, flags); the bag itself is genuinely untyped.
+  private(el: Element, key: string) {
+    return (el as any)[PHX_PRIVATE] && (el as any)[PHX_PRIVATE][key];
   },
 
-  deletePrivate(el: any, key: string) {
-    el[PHX_PRIVATE] && delete el[PHX_PRIVATE][key];
+  deletePrivate(el: Element, key: string) {
+    (el as any)[PHX_PRIVATE] && delete (el as any)[PHX_PRIVATE][key];
   },
 
-  putPrivate(el: any, key: string, value: any) {
-    if (!el[PHX_PRIVATE]) {
-      el[PHX_PRIVATE] = {};
+  // value is an arbitrary private-bag payload — intentionally dynamic
+  putPrivate(el: Element, key: string, value: any) {
+    if (!(el as any)[PHX_PRIVATE]) {
+      (el as any)[PHX_PRIVATE] = {};
     }
-    el[PHX_PRIVATE][key] = value;
+    (el as any)[PHX_PRIVATE][key] = value;
   },
 
-  updatePrivate(el: any, key: string, defaultVal: any, updateFunc: (val: any) => any) {
+  // defaultVal / the update result are arbitrary private-bag payloads
+  updatePrivate(
+    el: Element,
+    key: string,
+    defaultVal: any,
+    updateFunc: (val: any) => any,
+  ) {
     const existing = this.private(el, key);
     if (existing === undefined) {
       this.putPrivate(el, key, updateFunc(defaultVal));
@@ -286,7 +298,7 @@ const DOM = {
     }
   },
 
-  syncPendingAttrs(fromEl: any, toEl: Element) {
+  syncPendingAttrs(fromEl: Element, toEl: Element) {
     if (!fromEl.hasAttribute(PHX_REF_SRC)) {
       return;
     }
@@ -295,14 +307,14 @@ const DOM = {
     });
     PHX_PENDING_ATTRS.filter((attr) => fromEl.hasAttribute(attr)).forEach(
       (attr) => {
-        toEl.setAttribute(attr, fromEl.getAttribute(attr));
+        toEl.setAttribute(attr, fromEl.getAttribute(attr)!);
       },
     );
   },
 
-  copyPrivates(target: any, source: any) {
-    if (source[PHX_PRIVATE]) {
-      target[PHX_PRIVATE] = source[PHX_PRIVATE];
+  copyPrivates(target: Element, source: Element) {
+    if ((source as any)[PHX_PRIVATE]) {
+      (target as any)[PHX_PRIVATE] = (source as any)[PHX_PRIVATE];
     }
   },
 
@@ -323,14 +335,14 @@ const DOM = {
   },
 
   debounce(
-    el: any,
-    event: any,
+    el: Element,
+    event: Event,
     phxDebounce: string,
     defaultDebounce: string,
     phxThrottle: string,
     defaultThrottle: string,
-    asyncFilter: () => any,
-    callback: () => any,
+    asyncFilter: () => boolean,
+    callback: () => void,
   ) {
     let debounce = el.getAttribute(phxDebounce);
     let throttle = el.getAttribute(phxThrottle);
@@ -360,7 +372,7 @@ const DOM = {
         return;
 
       default:
-        const timeout = parseInt(value);
+        const timeout = parseInt(value!);
         const trigger = () =>
           throttle ? this.deletePrivate(el, THROTTLED) : callback();
         const currentCycle = this.incCycle(el, DEBOUNCE_TRIGGER, trigger);
@@ -371,8 +383,8 @@ const DOM = {
           let newKeyDown = false;
           if (event.type === "keydown") {
             const prevKey = this.private(el, DEBOUNCE_PREV_KEY);
-            this.putPrivate(el, DEBOUNCE_PREV_KEY, event.key);
-            newKeyDown = prevKey !== event.key;
+            this.putPrivate(el, DEBOUNCE_PREV_KEY, (event as KeyboardEvent).key);
+            newKeyDown = prevKey !== (event as KeyboardEvent).key;
           }
 
           if (!newKeyDown && this.private(el, THROTTLED)) {
@@ -394,7 +406,7 @@ const DOM = {
           }, timeout);
         }
 
-        const form = el.form;
+        const form = (el as HTMLInputElement).form;
         if (form && this.once(form, "bind-debounce")) {
           form.addEventListener("submit", () => {
             Array.from(new FormData(form).entries(), ([name]) => {
@@ -422,7 +434,7 @@ const DOM = {
     }
   },
 
-  triggerCycle(el: any, key: string, currentCycle?: any) {
+  triggerCycle(el: Element, key: string, currentCycle?: number) {
     const [cycle, trigger] = this.private(el, key);
     if (!currentCycle) {
       currentCycle = cycle;
@@ -433,7 +445,7 @@ const DOM = {
     }
   },
 
-  once(el: any, key: string) {
+  once(el: Element, key: string) {
     if (this.private(el, key) === true) {
       return false;
     }
@@ -441,7 +453,7 @@ const DOM = {
     return true;
   },
 
-  incCycle(el: any, key: string, trigger = function () {}) {
+  incCycle(el: Element, key: string, trigger = function () {}) {
     let [currentCycle] = this.private(el, key) || [0, trigger];
     currentCycle++;
     this.putPrivate(el, key, [currentCycle, trigger]);
@@ -452,7 +464,7 @@ const DOM = {
   // fromEl and toEl can be the same element in the case of a newly added node
   // fromEl and toEl can be any HTML node type, so we need to check if it's an element node
   maintainPrivateHooks(
-    fromEl: any,
+    fromEl: Element,
     toEl: Element,
     phxViewportTop: string,
     phxViewportBottom: string,
@@ -463,7 +475,7 @@ const DOM = {
       fromEl.hasAttribute("data-phx-hook") &&
       !toEl.hasAttribute("data-phx-hook")
     ) {
-      toEl.setAttribute("data-phx-hook", fromEl.getAttribute("data-phx-hook"));
+      toEl.setAttribute("data-phx-hook", fromEl.getAttribute("data-phx-hook")!);
     }
     // add hooks to elements with viewport attributes
     if (
@@ -475,6 +487,7 @@ const DOM = {
     }
   },
 
+  // hook is a user-supplied custom-element hook instance — opaque to the DOM layer
   putCustomElHook(el: Element, hook: any) {
     if (el.isConnected) {
       el.setAttribute("data-phx-hook", "");
@@ -505,11 +518,11 @@ const DOM = {
     });
   },
 
-  isPhxChild(node: any) {
+  isPhxChild(node: Element) {
     return node.getAttribute && node.getAttribute(PHX_PARENT_ID);
   },
 
-  isPhxSticky(node: any) {
+  isPhxSticky(node: Element) {
     return node.getAttribute && node.getAttribute(PHX_STICKY) !== null;
   },
 
@@ -543,13 +556,15 @@ const DOM = {
   },
 
   dispatchEvent(
-    target: any,
+    target: EventTarget,
     name: string,
+    // detail is arbitrary user-facing event payload; intentionally dynamic
     opts: { bubbles?: boolean; detail?: any } = {},
   ) {
     let defaultBubble = true;
     const isUploadTarget =
-      target.nodeName === "INPUT" && target.type === "file";
+      (target as Element).nodeName === "INPUT" &&
+      (target as HTMLInputElement).type === "file";
     if (isUploadTarget && name === "click") {
       defaultBubble = false;
     }
@@ -566,11 +581,11 @@ const DOM = {
     target.dispatchEvent(event);
   },
 
-  cloneNode(node: any, html?: string) {
+  cloneNode(node: Element, html?: string): Element {
     if (typeof html === "undefined") {
-      return node.cloneNode(true);
+      return node.cloneNode(true) as Element;
     } else {
-      const cloned = node.cloneNode(false);
+      const cloned = node.cloneNode(false) as Element;
       cloned.innerHTML = html;
       return cloned;
     }
@@ -580,8 +595,8 @@ const DOM = {
   // if an element is ignored, we only merge data attributes
   // including removing data attributes that are no longer in the source
   mergeAttrs(
-    target: any,
-    source: any,
+    target: Element,
+    source: Element,
     opts: { exclude?: string[]; isIgnored?: boolean } = {},
   ) {
     const exclude = new Set(opts.exclude || []);
@@ -595,7 +610,7 @@ const DOM = {
           target.getAttribute(name) !== sourceValue &&
           (!isIgnored || (isIgnored && name.startsWith("data-")))
         ) {
-          target.setAttribute(name, sourceValue);
+          target.setAttribute(name, sourceValue!);
         }
       } else {
         // We exclude the value from being merged on focused inputs, because the
@@ -606,10 +621,11 @@ const DOM = {
         // was never changed, see:
         // https://github.com/phoenixframework/phoenix_live_view/issues/2163
         if (name === "value") {
-          const sourceValue = source.value ?? source.getAttribute(name);
-          if (target.value === sourceValue) {
+          const sourceValue =
+            (source as HTMLInputElement).value ?? source.getAttribute(name);
+          if ((target as HTMLInputElement).value === sourceValue) {
             // actually set the value attribute to sync it with the value property
-            target.setAttribute("value", source.getAttribute(name));
+            target.setAttribute("value", source.getAttribute(name)!);
           }
         }
       }
@@ -634,26 +650,36 @@ const DOM = {
     }
   },
 
-  mergeFocusedInput(target: any, source: any) {
+  mergeFocusedInput(target: Element, source: Element) {
     // skip selects because FF will reset highlighted index for any setAttribute
     if (!(target instanceof HTMLSelectElement)) {
       DOM.mergeAttrs(target, source, { exclude: ["value"] });
     }
 
-    if (source.readOnly) {
-      target.setAttribute("readonly", true);
+    if ((source as HTMLInputElement).readOnly) {
+      target.setAttribute("readonly", true as unknown as string);
     } else {
       target.removeAttribute("readonly");
     }
   },
 
-  hasSelectionRange(el: any): el is HTMLInputElement | HTMLTextAreaElement {
+  hasSelectionRange(
+    el: Element | null,
+  ): el is HTMLInputElement | HTMLTextAreaElement {
+    // runtime feature-detect: el may be any element, only inputs/textareas
+    // expose setSelectionRange — keep the existence check dynamic
     return (
-      el.setSelectionRange && (el.type === "text" || el.type === "textarea")
+      (el as any).setSelectionRange &&
+      ((el as HTMLInputElement | null)!.type === "text" ||
+        (el as HTMLInputElement | null)!.type === "textarea")
     );
   },
 
-  restoreFocus(focused: any, selectionStart: any, selectionEnd: any) {
+  restoreFocus(
+    focused: Element | null,
+    selectionStart: number | undefined,
+    selectionEnd: number | undefined,
+  ) {
     if (focused instanceof HTMLSelectElement) {
       focused.focus();
     }
@@ -661,12 +687,12 @@ const DOM = {
       return;
     }
 
-    const wasFocused = focused.matches(":focus");
+    const wasFocused = focused!.matches(":focus");
     if (!wasFocused) {
-      focused.focus();
+      (focused as HTMLElement).focus();
     }
     if (this.hasSelectionRange(focused)) {
-      focused.setSelectionRange(selectionStart, selectionEnd);
+      focused.setSelectionRange(selectionStart as number, selectionEnd as number);
     }
   },
 
@@ -717,8 +743,8 @@ const DOM = {
     }
   },
 
-  isTextualInput(el: any) {
-    return FOCUSABLE_INPUTS.indexOf(el.type) >= 0;
+  isTextualInput(el: Element | null) {
+    return FOCUSABLE_INPUTS.indexOf((el as HTMLInputElement | null)!.type) >= 0;
   },
 
   isNowTriggerFormExternal(el: Element, phxTriggerExternal: string) {
@@ -793,7 +819,8 @@ const DOM = {
     }
   },
 
-  getSticky(el: any, name: string, defaultVal: any) {
+  // defaultVal is either a literal fallback or a thunk producing one — dynamic
+  getSticky(el: Element, name: string, defaultVal: any) {
     const op = (DOM.private(el, "sticky") || []).find(
       ([existingName]: any[]) => name === existingName,
     );
@@ -805,13 +832,15 @@ const DOM = {
     }
   },
 
-  deleteSticky(el: any, name: string) {
+  deleteSticky(el: Element, name: string) {
     this.updatePrivate(el, "sticky", [], (ops) => {
       return ops.filter(([existingName, _]: any[]) => existingName !== name);
     });
   },
 
-  putSticky(el: any, name: string, op: (el: any) => any) {
+  // op stashes an arbitrary per-element result keyed by name; callers narrow el
+  // to concrete subtypes (HTMLElement etc.), so op's param stays dynamic
+  putSticky(el: Element, name: string, op: (el: any) => any) {
     const stashedResult = op(el);
     this.updatePrivate(el, "sticky", [], (ops) => {
       const existingIndex = ops.findIndex(
@@ -826,7 +855,7 @@ const DOM = {
     });
   },
 
-  applyStickyOperations(el: any) {
+  applyStickyOperations(el: Element) {
     const ops = DOM.private(el, "sticky");
     if (!ops) {
       return;
@@ -835,13 +864,15 @@ const DOM = {
     ops.forEach(([name, op, _stashed]: any[]) => this.putSticky(el, name, op));
   },
 
-  isLocked(el: any) {
+  isLocked(el: Element) {
     return el.hasAttribute && el.hasAttribute(PHX_REF_LOCK);
   },
 
-  attributeIgnored(attribute: any, ignoredAttributes: any[]) {
+  // ignoredAttributes is a list of attribute-name patterns; callers may type it
+  // loosely (unknown[]), so keep the element type precise but the list dynamic
+  attributeIgnored(attribute: Attr, ignoredAttributes: any[]) {
     return ignoredAttributes.some(
-      (toIgnore: any) =>
+      (toIgnore: string) =>
         attribute.name == toIgnore ||
         toIgnore === "*" ||
         (toIgnore.includes("*") && attribute.name.match(toIgnore) != null),

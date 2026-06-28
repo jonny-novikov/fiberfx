@@ -1,16 +1,16 @@
 ---
 title: "Dive 11.1 — ValKey Streams internals"
-id: ep-m11-d1
+id: ep-m12-d1
 status: established
 route: "/echo-persistence/platform/echomq-bus/valkey-streams-internals"
-kind: "module 11 · dive 11.1"
+kind: "module 12 · dive 11.1"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive two-recovery-paths SVG; no machine numbers."
 grounded-in: "docs/echo_mq/kb/streams-tier/streams.synthesis.md · docs/echo_mq/emq.streams.md (emq3.3)"
 renders-to: "platform/echomq-bus/valkey-streams-internals.html"
 ---
 
-# ValKey Streams internals { id="ep-m11-d1" }
+# ValKey Streams internals { id="ep-m12-d1" }
 
 > _The hub showed the lifecycle; this dive goes under it, to the part most ad-hoc implementations get subtly wrong. A consumer group's pending list is not one recovery mechanism but two, and they recover different things: a consumer that restarts drains its own pending entries first, and a consumer that never comes back is recovered by a peer's claim on a beat. EchoMQ keeps both and names which is which._
 
@@ -37,4 +37,4 @@ External:
 
 ---
 
-_Pager: ← Module 11 — EchoMQ Bus · Dive 11.2 — Retention & the never-deleted problem →_
+_Pager: ← Module 12 — EchoMQ Bus · Dive 11.2 — Retention & the never-deleted problem →_

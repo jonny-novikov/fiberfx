@@ -1,16 +1,16 @@
 ---
 title: "Dive 12.3 — The loop closes"
-id: ep-m12-d3
+id: ep-m13-d3
 status: established
 route: "/echo-persistence/platform/bus-and-persistence/the-loop-closes"
-kind: "module 12 · dive 12.3"
+kind: "module 13 · dive 12.3"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive four-tier flow + archive-fold return-arc SVG; no machine numbers."
 grounded-in: "docs/echo_mq/emq.streams.md (emq3.5 fold into EchoStore.Graft) · docs/echo_mq/kb/streams-tier/streams.synthesis.md (merge-read across W, F3.4-A) · docs/graft/graft.design.md (the LSN cursor)"
 renders-to: "platform/bus-and-persistence/the-loop-closes.html"
 ---
 
-# The loop closes { id="ep-m12-d3" }
+# The loop closes { id="ep-m13-d3" }
 
 > _Follow a write forward and it crosses the four tiers this course was built around: accepted by Champ, stored in CubDB, committed by Graft as one replicated LSN, published onto an EchoMQ stream. That is a pipeline. What makes it a system is the return leg — the archive fold — which does not delete the stream's old tail but commits it back into the engine as durable segments._
 
@@ -18,7 +18,7 @@ renders-to: "platform/bus-and-persistence/the-loop-closes.html"
 
 ## §1 The fold closes the loop { id="fold" }
 
-Module 11 left a deliberate tension: a stream is an append-only log, `XACK` does not delete, so retention must trim — but trimming must never outrun what has been saved (the fold-before-trim rule of fork F3.4-A). This dive is where "saved" gets its meaning. The emq3.5 archive is a dedicated fold consumer that reads the stream's old tail — everything below the watermark `W` — and commits those slices into the engine with `EchoStore.Graft.commit/3`. The engine streams those pages from CubDB to Tigris exactly as any other commit would, so a slice of the bus's history becomes a set of the store's durable segments. Only *then* may the trim advance, which is why the fold watermark always sits at or ahead of the trim watermark. The payoff is the merge-read of Module 11.3: a deep read concatenates the segments below `W` (now in the store) with the live tail at or above `W` (still on the bus), with no gap and no overlap, because the same watermark divides them. `W` is *derived* from the engine's committed frontier — the engine owns its extent, so the cut cannot drift from what is actually durable. The fold is not a backup job bolted on; it is the return leg that turns the bus's retention into the store's durability, using the one commit primitive the whole course has been building.
+Module 12 left a deliberate tension: a stream is an append-only log, `XACK` does not delete, so retention must trim — but trimming must never outrun what has been saved (the fold-before-trim rule of fork F3.4-A). This dive is where "saved" gets its meaning. The emq3.5 archive is a dedicated fold consumer that reads the stream's old tail — everything below the watermark `W` — and commits those slices into the engine with `EchoStore.Graft.commit/3`. The engine streams those pages from CubDB to Tigris exactly as any other commit would, so a slice of the bus's history becomes a set of the store's durable segments. Only *then* may the trim advance, which is why the fold watermark always sits at or ahead of the trim watermark. The payoff is the merge-read of Module 12.3: a deep read concatenates the segments below `W` (now in the store) with the live tail at or above `W` (still on the bus), with no gap and no overlap, because the same watermark divides them. `W` is *derived* from the engine's committed frontier — the engine owns its extent, so the cut cannot drift from what is actually durable. The fold is not a backup job bolted on; it is the return leg that turns the bus's retention into the store's durability, using the one commit primitive the whole course has been building.
 
 ## §2 The four-tier cycle { id="cycle" }
 
@@ -37,4 +37,4 @@ External:
 
 ---
 
-_Pager: ← Dive 12.2 — The outbox beside the bus · Module 13 — Why it beats classical scheduling →_
+_Pager: ← Dive 12.2 — The outbox beside the bus · Module 14 — Why it beats classical scheduling →_

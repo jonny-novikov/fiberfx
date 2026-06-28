@@ -51,4 +51,4 @@ External:
 
 ---
 
-_Pager: ← Module 9 — Tigris & the fence · Module 11 — EchoMQ Bus →_
+_Pager: ← Module 9 — Tigris & the fence · Module 11 — Postgres WAL on the floor →_

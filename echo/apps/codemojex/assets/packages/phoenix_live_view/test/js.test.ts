@@ -249,8 +249,8 @@ describe("JS", () => {
       <div id="modal">modal</div>
       <div id="click" phx-click='[["toggle", {"to": "#modal"}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
       let showEndCalled = false;
       let hideEndCalled = false;
       let showStartCalled = false;
@@ -283,8 +283,8 @@ describe("JS", () => {
       <div id="modal">modal</div>
       <div id="click" phx-click='[["toggle", {"to": "#modal", "display": "inline-block"}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
       let showEndCalled = false;
       let hideEndCalled = false;
       let showStartCalled = false;
@@ -316,8 +316,8 @@ describe("JS", () => {
       <div id="modal">modal</div>
       <div id="click" phx-click='[["toggle", {"to": "#modal", "ins": [["fade-in"],["fade-in-start"],["fade-in-end"]], "outs": [["fade-out"],["fade-out-start"],["fade-out-end"]]}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
       let showEndCalled = false;
       let hideEndCalled = false;
       let showStartCalled = false;
@@ -396,8 +396,8 @@ describe("JS", () => {
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-click='[["transition", {"to": "#modal", "transition": [["fade-out"],[],[]]}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       expect(Array.from(modal.classList)).toEqual(["modal"]);
 
@@ -417,9 +417,9 @@ describe("JS", () => {
       <div id="modal2" class="modal">modal</div>
       <div id="click" phx-click='[["transition", {"to": "#modal1, #modal2", "transition": [["fade-out"],[],[]]}]]'></div>
       `);
-      const modal1 = document.querySelector("#modal1")!;
-      const modal2 = document.querySelector("#modal2")!;
-      const click = document.querySelector("#click")!;
+      const modal1 = document.querySelector<HTMLElement>("#modal1")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       expect(Array.from(modal1.classList)).toEqual(["modal"]);
       expect(Array.from(modal2.classList)).toEqual(["modal"]);
@@ -445,8 +445,8 @@ describe("JS", () => {
       <div id="modal">modal</div>
       <div id="click" phx-click='[["dispatch", {"to": "#modal", "event": "click"}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       modal.addEventListener("click", () => {
         done();
@@ -460,8 +460,8 @@ describe("JS", () => {
         <div class="modal">modal</div>
       </div>
       `);
-      const modal = simulateVisibility(document.querySelector(".modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>(".modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       modal.addEventListener("click", () => done());
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
@@ -475,8 +475,8 @@ describe("JS", () => {
         </div>
       </div>
       `);
-      const modal = simulateVisibility(document.querySelector(".modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>(".modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       modal.addEventListener("click", () => done());
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
@@ -488,9 +488,9 @@ describe("JS", () => {
       <div id="click" phx-click='[["dispatch", {"to": "#modal", "event": "click"}]]'></div>
       <div id="close" phx-click='[["dispatch", {"to": "#modal", "event": "close", "detail": {"id": 1}}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const click = document.querySelector("#click")!;
-      const close = document.querySelector("#close")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
+      const close = document.querySelector<HTMLElement>("#close")!;
 
       modal.addEventListener("close", (e) => {
         expect(e.detail).toEqual({ id: 1, dispatcher: close });
@@ -510,9 +510,9 @@ describe("JS", () => {
       <div id="close" phx-click='[["dispatch", {"to": ".modal", "event": "close", "detail": {"id": 123}}]]'></div>
       `);
       let modal1Clicked = false;
-      const modal1 = document.querySelector("#modal1")!;
-      const modal2 = document.querySelector("#modal2")!;
-      const close = document.querySelector("#close")!;
+      const modal1 = document.querySelector<HTMLElement>("#modal1")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const close = document.querySelector<HTMLElement>("#close")!;
 
       modal1.addEventListener("close", (e: CustomEventInit<object>) => {
         modal1Clicked = true;
@@ -533,8 +533,8 @@ describe("JS", () => {
       <div id="modal">modal</div>
       <div id="click" phx-click='[["dispatch", {"to": "#modal", "event": "custom", "blocking": true}]]'></div>
       `);
-      let modal = simulateVisibility(document.querySelector("#modal"));
-      let click = document.querySelector("#click")!;
+      let modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      let click = document.querySelector<HTMLElement>("#click")!;
       let doneCalled = false;
 
       modal.addEventListener("custom", (e) => {
@@ -562,9 +562,9 @@ describe("JS", () => {
       <div id="add" phx-click='[["add_class", {"to": "#modal", "names": ["class1"]}]]'></div>
       <div id="remove" phx-click='[["remove_class", {"to": "#modal", "names": ["class1"]}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const add = document.querySelector("#add")!;
-      const remove = document.querySelector("#remove")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const add = document.querySelector<HTMLElement>("#add")!;
+      const remove = document.querySelector<HTMLElement>("#remove")!;
 
       JS.exec(event, "click", add.getAttribute("phx-click"), view, add);
       JS.exec(event, "click", add.getAttribute("phx-click"), view, add);
@@ -587,10 +587,10 @@ describe("JS", () => {
       <div id="add" phx-click='[["add_class", {"to": "#modal1, #modal2", "names": ["class1"]}]]'></div>
       <div id="remove" phx-click='[["remove_class", {"to": "#modal1, #modal2", "names": ["class1"]}]]'></div>
       `);
-      const modal1 = document.querySelector("#modal1")!;
-      const modal2 = document.querySelector("#modal2")!;
-      const add = document.querySelector("#add")!;
-      const remove = document.querySelector("#remove")!;
+      const modal1 = document.querySelector<HTMLElement>("#modal1")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const add = document.querySelector<HTMLElement>("#add")!;
+      const remove = document.querySelector<HTMLElement>("#remove")!;
 
       JS.exec(event, "click", add.getAttribute("phx-click"), view, add);
       vi.runAllTimers();
@@ -613,8 +613,8 @@ describe("JS", () => {
       <div id="modal" class="modal">modal</div>
       <div id="toggle" phx-click='[["toggle_class", {"to": "#modal", "names": ["class1"]}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const toggle = document.querySelector("#toggle")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const toggle = document.querySelector<HTMLElement>("#toggle")!;
 
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
       vi.runAllTimers();
@@ -634,9 +634,9 @@ describe("JS", () => {
       <div id="modal2" class="modal">modal</div>
       <div id="toggle" phx-click='[["toggle_class", {"to": "#modal1, #modal2", "names": ["class1"]}]]'></div>
       `);
-      const modal1 = document.querySelector("#modal1")!;
-      const modal2 = document.querySelector("#modal2")!;
-      const toggle = document.querySelector("#toggle")!;
+      const modal1 = document.querySelector<HTMLElement>("#modal1")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const toggle = document.querySelector<HTMLElement>("#toggle")!;
 
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
       vi.runAllTimers();
@@ -655,7 +655,7 @@ describe("JS", () => {
       const view = setupView(`
       <button phx-click='[["toggle_class",{"names":["t"],"transition":[["a"],["b"],["c"]]}]]'></button>
       `);
-      const button = document.querySelector("button")!;
+      const button = document.querySelector<HTMLElement>("button")!;
 
       expect(Array.from(button.classList)).toEqual([]);
 
@@ -677,7 +677,7 @@ describe("JS", () => {
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-click='[["push", {"event": "clicked"}]]'></div>
       `);
-      const click = document.querySelector("#click")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
       view.pushEvent = (eventType, sourceEl, targetCtx, event, meta) => {
         expect(eventType).toBe("click");
         expect(event).toBe("clicked");
@@ -694,8 +694,8 @@ describe("JS", () => {
         <input type="text" name="username" id="username" phx-click=''></div>
       </form>
       `);
-      const form = document.querySelector("#my-form")!;
-      const input: HTMLInputElement = document.querySelector("#username")!;
+      const form = document.querySelector<HTMLElement>("#my-form")!;
+      const input: HTMLInputElement = document.querySelector<HTMLInputElement>("#username")!;
       view.pushInput = (
         sourceEl,
         _targetCtx,
@@ -731,8 +731,8 @@ describe("JS", () => {
         <input type="text" name="username" id="username" phx-click=''></div>
       </form>
       `);
-      const form = document.querySelector("#my-form")!;
-      const input: HTMLInputElement = document.querySelector("#username")!;
+      const form = document.querySelector<HTMLElement>("#my-form")!;
+      const input: HTMLInputElement = document.querySelector<HTMLInputElement>("#username")!;
       view.pushWithReply = (refGen, event, payload) => {
         expect(payload).toEqual({
           cid: null,
@@ -768,8 +768,8 @@ describe("JS", () => {
           <input id="textField" name="name" value="input value" />
         </form>
       `);
-      const form: HTMLFormElement = document.querySelector("#my-form")!;
-      const input: HTMLInputElement = document.querySelector("#textField")!;
+      const form: HTMLFormElement = document.querySelector<HTMLFormElement>("#my-form")!;
+      const input: HTMLInputElement = document.querySelector<HTMLInputElement>("#textField")!;
       view.pushWithReply = (refGen, event, payload) => {
         expect(payload).toEqual({
           cid: null,
@@ -801,8 +801,8 @@ describe("JS", () => {
           <input id="textField" name="name" value="input value" />
         </form>
       `);
-      const form: HTMLFormElement = document.querySelector("#my-form")!;
-      const input: HTMLInputElement = document.querySelector("#textField")!;
+      const form: HTMLFormElement = document.querySelector<HTMLFormElement>("#my-form")!;
+      const input: HTMLInputElement = document.querySelector<HTMLInputElement>("#textField")!;
       view.pushWithReply = (refGen, event, payload) => {
         expect(payload).toEqual({
           cid: null,
@@ -836,8 +836,8 @@ describe("JS", () => {
         <input type="text" name="other" id="other" phx-change="other_changed" />
       </form>
       `);
-      const form: HTMLFormElement = document.querySelector("#my-form")!;
-      const input: HTMLInputElement = document.querySelector("#username")!;
+      const form: HTMLFormElement = document.querySelector<HTMLFormElement>("#my-form")!;
+      const input: HTMLInputElement = document.querySelector<HTMLInputElement>("#username")!;
       const oldPush = view.pushInput.bind(view);
       view.pushInput = (
         sourceEl,
@@ -883,7 +883,7 @@ describe("JS", () => {
         <input type="text" name="other" id="other" />
       </form>
       `);
-      const input: HTMLInputElement = document.querySelector("#username1")!;
+      const input: HTMLInputElement = document.querySelector<HTMLInputElement>("#username1")!;
       const oldPush = view.pushInput.bind(view);
       view.pushInput = (
         sourceEl,
@@ -929,7 +929,7 @@ describe("JS", () => {
         <input type="text" name="other" id="other" />
       </form>
       `);
-      const input: HTMLInputElement = document.querySelector("#username")!;
+      const input: HTMLInputElement = document.querySelector<HTMLInputElement>("#username")!;
       const oldPush = view.pushInput.bind(view);
       view.pushInput = (
         sourceEl,
@@ -975,7 +975,7 @@ describe("JS", () => {
         <input type="text" name="desc" id="desc" phx-change="desc_changed" />
       </form>
       `);
-      const form: HTMLFormElement = document.querySelector("#my-form")!;
+      const form: HTMLFormElement = document.querySelector<HTMLFormElement>("#my-form")!;
 
       view.pushWithReply = (refGen, event, payload) => {
         expect(payload).toEqual({
@@ -1005,7 +1005,7 @@ describe("JS", () => {
         <input type="text" name="desc" id="desc" phx-change="desc_changed" />
       </form>
       `);
-      const form: HTMLFormElement = document.querySelector("#my-form")!;
+      const form: HTMLFormElement = document.querySelector<HTMLFormElement>("#my-form")!;
 
       view.pushWithReply = (refGen, event, payload) => {
         expect(payload).toEqual({
@@ -1034,7 +1034,7 @@ describe("JS", () => {
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-click='[["push", {"event": "clicked", "page_loading": true}]]'></div>
       `);
-      const click = document.querySelector("#click")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
       view.pushEvent = (eventType, sourceEl, targetCtx, event, meta, opts) => {
         expect(opts!.page_loading).toBe(true);
         done();
@@ -1047,7 +1047,7 @@ describe("JS", () => {
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-click='[["push", {"event": "clicked", "loading": "#modal"}]]'></div>
       `);
-      const click = document.querySelector("#click")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
       const modal = document.getElementById("modal")!;
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
       expect(Array.from(modal.classList)).toEqual([
@@ -1062,7 +1062,7 @@ describe("JS", () => {
       <div id="modal" class="modal">modal</div>
       <div id="click" phx-value-three="3" phx-click='[["push", {"event": "clicked", "value": {"one": 1, "two": 2}}]]'></div>
       `);
-      const click = document.querySelector("#click")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       view.pushWithReply = (refGenerator, event, payload) => {
         expect(payload.value).toEqual({ one: 1, two: 2, three: "3" });
@@ -1078,8 +1078,8 @@ describe("JS", () => {
       <div id="modal">modal</div>
       <div id="click" phx-click='[["push", {"event": "clicked"}], ["toggle", {"to": "#modal"}]]'></div>
       `);
-      const modal = simulateVisibility(document.querySelector("#modal"));
-      const click = document.querySelector("#click")!;
+      const modal = simulateVisibility(document.querySelector<HTMLElement>("#modal"));
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       view.pushEvent = (_eventType, _sourceEl, _targetCtx, event, _data) => {
         expect(event).toEqual("clicked");
@@ -1101,9 +1101,9 @@ describe("JS", () => {
       <div id="set" phx-click='[["set_attr", {"to": "#modal", "attr": ["aria-expanded", "true"]}]]'></div>
       <div id="remove" phx-click='[["remove_attr", {"to": "#modal", "attr": "aria-expanded"}]]'></div>
       `);
-      const modal = document.querySelector("#modal")!;
-      const set = document.querySelector("#set")!;
-      const remove = document.querySelector("#remove")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
+      const set = document.querySelector<HTMLElement>("#set")!;
+      const remove = document.querySelector<HTMLElement>("#remove")!;
 
       expect(modal.getAttribute("aria-expanded")).toEqual(null);
       JS.exec(event, "click", set.getAttribute("phx-click"), view, set);
@@ -1118,8 +1118,8 @@ describe("JS", () => {
       <div id="set" phx-click='[["set_attr", {"to": null, "attr": ["aria-expanded", "true"]}]]'></div>
       <div id="remove" class="here" phx-click='[["remove_attr", {"to": null, "attr": "class"}]]'></div>
       `);
-      const set = document.querySelector("#set")!;
-      const remove = document.querySelector("#remove")!;
+      const set = document.querySelector<HTMLElement>("#set")!;
+      const remove = document.querySelector<HTMLElement>("#remove")!;
 
       expect(set.getAttribute("aria-expanded")).toEqual(null);
       JS.exec(event, "click", set.getAttribute("phx-click"), view, set);
@@ -1135,8 +1135,8 @@ describe("JS", () => {
       <div id="modal" class="modal" aria-expanded="false">modal</div>
       <div id="set" phx-click='[["set_attr", {"to": "#modal", "attr": ["aria-expanded", "true"]}]]'></div>
       `);
-      const set = document.querySelector("#set")!;
-      const modal = document.querySelector("#modal")!;
+      const set = document.querySelector<HTMLElement>("#set")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
 
       expect(modal.getAttribute("aria-expanded")).toEqual("false");
       JS.exec(event, "click", set.getAttribute("phx-click"), view, set);
@@ -1149,9 +1149,9 @@ describe("JS", () => {
       <div id="set-false" phx-click='[["set_attr", {"to": "#modal", "attr": ["aria-expanded", "false"]}]]'></div>
       <div id="set-true" phx-click='[["set_attr", {"to": "#modal", "attr": ["aria-expanded", "true"]}]]'></div>
       `);
-      const setFalse = document.querySelector("#set-false")!;
-      const setTrue = document.querySelector("#set-true")!;
-      const modal = document.querySelector("#modal")!;
+      const setFalse = document.querySelector<HTMLElement>("#set-false")!;
+      const setTrue = document.querySelector<HTMLElement>("#set-true")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
 
       expect(modal.getAttribute("aria-expanded")).toEqual(null);
       JS.exec(
@@ -1173,7 +1173,7 @@ describe("JS", () => {
       <div id="modal" phx-remove='[["push", {"event": "clicked"}]]'>modal</div>
       <div id="click" phx-click='[["exec",{"attr": "phx-remove", "to": "#modal"}]]'></div>
       `);
-      const click = document.querySelector("#click")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
       view.pushEvent = (eventType, sourceEl, targetCtx, event, _meta) => {
         expect(eventType).toBe("exec");
         expect(event).toBe("clicked");
@@ -1186,7 +1186,7 @@ describe("JS", () => {
       const view = setupView(`
       <div id="modal" phx-remove='[["push", {"event": "clicked"}]]'>modal</div>
       `);
-      const modal = document.querySelector("#modal")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
       view.pushEvent = (eventType, sourceEl, targetCtx, event, _meta) => {
         expect(eventType).toBe("exec");
         expect(event).toBe("clicked");
@@ -1203,7 +1203,7 @@ describe("JS", () => {
         data-toggle='[["toggle_attr", {"attr": ["open", "true"]}]]'
       ></div>
       `);
-      const click = document.querySelector("#click")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       expect(click.getAttribute("open")).toEqual(null);
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
@@ -1216,8 +1216,8 @@ describe("JS", () => {
         <div id="modal" data-toggle='[["toggle_attr", {"attr": ["open", "true"]}]]'>modal</div>
       </div>
       `);
-      const modal = document.querySelector("#modal")!;
-      const click = document.querySelector("#click")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       expect(modal.getAttribute("open")).toEqual(null);
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
@@ -1230,8 +1230,8 @@ describe("JS", () => {
         <div id="click" phx-click='[["exec",{"attr": "data-toggle", "to": {"closest": "#modal"}}]]'></div>
       </div>
       `);
-      const modal = document.querySelector("#modal")!;
-      const click = document.querySelector("#click")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       expect(modal.getAttribute("open")).toEqual(null);
       JS.exec(event, "click", click.getAttribute("phx-click"), view, click);
@@ -1244,9 +1244,9 @@ describe("JS", () => {
       <div id="modal2" data-toggle='[["toggle_attr", {"attr": ["open", "true"]}]]' open='true'>modal</div>
       <div id="click" phx-click='[["exec", {"attr": "data-toggle", "to": "#modal1, #modal2"}]]'></div>
       `);
-      const modal1 = document.querySelector("#modal1")!;
-      const modal2 = document.querySelector("#modal2")!;
-      const click = document.querySelector("#click")!;
+      const modal1 = document.querySelector<HTMLElement>("#modal1")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const click = document.querySelector<HTMLElement>("#click")!;
 
       expect(modal1.getAttribute("open")).toEqual(null);
       expect(modal2.getAttribute("open")).toEqual("true");
@@ -1262,8 +1262,8 @@ describe("JS", () => {
       <div id="modal" class="modal">modal</div>
       <div id="toggle" phx-click='[["toggle_attr", {"to": "#modal", "attr": ["open", "true"]}]]'></div>
       `);
-      const modal = document.querySelector("#modal")!;
-      const toggle = document.querySelector("#toggle")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
+      const toggle = document.querySelector<HTMLElement>("#toggle")!;
 
       expect(modal.getAttribute("open")).toEqual(null);
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
@@ -1277,7 +1277,7 @@ describe("JS", () => {
       const view = setupView(`
       <div id="toggle" phx-click='[["toggle_attr", {"to": null, "attr": ["open", "true"]}]]'></div>
       `);
-      const toggle = document.querySelector("#toggle")!;
+      const toggle = document.querySelector<HTMLElement>("#toggle")!;
 
       expect(toggle.getAttribute("open")).toEqual(null);
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
@@ -1290,9 +1290,9 @@ describe("JS", () => {
       <div id="modal2" open="true">modal</div>
       <div id="toggle" phx-click='[["toggle_attr", {"to": "#modal1, #modal2", "attr": ["open", "true"]}]]'></div>
       `);
-      const modal1 = document.querySelector("#modal1")!;
-      const modal2 = document.querySelector("#modal2")!;
-      const toggle = document.querySelector("#toggle")!;
+      const modal1 = document.querySelector<HTMLElement>("#modal1")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const toggle = document.querySelector<HTMLElement>("#toggle")!;
 
       expect(modal1.getAttribute("open")).toEqual(null);
       expect(modal2.getAttribute("open")).toEqual("true");
@@ -1306,8 +1306,8 @@ describe("JS", () => {
       <div id="modal" class="modal" open="true">modal</div>
       <div id="toggle" phx-click='[["toggle_attr", {"to": "#modal", "attr": ["open", "true"]}]]'></div>
       `);
-      const toggle = document.querySelector("#toggle")!;
-      const modal = document.querySelector("#modal")!;
+      const toggle = document.querySelector<HTMLElement>("#toggle")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
 
       expect(modal.getAttribute("open")).toEqual("true");
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
@@ -1320,9 +1320,9 @@ describe("JS", () => {
       <div id="toggle1" phx-click='[["toggle_attr", {"to": "#modal", "attr": ["open", "true"]}]]'></div>
       <div id="toggle2" phx-click='[["toggle_attr", {"to": "#modal", "attr": ["open", "true"]}]]'></div>
       `);
-      const toggle1 = document.querySelector("#toggle1")!;
-      const toggle2 = document.querySelector("#toggle2")!;
-      const modal = document.querySelector("#modal")!;
+      const toggle1 = document.querySelector<HTMLElement>("#toggle1")!;
+      const toggle2 = document.querySelector<HTMLElement>("#toggle2")!;
+      const modal = document.querySelector<HTMLElement>("#modal")!;
 
       expect(modal.getAttribute("open")).toEqual(null);
       JS.exec(event, "click", toggle1.getAttribute("phx-click"), view, toggle1);
@@ -1335,7 +1335,7 @@ describe("JS", () => {
       const view = setupView(`
       <div id="toggle" phx-click='[["toggle_attr", {"to": null, "attr": ["aria-expanded", "true", "false"]}]]'></div>
       `);
-      const toggle = document.querySelector("#toggle")!;
+      const toggle = document.querySelector<HTMLElement>("#toggle")!;
 
       JS.exec(event, "click", toggle.getAttribute("phx-click"), view, toggle);
       expect(toggle.getAttribute("aria-expanded")).toEqual("true");
@@ -1353,11 +1353,11 @@ describe("JS", () => {
       <div id="push2" phx-click='[["push_focus", {"to": "#modal2"}]]'></div>
       <div id="pop" phx-click='[["pop_focus", {}]]'></div>
       `);
-      const modal1 = document.querySelector("#modal1")!;
-      const modal2 = document.querySelector("#modal2")!;
-      const push1 = document.querySelector("#push1")!;
-      const push2 = document.querySelector("#push2")!;
-      const pop = document.querySelector("#pop")!;
+      const modal1 = document.querySelector<HTMLElement>("#modal1")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const push1 = document.querySelector<HTMLElement>("#push1")!;
+      const push2 = document.querySelector<HTMLElement>("#push2")!;
+      const pop = document.querySelector<HTMLElement>("#pop")!;
 
       JS.exec(event, "click", push1.getAttribute("phx-click"), view, push1);
       JS.exec(event, "click", push2.getAttribute("phx-click"), view, push2);
@@ -1382,8 +1382,8 @@ describe("JS", () => {
         <div id="push" phx-click='[["focus_first", {"to": "#parent"}]]'></div>
       </div>
       `);
-      const modal2 = document.querySelector("#modal2")!;
-      const push = document.querySelector("#push")!;
+      const modal2 = document.querySelector<HTMLElement>("#modal2")!;
+      const push = document.querySelector<HTMLElement>("#push")!;
 
       JS.exec(event, "click", push.getAttribute("phx-click"), view, push);
 

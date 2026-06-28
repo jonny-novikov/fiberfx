@@ -18,11 +18,11 @@
 export default class Timer {
   callback: () => void | Promise<void>
   timerCalc: (tries: number) => number
-  // The timer handle is an untyped implementation detail: it holds the
-  // setTimeout return (NodeJS.Timeout under @types/node, number under DOM) or
-  // null when idle. `clearTimeout` rejects the null branch under strict, so
-  // `any` here matches the untyped-handle posture without a runtime change.
-  timer: any
+  // The timer handle holds the `setTimeout` return (NodeJS.Timeout under
+  // @types/node) or null when idle/reset. `clearTimeout` rejects the null arm
+  // under strict, so the two clear sites cast the handle (type-only) rather
+  // than changing the runtime no-op of `clearTimeout(null)`.
+  timer: ReturnType<typeof setTimeout> | null
   tries: number
 
   constructor(callback: () => void | Promise<void>, timerCalc: (tries: number) => number){
@@ -34,14 +34,14 @@ export default class Timer {
 
   reset(){
     this.tries = 0
-    clearTimeout(this.timer)
+    clearTimeout(this.timer as ReturnType<typeof setTimeout>)
   }
 
   /**
    * Cancels any previous scheduleTimeout and schedules callback
    */
   scheduleTimeout(){
-    clearTimeout(this.timer)
+    clearTimeout(this.timer as ReturnType<typeof setTimeout>)
 
     this.timer = setTimeout(() => {
       this.tries = this.tries + 1

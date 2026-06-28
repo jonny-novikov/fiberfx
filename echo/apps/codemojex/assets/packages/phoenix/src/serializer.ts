@@ -10,7 +10,7 @@ export default {
   META_LENGTH: 4,
   KINDS: {push: 0, reply: 1, broadcast: 2},
 
-  encode(msg: Message, callback: (encoded: any) => void){
+  encode(msg: Message, callback: (encoded: string | ArrayBuffer) => void){
     if(msg.payload.constructor === ArrayBuffer){
       return callback(this.binaryEncode(msg))
     } else {
@@ -19,11 +19,14 @@ export default {
     }
   },
 
-  decode(rawPayload: any, callback: (decoded: any) => void){
+  // rawPayload is the raw wire frame — a JSON string or an ArrayBuffer.
+  // decoded carries through to the untyped Message envelope, so stays `any`.
+  decode(rawPayload: string | ArrayBuffer, callback: (decoded: any) => void){
     if(rawPayload.constructor === ArrayBuffer){
-      return callback(this.binaryDecode(rawPayload))
+      // `.constructor` check is a runtime guard TS can't narrow — assert the branch type.
+      return callback(this.binaryDecode(rawPayload as ArrayBuffer))
     } else {
-      let [join_ref, ref, topic, event, payload] = JSON.parse(rawPayload)
+      let [join_ref, ref, topic, event, payload] = JSON.parse(rawPayload as string)
       return callback({join_ref, ref, topic, event, payload})
     }
   },

@@ -1,4 +1,13 @@
 import {Presence} from "../src"
+import type Channel from "../src/channel"
+
+// Presence's state/diff maps are dynamic wire JSON keyed by user id; the test
+// fixtures use this shape so a syncState/syncDiff return value (PresenceMap) can
+// be reassigned back without the literal-type narrowing TS would otherwise infer.
+type TestPresenceMap = Record<string, {metas: any[]; [key: string]: any}>
+// The channel stub is a structural test double; cast it to Channel at the
+// construction sites (it intentionally implements only what Presence touches).
+const asChannel = (stub: unknown): Channel => stub as Channel
 
 const clone = (obj) => {
   let cloned = JSON.parse(JSON.stringify(obj))
@@ -47,7 +56,7 @@ const channelStub = {
   },
 }
 
-const listByFirst = (id, {metas: [first, ..._rest]}) => first
+const listByFirst = (id: string, {metas: [first, ..._rest]}: {metas: any[]}) => first
 
 describe("syncState", () => {
   it("syncs empty state", () => {
@@ -63,7 +72,7 @@ describe("syncState", () => {
 
   it("onJoins new presences and onLeave's left presences", () => {
     let newState = fixtures.state()
-    let state = {u4: {metas: [{id: 4, phx_ref: "4"}]}}
+    let state: TestPresenceMap = {u4: {metas: [{id: 4, phx_ref: "4"}]}}
     let joined = {}
     let left = {}
     const onJoin = (key, current, newPres) => {
@@ -87,9 +96,9 @@ describe("syncState", () => {
 
   it("onJoins only newly added metas", () => {
     let newState = {u3: {metas: [{id: 3, phx_ref: "3"}, {id: 3, phx_ref: "3.new"}]}}
-    let state = {u3: {metas: [{id: 3, phx_ref: "3"}]}}
-    let joined = []
-    let left = []
+    let state: TestPresenceMap = {u3: {metas: [{id: 3, phx_ref: "3"}]}}
+    let joined: any[] = []
+    let left: any[] = []
     const onJoin = (key, current, newPres) => {
       joined.push([key, clone({current, newPres})])
     }
@@ -113,7 +122,7 @@ describe("syncDiff", () => {
   })
 
   it("removes presence when meta is empty and adds additional meta", () => {
-    let state = fixtures.state()
+    let state: TestPresenceMap = fixtures.state()
     state = Presence.syncDiff(state, {joins: fixtures.joins(), leaves: fixtures.leaves()})
 
     expect(state).toEqual({
@@ -123,7 +132,7 @@ describe("syncDiff", () => {
   })
 
   it("removes meta while leaving key if other metas exist", () => {
-    let state = {u1: {metas: [{id: 1, phx_ref: "1"}, {id: 1, phx_ref: "1.2"}]}}
+    let state: TestPresenceMap = {u1: {metas: [{id: 1, phx_ref: "1"}, {id: 1, phx_ref: "1.2"}]}}
     state = Presence.syncDiff(state, {joins: {}, leaves: {u1: {metas: [{id: 1, phx_ref: "1"}]}}})
 
     expect(state).toEqual({
@@ -145,7 +154,7 @@ describe("list", () => {
   it("lists with custom function", () => {
     let state = {u1: {metas: [{id: 1, phx_ref: "1.first"}, {id: 1, phx_ref: "1.second"}]}}
 
-    const listBy = (key, {metas: [first, ..._rest]}) => first
+    const listBy = (key: string, {metas: [first, ..._rest]}: {metas: any[]}) => first
 
     expect(Presence.list(state, listBy)).toEqual([{id: 1, phx_ref: "1.first"}])
   })
@@ -153,7 +162,7 @@ describe("list", () => {
 
 describe("instance", () => {
   it("syncs state and diffs", () => {
-    let presence = new Presence(channelStub)
+    let presence = new Presence(asChannel(channelStub))
     let user1 = {metas: [{id: 1, phx_ref: "1"}]}
     let user2 = {metas: [{id: 2, phx_ref: "2"}]}
     let newState = {u1: user1, u2: user2}
@@ -166,9 +175,9 @@ describe("instance", () => {
   })
 
   it("applies pending diff if state is not yet synced", () => {
-    let presence = new Presence(channelStub)
-    let onJoins = []
-    let onLeaves = []
+    let presence = new Presence(asChannel(channelStub))
+    let onJoins: any[] = []
+    let onLeaves: any[] = []
 
     presence.onJoin((id, current, newPres) => {
       onJoins.push(clone({id, current, newPres}))
@@ -209,7 +218,7 @@ describe("instance", () => {
   })
 
   it("allows custom channel events", () => {
-    let presence = new Presence(channelStub, {
+    let presence = new Presence(asChannel(channelStub), {
       events: {
         state: "the_state",
         diff: "the_diff",
@@ -224,9 +233,9 @@ describe("instance", () => {
   })
 
   it("updates existing meta for a presence update (leave + join)", () => {
-    let presence = new Presence(channelStub)
-    let onJoins = []
-    let onLeaves = []
+    let presence = new Presence(asChannel(channelStub))
+    let onJoins: any[] = []
+    let onLeaves: any[] = []
 
     let user1 = {metas: [{id: 1, phx_ref: "1"}]}
     let user2 = {metas: [{id: 2, name: "chris", phx_ref: "2"}]}

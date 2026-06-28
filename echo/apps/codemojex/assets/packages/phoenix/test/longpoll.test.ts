@@ -1,7 +1,9 @@
+/// <reference types="node" />
 import {LongPoll} from "../src"
 import {Socket} from "../src"
 import {AUTH_TOKEN_PREFIX} from "../src/constants"
 import Ajax from "../src/ajax"
+import type {Mock} from "vitest"
 
 describe("LongPoll", () => {
   let originalXHR
@@ -126,7 +128,7 @@ describe("LongPoll", () => {
       longpoll.onerror = mockOnerror
       longpoll.closeAndRetry = mockCloseAndRetry
 
-      Ajax.request.mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
+      (Ajax.request as unknown as Mock).mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
         callback({status: 410, token: "new-token", messages: []})
         return {abort: vi.fn()}
       })

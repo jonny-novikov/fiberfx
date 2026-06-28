@@ -1,18 +1,18 @@
 ---
-title: "Module 12 — EchoBus + Echo Persistence"
-id: ep-m12-hub
+title: "Module 13 — EchoBus + Echo Persistence"
+id: ep-m13-hub
 status: established
 route: "/echo-persistence/platform/bus-and-persistence"
-kind: "module 12 hub — Chapter IV, 3 dives"
+kind: "module 13 hub — Chapter IV, 3 dives"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive two-halves / three-seams composition SVG; no machine numbers."
 grounded-in: "docs/graft/graft.design.md (two-tier join, LSN published over EchoMQ) · docs/graft/graft.engine-split.design.md (EchoStore.Durability outbox) · docs/echo_mq/emq.streams.md (emq3.5 fold)"
 renders-to: "platform/bus-and-persistence/index.html"
 ---
 
-# EchoBus + Echo Persistence { id="ep-m12-hub" }
+# EchoBus + Echo Persistence { id="ep-m13-hub" }
 
-> _Eleven modules built two things that look separate: a message bus (EchoMQ 3.0) and a durable floor (the engines and store of EP1–10). This module is the claim that they are one system. They meet at exactly three seams — a shared cursor, an outbox, and a fold — and through those seams a write becomes a loop across four tiers: accepted, committed, published, and folded back._
+> _Eleven modules built two things that look separate: a message bus (EchoMQ) and a durable floor (the engines and store of EP1–10). This module is the claim that they are one system. They meet at exactly three seams — a shared cursor, an outbox, and a fold — and through those seams a write becomes a loop across four tiers: accepted, committed, published, and folded back._
 
 **Interactive figure (hub).** A left panel (the bus: Champ accept tier, emq3.0 stream tier) and a right panel (the durable floor: Graft engine, CubDB→Tigris store), coupled in both directions. Tapping each of three connectors highlights it: ① the commit LSN published from the engine is the cursor the bus binds to; ② the outbox stands beside the bus, journaling intents while the bus stays on Valkey; ③ the archive fold commits stream slices back into the engine.
 
@@ -32,8 +32,8 @@ The coupling is not diffuse; it is exactly three seams, and each is a dive. **Th
 
 ## §4 Up next { id="next" }
 
-- **Module 13 · Why it beats classical scheduling** — beats over polling, claim batches, and at-least-once with idempotent handlers; why the EchoMQ model out-performs an Oban/cron shape on the platform's workloads. → `/echo-persistence/platform/beats-classical-scheduling`
-- **Module 14 · The door to BCS** — where durable state stops being plumbing and becomes substrate: Tables and Properties over the engines, the Branded Component System, and the codemojex apps that ride it.
+- **Module 14 · Why it beats classical scheduling** — beats over polling, claim batches, and at-least-once with idempotent handlers; why the EchoMQ model out-performs an Oban/cron shape on the platform's workloads. → `/echo-persistence/platform/beats-classical-scheduling`
+- **Module 15 · The door to BCS** — where durable state stops being plumbing and becomes substrate: Tables and Properties over the engines, the Branded Component System, and the codemojex apps that ride it.
 - **The course map** — jump back to the full map (Foundations, the local store, the engines, the platform) and revisit any module or dive. → `/echo-persistence#map`
 
 ## §5 References & sources { id="refs" }
@@ -50,4 +50,4 @@ External:
 
 ---
 
-_Pager: ← Module 11 — EchoMQ Bus · Dive 12.1 — The commit LSN is the cursor →_
+_Pager: ← Module 12 — EchoMQ Bus · Dive 12.1 — The commit LSN is the cursor →_

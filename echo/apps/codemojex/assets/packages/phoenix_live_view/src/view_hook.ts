@@ -7,7 +7,9 @@ const HOOK_ID = "hookId";
 const DEAD_HOOK = "deadHook";
 let viewHookID = 1;
 
+// `reply` is the server's wire reply (dynamic JSON); user return is discarded
 export type OnReply = (reply: any, ref: number) => any;
+// `payload` is the dynamic JSON detail carried on the phx event
 export type CallbackRef = { event: string; callback: (payload: any) => any };
 
 export type PhxTarget = string | number | HTMLElement;
@@ -184,7 +186,8 @@ export interface HookInterface<E extends HTMLElement = HTMLElement> {
    * @param name - The upload name corresponding to the `Phoenix.LiveView.allow_upload/3` call.
    * @param files - The files to upload.
    */
-  upload(name: any, files: any): any;
+  // return is the result of View.dispatchUploads — dynamic, untyped upstream
+  upload(name: string, files: FileList): any;
 
   /**
    * Allows to trigger a live file upload to a specific target.
@@ -193,7 +196,8 @@ export interface HookInterface<E extends HTMLElement = HTMLElement> {
    * @param name - The upload name corresponding to the `Phoenix.LiveView.allow_upload/3` call.
    * @param files - The files to upload.
    */
-  uploadTo(selectorOrTarget: PhxTarget, name: any, files: any): any;
+  // return is the result of View.dispatchUploads — dynamic, untyped upstream
+  uploadTo(selectorOrTarget: PhxTarget, name: string, files: FileList): any;
 
   // allow unknown methods, as people can define them in their hooks
   [key: PropertyKey]: any;
@@ -494,10 +498,11 @@ export class ViewHook<E extends HTMLElement = HTMLElement>
     onReply?: OnReply,
   ): Promise<PromiseSettledResult<{ reply: any; ref: number }>[]> | void {
     if (onReply === undefined) {
-      const targetPair: { view: View; targetCtx: any }[] = [];
+      // targetCtx is an opaque target context (CID or element) forwarded as-is
+      const targetPair: { view: View; targetCtx: unknown }[] = [];
       this.__view().withinTargets(
         selectorOrTarget,
-        (view: View, targetCtx: any) => {
+        (view: View, targetCtx: unknown) => {
           targetPair.push({ view, targetCtx });
         },
       );
@@ -513,7 +518,7 @@ export class ViewHook<E extends HTMLElement = HTMLElement>
     }
     this.__view().withinTargets(
       selectorOrTarget,
-      (view: View, targetCtx: any) => {
+      (view: View, targetCtx: unknown) => {
         view
           .pushHookEvent(this.el, targetCtx, event, payload || {})
           .then(({ reply, ref }: { reply: any; ref: number }) =>
@@ -545,6 +550,7 @@ export class ViewHook<E extends HTMLElement = HTMLElement>
     this.__listeners.delete(ref);
   }
 
+  // return mirrors View.dispatchUploads, which is untyped (any) upstream
   upload(name: string, files: FileList): any {
     return this.__view().dispatchUploads(null, name, files);
   }
@@ -552,7 +558,7 @@ export class ViewHook<E extends HTMLElement = HTMLElement>
   uploadTo(selectorOrTarget: PhxTarget, name: string, files: FileList): any {
     return this.__view().withinTargets(
       selectorOrTarget,
-      (view: View, targetCtx: any) => {
+      (view: View, targetCtx: unknown) => {
         view.dispatchUploads(targetCtx, name, files);
       },
     );
@@ -569,6 +575,7 @@ export class ViewHook<E extends HTMLElement = HTMLElement>
 /**
  * @category JavaScript Hooks
  */
+// Hook<any, any>: user hooks carry arbitrary state and target any HTMLElement
 export type HooksOptions = Record<string, typeof ViewHook | Hook<any, any>>;
 
 export default ViewHook;

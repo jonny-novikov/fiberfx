@@ -4,15 +4,27 @@ import ARIA from "./aria";
 const focusStack: HTMLElement[] = [];
 const default_transition_time = 200;
 
+// The cross-boundary internal View / LiveSocket instances (default-exported classes in
+// view.ts / live_socket.ts). Kept structurally open (any) to avoid coupling this command
+// table to those modules and the cascade a hard import would cause.
+type ViewLike = any;
+type LiveSocketLike = any;
+// A JS-command spec arriving over the wire as raw JSON (string or nested arrays) — dynamic, untypeable.
+type PhxEvent = any;
+// A single JS-command's argument bundle (also raw wire JSON), e.g. { names, transition, time, blocking }.
+type CommandArgs = any;
+// The opaque component-context value carried across the View boundary (a cid/target tuple) — passed through, never inspected here.
+type TargetCtx = any;
+
 const JS = {
   // private
   exec(
-    e: any,
+    e: Event,
     eventType: string | null,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
-    defaults?: any,
+    defaults?: CommandArgs,
   ) {
     const [defaultKind, defaultArgs] = defaults || [
       null,
@@ -24,6 +36,7 @@ const JS = {
         ? JSON.parse(phxEvent)
         : [[defaultKind, defaultArgs]];
 
+    // args is the wire command's argument bundle — dynamic JSON, untypeable
     commands.forEach(([kind, args]: [string, any]) => {
       if (kind === defaultKind) {
         // always prefer the args, but keep existing keys from the defaultArgs
@@ -32,6 +45,7 @@ const JS = {
       }
       this.filterToEls(view.liveSocket, sourceEl, args).forEach(
         (el: HTMLElement) => {
+          // dynamic dispatch onto exec_<kind> — the method name is computed from wire data
           (this as any)[`exec_${kind}`](
             e,
             eventType,
@@ -75,13 +89,13 @@ const JS = {
   // commands
 
   exec_exec(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { attr, to }: any,
+    { attr, to }: CommandArgs,
   ) {
     const encodedJS = el.getAttribute(attr);
     if (!encodedJS) {
@@ -91,13 +105,13 @@ const JS = {
   },
 
   exec_dispatch(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { event, detail, bubbles, blocking }: any,
+    { event, detail, bubbles, blocking }: CommandArgs,
   ) {
     detail = detail || {};
     detail.dispatcher = sourceEl;
@@ -111,13 +125,13 @@ const JS = {
   },
 
   exec_push(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    args: any,
+    args: CommandArgs,
   ) {
     const {
       event,
@@ -129,7 +143,7 @@ const JS = {
       dispatcher,
       callback,
     } = args;
-    const pushOpts: any = {
+    const pushOpts: Record<string, unknown> = {
       loading,
       value,
       target,
@@ -140,7 +154,7 @@ const JS = {
       eventType === "change" && dispatcher ? dispatcher : sourceEl;
     const phxTarget =
       target || targetSrc.getAttribute(view.binding("target")) || targetSrc;
-    const handler = (targetView: any, targetCtx: any) => {
+    const handler = (targetView: ViewLike, targetCtx: TargetCtx) => {
       if (!targetView.isConnected()) {
         return;
       }
@@ -194,13 +208,13 @@ const JS = {
   },
 
   exec_navigate(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { href, replace }: any,
+    { href, replace }: CommandArgs,
   ) {
     view.liveSocket.historyRedirect(
       e,
@@ -212,13 +226,13 @@ const JS = {
   },
 
   exec_patch(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { href, replace }: any,
+    { href, replace }: CommandArgs,
   ) {
     view.liveSocket.pushHistoryPatch(
       e,
@@ -229,10 +243,10 @@ const JS = {
   },
 
   exec_focus(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
   ) {
@@ -246,10 +260,10 @@ const JS = {
   },
 
   exec_focus_first(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
   ) {
@@ -263,10 +277,10 @@ const JS = {
   },
 
   exec_push_focus(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
   ) {
@@ -274,10 +288,10 @@ const JS = {
   },
 
   exec_pop_focus(
-    _e: any,
+    _e: Event,
     _eventType: string,
-    _phxEvent: any,
-    _view: any,
+    _phxEvent: PhxEvent,
+    _view: ViewLike,
     _sourceEl: HTMLElement,
     _el: HTMLElement,
   ) {
@@ -292,138 +306,138 @@ const JS = {
   },
 
   exec_add_class(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { names, transition, time, blocking }: any,
+    { names, transition, time, blocking }: CommandArgs,
   ) {
     this.addOrRemoveClasses(el, names, [], transition, time, view, blocking);
   },
 
   exec_remove_class(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { names, transition, time, blocking }: any,
+    { names, transition, time, blocking }: CommandArgs,
   ) {
     this.addOrRemoveClasses(el, [], names, transition, time, view, blocking);
   },
 
   exec_toggle_class(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { names, transition, time, blocking }: any,
+    { names, transition, time, blocking }: CommandArgs,
   ) {
     this.toggleClasses(el, names, transition, time, view, blocking);
   },
 
   exec_toggle_attr(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { attr: [attr, val1, val2] }: any,
+    { attr: [attr, val1, val2] }: CommandArgs,
   ) {
     this.toggleAttr(el, attr, val1, val2);
   },
 
   exec_ignore_attrs(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { attrs }: any,
+    { attrs }: CommandArgs,
   ) {
     this.ignoreAttrs(el, attrs);
   },
 
   exec_transition(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { time, transition, blocking }: any,
+    { time, transition, blocking }: CommandArgs,
   ) {
     this.addOrRemoveClasses(el, [], [], transition, time, view, blocking);
   },
 
   exec_toggle(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { display, ins, outs, time, blocking }: any,
+    { display, ins, outs, time, blocking }: CommandArgs,
   ) {
     this.toggle(eventType, view, el, display, ins, outs, time, blocking);
   },
 
   exec_show(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { display, transition, time, blocking }: any,
+    { display, transition, time, blocking }: CommandArgs,
   ) {
     this.show(eventType, view, el, display, transition, time, blocking);
   },
 
   exec_hide(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { display, transition, time, blocking }: any,
+    { display, transition, time, blocking }: CommandArgs,
   ) {
     this.hide(eventType, view, el, display, transition, time, blocking);
   },
 
   exec_set_attr(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { attr: [attr, val] }: any,
+    { attr: [attr, val] }: CommandArgs,
   ) {
     this.setOrRemoveAttrs(el, [[attr, val]], []);
   },
 
   exec_remove_attr(
-    e: any,
+    e: Event,
     eventType: string,
-    phxEvent: any,
-    view: any,
+    phxEvent: PhxEvent,
+    view: ViewLike,
     sourceEl: HTMLElement,
     el: HTMLElement,
-    { attr }: any,
+    { attr }: CommandArgs,
   ) {
     this.setOrRemoveAttrs(el, [], [attr]);
   },
 
-  ignoreAttrs(el: HTMLElement, attrs: any) {
+  ignoreAttrs(el: HTMLElement, attrs: unknown[]) {
     DOM.putPrivate(el, "JS:ignore_attrs", {
       apply: (fromEl: HTMLElement, toEl: HTMLElement) => {
         let fromAttributes = Array.from(fromEl.attributes);
@@ -457,12 +471,14 @@ const JS = {
 
   show(
     eventType: string | null,
-    view: any,
+    view: ViewLike,
     el: HTMLElement,
-    display: any,
+    display: string | null | undefined,
+    // transition is the dynamic [run, start, end] class triple from the wire — kept any so the
+    // empty-array `[].concat(...)` accumulation downstream type-checks unchanged.
     transition: any,
-    time: any,
-    blocking: any,
+    time: number | null | undefined,
+    blocking: boolean | undefined,
   ) {
     if (!this.isVisible(el)) {
       this.toggle(
@@ -480,12 +496,13 @@ const JS = {
 
   hide(
     eventType: string | null,
-    view: any,
+    view: ViewLike,
     el: HTMLElement,
-    display: any,
+    display: string | null | undefined,
+    // transition: dynamic wire [run, start, end] class triple — kept any for the `[].concat(...)` pattern.
     transition: any,
-    time: any,
-    blocking: any,
+    time: number | null | undefined,
+    blocking: boolean | undefined,
   ) {
     if (this.isVisible(el)) {
       this.toggle(
@@ -503,13 +520,15 @@ const JS = {
 
   toggle(
     eventType: string | null,
-    view: any,
+    view: ViewLike,
     el: HTMLElement,
-    display: any,
+    display: string | null | undefined,
+    // ins/outs are dynamic wire [run, start, end] class triples — kept any so the empty-array
+    // `[].concat(...)` / inner `.concat()` accumulation downstream type-checks unchanged.
     ins: any,
     outs: any,
-    time: any,
-    blocking: any,
+    time: number | null | undefined,
+    blocking: boolean | undefined,
   ) {
     time = time || default_transition_time;
     const [inClasses, inStartClasses, inEndClasses] = ins || [[], [], []];
@@ -615,10 +634,11 @@ const JS = {
   toggleClasses(
     el: HTMLElement,
     classes: string[],
+    // transition: dynamic wire [run, start, end] class triple — kept any for the `[].concat(...)` pattern.
     transition: any,
-    time: any,
-    view: any,
-    blocking: any,
+    time: number | null | undefined,
+    view: ViewLike,
+    blocking: boolean | undefined,
   ) {
     window.requestAnimationFrame(() => {
       const [prevAdds, prevRemoves] = DOM.getSticky(el, "classes", [[], []]);
@@ -662,10 +682,12 @@ const JS = {
     el: HTMLElement,
     adds: string[],
     removes: string[],
+    // transition: dynamic wire [run, start, end] class triple — kept any so the empty-array
+    // `[].concat(transitionRun)` accumulation below type-checks unchanged.
     transition?: any,
-    time?: any,
-    view?: any,
-    blocking?: any,
+    time?: number | null,
+    view?: ViewLike,
+    blocking?: boolean | undefined,
   ) {
     time = time || default_transition_time;
     const [transitionRun, transitionStart, transitionEnd] = transition || [
@@ -762,7 +784,11 @@ const JS = {
     return !this.isVisible(el) || this.hasAllClasses(el, outClasses);
   },
 
-  filterToEls(liveSocket: any, sourceEl: HTMLElement, { to }: any) {
+  filterToEls(
+    liveSocket: LiveSocketLike,
+    sourceEl: HTMLElement,
+    { to }: CommandArgs,
+  ) {
     const defaultQuery = () => {
       if (typeof to === "string") {
         return document.querySelectorAll(to);
@@ -786,6 +812,8 @@ const JS = {
     );
   },
 
+  // val is the raw wire transition value: a space-delimited class string OR a nested
+  // [run, start, end] array whose elements are themselves string-or-array — genuinely dynamic, kept any.
   transitionClasses(val: any) {
     if (!val) {
       return null;

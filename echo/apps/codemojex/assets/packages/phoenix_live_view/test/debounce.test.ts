@@ -37,15 +37,15 @@ const container = () => {
 describe("debounce", function () {
   test("triggers once on input blur", async () => {
     let calls = 0;
-    const el = container().querySelector("input[name=blur]");
+    const el = container().querySelector("input[name=blur]")!;
 
     DOM.debounce(
       el,
-      {},
+      {} as Event,
       "phx-debounce",
-      100,
+      100 as unknown as string,
       "phx-throttle",
-      200,
+      200 as unknown as string,
       () => true,
       () => calls++,
     );
@@ -69,9 +69,9 @@ describe("debounce", function () {
         el,
         e,
         "phx-debounce",
-        0,
+        0 as unknown as string,
         "phx-throttle",
-        0,
+        0 as unknown as string,
         () => true,
         () => calls++,
       );
@@ -97,9 +97,9 @@ describe("debounce", function () {
         el,
         e,
         "phx-debounce",
-        0,
+        0 as unknown as string,
         "phx-throttle",
-        0,
+        0 as unknown as string,
         () => true,
         () => calls++,
       );
@@ -129,9 +129,9 @@ describe("debounce", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => calls++,
       );
@@ -172,9 +172,9 @@ describe("debounce", function () {
         el,
         e,
         "phx-debounce",
-        500,
+        500 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => calls++,
       );
@@ -208,9 +208,9 @@ describe("debounce", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => calls++,
       );
@@ -219,7 +219,7 @@ describe("debounce", function () {
       el.value = "submitted";
     });
     simulateInput(el, "changed");
-    DOM.dispatchEvent(el.form, "submit");
+    DOM.dispatchEvent(el.form!, "submit");
     after(100, () => {
       expect(calls).toBe(0);
       expect(el.value).toBe("submitted");
@@ -243,9 +243,9 @@ describe("throttle", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => {
           calls++;
@@ -282,9 +282,9 @@ describe("throttle", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        500,
+        500 as unknown as string,
         () => true,
         () => {
           calls++;
@@ -322,9 +322,9 @@ describe("throttle", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => calls++,
       );
@@ -334,7 +334,7 @@ describe("throttle", function () {
     });
     simulateInput(el, "changed");
     simulateInput(el, "changed2");
-    DOM.dispatchEvent(el.form, "submit");
+    DOM.dispatchEvent(el.form!, "submit");
     expect(calls).toBe(1);
     expect(el.value).toBe("submitted");
     simulateInput(el, "changed3");
@@ -354,9 +354,9 @@ describe("throttle", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => {
           calls++;
@@ -384,9 +384,9 @@ describe("throttle", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => {
           calls++;
@@ -429,9 +429,9 @@ describe("throttle keydown", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => {
           keyPresses[e.key] = (keyPresses[e.key] || 0) + 1;
@@ -464,9 +464,9 @@ describe("throttle keydown", function () {
         el,
         e,
         "phx-debounce",
-        100,
+        100 as unknown as string,
         "phx-throttle",
-        200,
+        200 as unknown as string,
         () => true,
         () => {
           keyPresses[e.key] = (keyPresses[e.key] || 0) + 1;

@@ -1,16 +1,16 @@
 ---
 title: "Dive 12.1 — The commit LSN is the cursor"
-id: ep-m12-d1
+id: ep-m13-d1
 status: established
 route: "/echo-persistence/platform/bus-and-persistence/the-commit-lsn-is-the-cursor"
-kind: "module 12 · dive 12.1"
+kind: "module 13 · dive 12.1"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive accept→commit→publish→bind SVG; no machine numbers."
 grounded-in: "docs/graft/graft.design.md (two-tier join at the batch, :async/:sync, LSN published over EchoMQ)"
 renders-to: "platform/bus-and-persistence/the-commit-lsn-is-the-cursor.html"
 ---
 
-# The commit LSN is the cursor { id="ep-m12-d1" }
+# The commit LSN is the cursor { id="ep-m13-d1" }
 
 > _The accept tier is fast because it amortizes one fsync over a whole batch; the commit tier is durable because each batch becomes one replicated transaction. They meet at the batch, and the number that transaction produces — the LSN — is published over EchoMQ. So a replica catching up, a consumer reading the feed, and the store proving durability all name their position with the same integer._
 
@@ -37,4 +37,4 @@ External:
 
 ---
 
-_Pager: ← Module 12 — EchoBus + Echo Persistence · Dive 12.2 — The outbox beside the bus →_
+_Pager: ← Module 13 — EchoBus + Echo Persistence · Dive 12.2 — The outbox beside the bus →_

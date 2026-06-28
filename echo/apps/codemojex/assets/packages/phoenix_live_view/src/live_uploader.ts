@@ -12,6 +12,20 @@ import UploadEntry from "./upload_entry";
 import type View from "./view";
 import type LiveSocket from "./live_socket";
 
+// The per-file payload serialized for the preflight request. `path` is set at
+// construction; the rest are filled in field-by-field, and `meta` is the
+// opaque value returned by a file's optional meta() hook.
+interface SerializedUploadEntry {
+  path: string;
+  ref?: string;
+  last_modified?: number;
+  name?: string;
+  relative_path?: string;
+  type?: string;
+  size?: number;
+  meta?: unknown;
+}
+
 let liveUploaderFileRef = 0;
 
 export default class LiveUploader {
@@ -54,9 +68,9 @@ export default class LiveUploader {
 
   static serializeUploads(inputEl: HTMLInputElement) {
     const files = this.activeFiles(inputEl);
-    const fileData: { [ref: string]: any[] } = {};
+    const fileData: { [ref: string]: SerializedUploadEntry[] } = {};
     files.forEach((file: LiveViewFile) => {
-      const entry: any = { path: inputEl.name };
+      const entry: SerializedUploadEntry = { path: inputEl.name };
       const uploadRef = inputEl.getAttribute(PHX_UPLOAD_REF)!;
       fileData[uploadRef] = fileData[uploadRef] || [];
       entry.ref = this.genFileRef(file);
@@ -167,7 +181,13 @@ export default class LiveUploader {
     return this._entries;
   }
 
-  initAdapterUpload(resp: any, onError: any, liveSocket: LiveSocket) {
+  initAdapterUpload(
+    // resp is the opaque preflight response forwarded to each entry + uploader.
+    resp: any,
+    // onError is the uploader-protocol error callback; its args are app-defined.
+    onError: (...args: any[]) => void,
+    liveSocket: LiveSocket,
+  ) {
     this._entries = this._entries.map((entry) => {
       if (entry.isCancelled()) {
         this.numEntriesInProgress--;
@@ -187,7 +207,12 @@ export default class LiveUploader {
     });
 
     const groupedEntries = this._entries.reduce(
-      (acc: { [name: string]: { callback: any; entries: UploadEntry[] } }, entry) => {
+      // callback is the host-supplied uploader (or channelUploader); its shape
+      // is app-defined, so it stays `any`.
+      (
+        acc: { [name: string]: { callback: any; entries: UploadEntry[] } },
+        entry,
+      ) => {
         if (!entry.meta) {
           return acc;
         }

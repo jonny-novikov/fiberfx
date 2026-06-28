@@ -2,7 +2,11 @@ import { PHX_VIEW_SELECTOR } from "./constants";
 
 import EntryUploader from "./entry_uploader";
 
-export const logError = (msg: any, obj?: any) =>
+import type View from "./view";
+import type LiveSocket from "./live_socket";
+import type UploadEntry from "./upload_entry";
+
+export const logError = (msg: unknown, obj?: unknown) =>
   console.error && console.error(msg, obj);
 
 // Live navigation can only stay within the current origin, as it joins the
@@ -29,9 +33,9 @@ export const ensureSameOrigin = (
   }
 };
 
-export const isCid = (cid: any): cid is number | string => {
+export const isCid = (cid: unknown): cid is number | string => {
   const type = typeof cid;
-  return type === "number" || (type === "string" && /^(0|[1-9]\d*)$/.test(cid));
+  return type === "number" || (type === "string" && /^(0|[1-9]\d*)$/.test(cid as string));
 };
 
 export function detectDuplicateIds() {
@@ -48,7 +52,7 @@ export function detectDuplicateIds() {
   }
 }
 
-export function detectInvalidStreamInserts(inserts: any) {
+export function detectInvalidStreamInserts(inserts: Record<string, unknown>) {
   const errors = new Set();
   Object.keys(inserts).forEach((id) => {
     const streamEl = document.getElementById(id);
@@ -65,20 +69,22 @@ export function detectInvalidStreamInserts(inserts: any) {
   errors.forEach((error) => console.error(error));
 }
 
-export const debug = (view: any, kind: string, msg: string, obj: any) => {
+export const debug = (view: View, kind: string, msg: string, obj: unknown) => {
   if (view.liveSocket.isDebugEnabled()) {
     console.log(`${view.id} ${kind}: ${msg} - `, obj);
   }
 };
 
 // wraps value in closure or returns closure
-export const closure = (val?: any) =>
+export const closure = (val?: unknown) =>
   typeof val === "function"
     ? val
     : function () {
         return val;
       };
 
+// obj is arbitrary wire/diff/location data round-tripped through JSON; the
+// cloned shape is intentionally dynamic, so it stays `any`.
 export const clone = (obj: any) => {
   return JSON.parse(JSON.stringify(obj));
 };
@@ -102,13 +108,15 @@ export const closestPhxBinding = (
   return null;
 };
 
-export const isObject = (obj: any) => {
+export const isObject = (obj: unknown) => {
   return obj !== null && typeof obj === "object" && !(obj instanceof Array);
 };
 
-export const isEqualObj = (obj1: any, obj2: any) =>
+export const isEqualObj = (obj1: unknown, obj2: unknown) =>
   JSON.stringify(obj1) === JSON.stringify(obj2);
 
+// obj is a dynamic diff/object whose own enumerable keys are probed; `any`
+// keeps the for-in over the untyped wire shape.
 export const isEmpty = (obj: any) => {
   for (const x in obj) {
     return false;
@@ -116,24 +124,27 @@ export const isEmpty = (obj: any) => {
   return true;
 };
 
-export const maybe = (el: any, callback: any) => el && callback(el);
+export const maybe = <T, R>(el: T | null | undefined, callback: (el: T) => R) =>
+  el && callback(el);
 
 export const channelUploader = function (
-  entries: any,
-  onError: any,
-  resp: any,
-  liveSocket: any,
+  entries: UploadEntry[],
+  // onError is the uploader-protocol error callback; its shape is defined by
+  // the host application's custom uploaders, so it stays an untyped function.
+  onError: (...args: any[]) => void,
+  resp: { config: ConstructorParameters<typeof EntryUploader>[1] },
+  liveSocket: LiveSocket,
 ) {
-  entries.forEach((entry: any) => {
+  entries.forEach((entry: UploadEntry) => {
     const entryUploader = new EntryUploader(entry, resp.config, liveSocket);
     entryUploader.upload();
   });
 };
 
-export const eventContainsFiles = (e: any) => {
-  if (e.dataTransfer.types) {
-    for (let i = 0; i < e.dataTransfer.types.length; i++) {
-      if (e.dataTransfer.types[i] === "Files") {
+export const eventContainsFiles = (e: DragEvent) => {
+  if (e.dataTransfer!.types) {
+    for (let i = 0; i < e.dataTransfer!.types.length; i++) {
+      if (e.dataTransfer!.types[i] === "Files") {
         return true;
       }
     }

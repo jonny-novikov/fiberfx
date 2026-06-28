@@ -1,4 +1,4 @@
-import { type Socket } from "phoenix";
+import { type Socket, type Channel } from "phoenix";
 
 import {
   BINDING_PREFIX,
@@ -80,6 +80,7 @@ export interface LiveSocketOptions {
    *     (el) => {view: el.getAttribute("data-my-view-name", token: window.myToken}
    *
    */
+  // connect params are arbitrary user-supplied JSON sent to the server
   params?:
     | ((el: HTMLElement) => { [key: string]: any })
     | { [key: string]: any };
@@ -114,6 +115,7 @@ export interface LiveSocketOptions {
    *
    *     (view, kind, msg, obj) => console.log(`${view.id} ${kind}: ${msg} - `, obj)
    */
+  // `obj` is an arbitrary debug payload handed to the user's logger
   viewLogger?: (view: View, kind: string, msg: string, obj: any) => void;
   /**
    * Object mapping event names to functions for populating event metadata.
@@ -244,10 +246,14 @@ export default class LiveSocket {
   /** @internal */
   unloaded = false;
   private bindingPrefix: string;
-  private viewLogger: any;
+  private viewLogger:
+    | ((view: View, kind: string, msg: string, obj: unknown) => void)
+    | undefined;
+  // indexed by runtime event-name string; the per-event callback shapes vary
+  // by event, so the map stays `any` to keep string indexing sound
   private metadataCallbacks: any;
-  private defaults: any;
-  private prevActive: any;
+  private defaults: { debounce: number; throttle: number };
+  private prevActive: Element | null;
   private silenced: boolean;
   /** @internal */
   main: View | null;
@@ -295,7 +301,8 @@ export default class LiveSocket {
   /** @internal */
   params: (el: Element) => Record<string, unknown>;
   /** @internal */
-  uploaders: any;
+  // user-supplied uploader callbacks keyed by name — opaque hook objects
+  uploaders: { [key: string]: any };
   /** @internal */
   disconnectedTimeout: number;
 
@@ -333,7 +340,9 @@ export default class LiveSocket {
     }
     this.socket = new phxSocket(url, opts);
     this.bindingPrefix = opts.bindingPrefix || BINDING_PREFIX;
-    this.params = closure(opts.params || {});
+    this.params = closure(opts.params || {}) as (
+      el: Element,
+    ) => Record<string, unknown>;
     this.viewLogger = opts.viewLogger;
     this.metadataCallbacks = opts.metadata || {};
     this.defaults = Object.assign(clone(DEFAULTS), opts.defaults || {});
@@ -537,7 +546,7 @@ export default class LiveSocket {
   /**
    * Can be used to replace the transport used by the underlying Phoenix Socket.
    */
-  replaceTransport(transport: any): void {
+  replaceTransport(transport: new (endpoint: string) => object): void {
     this.reloadWithJitterTimer != null &&
       clearTimeout(this.reloadWithJitterTimer);
     this.socket.replaceTransport(transport);
@@ -586,12 +595,12 @@ export default class LiveSocket {
   }
 
   /** @internal */
-  triggerDOM(kind: string, args: any[]) {
-    (this.domCallbacks as any)[kind](...args);
+  triggerDOM(kind: keyof LiveSocket["domCallbacks"], args: unknown[]) {
+    (this.domCallbacks[kind] as (...args: unknown[]) => unknown)(...args);
   }
 
   /** @internal */
-  time(name: string, func: () => any) {
+  time<T>(name: string, func: () => T): T {
     if (!this.isProfileEnabled() || !console.time) {
       return func();
     }
@@ -618,7 +627,7 @@ export default class LiveSocket {
   }
 
   /** @internal */
-  asyncTransition(promise: Promise<any>) {
+  asyncTransition(promise: Promise<unknown>) {
     this.transitions.addAsyncTransition(promise);
   }
 
@@ -628,7 +637,8 @@ export default class LiveSocket {
   }
 
   /** @internal */
-  onChannel(channel: any, event: string, cb: (data: any) => void) {
+  // `data` is the raw wire payload pushed over the channel — dynamic JSON
+  onChannel(channel: Channel, event: string, cb: (data: any) => void) {
     channel.on(event, (data: any) => {
       const latency = this.getLatencySim();
       if (!latency) {
@@ -640,7 +650,7 @@ export default class LiveSocket {
   }
 
   /** @internal */
-  reloadWithJitter(view: View, log?: () => any) {
+  reloadWithJitter(view: View, log?: () => void) {
     this.reloadWithJitterTimer != null &&
       clearTimeout(this.reloadWithJitterTimer);
     this.disconnect();
@@ -890,6 +900,7 @@ export default class LiveSocket {
   }
 
   /** @internal */
+  // callback return is forwarded opaquely to varied call sites — passthrough
   owner(childEl: Element, callback?: (view: View) => any) {
     let view: View | undefined;
     const viewEl = DOM.closestViewEl(childEl);
@@ -1313,6 +1324,8 @@ export default class LiveSocket {
   }
 
   /** @internal */
+  // clickStartedAt arrives as an EventTarget but is used via Element APIs
+  // (.closest/.contains/.isSameNode) — the boundary mismatch is intentional
   dispatchClickAway(e: Event, clickStartedAt: any) {
     const phxClickAway = this.binding("click-away");
     const portal = clickStartedAt.closest(`[${PHX_TELEPORTED_SRC}]`);
@@ -1471,7 +1484,7 @@ export default class LiveSocket {
   }
 
   /** @internal */
-  maybeScroll(scroll: any) {
+  maybeScroll(scroll: unknown) {
     if (typeof scroll === "number") {
       requestAnimationFrame(() => {
         window.scrollTo(0, scroll);
@@ -1480,17 +1493,19 @@ export default class LiveSocket {
   }
 
   /** @internal */
-  dispatchEvent(event: string, payload: any = {}) {
+  dispatchEvent(event: string, payload: unknown = {}) {
     DOM.dispatchEvent(window, `phx:${event}`, { detail: payload });
   }
 
   /** @internal */
-  dispatchEvents(events: [string, any][]) {
+  dispatchEvents(events: [string, unknown][]) {
     events.forEach(([event, payload]) => this.dispatchEvent(event, payload));
   }
 
   /** @internal */
-  withPageLoading(info: any, callback?: (done: () => void) => any) {
+  // `info` is forwarded as a page-loading event detail — dynamic payload;
+  // callback return is forwarded opaquely to the caller — passthrough
+  withPageLoading(info: unknown, callback?: (done: () => void) => any) {
     DOM.dispatchEvent(window, "phx:page-loading-start", { detail: info });
     const done = () =>
       DOM.dispatchEvent(window, "phx:page-loading-stop", { detail: info });
@@ -1501,7 +1516,7 @@ export default class LiveSocket {
   pushHistoryPatch(
     e: Event,
     href: string,
-    linkState: any,
+    linkState: "replace" | "push",
     targetEl: HTMLElement | null,
   ) {
     if (!this.isConnected() || !(this.main && this.main.isMain())) {
@@ -1517,7 +1532,11 @@ export default class LiveSocket {
   }
 
   /** @internal */
-  historyPatch(href: string, linkState: any, linkRef = this.setPendingLink(href)) {
+  historyPatch(
+    href: string,
+    linkState: "replace" | "push",
+    linkRef = this.setPendingLink(href),
+  ) {
     if (!this.commitPendingLink(linkRef)) {
       return;
     }
@@ -1819,6 +1838,8 @@ export default class LiveSocket {
     this.boundEventNames.add(event);
     window.addEventListener(event, (e) => {
       if (!this.silenced) {
+        // bridge the generic conditional event type from the plain Event the
+        // DOM hands us — narrowing is by the event name K, not statically known
         callback(e as any);
       }
     });
@@ -1837,7 +1858,7 @@ export default class LiveSocket {
 
 class TransitionSet {
   private transitions: Set<ReturnType<typeof setTimeout>>;
-  private promises: Set<Promise<any>>;
+  private promises: Set<Promise<unknown>>;
   private pendingOps: Array<() => void>;
 
   constructor() {
@@ -1873,7 +1894,7 @@ class TransitionSet {
     this.transitions.add(timer);
   }
 
-  addAsyncTransition(promise: Promise<any>) {
+  addAsyncTransition(promise: Promise<unknown>) {
     this.promises.add(promise);
     promise.then(() => {
       this.promises.delete(promise);

@@ -1,16 +1,16 @@
 ---
-title: "Module 11 — EchoMQ Bus"
-id: ep-m11-hub
+title: "Module 12 — EchoMQ Bus"
+id: ep-m12-hub
 status: established
 route: "/echo-persistence/platform/echomq-bus"
-kind: "module 11 hub — Chapter IV (opens Chapter IV), 3 dives"
+kind: "module 12 hub — Chapter IV (opens Chapter IV), 3 dives"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive stream + consumer-group PEL SVG; no machine numbers."
 reference: "Danni Popova — Replacing Kafka with Redis Streams (Arcjet), converted + annotated; mapped onto emq.streams.md"
 renders-to: "platform/echomq-bus/index.html"
 ---
 
-# The EchoMQ bus { id="ep-m11-hub" }
+# The EchoMQ bus { id="ep-m12-hub" }
 
 > _Ten modules built the durable floor; this one teaches the thing that sits on it. EchoMQ's newest tier is a stream tier — append-only event streams with consumer groups — built on the same ValKey/Redis Streams verbs a field team would reach for. The lesson is the consumer-group lifecycle: an entry is read into a group's pending list, acknowledged per group, re-claimed on crash — and exactly where ordering survives that and where it doesn't._
 
@@ -22,7 +22,7 @@ For a single reader a stream is three verbs — `XADD` to append, `XREAD` to con
 
 ## §2 What EchoMQ adds: invariants, not verbs { id="tier" }
 
-EchoMQ 3.0 claims the small end explicitly — event streams, bounded retention, a handful of groups per stream — and keeps its databases (Tables, the journal, Postgres) beside the log, which makes keyed compaction someone else's problem. Its contribution is to turn each edge the field account discovered into something named. An order theorem: stream order equals branded-id sort order equals mint order, because every record's id is minted so its byte order is its time order; but a consumer group adds a second axis — a re-claimed PEL entry returns out of real-time order, the honest cost of at-least-once — and the spec names exactly where the theorem holds (the stream) and where it cannot (a re-claim), so a spec asserting "order preserved" can never be a false green. Retention is policy, not a bespoke process: a declared per-stream window (`MAXLEN ~` approx, `MINID` by mint instant) rather than a Janitor trimming by estimate. And the archive: a fold consumer commits each trimmed slice into the native `EchoStore.Graft` engine before it trims (fold-before-trim), and the engine streams those pages to Tigris — so the field account's "acked entries are never deleted" fear is answered by folding them to durable object storage, not by hoarding RAM.
+EchoMQ claims the small end explicitly — event streams, bounded retention, a handful of groups per stream — and keeps its databases (Tables, the journal, Postgres) beside the log, which makes keyed compaction someone else's problem. Its contribution is to turn each edge the field account discovered into something named. An order theorem: stream order equals branded-id sort order equals mint order, because every record's id is minted so its byte order is its time order; but a consumer group adds a second axis — a re-claimed PEL entry returns out of real-time order, the honest cost of at-least-once — and the spec names exactly where the theorem holds (the stream) and where it cannot (a re-claim), so a spec asserting "order preserved" can never be a false green. Retention is policy, not a bespoke process: a declared per-stream window (`MAXLEN ~` approx, `MINID` by mint instant) rather than a Janitor trimming by estimate. And the archive: a fold consumer commits each trimmed slice into the native `EchoStore.Graft` engine before it trims (fold-before-trim), and the engine streams those pages to Tigris — so the field account's "acked entries are never deleted" fear is answered by folding them to durable object storage, not by hoarding RAM.
 
 ## §3 The three dives { id="dives" }
 
@@ -44,10 +44,10 @@ External:
 - Danni Popova, *Replacing Kafka with Redis Streams* — this module's field reference — https://blog.arcjet.com/replacing-kafka-with-redis-streams/
 
 Echo records:
-- emq.streams.md — EchoMQ 3.0 the Stream Tier (the ladder, the small-end claim, retention, the archive) — https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.streams.md
+- emq.streams.md — The EchoMQ Stream Tier (the ladder, the small-end claim, retention, the archive) — https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/emq.streams.md
 - streams.synthesis.md — the PEL re-claim exception, F3.4-A, the fold — https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/echo_mq/kb/streams-tier/streams.synthesis.md
 - graft.roadmap.md — echo_graft, where the archive folds — https://github.com/jonny-novikov/fiberfx/blob/echo_mq/docs/graft/graft.roadmap.md
 
 ---
 
-_Pager: ← Chapter III · The engines · Module 12 — EchoBus + Echo Persistence →_
+_Pager: ← Chapter III · The engines · Module 13 — EchoBus + Echo Persistence →_

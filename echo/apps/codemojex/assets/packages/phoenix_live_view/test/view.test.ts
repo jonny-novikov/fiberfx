@@ -150,7 +150,7 @@ describe("View + DOM", function () {
 
     view.pushWithReply(
       null,
-      { target: el.querySelector("form") },
+      { target: el.querySelector("form") } as unknown as string,
       { value: "increment=1" },
     );
   });
@@ -186,7 +186,7 @@ describe("View + DOM", function () {
 
     view.pushWithReply(
       null,
-      { target: el.querySelector("form") },
+      { target: el.querySelector("form") } as unknown as string,
       { value: "increment=1" },
     );
 

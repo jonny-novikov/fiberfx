@@ -1,16 +1,16 @@
 ---
 title: "Dive 14.1 — Tables & Properties"
-id: ep-m14-d1
+id: ep-m15-d1
 status: established
 route: "/echo-persistence/platform/the-door-to-bcs/tables-and-properties"
-kind: "module 14 · dive 14.1"
+kind: "module 15 · dive 14.1"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive property-table + newer-wins-coherence SVG; no machine numbers."
 grounded-in: "echo_data/bcs/property_store.ex (ordered_set keyed by branded id; page_desc) · coherence.ex + graft/id.ex (newer-wins, the id is the version) · graft.engine-split.design.md (EchoStore.Table L1)"
 renders-to: "platform/the-door-to-bcs/tables-and-properties.html"
 ---
 
-# Tables & Properties { id="ep-m14-d1" }
+# Tables & Properties { id="ep-m15-d1" }
 
 > _The first thing BCS needs from the floor is a place to keep a component, and the floor already has the perfect shape for it: a table keyed by the branded id. A property store is an `ordered_set` on the 14-byte name, so it is sorted by birth for free; `EchoStore.Table` is the L1 ETS cache that serves reads without a lock; and `EchoStore.Coherence` keeps that cache correct with one rule — newer wins — where the version is the id itself._
 
@@ -37,4 +37,4 @@ External:
 
 ---
 
-_Pager: ← Module 14 — The door to BCS · Dive 14.2 — Entities, components & the law →_
+_Pager: ← Module 15 — The door to BCS · Dive 14.2 — Entities, components & the law →_

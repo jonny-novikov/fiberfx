@@ -48,7 +48,7 @@ export default class ElementRef {
   maybeUndo(
     ref: number,
     phxEvent: string,
-    eachCloneCallback: (clonedTree: any) => void,
+    eachCloneCallback: (clonedTree: Node) => void,
   ) {
     if (!this.isWithin(ref)) {
       // we cannot undo the lock / loading now, as there is a newer one already set;
@@ -115,7 +115,7 @@ export default class ElementRef {
   private undoLocks(
     ref: number,
     phxEvent: string,
-    eachCloneCallback: (clonedTree: any) => void,
+    eachCloneCallback: (clonedTree: Node) => void,
   ) {
     if (!this.isLockUndoneBy(ref)) {
       return;

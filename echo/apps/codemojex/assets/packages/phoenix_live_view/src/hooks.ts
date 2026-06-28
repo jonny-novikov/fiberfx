@@ -209,11 +209,11 @@ const InfiniteScroll: Hook<
     }
   },
 
-  throttle(interval: number, callback: (...args: any[]) => void) {
+  throttle<A extends unknown[]>(interval: number, callback: (...args: A) => void) {
     let lastCallAt = 0;
     let timer: ReturnType<typeof setTimeout> | null | undefined;
 
-    return (...args: any[]) => {
+    return (...args: A) => {
       const now = Date.now();
       const remainingTime = interval - (now - lastCallAt);
 
@@ -297,6 +297,8 @@ const LiveImgPreview: Hook<object, HTMLImageElement> = {
   },
 };
 
+// Hook<any, any> is the idiomatic catch-all for a heterogeneous hook registry
+// (each entry has its own state T / element E); mirrors HooksOptions in view_hook.ts.
 const Hooks: Record<string, Hook<any, any>> = {
   LiveFileUpload,
   LiveImgPreview,
@@ -304,6 +306,9 @@ const Hooks: Record<string, Hook<any, any>> = {
     mounted() {
       this.focusStart = this.el.firstElementChild;
       this.focusEnd = this.el.lastElementChild;
+      // e kept as any: this.el is any here (Hook<any,any> registry) and e.target's
+      // sibling walk feeds ARIA.attemptFocus(el: Element), whose strict non-null
+      // Element signature a precise FocusEvent typing would cascade a null through.
       this.focusStart.addEventListener("focus", (e: any) => {
         if (!e.relatedTarget || !this.el.contains(e.relatedTarget)) {
           // Handle focus entering from outside (e.g. Tab when body is focused)
@@ -314,6 +319,7 @@ const Hooks: Record<string, Hook<any, any>> = {
           ARIA.focusLast(this.el);
         }
       });
+      // e kept as any for the same reason as focusStart's handler above.
       this.focusEnd.addEventListener("focus", (e: any) => {
         if (!e.relatedTarget || !this.el.contains(e.relatedTarget)) {
           // Handle focus entering from outside (e.g. Shift+Tab when body is focused)

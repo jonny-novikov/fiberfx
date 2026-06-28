@@ -3,17 +3,19 @@
 (function() {
   var PolyfillEvent = eventConstructor();
 
-  function eventConstructor(): any {
+  function eventConstructor(): typeof window.CustomEvent {
     if (typeof window.CustomEvent === "function") return window.CustomEvent;
     // IE<=9 Support
-    function CustomEvent(event: string, params?: any) {
+    function CustomEvent(event: string, params?: CustomEventInit) {
       params = params || {bubbles: false, cancelable: false, detail: undefined};
       var evt = document.createEvent('CustomEvent');
       evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
       return evt;
     }
     CustomEvent.prototype = window.Event.prototype;
-    return CustomEvent;
+    // the IE<=9 polyfill is an old-style constructor function; assert it to the
+    // standard CustomEvent constructor shape for the `new PolyfillEvent(...)` call sites.
+    return CustomEvent as unknown as typeof window.CustomEvent;
   }
 
   function buildHiddenInput(name: string, value: string | null) {
@@ -51,6 +53,8 @@
   }
 
   window.addEventListener("click", function(e) {
+    // duck-typed DOM walk: starts at the EventTarget and climbs `parentNode`
+    // (ParentNode | null), gated each step by the runtime `element.getAttribute` check.
     var element: any = e.target;
     if (e.defaultPrevented) return;
 
@@ -76,7 +80,7 @@
   }, false);
 
   window.addEventListener('phoenix.link.click', function (e) {
-    var message = (e.target as any).getAttribute("data-confirm");
+    var message = (e.target as Element).getAttribute("data-confirm");
     if(message && !window.confirm(message)) {
       e.preventDefault();
     }

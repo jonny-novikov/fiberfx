@@ -37,4 +37,4 @@ External:
 
 ---
 
-_Pager: ← Dive 10.2 — Commit, ack, and the feed advance · Module 11 — EchoMQ Bus →_
+_Pager: ← Dive 10.2 — Commit, ack, and the feed advance · Module 11 — Postgres WAL on the floor →_

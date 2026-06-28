@@ -7,7 +7,7 @@ const e = (href: string) => {
   const event = {
     target: anchor,
     defaultPrevented: false,
-  } as unknown as Event & { target: HTMLAnchorElement };
+  } as unknown as MouseEvent & { target: HTMLAnchorElement };
   return event;
 };
 
@@ -94,12 +94,12 @@ describe("DOM", () => {
     });
 
     test("empty hash href", () => {
-      const currentLoc = new URL("https://test.local/foo");
+      const currentLoc = new URL("https://test.local/foo") as unknown as Location;
       expect(DOM.isNewPageClick(e("#"), currentLoc)).toBe(false);
     });
 
     test("local hash", () => {
-      const currentLoc = new URL("https://test.local/foo");
+      const currentLoc = new URL("https://test.local/foo") as unknown as Location;
       expect(DOM.isNewPageClick(e("#foo"), currentLoc)).toBe(false);
     });
 
@@ -113,10 +113,16 @@ describe("DOM", () => {
 
     test("ignores mailto and tel links", () => {
       expect(
-        DOM.isNewPageClick(e("mailto:foo"), new URL("https://test.local/foo")),
+        DOM.isNewPageClick(
+          e("mailto:foo"),
+          new URL("https://test.local/foo") as unknown as Location,
+        ),
       ).toBe(false);
       expect(
-        DOM.isNewPageClick(e("tel:1234"), new URL("https://test.local/foo")),
+        DOM.isNewPageClick(
+          e("tel:1234"),
+          new URL("https://test.local/foo") as unknown as Location,
+        ),
       ).toBe(false);
     });
 
@@ -156,10 +162,10 @@ describe("DOM", () => {
 
     test("with default", () => {
       appendTitle({ default: "DEFAULT", prefix: "PRE ", suffix: " POST" });
-      DOM.putTitle(null);
+      DOM.putTitle(null as unknown as string);
       expect(document.title).toBe("PRE DEFAULT POST");
 
-      DOM.putTitle(undefined);
+      DOM.putTitle(undefined as unknown as string);
       expect(document.title).toBe("PRE DEFAULT POST");
 
       DOM.putTitle("");

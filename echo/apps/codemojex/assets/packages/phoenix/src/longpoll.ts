@@ -21,14 +21,22 @@ export default class LongPoll {
   endPoint: string | null
   token: string | null
   skipHeartbeat: boolean
-  reqs: Set<any>
+  // The only operation performed on a stored request handle is `.abort()`; the
+  // concrete handle (XHR | AbortController | XDomainRequest) comes back `any`
+  // from Ajax.request, so the abortable shape is the precise contract.
+  reqs: Set<{abort(): void}>
   awaitingBatchAck: boolean
   currentBatch: string[] | null
-  currentBatchTimer: any
+  // setTimeout handle (NodeJS.Timeout under @types/node) or null when idle;
+  // cleared via clearTimeout with a non-null cast (the timer.ts pattern).
+  currentBatchTimer: ReturnType<typeof setTimeout> | null
   batchBuffer: string[]
+  // The four transport-event callbacks the Socket assigns to. `onopen`/`onclose`
+  // carry an open/close event envelope (genuinely transport-shaped → any);
+  // `onerror` is always a status code or "timeout"; `onmessage` carries {data}.
   onopen: (msg?: any) => void
-  onerror: (reason?: any) => void
-  onmessage: (msg?: any) => void
+  onerror: (reason?: string | number) => void
+  onmessage: (msg?: {data: any}) => void
   onclose: (event?: any) => void
   pollEndpoint: string
   readyState: number
@@ -69,7 +77,9 @@ export default class LongPoll {
     return Ajax.appendParams(this.pollEndpoint, {token: this.token})
   }
 
-  closeAndRetry(code?: any, reason?: any, wasClean?: any): void {
+  // `wasClean` is genuinely `any`: upstream passes a boolean on most paths but a
+  // status number (e.g. 500) on the server-error path into this slot.
+  closeAndRetry(code?: number, reason?: string, wasClean?: any): void {
     this.close(code, reason, wasClean)
     this.readyState = SOCKET_STATES.connecting
   }
@@ -103,6 +113,7 @@ export default class LongPoll {
 
       switch(status){
         case 200:
+          // `msg` is a raw encoded wire frame from the untyped poll response.
           messages.forEach((msg: any) => {
             // Tasks are what things like event handlers, setTimeout callbacks,
             // promise resolves and more are run within.
@@ -187,12 +198,14 @@ export default class LongPoll {
     })
   }
 
-  close(code?: any, reason?: any, wasClean?: any): void {
+  // `wasClean` stays `any` — see closeAndRetry; it lands in CloseEventInit which
+  // contractually wants a boolean, but a status number flows here on one path.
+  close(code?: number, reason?: string, wasClean?: any): void {
     for(let req of this.reqs){ req.abort() }
     this.readyState = SOCKET_STATES.closed
     let opts = Object.assign({code: 1000, reason: undefined, wasClean: true}, {code, reason, wasClean})
     this.batchBuffer = []
-    clearTimeout(this.currentBatchTimer)
+    clearTimeout(this.currentBatchTimer as ReturnType<typeof setTimeout>)
     this.currentBatchTimer = null
     if(typeof(CloseEvent) !== "undefined"){
       this.onclose(new CloseEvent("close", opts))
@@ -201,8 +214,10 @@ export default class LongPoll {
     }
   }
 
-  ajax(method: string, headers: any, body: any, onCallerTimeout: () => void, callback: (resp?: any) => void): void {
-    let req: any
+  // `body` is a request body string or null; `resp` is the raw decoded wire JSON
+  // ({status, token, messages}) — genuinely dynamic, so it stays `any`.
+  ajax(method: string, headers: Record<string, string>, body: string | null, onCallerTimeout: () => void, callback: (resp?: any) => void): void {
+    let req: {abort(): void}
     let ontimeout = () => {
       this.reqs.delete(req)
       onCallerTimeout()

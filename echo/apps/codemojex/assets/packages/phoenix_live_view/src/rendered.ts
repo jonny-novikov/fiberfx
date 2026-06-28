@@ -39,7 +39,7 @@ const quoteChars = new Set(["'", '"']);
 
 export const modifyRoot = (
   html: string,
-  attrs: { [key: string]: any },
+  attrs: { [key: string]: string | boolean },
   clearInnerHTML?: boolean,
 ): [string, string, string] => {
   let i = 0;
@@ -126,9 +126,12 @@ export const modifyRoot = (
 /** @internal */
 export default class Rendered {
   viewId: string;
+  // the rendered tree is raw, recursive wire JSON keyed by numeric-string
+  // indices plus internal markers (STATIC/COMPONENTS/KEYED/…); genuinely dynamic
   rendered: any;
   magicId: number;
 
+  // diff is the raw wire diff payload (same dynamic shape as `rendered`)
   static extract(diff: any) {
     const { [REPLY]: reply, [EVENTS]: events, [TITLE]: title } = diff;
     delete diff[REPLY];
@@ -148,7 +151,7 @@ export default class Rendered {
     return this.viewId;
   }
 
-  toString(onlyCids?: any) {
+  toString(onlyCids?: number[] | null) {
     const { buffer: str, streams: streams } = this.recursiveToString(
       this.rendered,
       this.rendered[COMPONENTS],
@@ -162,8 +165,9 @@ export default class Rendered {
   recursiveToString(
     rendered: any,
     components: any = rendered[COMPONENTS],
-    onlyCids?: any,
-    changeTracking?: any,
+    onlyCids?: number[] | Set<number> | null,
+    changeTracking?: boolean,
+    // rootAttrs is the dynamic attribute bag merged onto the root tag
     rootAttrs?: any,
   ) {
     onlyCids = onlyCids ? new Set(onlyCids) : null;
@@ -177,7 +181,7 @@ export default class Rendered {
     return { buffer: output.buffer, streams: output.streams };
   }
 
-  componentCIDs(diff: any) {
+  componentCIDs(diff: any): number[] {
     return Object.keys(diff[COMPONENTS] || {}).map((i) => parseInt(i));
   }
 
@@ -188,11 +192,11 @@ export default class Rendered {
     return Object.keys(diff).length === 1;
   }
 
-  getComponent(diff: any, cid: any) {
+  getComponent(diff: any, cid: number) {
     return diff[COMPONENTS][cid];
   }
 
-  resetRender(cid: any) {
+  resetRender(cid: number) {
     // we are racing a component destroy, it could not exist, so
     // make sure that we don't try to set reset on undefined
     if (this.rendered[COMPONENTS][cid]) {
@@ -374,7 +378,7 @@ export default class Rendered {
     return merged;
   }
 
-  componentToString(cid: any) {
+  componentToString(cid: number) {
     const { buffer: str, streams } = this.recursiveCIDToString(
       this.rendered[COMPONENTS],
       cid,
@@ -384,7 +388,7 @@ export default class Rendered {
     return { buffer: strippedHTML, streams: streams };
   }
 
-  pruneCIDs(cids: any[]) {
+  pruneCIDs(cids: number[]) {
     cids.forEach((cid) => delete this.rendered[COMPONENTS][cid]);
   }
 
@@ -418,7 +422,7 @@ export default class Rendered {
     rendered: any,
     templates: any,
     output: any,
-    changeTracking: any,
+    changeTracking: boolean | undefined,
     rootAttrs: any = {},
   ) {
     if (rendered[KEYED]) {
@@ -468,7 +472,7 @@ export default class Rendered {
     // We can only skip when changeTracking is supported,
     // and when the root element hasn't experienced an unrendered merge (newRender true).
     if (isRoot) {
-      let skip = false;
+      let skip: boolean | undefined = false;
       let attrs;
       // When a LC is re-added to the page, we need to re-render the entire LC tree,
       // therefore changeTracking is false; however, we need to keep all the magicIds
@@ -497,7 +501,7 @@ export default class Rendered {
     rendered: any,
     templates: any,
     output: any,
-    changeTracking: any,
+    changeTracking: boolean | undefined,
   ) {
     const keyedTemplates = templates || rendered[TEMPLATES];
     const statics = this.templateStatic(rendered[STATIC], templates);
@@ -536,7 +540,7 @@ export default class Rendered {
     rendered: any,
     templates: any,
     output: any,
-    changeTracking: any,
+    changeTracking: boolean | undefined,
   ) {
     if (typeof rendered === "number") {
       const { buffer: str, streams } = this.recursiveCIDToString(
@@ -553,7 +557,11 @@ export default class Rendered {
     }
   }
 
-  recursiveCIDToString(components: any, cid: any, onlyCids?: any) {
+  recursiveCIDToString(
+    components: any,
+    cid: number,
+    onlyCids?: Set<number> | null,
+  ) {
     const component =
       components[cid] || logError(`no component for CID ${cid}`, components);
     const attrs = { [PHX_COMPONENT]: cid, [PHX_VIEW_REF]: this.viewId };

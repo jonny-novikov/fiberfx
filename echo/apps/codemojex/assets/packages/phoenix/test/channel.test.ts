@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import {Channel, Socket} from "../src"
 
 let channel, socket
@@ -6,6 +7,10 @@ const defaultRef = 1
 const defaultTimeout = 10000
 
 class WSMock {
+  // `declare` keeps these type-only — no field initializer is emitted, so the
+  // constructor body remains byte-identical under useDefineForClassFields.
+  declare url: any
+  declare protocols: any
   constructor(url, protocols){
     this.url = url
     this.protocols = protocols
@@ -16,11 +21,11 @@ class WSMock {
 
 describe("with transport", function (){
   beforeAll(function (){
-    global.WebSocket = WSMock
+    (global as Record<string, any>).WebSocket = WSMock
   })
 
   afterAll(function (){
-    global.WebSocket = null
+    (global as Record<string, any>).WebSocket = null
   })
 
   describe("constructor", function (){

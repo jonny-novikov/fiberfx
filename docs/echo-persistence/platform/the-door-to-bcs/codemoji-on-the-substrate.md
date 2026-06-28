@@ -1,16 +1,16 @@
 ---
 title: "Dive 14.3 — Codemoji on the substrate"
-id: ep-m14-d3
+id: ep-m15-d3
 status: established
 route: "/echo-persistence/platform/the-door-to-bcs/codemoji-on-the-substrate"
-kind: "module 14 · dive 14.3 · the finale"
+kind: "module 15 · dive 14.3 · the finale"
 design: "html/redis-patterns sheet, re-themed amber/bronze."
 pedagogy: "Taught through a unique interactive Broadcast-compaction SVG (BDV id IS the chronological key → fold in mint order, no sort); no machine numbers."
 grounded-in: "docs/codemojex/notifications/notifications.design.md §2 (BTP/BCA/BDV/RGP; BDV id IS the chronological key) · docs/codemojex/notifications/specs/notifications.specs.md (cmn.3 — compaction order = mint order, no sort) · mesh.8.1.md (the law)"
 renders-to: "platform/the-door-to-bcs/codemoji-on-the-substrate.html"
 ---
 
-# Codemoji on the substrate { id="ep-m14-d3" }
+# Codemoji on the substrate { id="ep-m15-d3" }
 
 > _To see the door is one thing; to see something standing on the other side is another. Codemoji's Broadcast system is a BCS system end to end: four branded entities, components as data, the audience held by reference. And it cashes in the course's oldest idea at the last moment — the `BDV` delivery id is the chronological key, so the hour-long fan-out of a broadcast compacts to a single result by folding in mint order, with no sort._
 

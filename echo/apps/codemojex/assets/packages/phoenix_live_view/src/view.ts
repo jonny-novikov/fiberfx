@@ -103,7 +103,8 @@ export default class View {
   private childJoins: number;
   private loaderTimer: ReturnType<typeof setTimeout> | null;
   private disconnectedTimer: ReturnType<typeof setTimeout> | null;
-  private pendingDiffs: any[];
+  // raw wire diffs queued for replay after join — dynamic JSON shapes
+  private pendingDiffs: { diff: any; events: any }[];
   private redirect: boolean;
   private href: string | null;
   private joinCount: number;
@@ -112,9 +113,12 @@ export default class View {
   private destroyed: boolean;
   private joinCallback: (onDone?: () => void) => void;
   private stopCallback: () => void;
-  private pendingJoinOps: any[];
+  // root stores [view, op] tuples for children + itself; on a rejoin a child
+  // stores bare ops (() => void) instead — hence the union
+  private pendingJoinOps: ([View, () => void] | (() => void))[];
   private viewHooks: Record<string, ViewHook>;
-  private formSubmits: any[];
+  // queued form submits: [formEl, ref, opts, callback]
+  private formSubmits: [HTMLFormElement, number, any, () => void][];
   private children: Record<string, Record<string, View>> | null;
   private pendingForms: Set<string>;
   private formsForRecovery: Record<string, HTMLFormElement>;
@@ -335,8 +339,8 @@ export default class View {
   //  * a selector, then we search the selector in the DOM and call the callback
   //    for each element found with the corresponding owner view
   withinTargets(
-    phxTarget: any,
-    callback: (view: View, target: any) => void,
+    phxTarget: HTMLElement | SVGElement | number | string,
+    callback: (view: View, target: Element | number) => void,
     dom: QueryableNode = document,
   ) {
     // in the form recovery case we search in a template fragment instead of
@@ -648,8 +652,11 @@ export default class View {
     let phxChildrenAdded = false;
     const updatedHookIds = new Set();
 
+    // targetContainer is private on DOMPatch; reached via cast for the DOM hook
     this.liveSocket.triggerDOM("onPatchStart", [(patch as any).targetContainer]);
 
+    // morphdom hands these callbacks bare Nodes; we access element-only APIs
+    // (getAttribute/id) behind runtime guards, so they stay `any` at this seam
     patch.afterAdded((el: any) => {
       this.liveSocket.triggerDOM("onNodeAdded", [el]);
       const phxViewportTop = this.binding(PHX_VIEWPORT_TOP);
@@ -701,7 +708,7 @@ export default class View {
     return phxChildrenAdded;
   }
 
-  afterElementsRemoved(elements: any[], pruneCids: boolean) {
+  afterElementsRemoved(elements: Element[], pruneCids: boolean) {
     const destroyedCIDs: Array<number> = [];
     elements.forEach((parent) => {
       const components = DOM.all(
@@ -882,7 +889,8 @@ export default class View {
     // we can also clear the formsForRecovery object to not keep old form elements around
     this.formsForRecovery = {};
     this.joinCallback(() => {
-      this.pendingJoinOps.forEach(([view, op]) => {
+      // at the root this path only holds the [view, op] tuple form
+      (this.pendingJoinOps as [View, () => void][]).forEach(([view, op]) => {
         if (!view.isDestroyed()) {
           op();
         }
@@ -918,7 +926,7 @@ export default class View {
         parentCids.forEach((parentCID) => {
           if (
             this.componentPatch(
-              this.rendered!.getComponent(diff, parentCID),
+              this.rendered!.getComponent(diff, parentCID as number),
               parentCID as number,
             )
           ) {
@@ -942,7 +950,8 @@ export default class View {
     return true;
   }
 
-  renderContainer(diff: any, kind: string) {
+  // streams is the dynamic stream-diff set consumed by DOMPatch (Set<Stream>)
+  renderContainer(diff: any, kind: string): [string, Set<any>] {
     return this.liveSocket.time(`toString diff (${kind})`, () => {
       const tag = this.el.tagName;
       // Don't skip any component in the diff nor any marked as pruned
@@ -969,6 +978,7 @@ export default class View {
     const hookElId = ViewHook.elementID(el);
 
     // only ever try to add hooks to elements owned by this view
+    // `el` may be a non-element node at runtime, hence the defensive guard
     if ((el as any).getAttribute && !this.ownsElement(el)) {
       return;
     }
@@ -1574,7 +1584,7 @@ export default class View {
     return this.lastAckRef !== null && this.lastAckRef >= ref;
   }
 
-  componentID(el: any): number | null {
+  componentID(el: Element): number | null {
     const cid = el.getAttribute && el.getAttribute(PHX_COMPONENT);
     return cid ? parseInt(cid) : null;
   }
@@ -1583,9 +1593,9 @@ export default class View {
     target: any,
     targetCtx: any,
     opts: { [key: string]: any } = {},
-  ) {
+  ): number | null {
     if (isCid(targetCtx)) {
-      return targetCtx;
+      return targetCtx as number;
     }
 
     const cidOrSelector =
@@ -1601,9 +1611,11 @@ export default class View {
     }
   }
 
-  closestComponentID(targetCtx: any) {
+  // returns the resolved component id (a cid) or null; the return annotation
+  // is required because this method recurses through `maybe`
+  closestComponentID(targetCtx: any): number | null {
     if (isCid(targetCtx)) {
-      return targetCtx;
+      return targetCtx as number;
     } else if (targetCtx) {
       return maybe(
         // We either use the closest data-phx-component binding, or -
@@ -1622,7 +1634,7 @@ export default class View {
             return this.closestComponentID(portalParent);
           }
         },
-      );
+      ) as number | null;
     } else {
       return null;
     }
@@ -1700,7 +1712,10 @@ export default class View {
 
   serializeForm(
     form: HTMLFormElement,
-    opts: { [key: string]: any } = {},
+    opts: {
+      submitter?: HTMLButtonElement | HTMLInputElement;
+      [key: string]: any;
+    } = {},
     onlyNames: string[] = [],
   ) {
     const { submitter } = opts;
@@ -1719,7 +1734,7 @@ export default class View {
       }
       input.name = submitter.name;
       input.value = submitter.value;
-      submitter.parentElement.insertBefore(input, submitter);
+      submitter.parentElement!.insertBefore(input, submitter);
       injectedElement = input;
     }
 
@@ -1804,7 +1819,7 @@ export default class View {
     // remove the injected element again
     // (it would be removed by the next dom patch anyway, but this is cleaner)
     if (submitter && injectedElement) {
-      submitter.parentElement.removeChild(injectedElement);
+      submitter.parentElement!.removeChild(injectedElement);
     }
 
     return params.toString();
@@ -1874,8 +1889,8 @@ export default class View {
     }
 
     let uploads;
-    const cid = isCid(forceCid)
-      ? forceCid
+    const cid: number | null = isCid(forceCid)
+      ? (forceCid as number)
       : this.targetComponentID(inputEl.form, targetCtx, opts);
     const refGenerator = (maybePayload?: any) => {
       return this.putRef(
@@ -1997,24 +2012,27 @@ export default class View {
   }
 
   disableForm(formEl: HTMLFormElement, phxEvent: string, opts = {}) {
-    const filterIgnored = (el: any) => {
+    const filterIgnored = (
+      el: HTMLButtonElement | HTMLInputElement | HTMLTextAreaElement,
+    ) => {
       const userIgnored = closestPhxBinding(
         el,
         `${this.binding(PHX_UPDATE)}=ignore`,
-        el.form,
+        el.form!,
       );
       return !(
-        userIgnored || closestPhxBinding(el, "data-phx-update=ignore", el.form)
+        userIgnored ||
+        closestPhxBinding(el, "data-phx-update=ignore", el.form!)
       );
     };
-    const filterDisables = (el: any) => {
+    const filterDisables = (el: Element) => {
       return el.hasAttribute(this.binding(PHX_DISABLE_WITH));
     };
-    const filterButton = (el: any): el is HTMLButtonElement =>
+    const filterButton = (el: Element): el is HTMLButtonElement =>
       el.tagName == "BUTTON";
 
     const filterInput = (
-      el: any,
+      el: Element,
     ): el is HTMLInputElement | HTMLTextAreaElement =>
       ["INPUT", "TEXTAREA"].includes(el.tagName);
 
@@ -2311,7 +2329,7 @@ export default class View {
   }
 
   pushLinkPatch(
-    e: any,
+    e: Event,
     href: string,
     targetEl: HTMLElement | null,
     callback: (linkRef?: any) => void,

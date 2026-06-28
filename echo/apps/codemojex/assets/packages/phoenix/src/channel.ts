@@ -20,6 +20,8 @@ export default class Channel {
   topic: string
   params: () => object
   socket: Socket
+  // Binding callbacks are heterogeneous: each receives an event's wire payload
+  // plus ref/joinRef — genuinely dynamic, so (...args: any[]) => any per @types/phoenix.
   bindings: { event: string; ref: number; callback: (...args: any[]) => any }[]
   bindingRef: number
   timeout: number
@@ -106,6 +108,7 @@ export default class Channel {
    * Hook into channel close
    * @param {Function} callback
    */
+  // payload/ref/joinRef are raw wire data passed through to the hook — dynamic.
   onClose(callback: (payload?: any, ref?: any, joinRef?: any) => void | Promise<void>): void{
     this.on(CHANNEL_EVENTS.close, callback)
   }
@@ -114,6 +117,7 @@ export default class Channel {
    * Hook into channel errors
    * @param {Function} callback
    */
+  // reason is an arbitrary error payload from the wire/transport — dynamic.
   onError(callback: (reason?: any) => void | Promise<void>): number{
     return this.on(CHANNEL_EVENTS.error, reason => callback(reason))
   }
@@ -135,6 +139,7 @@ export default class Channel {
    * @param {Function} callback
    * @returns {integer} ref
    */
+  // callback receives an event's wire payload (+ ref/joinRef) — genuinely dynamic.
   on(event: string, callback: (...args: any[]) => any): number{
     let ref = this.bindingRef++
     this.bindings.push({event, ref, callback})
@@ -248,11 +253,13 @@ export default class Channel {
    * @param {integer} ref
    * @returns {Object}
    */
+  // Overridable hook over the raw wire message (payload/ref/joinRef) — dynamic JSON.
   onMessage(_event: string, payload: any, _ref?: any, _joinRef?: any): any{ return payload }
 
   /**
    * @private
    */
+  // payload/joinRef come straight off the wire envelope — dynamic.
   isMember(topic: string, event: string, payload: any, joinRef: any): boolean{
     if(this.topic !== topic){ return false }
 
@@ -282,6 +289,7 @@ export default class Channel {
   /**
    * @private
    */
+  // payload/ref/joinRef are raw wire data dispatched to bindings — dynamic.
   trigger(event: string, payload?: any, ref?: any, joinRef?: any): void{
     let handledPayload = this.onMessage(event, payload, ref, joinRef)
     if(payload && !handledPayload){ throw new Error("channel onMessage callbacks must return the payload, modified or unmodified") }
@@ -297,7 +305,7 @@ export default class Channel {
   /**
    * @private
    */
-  replyEventName(ref: any): string{ return `chan_reply_${ref}` }
+  replyEventName(ref: string | null): string{ return `chan_reply_${ref}` }
 
   /**
    * @private
