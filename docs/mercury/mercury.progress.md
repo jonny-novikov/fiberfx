@@ -9,8 +9,11 @@ barrel-diff shows all 91 prior exports preserved, +12 from the salvaged Accordio
 All four packages typecheck + build and all five apps build. **Movement II — the authored contract
 layer (`mx.2`) — is now BUILT**: all 33 components carry a hand-authored, grounded, cross-linked
 `<Name>.prompt.md` (coverage 33/33 · 75 cross-links resolve · no extractor framing · build
-undisturbed), authored in 3 waves via `/mercury-ship mx.2`. The **Storybook** (**Movement III,
-`mx.3`–`mx.6`**) is the next frontier — each story writes its controls from these contracts. Forward
+undisturbed), authored in 3 waves via `/mercury-ship mx.2`. **Movement III (the Storybook) has opened — `mx.3` ✅ BUILT:** the
+`apps/storybook/` host (`@storybook/react-vite` 10.4.6) resolves the packages from source, with a
+light/`dark-theme` decorator and the first three foundation stories (Icon · tokens · Button) writing
+their controls from the mx.2 contracts. **`mx.4`–`mx.6`** (component · effector · build/deploy stories)
+are the remaining frontier. Forward
 plan: [`mercury.roadmap.md`](./mercury.roadmap.md); architecture:
 [`mercury.design.md`](./mercury.design.md).
 
@@ -43,7 +46,7 @@ Movement II · the authored contract layer   (laddered behind mx.1 — grounds o
   mx.2   ✅ BUILT     ████████████████████  33/33 hand-authored <Name>.prompt.md (grounded · enum language · Composition cross-links · real-call-site examples) + D-8 split ratified — gate-green 2026-06-28 (commit pending)
 
 Movement III · the Design System Storybook   (laddered behind mx.2 — each story writes its controls from the contract)
-  mx.3   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  Storybook host (@storybook/react-vite) + theme decorator + foundations stories (Icon · tokens · Button)
+  mx.3   ✅ BUILT     ████████████████████  Storybook host (apps/storybook · @storybook/react-vite 10.4.6) + light/dark decorator + foundations stories (Icon · tokens · Button) — gate-green 2026-06-28 (/mercury-ship mx.3)
   mx.4   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  component stories — variants · argTypes/controls · actions — across all groups
   mx.5   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  Effector-powered stories — theme · toast · createForm · createCooldown + decorators
   mx.6   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  static build + deploy · regenerate the Claude-Design export · re-align .design-sync
@@ -82,10 +85,20 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   waves (≤2 authors/wave) via `/mercury-ship mx.2`, grounded in the live `.tsx` + real call sites,
   cross-linked (75 links resolve); the app/library split ratified (`D-8`). Gate-green: coverage
   33/33, no extractor framing, packages typecheck+build + 5 apps build exit 0, barrel byte-identical.
-- **Next.** `mx.3` — the Storybook host (Movement III): add `.storybook/` (`@storybook/react-vite`),
-  resolve `@mercury/*` from source via the vite alias (mirroring the apps), a light/dark theme
-  decorator, and the first stories (Icon · tokens · Button) — each writing its controls from the
-  `mx.2` contracts. `mx.4`–`mx.6` (component · effector · build/deploy stories) ladder behind it.
+- **Landed (mx.3).** The Storybook host (Movement III opener) — `apps/storybook/` (`@mercury/storybook`)
+  on Storybook 10.4.6 (`@storybook/react-vite`), resolving `@mercury/*` from source via a vite alias
+  mirroring the apps, a light/`dark-theme` decorator, and three foundation stories (Icon · tokens ·
+  Button) writing their controls from the mx.2 contracts. Host **excluded from the per-rung `apps/*`
+  gate** (a separate `pnpm sb:build` smoke); co-located `*.stories.tsx` excluded from `@mercury/ui`'s
+  own `tsc` (`D-9`); `ds-bundle/` relocated under the host as the `/design-sync` `localDir`. Gate-green
+  (Director-verified, independent re-run): packages typecheck+build, five apps build, barrel
+  byte-identical, `sb:build` registers exactly the 3 stories, INV-8 proven load-bearing by a net-zero
+  mutation spot-check.
+- **Next.** `mx.4` — component stories across all groups (variants · `argTypes`/controls · actions),
+  **and** the apps-side Pages (brand-new pages from the apps' real composed screens wiring
+  `@mercury/ui` + `@mercury/effector`) that **mandatorily enhance `@mercury/ui`** additively to cover
+  the controls/cases/pages those screens need. `mx.5`–`mx.6` (effector · build/deploy + design-sync
+  re-align) ladder behind it.
 - **Deferred / open.** Widening `@mercury/core`'s public barrel beyond `cx` + `date` (the deeper
   foundation lives in core as files, surfaced when a consumer needs it); whether design tokens later
   migrate into `@mercury/core`; the `.design-sync` pipeline re-alignment (`mx.6` — its
