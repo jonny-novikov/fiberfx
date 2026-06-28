@@ -8,32 +8,54 @@ import { channelUploader, logError } from "./utils";
 
 import LiveUploader from "./live_uploader";
 
+import type View from "./view";
+
 export default class UploadEntry {
-  static isActive(fileEl, file) {
+  ref: string;
+  fileEl: HTMLInputElement;
+  file: LiveViewFile;
+  view: View;
+  meta: any;
+  _isCancelled: boolean;
+  _isDone: boolean;
+  _progress: number;
+  _lastProgressSent: number;
+  _onDone: () => void;
+  _onElUpdated: () => void;
+  autoUpload: boolean;
+
+  static isActive(fileEl: HTMLInputElement, file: LiveViewFile) {
     const isNew = file._phxRef === undefined;
-    const activeRefs = fileEl.getAttribute(PHX_ACTIVE_ENTRY_REFS).split(",");
+    const activeRefs = fileEl
+      .getAttribute(PHX_ACTIVE_ENTRY_REFS)!
+      .split(",");
     const isActive = activeRefs.indexOf(LiveUploader.genFileRef(file)) >= 0;
     return file.size > 0 && (isNew || isActive);
   }
 
-  static isPreflighted(fileEl, file) {
+  static isPreflighted(fileEl: HTMLInputElement, file: LiveViewFile) {
     const preflightedRefs = fileEl
-      .getAttribute(PHX_PREFLIGHTED_REFS)
+      .getAttribute(PHX_PREFLIGHTED_REFS)!
       .split(",");
     const isPreflighted =
       preflightedRefs.indexOf(LiveUploader.genFileRef(file)) >= 0;
     return isPreflighted && this.isActive(fileEl, file);
   }
 
-  static isPreflightInProgress(file) {
+  static isPreflightInProgress(file: LiveViewFile) {
     return file._preflightInProgress === true;
   }
 
-  static markPreflightInProgress(file) {
+  static markPreflightInProgress(file: LiveViewFile) {
     file._preflightInProgress = true;
   }
 
-  constructor(fileEl, file, view, autoUpload) {
+  constructor(
+    fileEl: HTMLInputElement,
+    file: LiveViewFile,
+    view: View,
+    autoUpload: boolean,
+  ) {
     this.ref = LiveUploader.genFileRef(file);
     this.fileEl = fileEl;
     this.file = file;
@@ -53,7 +75,7 @@ export default class UploadEntry {
     return this.meta;
   }
 
-  progress(progress) {
+  progress(progress: number) {
     this._progress = Math.floor(progress);
     if (this._progress > this._lastProgressSent) {
       if (this._progress >= 100) {

@@ -1,7 +1,29 @@
 import { logError } from "./utils";
 
+import type { Channel } from "phoenix";
+import type LiveSocket from "./live_socket";
+import type UploadEntry from "./upload_entry";
+
+interface EntryUploaderConfig {
+  chunk_size: number;
+  chunk_timeout: number;
+}
+
 export default class EntryUploader {
-  constructor(entry, config, liveSocket) {
+  liveSocket: LiveSocket;
+  entry: UploadEntry;
+  offset: number;
+  chunkSize: number;
+  chunkTimeout: number;
+  chunkTimer: ReturnType<typeof setTimeout> | null;
+  errored: boolean;
+  uploadChannel: Channel;
+
+  constructor(
+    entry: UploadEntry,
+    config: EntryUploaderConfig,
+    liveSocket: LiveSocket,
+  ) {
     const { chunk_size, chunk_timeout } = config;
     this.liveSocket = liveSocket;
     this.entry = entry;
@@ -15,7 +37,7 @@ export default class EntryUploader {
     });
   }
 
-  error(reason) {
+  error(reason?: any) {
     if (this.errored) {
       return;
     }
@@ -26,11 +48,11 @@ export default class EntryUploader {
   }
 
   upload() {
-    this.uploadChannel.onError((reason) => this.error(reason));
+    this.uploadChannel.onError((reason?: any) => this.error(reason));
     this.uploadChannel
       .join()
-      .receive("ok", (_data) => this.readNextChunk())
-      .receive("error", ({ reason }) => this.error(reason));
+      .receive("ok", (_data?: any) => this.readNextChunk())
+      .receive("error", ({ reason }: { reason?: any }) => this.error(reason));
   }
 
   isDone() {
@@ -45,8 +67,8 @@ export default class EntryUploader {
     );
     reader.onload = (e) => {
       if (e.target?.error === null) {
-        this.offset += /** @type {ArrayBuffer} */ (e.target.result).byteLength;
-        this.pushChunk(/** @type {ArrayBuffer} */ (e.target.result));
+        this.offset += (e.target.result as ArrayBuffer).byteLength;
+        this.pushChunk(e.target.result as ArrayBuffer);
       } else {
         return logError("Read error: " + e.target?.error);
       }
@@ -54,7 +76,7 @@ export default class EntryUploader {
     reader.readAsArrayBuffer(blob);
   }
 
-  pushChunk(chunk) {
+  pushChunk(chunk: ArrayBuffer) {
     if (!this.uploadChannel.isJoined()) {
       return;
     }
@@ -69,6 +91,6 @@ export default class EntryUploader {
           );
         }
       })
-      .receive("error", ({ reason }) => this.error(reason));
+      .receive("error", ({ reason }: { reason?: any }) => this.error(reason));
   }
 }
