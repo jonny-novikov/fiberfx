@@ -34,11 +34,14 @@ them all.**
   apps (`apps/{catalogue,docs,echomq,mobile,showcase}`) — they resolve packages from **source** via
   vite alias, so a package edit is live in dev with no prebuild.
 - **When.** **Movements I + II are built; Movement III is the active frontier.** `mx.0`–`mx.2` are
-  built (docs floor · the structural rung · the contract layer — all 33 components carry a
-  hand-authored, grounded, cross-linked `<Name>.prompt.md`). In **Movement III (the Storybook, now
-  `mx.3`–`mx.7`)**, `mx.3` (host), `mx.4` (component stories + the focused-trio enhancement), and
-  `mx.5` (effector-powered stories) **are built**; `mx.6` (apps-side Pages) and `mx.7` (build/deploy +
-  design-sync) remain.
+  built (docs floor · the structural rung · the contract layer). In **Movement III (the Storybook +
+  the design-system import + the showcase, now `mx.3`–`mx.9`)**, `mx.3` (host), `mx.4` (component
+  stories), and `mx.5` (effector-powered stories) **are built**. `mx.6` (apps-side Pages) is
+  **DROPPED** (Operator-ruled "skip apps", 2026-06-29). The frontier is the new tail: **`mx.7` —
+  import the Claude-Design bundle's net-new components (a 5-batch epic, `mx.7.1`–`mx.7.5`)**, **`mx.8`**
+  (enrich the Storybook stories — palette/roundings/variants/actions/scenes), **`mx.9`** (one
+  comprehensive showcase application replacing the retired apps). Design flows DOWN from Claude Web
+  only — `/design-sync` is forbidden (the import is one-way).
 - **Where.** Code: `mercury/packages/{mercury-core,mercury-ui,mercury-effector}`, `mercury/apps/*`.
   Specs: `docs/mercury/` (this roadmap · the design canon · the progress dashboard · the rung
   triads under [`specs/`](./specs/)).
@@ -86,12 +89,18 @@ feed each other and are reconciled against source + the reference apps (the cont
 [`../aaw/aaw.architect-approach.md`](../aaw/aaw.architect-approach.md)). This is the surface the
 Storybook renders and the Claude Design agent builds from — authored, not extracted.
 
-### Movement III · The Design System Storybook
+### Movement III · The Storybook, the design-system import & the showcase
 
 A `@storybook/react-vite` host that resolves `@mercury/ui` + `@mercury/core` from source (mirroring
-the apps), with a global theme decorator, per-component stories across all groups (variants,
-`argTypes`/controls written from the contract, actions), Effector-powered live-state stories, and a
-deployable static build that re-aligns with the Claude-Design (`.design-sync`) export.
+the apps), with a global theme decorator, per-component stories across all groups, and Effector-powered
+live-state stories (`mx.3`–`mx.5`, built). Then the **design-system import** (`mx.7`, a 5-batch epic):
+the Operator authors the design system in Claude Web and exports a handoff bundle to
+`packages/mercury-ds/`; mx.7 translates its **net-new** components into `@mercury/ui` (the `.mx-*` +
+token idiom, additive), batch by batch with the Operator in the loop. Then `mx.8` **enriches** the
+stories (palette · roundings · variant switching · actions · real-world scenes), and `mx.9` stands up
+**one comprehensive showcase application** (library · docs · API · do/don't · recipes) replacing the
+retired apps. **Design flows DOWN from Claude Web only — `/design-sync` and the `DesignSync` MCP are
+forbidden** (the import is one-way).
 
 ## The rung ladder
 
@@ -103,8 +112,15 @@ deployable static build that re-aligns with the Claude-Design (`.design-sync`) e
 | **mx.3** | III | **Storybook host + foundations stories** — `apps/storybook/` (`@storybook/react-vite` 10.4.6), source-resolved packages, CSF3, a light/`dark-theme` decorator, first stories (Icon · tokens · Button) | ✅ **BUILT** (gate-green 2026-06-28; `/mercury-ship mx.3`) ([`specs/mx.3/mx.3.md`](./specs/mx.3/mx.3.md)) |
 | **mx.4** | III | **Component stories + the focused-trio enhancement** — a co-located `<Name>.stories.tsx` for all 33 components (CSF3, controls from the contract, variant/states grids; data-prop stories grounded in real call sites); **+ the additive `@mercury/ui` enhancement**: `Card` `title`/`actions` header props + new `ListRow` + new `MoneyInput` (barrel +4 names, additions-only) | ✅ **BUILT** (gate-green 2026-06-29; `/mercury-ship mx.4`) ([`specs/mx.4/mx.4.md`](./specs/mx.4/mx.4.md)) |
 | **mx.5** | III | **Effector-powered stories** — a host-home `Effector/<Adapter>` story for **all six** `@mercury/effector` adapters (`theme · toast · createForm · strength · createCooldown · formatter`), each wiring the adapter's live Effector state (`effector-react` hooks; models at module scope) into the real `@mercury/ui` component(s) at the real prop surface; the `@mercury/ui` surface frozen **byte-identical** (no barrel change), zero host-config edit, `sb:build` 36 → 42 homes | ✅ **BUILT** (gate-green 2026-06-29; `/mercury-ship mx.5`) ([`specs/mx.5/mx.5.md`](./specs/mx.5/mx.5.md)) |
-| **mx.6** | III | **Apps-side Pages** — brand-new page-level `*.stories.tsx` co-located in `apps/*/src/`, composing the five apps' real screens (`apps/{catalogue,echomq,showcase,mobile,docs}`) on real `@mercury/ui` + `@mercury/effector` (the apps-side mandate re-sequenced here from mx.4 — Operator-ruled). The five apps are being **completely rewritten with Mercury DS** and **retired from the workspace** when the mx program finishes; `codemojex-node/apps/economy` is out of scope | 📋 PLANNED |
-| **mx.7** | III | **Build/deploy + design-sync reconcile** — static Storybook build + deploy; regenerate the Claude-Design export from the grouped structure; re-align the `.design-sync` pipeline | 📋 PLANNED |
+| **mx.6** | III | **Apps-side Pages — DROPPED** (Operator-ruled "skip apps at all", 2026-06-29). Superseded by the mx.7/8/9 tail; the component-documentation value moves to the mx.9 showcase. See [`specs/mx.6/mx.6.md`](./specs/mx.6/mx.6.md) | ❌ **DROPPED** |
+| **mx.7** | III | **Import the Claude-Design bundle's net-new components into `@mercury/ui`** — a **5-batch epic** (30 net-new + 2 folds), translating the bundle's inline-style prototypes into the `.mx-*` + token idiom, additively (master invariant holds); design flows DOWN only (`/design-sync` forbidden). Epic: [`specs/mx.7/mx.7.md`](./specs/mx.7/mx.7.md) | 📋 PLANNED (epic) |
+| ↳ **mx.7.1** | III | foundational primitives — `Heading · Text · Label · IconButton · Separator` (+5) | ✅ **BUILT** (gate-green 2026-06-30; `/mercury-ship mx.7.1`; barrel 107→127, 0 removed) ([`specs/mx.7.1/mx.7.1.md`](./specs/mx.7.1/mx.7.1.md)) |
+| ↳ **mx.7.2** | III | feedback/display + layout — `Callout · Spinner · Skeleton · Blockquote · DataList · Code · Kbd · AspectRatio · Collapsible · ScrollArea` (+10) | 📋 PLANNED |
+| ↳ **mx.7.3** | III | input/selection composites — `DateField · Calendar · CheckboxGroup · CheckboxCards · RadioGroup · RadioCards` (+6) + folds `TextArea`/`ToggleGroup` | 📋 PLANNED |
+| ↳ **mx.7.4** | III | the **overlay-floor primitive** + `Dialog · AlertDialog · Popover` (+3) — Squad-tier | 📋 PLANNED |
+| ↳ **mx.7.5** | III | menus/hover/nav (consume the floor) — `Dropdown · ContextMenu · HoverCard · LinkPreview · Menubar · TabNav` (+6) — Squad-tier | 📋 PLANNED |
+| **mx.8** | III | **Enrich the Storybook stories** — palette switching · roundings · variant switching · actions · real-world usage scenes (host-config + co-located story enrichment; `@mercury/ui` surface frozen byte-identical). [`specs/mx.8/mx.8.md`](./specs/mx.8/mx.8.md) | 📋 PLANNED |
+| **mx.9** | III | **One comprehensive showcase application** — `apps/showcase/` (vite/React, source-resolved) serving the library · documentation · API · do/don't · recipes, replacing the retired apps; Squad-tier. [`specs/mx.9/mx.9.md`](./specs/mx.9/mx.9.md) | 📋 PLANNED |
 
 > **Re-sequencing is Operator-ruled.** Movement II (contracts) is laddered behind `mx.1` because a
 > contract grounds in the component's source + folder; Movement III (Storybook) is laddered behind
@@ -112,7 +128,12 @@ deployable static build that re-aligns with the Claude-Design (`.design-sync`) e
 > checkpoint; the Operator may re-order, and rungs are revisable, not deleted. *(The contract layer
 > was inserted as Movement II on 2026-06-28, shifting the Storybook rungs from `mx.2`–`mx.5` to
 > `mx.3`–`mx.6`. On 2026-06-29 `mx.5` was split — effector-powered stories stay `mx.5`; the apps-side
-> Pages re-sequenced to `mx.6`; build/deploy + design-sync to `mx.7` — Operator-ruled.)*
+> Pages re-sequenced to `mx.6`; build/deploy + design-sync to `mx.7` — Operator-ruled. Later on
+> 2026-06-29 the tail was **re-scoped** (Operator-ruled): `mx.6` (apps-side Pages) **DROPPED**
+> ("skip apps"); the new tail is `mx.7` (the Claude-Design import — a 5-batch epic `mx.7.1`–`mx.7.5`,
+> the overlay batch split 7.4→7.4+7.5), `mx.8` (enrich the stories), `mx.9` (the showcase
+> application). The old build/deploy + design-sync re-align is retired — design now flows DOWN from
+> Claude Web only.)*
 
 ## How the program runs
 
@@ -123,8 +144,9 @@ Each rung is one shippable increment, run through a small fixed loop:
    build context).
 2. **Build** — implement to the spec; move (don't rewrite) where the rung relocates code; keep the
    diff inside `mercury/packages/*` (+ the app `vite.config.ts` aliases a package rung touches).
-3. **Gate** (the ladder, run from the workspace root):
-   - `pnpm -r typecheck` and `pnpm -r build` green for every package.
+3. **Gate** (the ladder, run from `mercury/`):
+   - `pnpm --filter "./packages/*" typecheck` and `pnpm --filter "./packages/*" build` green for every
+     package (never a blind `pnpm -r` — it walks the `codemojex-node` sub-workspace, the wrong scope).
    - **Barrel-diff** — the set of named exports from `@mercury/ui` is identical before/after the
      rung (the master invariant, mechanically checked).
    - Every app still builds (`pnpm --filter "./apps/*" build`), resolving packages via alias.
@@ -147,9 +169,16 @@ Each rung is one shippable increment, run through a small fixed loop:
   `@mercury/ui/src/styles/tokens.css`; `mx.1` diffs and folds in do-no-harm. Whether design tokens
   later migrate down into `@mercury/core` is a **deferred** question (out of scope for `mx.1`,
   Operator-revisable).
-- **S-4 · design-sync output path.** `packages/mercury-ds` appears to be a stale/relocated
-  design-sync bundle; deleting it is safe (re-generable). `mx.1` confirms `.design-sync/config.json`'s
-  output target; the pipeline re-alignment is `mx.7`.
+- **S-4 · the `mercury-ds` bundle (the import source).** `packages/mercury-ds/` is a **new, untracked
+  Claude-Design handoff** (created 2026-06-29 — NOT the old ephemeral one deleted in mx.1): 53 component
+  prototypes + tokens/fonts + a live-`.tsx` showcase engine. It is `mx.7`'s read-only **import source**.
+  Its git fate is an open fork (mx.7 epic §4: gitignore-regenerable [Steward] vs delete-after-7.5 vs
+  track); it stays OUT of every commit pathspec regardless.
+- **S-5 · design flows DOWN only — `/design-sync` is forbidden.** The Operator authors the design
+  system in Claude Web (project `…/22dd5e3f-…`) and exports the bundle down to `packages/mercury-ds/`.
+  `mx.7` translates it **into** `@mercury/ui`; **the `DesignSync` MCP + the `/design-sync` skill (which
+  push local→remote) are forbidden** this program. The old design-sync re-align (the prior `mx.7`) is
+  retired — the import is one-way.
 
 ## Map
 

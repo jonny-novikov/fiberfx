@@ -32,9 +32,13 @@ export type {
 // actions
 export * from "./components/actions/Button";
 export * from "./components/actions/Link";
+export * from "./components/actions/IconButton";
 // foundations
 export * from "./components/foundations/Icon";
 export * from "./components/foundations/Divider";
+export * from "./components/foundations/Heading";
+export * from "./components/foundations/Text";
+export * from "./components/foundations/Separator";
 // inputs
 export * from "./components/inputs/Input";
 export * from "./components/inputs/Textarea";
@@ -42,6 +46,7 @@ export * from "./components/inputs/Search";
 export * from "./components/inputs/Select";
 export * from "./components/inputs/AuthCode";
 export * from "./components/inputs/MoneyInput";
+export * from "./components/inputs/Label";
 // selection
 export * from "./components/selection/Checkbox";
 export * from "./components/selection/Radio";

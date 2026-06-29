@@ -19,8 +19,12 @@ the first additive growth landed — the **focused trio** (`Card` `title`/`actio
 a host-home `Effector/<Adapter>` story for all six `@mercury/effector` adapters (theme · toast ·
 createForm · strength · createCooldown · formatter) wiring live Effector state into the real
 components — **42** `sb:build` homes (36 + 6), the `@mercury/ui` surface frozen byte-identical, zero
-host-config edit. **`mx.6`–`mx.7`** (the apps-side Pages · build/deploy + design-sync re-align) are
-the remaining frontier. Forward
+host-config edit. **The tail was re-scoped 2026-06-29 (Operator-ruled):** `mx.6` (apps-side Pages) is
+**DROPPED** ("skip apps"); the frontier is **`mx.7`** — import the Claude-Design bundle's net-new
+components into `@mercury/ui`, a **5-batch epic** (`mx.7.1`–`mx.7.5`; 30 net-new + 2 folds; design
+flows DOWN only) — then **`mx.8`** (enrich the stories) and **`mx.9`** (one comprehensive showcase app
+replacing the retired apps). **All three tail triads are authored**; **`mx.7.1` is BUILT** (gate-green 2026-06-30 — 5 primitives,
+barrel 107→127, 0 removed). The frontier is **`mx.7.2`** (the +10 feedback/display+layout batch). Forward
 plan: [`mercury.roadmap.md`](./mercury.roadmap.md); architecture:
 [`mercury.design.md`](./mercury.design.md).
 
@@ -56,8 +60,15 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   mx.3   ✅ BUILT     ████████████████████  Storybook host (apps/storybook · @storybook/react-vite 10.4.6) + light/dark decorator + foundations stories (Icon · tokens · Button) — gate-green 2026-06-28 (/mercury-ship mx.3)
   mx.4   ✅ BUILT     ████████████████████  component stories (35 homes + Tokens = 36) + the focused-trio enhancement (Card title/actions · ListRow · MoneyInput; barrel +4) — gate-green 2026-06-29 (/mercury-ship mx.4)
   mx.5   ✅ BUILT     ████████████████████  effector-powered stories — all 6 adapters (theme · toast · createForm · strength · createCooldown · formatter); 42 homes; barrel byte-identical — gate-green 2026-06-29 (/mercury-ship mx.5)
-  mx.6   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  apps-side Pages — page-level *.stories.tsx in apps/*/src/ (the 5 rewritten apps, then retired) · economy out of scope
-  mx.7   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  static build + deploy · regenerate the Claude-Design export · re-align .design-sync
+  mx.6   ❌ DROPPED   ────────────────────  apps-side Pages — DROPPED 2026-06-29 (Operator "skip apps"); value moves to mx.9
+  mx.7   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  IMPORT the Claude-Design bundle's net-new components → @mercury/ui · 5-batch epic (30 net-new + 2 folds) · design flows DOWN only
+    7.1  ✅ BUILT     ████████████████████  foundational primitives — Heading·Text·Label·IconButton·Separator (+5) — gate-green 2026-06-30
+    7.2  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  feedback/display+layout — Callout·Spinner·Skeleton·Blockquote·DataList·Code·Kbd·AspectRatio·Collapsible·ScrollArea (+10)
+    7.3  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  input/selection composites — DateField·Calendar·Checkbox/Radio groups+cards (+6) + folds TextArea/ToggleGroup
+    7.4  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  overlay-floor primitive + Dialog·AlertDialog·Popover (+3) · Squad-tier
+    7.5  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  menus/hover/nav (consume the floor) — Dropdown·ContextMenu·HoverCard·LinkPreview·Menubar·TabNav (+6) · Squad-tier
+  mx.8   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  enrich the stories — palette · roundings · variant switching · actions · real-world scenes (@mercury/ui surface frozen)
+  mx.9   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  ONE comprehensive showcase app (library · docs · API · do/don't · recipes) replacing retired apps · Squad-tier
 ```
 
 ---
@@ -111,11 +122,16 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   each wiring live Effector state into the real `@mercury/ui` component(s); the `@mercury/ui` surface
   **frozen byte-identical** (no barrel change), zero host-config edit, 42 `sb:build` homes (36 + 6).
   Gate-green 2026-06-29 (`/mercury-ship mx.5`, `D-11`).
-- **Next.** `mx.6` — the **apps-side Pages**: page-level `*.stories.tsx` co-located in `apps/*/src/`
-  composing the five apps' real screens on real `@mercury/ui` + `@mercury/effector` (the host glob
-  already reaches `apps/*/src/**`). The five apps are being completely rewritten with Mercury DS and
-  retired from the workspace at program end; `codemojex-node/apps/economy` is out of scope. `mx.7`
-  (static build/deploy + the `.design-sync` re-align) ladders behind it.
+- **Next.** The Movement-III tail was re-scoped (Operator-ruled 2026-06-29): **`mx.6` (apps-side
+  Pages) is DROPPED** ("skip apps"). The new-tail triads are **authored**: **`mx.7`** — import the
+  Claude-Design bundle's net-new components into `@mercury/ui`, a **5-batch epic** (`mx.7.1`–`mx.7.5`;
+  30 net-new + 2 folds; the overlay batch split 7.4 = the overlay-floor + `Dialog`/`AlertDialog`/
+  `Popover`, 7.5 = the menus/hover/nav). Each batch ships through an **Operator → Agent → Agent** loop
+  with the Operator in the seat between batches. Then **`mx.8`** (enrich the stories) and **`mx.9`**
+  (one comprehensive showcase app replacing the retired apps). **`mx.7.1` is BUILT** (gate-green 2026-06-30;
+  Fork A → `Separator` net-new, `Divider` kept; barrel 107→127, 0 removed). The frontier is **`mx.7.2`**.
+  Open forks for the later batches: the bundle's git fate · the overlay-floor ADR (7.4) · the date-lib
+  dependency (7.3) · mx.8's palette mechanism. Design flows DOWN from Claude Web only — `/design-sync` forbidden.
 - **Deferred / open.** Widening `@mercury/core`'s public barrel beyond `cx` + `date` (the deeper
   foundation lives in core as files, surfaced when a consumer needs it); whether design tokens later
   migrate into `@mercury/core`; the `.design-sync` pipeline re-alignment (`mx.7` — its

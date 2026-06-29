@@ -27,6 +27,9 @@ stretches to the row height. The rule colour resolves to `--border-secondary`; a
 ## Composition
 
 - **Composes:** nothing — a leaf.
+- **Sibling:** [Separator](../Separator/Separator.prompt.md) — the Claude-Design rule primitive with the
+  richer `decorative`/`size`/labelled-vertical surface; both stay exported. Reach for `Divider` as the
+  auth-flow splitter, `Separator` for the AT-meaningful `decorative={false}` rule.
 - **Composed by:** [AuthLayout](../../layout/AuthLayout/AuthLayout.prompt.md) (the "or sign in with
   email" separator) and app forms (the labelled section breaks in the economy calibration panels).
 
