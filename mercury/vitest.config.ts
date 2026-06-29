@@ -33,6 +33,7 @@ export default defineConfig({
           setupFiles: ["./vitest.setup.ts"],
           include: [
             "packages/*/test/**/*.test.{ts,tsx}",
+            "packages/*/src/**/*.test.{ts,tsx}",
             "apps/*/test/**/*.test.{ts,tsx}",
           ],
         },
