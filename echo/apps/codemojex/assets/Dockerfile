@@ -47,6 +47,8 @@ WORKDIR /app
 # The whole self-contained assets/ tree: the workspace (package.json,
 # pnpm-workspace.yaml, pnpm-lock.yaml), the vendored packages/, the bin/ publish
 # script, the vite configs, js/, src/. Nothing outside assets/ is referenced.
+# .dockerignore keeps the HOST node_modules out, so the script's
+# `pnpm install --frozen-lockfile` resolves the linux-correct binaries from the lock.
 COPY . .
 
 RUN chmod +x bin/edge-deploy.sh
