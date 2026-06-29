@@ -35,7 +35,7 @@ describe("binary", () => {
     let bin = "\0\x01\x01\x01\x0101te\x01"
     let decoder = new TextDecoder()
     Serializer.encode({join_ref: "0", ref: "1", topic: "t", event: "e", payload: buffer}, (result) => {
-      expect(decoder.decode(result)).toBe(bin)
+      expect(decoder.decode(result as ArrayBuffer)).toBe(bin)
       done()
     })
   }))
@@ -45,7 +45,7 @@ describe("binary", () => {
     let bin = "\0\x02\x01\x03\x02101topev\x01"
     let decoder = new TextDecoder()
     Serializer.encode({join_ref: "10", ref: "1", topic: "top", event: "ev", payload: buffer}, (result) => {
-      expect(decoder.decode(result)).toBe(bin)
+      expect(decoder.decode(result as ArrayBuffer)).toBe(bin)
       done()
     })
   }))
@@ -94,7 +94,7 @@ describe("binary", () => {
     let refBytes = encoder.encode(ref)
 
     Serializer.encode({join_ref: joinRef, ref: ref, topic: topic, event: event, payload: buffer}, (result) => {
-      let bytes = new Uint8Array(result)
+      let bytes = new Uint8Array(result as ArrayBuffer)
       expect(bytes[0]).toBe(0) // push kind
       expect(bytes[1]).toBe(joinRefBytes.byteLength) // 4 bytes for "🚀"
       expect(bytes[2]).toBe(refBytes.byteLength)

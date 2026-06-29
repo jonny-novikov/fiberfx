@@ -26,7 +26,7 @@ describe("LongPoll", () => {
       status: 200,
       responseText: JSON.stringify({status: 200, token: "token123", messages: []}),
       onreadystatechange: null,
-    }) })
+    }) }) as unknown as typeof XMLHttpRequest
 
     // Spy on Ajax.request
     vi.spyOn(Ajax, "request").mockImplementation(() => {
@@ -50,7 +50,7 @@ describe("LongPoll", () => {
     })
 
     it("should handle null protocols", () => {
-      const longpoll = new LongPoll("http://localhost/socket/longpoll", null)
+      const longpoll = new LongPoll("http://localhost/socket/longpoll", null as unknown as string[])
       
       // Verify longpoll was initialized correctly without error
       expect(longpoll.pollEndpoint).toBe("http://localhost/socket/longpoll")
@@ -128,7 +128,7 @@ describe("LongPoll", () => {
       longpoll.onerror = mockOnerror
       longpoll.closeAndRetry = mockCloseAndRetry
 
-      (Ajax.request as unknown as Mock).mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
+      ;(Ajax.request as unknown as Mock).mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
         callback({status: 410, token: "new-token", messages: []})
         return {abort: vi.fn()}
       })
@@ -168,8 +168,8 @@ describe("LongPoll", () => {
         // suppress the initial poll() that the constructor schedules via setTimeout(0)
         longpoll.poll = vi.fn()
 
-        const calls = []
-        Ajax.request.mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
+        const calls: any[] = []
+        ;(Ajax.request as unknown as Mock).mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
           calls.push({method, body, callback})
           return {abort: vi.fn()}
         })
@@ -221,8 +221,8 @@ describe("LongPoll", () => {
         longpoll.timeout = 1000
         longpoll.poll = vi.fn()
 
-        const calls = []
-        Ajax.request.mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
+        const calls: any[] = []
+        ;(Ajax.request as unknown as Mock).mockImplementation((method, url, headers, body, timeout, ontimeout, callback) => {
           calls.push({body, callback})
           return {abort: vi.fn()}
         })
@@ -320,7 +320,7 @@ describe("Ajax.request", () => {
     global.AbortController = vi.fn(function (){ return ({
       abort: vi.fn(),
       signal: {}
-    }) })
+    }) }) as unknown as typeof AbortController
 
     // Mock XMLHttpRequest
     global.XMLHttpRequest = vi.fn(function (){ return ({
@@ -331,14 +331,14 @@ describe("Ajax.request", () => {
       readyState: 4,
       status: 200,
       responseText: JSON.stringify({success: true})
-    }) })
+    }) }) as unknown as typeof XMLHttpRequest
 
     // Mock fetch
     global.fetch = vi.fn(() =>
       Promise.resolve({
         text: () => Promise.resolve(JSON.stringify({success: true}))
       })
-    )
+    ) as unknown as typeof fetch
   })
 
   afterEach(() => {
@@ -349,7 +349,7 @@ describe("Ajax.request", () => {
   })
 
   it("should use XMLHttpRequest by default", () => {
-    Ajax.request("GET", "/test-endpoint", {}, null, 0, null, (response) => {
+    Ajax.request("GET", "/test-endpoint", {}, null, 0, null as unknown as () => void, (response) => {
       expect(response).toEqual({success: true})
     })
 
@@ -357,8 +357,8 @@ describe("Ajax.request", () => {
   })
 
   it("should use fetch when XMLHttpRequest is not available", () => {
-    global.XMLHttpRequest = undefined // Simulate it being unavailable
-    Ajax.request("GET", "/test-endpoint", {}, null, 0, null, (response) => {
+    global.XMLHttpRequest = undefined as unknown as typeof XMLHttpRequest // Simulate it being unavailable
+    Ajax.request("GET", "/test-endpoint", {}, null, 0, null as unknown as () => void, (response) => {
       expect(response).toEqual({success: true})
     })
 

@@ -198,7 +198,7 @@ describe("View + DOM", function () {
 
     liveSocket = new LiveSocket("/live", Socket);
     const el = liveViewDOM();
-    const input = el.querySelector("input");
+    const input = el.querySelector("input")!;
 
     const view = simulateJoinedView(el, liveSocket);
     const channelStub = {
@@ -230,7 +230,7 @@ describe("View + DOM", function () {
 
     liveSocket = new LiveSocket("/live", Socket);
     const el = liveViewDOM();
-    const input = el.querySelector('input[type="checkbox"]');
+    const input = el.querySelector<HTMLElement>('input[type="checkbox"]')!;
 
     const view = simulateJoinedView(el, liveSocket);
     const channelStub = {
@@ -479,7 +479,7 @@ describe("View + DOM", function () {
 
       const liveSocket = new LiveSocket("/live", Socket);
       const el = liveViewDOM();
-      const form = el.querySelector("form");
+      const form = el.querySelector("form")!;
 
       const view = simulateJoinedView(el, liveSocket);
       const channelStub = {
@@ -511,7 +511,7 @@ describe("View + DOM", function () {
           <button phx-click="inc_temperature">Inc Temperature</button>
         </form>
       `);
-      const form = el.querySelector("form");
+      const form = el.querySelector("form")!;
 
       const view = simulateJoinedView(el, liveSocket);
       const channelStub = {
@@ -1635,7 +1635,7 @@ describe("View Hooks", function () {
       liveview_version,
     });
 
-    const recorderHook = view.getHook(view.el.querySelector("#rec"));
+    const recorderHook = view.getHook(view.el.querySelector("#rec")!);
     const fileEl = view.el.querySelector("#uploads0");
     const dispatchEventSpy = vi.spyOn(fileEl as any, "dispatchEvent");
 
@@ -1772,10 +1772,10 @@ describe("View + Component", function () {
 
     liveSocket = new LiveSocket("/live", Socket);
     const el = liveViewComponent();
-    const targetCtx = el.querySelector(".form-wrapper");
+    const targetCtx = el.querySelector(".form-wrapper")!;
 
     const view = simulateJoinedView(el, liveSocket);
-    const input = view.el.querySelector("input[id=plus]")!;
+    const input = view.el.querySelector<HTMLElement>("input[id=plus]")!;
     const channelStub = {
       leave() {
         return {
@@ -2096,7 +2096,7 @@ describe("View + Component", function () {
       );
 
       const toEl = tag("span", { id: "myhook", "phx-hook": "MyHook" }, "world");
-      DOM.putPrivate(el.querySelector("#myhook"), "data-phx-ref-lock", toEl);
+      DOM.putPrivate(el.querySelector("#myhook")!, "data-phx-ref-lock", toEl);
 
       view.undoRefs(1, "");
 

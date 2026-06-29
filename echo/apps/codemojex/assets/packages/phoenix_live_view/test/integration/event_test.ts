@@ -47,9 +47,9 @@ describe("events", () => {
   test("send change event to correct target", () => {
     const liveSocket = new LiveSocket("/live", Socket);
     liveSocket.connect();
-    const view = liveSocket.getViewByEl(document.getElementById("root"));
+    const view = liveSocket.getViewByEl(document.getElementById("root")!)!;
     view.isConnected = () => true;
-    const input = view.el.querySelector("#first_name");
+    const input = view.el.querySelector<HTMLInputElement>("#first_name")!;
     let meta = {
       event: null,
       target: null,

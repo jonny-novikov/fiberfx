@@ -103,7 +103,10 @@ export default class Ajax {
 
   // values are dynamic (string | number | nested object), so the value type is `any`.
   static serialize(obj: Record<string, any>, parentKey?: string): string {
-    let queryStr = []
+    // Annotated `string[]` (not bare `[]`): strict src lets the array evolve from the
+    // `.push(string)` calls, but the test scope sets noImplicitAny:false, which disables
+    // that evolution and would otherwise freeze it to `never[]`. Type-only, runtime-neutral.
+    let queryStr: string[] = []
     for(var key in obj){
       if(!Object.prototype.hasOwnProperty.call(obj, key)){ continue }
       let paramKey = parentKey ? `${parentKey}[${key}]` : key

@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  * @vitest-environment-options {"url": "https://example.com/"}
  */
+/// <reference types="node" />
 import {WebSocket, Server as WebSocketServer} from "mock-socket"
 import {encode} from "./serializer"
 import {Socket, LongPoll} from "../src"
@@ -26,7 +27,7 @@ describe("with transports", function (){
       status: 200,
       responseText: JSON.stringify({}),
       onreadystatechange: null,
-    }) })
+    }) }) as unknown as typeof XMLHttpRequest
   })
 
   describe("constructor", function (){
@@ -64,9 +65,9 @@ describe("with transports", function (){
         timeout: 40000,
         longpollerTimeout: 50000,
         heartbeatIntervalMs: 60000,
-        transport: customTransport,
+        transport: customTransport as unknown as new (endpoint: string) => object,
         logger: customLogger,
-        reconnectAfterMs: customReconnect,
+        reconnectAfterMs: customReconnect as unknown as (tries: number) => number,
         params: {one: "two"},
       })
 
@@ -328,7 +329,7 @@ describe("with transports", function (){
     })
 
     it("properly tears down old connection when immediately reconnecting", function (){
-      const connections = []
+      const connections: any[] = []
       const mockWebSocket = function StubWebSocketNoAutoClose(_url){
         const conn = {
           readyState: SOCKET_STATES.open,
@@ -355,10 +356,12 @@ describe("with transports", function (){
 
       socket = new Socket("/socket", {
         heartbeatIntervalMs: 30000,
+        // heartbeatTimeoutMs is not a declared SocketConnectOption — the test
+        // passes it through intentionally, so widen the literal type to allow it.
         heartbeatTimeoutMs: 30000,
         reconnectAfterMs: () => 10,
-        transport: mockWebSocket
-      })
+        transport: mockWebSocket as unknown as new (endpoint: string) => object
+      } as Partial<import("../src/types").SocketConnectOption> & {heartbeatTimeoutMs: number})
       socket.connect()
       const originalConn = socket.conn
 
@@ -392,7 +395,7 @@ describe("with transports", function (){
     })
 
     it("properly tears down old connection when disconnecting twice", function (){
-      const connections = []
+      const connections: any[] = []
       const mockWebSocket = function StubWebSocketNoAutoClose(_url){
         const conn = {
           readyState: SOCKET_STATES.open,
@@ -419,10 +422,12 @@ describe("with transports", function (){
 
       socket = new Socket("/socket", {
         heartbeatIntervalMs: 30000,
+        // heartbeatTimeoutMs is not a declared SocketConnectOption — the test
+        // passes it through intentionally, so widen the literal type to allow it.
         heartbeatTimeoutMs: 30000,
         reconnectAfterMs: () => 10,
-        transport: mockWebSocket
-      })
+        transport: mockWebSocket as unknown as new (endpoint: string) => object
+      } as Partial<import("../src/types").SocketConnectOption> & {heartbeatTimeoutMs: number})
       socket.connect()
 
       const disconnected = vi.fn()
@@ -1068,5 +1073,5 @@ describe("with transports", function (){
   })
 })
 
-window.XMLHttpRequest = vi.fn()
+window.XMLHttpRequest = vi.fn() as unknown as typeof XMLHttpRequest
 window.WebSocket = WebSocket

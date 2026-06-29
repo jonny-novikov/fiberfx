@@ -1,4 +1,6 @@
 import EntryUploader from "phoenix_live_view/entry_uploader";
+import type UploadEntry from "phoenix_live_view/upload_entry";
+import type LiveSocket from "phoenix_live_view/live_socket";
 
 describe("EntryUploader", () => {
   test("passes channel-error reply reason as string to entry.error", () => {
@@ -13,8 +15,12 @@ describe("EntryUploader", () => {
         },
       }),
     };
-    let fakeLiveSocket = { channel: () => fakeChannel };
-    let entry = { ref: "0", metadata: () => ({}), error: vi.fn() };
+    let fakeLiveSocket = { channel: () => fakeChannel } as unknown as LiveSocket;
+    let entry = {
+      ref: "0",
+      metadata: () => ({}),
+      error: vi.fn(),
+    } as unknown as UploadEntry;
     let config = { chunk_size: 1024, chunk_timeout: 5000 };
 
     new EntryUploader(entry, config, fakeLiveSocket).upload();

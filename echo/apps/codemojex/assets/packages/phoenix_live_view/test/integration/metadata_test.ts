@@ -27,8 +27,8 @@ describe("metadata", () => {
   test("is empty by default", () => {
     const liveSocket = new LiveSocket("/live", Socket);
     liveSocket.connect();
-    const view = liveSocket.getViewByEl(document.getElementById("root"));
-    const btn = view.el.querySelector("button");
+    const view = liveSocket.getViewByEl(document.getElementById("root")!)!;
+    const btn = view.el.querySelector("button")!;
     let meta = {};
     stubViewPushEvent(
       view,
@@ -54,9 +54,9 @@ describe("metadata", () => {
     });
     liveSocket.connect();
     liveSocket.isConnected = () => true;
-    const view = liveSocket.getViewByEl(document.getElementById("root"));
+    const view = liveSocket.getViewByEl(document.getElementById("root")!)!;
     view.isConnected = () => true;
-    const btn = view.el.querySelector("button");
+    const btn = view.el.querySelector("button")!;
     let meta = {};
     stubViewPushEvent(view, (type, el, target, phxEvent, metadata, _opts) => {
       meta = metadata;
