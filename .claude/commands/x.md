@@ -142,6 +142,13 @@ Bootstrap sequence:
 
 **LAW-1a (Director restriction).** Once the team is spawned, the Director MUST NOT call `Edit` / `Write` on implementation files. Permitted: `Read`, `Glob`, `Grep`, `Bash` (read-only), `AskUserQuestion`, `SendMessage`, `Task*` (task list), and the `mcp__aaw__agent_*`/`channel_*`/`aaw_*` namespace. Violation = **V-SOLO-3** (Director did Mars's work).
 
+**LAW-1b (spawn resilience — the write-ready dispatch).** A spawned subagent runs ONE long uninterrupted session and dies to a mid-response connection drop (`ECONNRESET` / "closed mid-response") on a long, **read-heavy** run; the Director's main loop survives because it checkpoints to the Operator between turns. **Files written to disk survive a drop; the agent's final report does NOT.** Three disciplines, none of which relax LAW-1a (the peer still writes the code):
+- **Pre-ground the dispatch (effective messaging).** Front-load EVERY fact the peer needs into the spawn prompt — or the Venus brief it reads — exact signatures, file paths, the import convention, a usage sketch, the gate commands — so the peer's FIRST actions are writes, not a read-to-understand phase; cap its required reading at ≤2–3 named files. The grounding burden shifts to the resilient main loop: the Director (or Venus) pre-reads the intricate surface and hands the peer a write-ready map.
+- **Short waves, write-first, heartbeat.** Scope each spawn to a bounded wave that finishes before a drop (split a heavy build into sequential waves); the peer writes the target skeleton early, fills it in passes, and `agent_heartbeat`s after each file + the gate.
+- **Recover from the tree, never the message.** When a spawn dies, read the on-disk tree (files survive) — never assume zero progress, never trust the lost report.
+
+(mx.7.3.1: three Mars spawns died to `ECONNRESET` mid-read having written nothing; the build landed only once the Director pre-ground the date machinery into a write-ready dispatch and split it into short waves.)
+
 **Anti-patterns that trigger REJECT EXECUTION:**
 
 | Code | Pattern | Detection |

@@ -128,11 +128,24 @@ edit no one can review.** Enforce it mechanically:
   - **the implementor** = `mars` — builds to the brief inside `mercury/packages/*`, cites the spec/source for
     every public call, invents nothing, runs the gate. Two-pass (build, then harden). Edits code + tests + the
     co-located contracts, never the spec body.
-  - **the verifier** = `apollo` — re-runs the gate, reconciles spec↔code (post), renders BUILD-GRADE / BLOCKED.
-    **Mandatory only on a high-risk rung** (below); on a normal rung it is out of the pipeline (an optional
-    fast-finisher / post-ship mentor, PROPOSE-ONLY).
+  - **the verifier + team mentor** = `apollo` — re-runs the gate, reconciles spec↔code (post), renders
+    BUILD-GRADE / BLOCKED. **Mandatory as the in-pipeline verifier only on a high-risk rung** (below); but
+    **on EVERY rung Apollo is the team's standing MENTOR** (Operator-directed) — after the ship it folds the
+    rung's craft / contract / **spawn-resilience** findings forward into `.claude/agents/{venus,mars}.md` + the
+    retrospective (one guardrail per recurring finding, Director-ratified, PROPOSE-ONLY; the harness fences a
+    peer's self-edit, so Apollo proposes the diff and the Director applies it). On a normal rung that is a
+    short, post-ship, read-only mentoring pass — never skipped.
   The peers self-register via `mcp__aaw__agent_register` from their own context (LAW-1; no narrated spawns).
   The "## The Mercury facts" block below is the pre-loaded context they would otherwise re-derive.
+- **Spawn resilience — the write-ready dispatch (x.md §5 LAW-1b).** A spawned peer dies to `ECONNRESET` on a
+  long, read-heavy run (files on disk survive; the final report does not). So the Director **pre-grounds** every
+  dispatch — front-load the exact signatures, file paths, the import convention, a usage sketch, and the gate
+  into the spawn prompt (or the Venus brief) so the peer's FIRST actions are writes, not a subsystem read; cap
+  its required reading at ≤2–3 named files. **Split a heavy component into short sequential waves** (the mx.7.2
+  "two waves" precedent — e.g. a date component = wave 1 the `@mercury/core` composable, wave 2 the
+  `@mercury/ui` home), each peer skeleton-first + heart-beating per file. When a spawn dies, **recover from the
+  tree** (read the on-disk files), never the lost message. The Director (resilient main loop) absorbs the heavy
+  grounding read; the peer still writes the code (LAW-1a holds).
 - **The boundary is `mercury/packages/*`** — `mercury-core` / `mercury-ui` / `mercury-effector` — **plus** the
   `mercury/apps/*/vite.config.ts` (+ `tsconfig` paths) aliases when a package rung adds or moves a package. A
   reusable component lands ONLY in a package; an app only composes. A change reaching outside `mercury/` (any

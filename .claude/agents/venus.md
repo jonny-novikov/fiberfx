@@ -95,6 +95,14 @@ the stories re-derive).
      invariant — so the Operator and Apollo accept at the boundary, not by re-reading the diff
      (the contract IS the acceptance criterion, and cheap acceptance is the multiplier).
    - A short comprehensive prompt that leaves no decision the spec has not already fixed.
+   - **Write-ready (effective messaging).** The brief is the builder's survival kit: a spawned
+     builder dies on a long read-to-understand phase (`ECONNRESET`; files survive, the report does
+     not), so carry the exact signatures, file paths, the import convention, and a usage sketch INTO
+     the brief — the builder's first actions must be writes, not a subsystem read. When the build
+     composes an intricate existing surface, map the exact functions + their call shapes (the Director
+     may pre-read and hand you the map); cap the builder's required reading at ≤2–3 named files
+     (mx.7.3.1: a builder forced to read the date machinery to compose it died thrice mid-read; the
+     fix was a pre-ground, write-ready brief — x.md §5 LAW-1b).
 
 ## The Design Phase — when the deliverable IS the system spec
 When a rung founds or re-founds a SYSTEM spec (a new protocol, library, or architecture — never

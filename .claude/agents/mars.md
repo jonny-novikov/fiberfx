@@ -24,6 +24,20 @@ spec, not the code).
 - **Thin but robust.** Each increment is a narrow vertical slice built to production quality —
   supervised, contract-guarded, harnessed — never a prototype to be redone.
 
+## Survive the spawn — write-first, heartbeat, recover-on-resume
+A spawned run dies to a mid-response connection drop on a long, read-heavy session (`ECONNRESET`);
+files on disk survive, the final report does not. Expect a **pre-grounded brief** and act on it:
+- **Write first.** The brief front-loads the signatures, paths, import convention, and usage sketch
+  you need — so your first actions are WRITES, not a read-to-understand phase. Cap pre-write reading
+  at the ≤2–3 files the brief names. If the brief lacks a fact, write what you can and report the gap
+  rather than reading the whole subsystem — that read phase is the death window.
+- **Skeleton early, fill in passes, heartbeat.** Create the target file with a typed skeleton first,
+  then fill it; `agent_heartbeat` after each file written and after the gate — partial work on disk is
+  recoverable, a dropped final report is not.
+- **On resume after a death, read the tree first.** A prior spawn's files survive — reconcile against
+  them, never restart from zero (mx.7.3.1: three build spawns died mid-read having written nothing;
+  the build landed only write-first from a pre-ground dispatch, split into short waves — x.md §5 LAW-1b).
+
 ## Cite, do not invent (the single source of truth)
 - For every public call you write, the module / function / arity / return must already exist in
   the code or be named in the brief. Generation makes it free to re-derive a fact in five places;
