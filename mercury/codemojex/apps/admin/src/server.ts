@@ -1,6 +1,6 @@
 /**
  * codemojex admin — an operator surface for browsing rooms, active games, and
- * players, plus light management. Postgres (via @mercury/db) is the system of
+ * players, plus light management. Postgres (via @codemojex/db) is the system of
  * record; ValKey (:6390) is read for the live board. The server never scores or
  * mutates game state beyond explicit management endpoints.
  *
@@ -22,7 +22,7 @@ import sensible from "@fastify/sensible";
 import { TypeBoxValidatorCompiler } from "@fastify/type-provider-typebox";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import type { Redis } from "iovalkey";
-import { sql } from "@mercury/db";
+import { sql } from "@codemojex/db";
 import type { Env } from "./env.js";
 import { loadEnv } from "./env.js";
 import { makeValkey, valkeyPing } from "./valkey.js";

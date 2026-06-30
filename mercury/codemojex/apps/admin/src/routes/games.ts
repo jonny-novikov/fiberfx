@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ok, err, type Result, type Static } from "@echo/core";
-import { db, games, guesses, rooms, type GameId } from "@mercury/db";
+import { db, games, guesses, rooms, type GameId } from "@codemojex/db";
 import { eq, desc } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import * as S from "../schemas.js";

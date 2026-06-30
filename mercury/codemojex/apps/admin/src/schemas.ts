@@ -4,13 +4,14 @@
  * the secret and the keyboard snapshot, so fast-json-stringify strips them at the
  * wire even if a query ever selects them — withholding by serializer contract.
  */
-import { Type, BrandedIdSchema, Nullable } from "@echo/core";
+import { Type, Nullable } from "@echo/core";
+import { CM } from "@codemojex/domain";
 
 // Branded-id field schemas (pattern-checked; the authoritative decode is @echo/fx).
-const RomId = BrandedIdSchema("ROM");
-const GamId = BrandedIdSchema("GAM");
-const PlrId = BrandedIdSchema("PLR");
-const GesId = BrandedIdSchema("GES");
+const RomId = CM.idSchema("ROM");
+const GamId = CM.idSchema("GAM");
+const PlrId = CM.idSchema("PLR");
+const GesId = CM.idSchema("GES");
 
 // Uncertain numeric / decimal / bigint / jsonb columns pass through untyped but
 // are still listed, so the strip-unknown behavior holds for the fields we omit.
