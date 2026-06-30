@@ -6,6 +6,8 @@ import {
   namespaceOf,
   assertBranded,
   unsafeBrand,
+  gate,
+  defineNamespaces,
   loadEnv,
   EnvError,
   BrandedIdSchema,
@@ -22,10 +24,29 @@ test("isBranded is a shape guard over namespace + base62", () => {
   assert.equal(isBranded(42 as unknown, "ROM"), false); // non-string
 });
 
-test("namespaceOf reads a well-formed id's namespace", () => {
+test("namespaceOf slices the namespace from any well-formed id (membership is the registry's job)", () => {
   assert.equal(namespaceOf("PLR0OOcCGXy0v5"), "PLR");
-  assert.equal(namespaceOf("ZZZ0OOcCGXy0v5"), null); // unregistered ns
-  assert.equal(namespaceOf("not-an-id"), null);
+  assert.equal(namespaceOf("ZZZ0OOcCGXy0v5"), "ZZZ"); // generic: any 3-uppercase ns, core knows no set
+  assert.equal(namespaceOf("rom0OOcCGXy0v5"), null); // lowercase ns -> not well-formed
+  assert.equal(namespaceOf("not-an-id"), null); // malformed -> null
+});
+
+test("gate is the boundary as a Result, mirroring EchoData.Bcs", () => {
+  const okR = gate("GAM0OOcCGXy0v7", "GAM");
+  assert.equal(okR.isOk() && okR.value, "GAM0OOcCGXy0v7");
+  const nsR = gate("GAM0OOcCGXy0v7", "ROM");
+  assert.equal(nsR.isErr() && nsR.error, "namespace");
+  const badR = gate("nope", "GAM");
+  assert.equal(badR.isErr() && badR.error, "invalid");
+});
+
+test("defineNamespaces builds a typed registry and rejects malformed codes", () => {
+  const APP = defineNamespaces({ USR: "user", JOB: "job" } as const);
+  assert.deepEqual([...APP.names].sort(), ["JOB", "USR"]);
+  assert.equal(APP.has("USR"), true);
+  assert.equal(APP.has("GAM"), false);
+  assert.equal(APP.gate("USR", "USR0OOcCGXy0v5").isOk(), true);
+  assert.throws(() => defineNamespaces({ ab: "bad" } as const), TypeError); // not 3 uppercase
 });
 
 test("assertBranded returns the branded value or throws", () => {

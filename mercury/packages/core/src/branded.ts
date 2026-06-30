@@ -1,59 +1,61 @@
 /**
- * Branded (nominal) string types for BCS identities.
+ * The branded-identity FORMAT contract — generic over the namespace.
  *
- * These are erased at runtime (zero cost) and exist only to make the type
- * checker carry the namespace, so the compiler refuses a `GAM` id where a `PLR`
- * id is required. This module is the single owner of the identity type contract;
- * `@mercury/db` re-exports from here so the read model and the surface share one
- * definition.
+ * A BCS id is fourteen characters: a three-letter uppercase namespace followed
+ * by the width-11 base62 of a 63-bit Snowflake (for example `USR0KHTOWnGLuC`).
+ * This mirrors `EchoData.BrandedId`: one module owns the codec and hash, and the
+ * namespace is a PARAMETER, not a closed set. Core knows nothing of any product's
+ * namespaces — an application declares its own via `defineNamespaces`.
  *
- * The guard below is a shape check only (length + namespace + base62 charset);
- * it is NOT a substitute for the authoritative codec. Cross-isolate minting, the
- * Snowflake decode, and the routing hash live in `@echo/fx` (Rust to wasm), kept
- * at parity with `EchoData.BrandedId` via the self-check.
+ * `BrandedId<NS>` is a nominal type erased at runtime (zero cost); it exists only
+ * to make the compiler carry the namespace, so a `GAM` id cannot be passed where
+ * a `PLR` id is required. The guards here are SHAPE checks (length + 3-uppercase
+ * namespace + base62 body); the authoritative Snowflake decode and routing hash
+ * live in `@echo/fx` (Rust to wasm), kept at parity with `EchoData.BrandedId`.
  */
-import {
-  type Namespace,
-  BRANDED_ID_RE,
-  namespaceRe,
-  isNamespace,
-} from "./namespace.js";
 
 declare const brand: unique symbol;
 
-export type BrandedId<NS extends Namespace> = string & { readonly [brand]: NS };
+/** A 14-char BCS identity in namespace `NS`. Nominal; erased at runtime. */
+export type BrandedId<NS extends string> = string & { readonly [brand]: NS };
 
-export type AnyBrandedId = BrandedId<Namespace>;
+/** Any well-formed branded id, namespace unknown at the type level. */
+export type AnyBrandedId = BrandedId<string>;
 
-export type PlayerId = BrandedId<"PLR">;
-export type RoomId = BrandedId<"ROM">;
-export type GameId = BrandedId<"GAM">;
-export type GuessId = BrandedId<"GES">;
-export type EmojiSetId = BrandedId<"EMS">;
-export type SessionId = BrandedId<"SES">;
-export type JobId = BrandedId<"JOB">;
-export type TxnId = BrandedId<"TXN">;
+/** The base62 body charset (everything after the 3-char namespace). */
+export const BASE62 = "0-9A-Za-z";
+
+/** Total length of a branded id. */
+export const BRANDED_ID_LENGTH = 14;
+
+/** Matches any well-formed branded id: 3 uppercase + 11 base62. */
+export const BRANDED_ID_RE = /^[A-Z]{3}[0-9A-Za-z]{11}$/;
+
+/** A 3-letter uppercase namespace (shape only). */
+export const NAMESPACE_RE = /^[A-Z]{3}$/;
+
+/** True when `s` has the shape of a namespace (3 uppercase ASCII letters). */
+export function isNamespaceShape(s: string): boolean {
+  return NAMESPACE_RE.test(s);
+}
+
+/** The regex matching a branded id of a specific namespace. */
+export function namespaceRe(ns: string): RegExp {
+  return new RegExp(`^${ns}[0-9A-Za-z]{11}$`);
+}
 
 /** Narrowing shape guard for a branded id of `ns`. */
-export function isBranded<NS extends Namespace>(
-  value: unknown,
-  ns: NS,
-): value is BrandedId<NS> {
+export function isBranded<NS extends string>(value: unknown, ns: NS): value is BrandedId<NS> {
   return typeof value === "string" && namespaceRe(ns).test(value);
 }
 
-/** The namespace of a well-formed branded id, or null. */
-export function namespaceOf(value: string): Namespace | null {
-  if (!BRANDED_ID_RE.test(value)) return null;
-  const head = value.slice(0, 3);
-  return isNamespace(head) ? head : null;
+/** The 3-char namespace of a well-formed branded id, or null. */
+export function namespaceOf(value: string): string | null {
+  return BRANDED_ID_RE.test(value) ? value.slice(0, 3) : null;
 }
 
 /** Assert a value is a branded id of `ns`, throwing otherwise. */
-export function assertBranded<NS extends Namespace>(
-  value: unknown,
-  ns: NS,
-): BrandedId<NS> {
+export function assertBranded<NS extends string>(value: unknown, ns: NS): BrandedId<NS> {
   if (!isBranded(value, ns)) {
     throw new TypeError(`expected a ${ns} branded id, got ${String(value)}`);
   }
@@ -61,13 +63,10 @@ export function assertBranded<NS extends Namespace>(
 }
 
 /**
- * Brand a string already validated by other means (for example the authoritative
- * `@echo/fx` decode, or a value read straight from the system of record). Use
- * sparingly; prefer `isBranded` / `assertBranded` at trust boundaries.
+ * Brand a string already validated by other means — the authoritative `@echo/fx`
+ * decode, or a value read straight from the system of record. Prefer the gate or
+ * `assertBranded` at trust boundaries.
  */
-export function unsafeBrand<NS extends Namespace>(
-  value: string,
-  _ns: NS,
-): BrandedId<NS> {
+export function unsafeBrand<NS extends string>(value: string, _ns: NS): BrandedId<NS> {
   return value as BrandedId<NS>;
 }

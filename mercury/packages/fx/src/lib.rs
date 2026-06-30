@@ -266,19 +266,19 @@ mod tests {
     #[test]
     fn roundtrip() {
         let sf: u64 = 123_456_789_012;
-        let id = encode("GAM", sf).unwrap();
+        let id = encode("USR", sf).unwrap();
         assert_eq!(id.len(), 14);
-        assert_eq!(&id[0..3], "GAM");
+        assert_eq!(&id[0..3], "USR");
         let d = decode(&id).unwrap();
-        assert_eq!(d.namespace, "GAM");
+        assert_eq!(d.namespace, "USR");
         assert_eq!(d.snowflake, sf);
     }
 
     #[test]
     fn validate_shape() {
-        assert!(validate("PLR0ONWgLPPGbY"));
+        assert!(validate("USR0ONWgLPPGbY"));
         assert!(!validate("plr0ONWgLPPGbY"));
-        assert!(!validate("PLR0ONWgLPPGb")); // 13 chars
+        assert!(!validate("USR0ONWgLPPGb")); // 13 chars
     }
 
     #[test]
@@ -287,7 +287,7 @@ mod tests {
         let a = m.mint_snowflake(1_704_067_200_001.0).unwrap();
         let b = m.mint_snowflake(1_704_067_200_001.0).unwrap();
         assert!(b > a, "same-ms ids must increase by sequence");
-        let id = m.mint("JOB", 1_704_067_200_002.0).unwrap();
+        let id = m.mint("USR", 1_704_067_200_002.0).unwrap();
         assert!(validate(&id));
         let d = decode(&id).unwrap();
         assert_eq!(d.node, 7);

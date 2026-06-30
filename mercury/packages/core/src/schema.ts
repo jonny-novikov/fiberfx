@@ -1,22 +1,19 @@
 /**
- * TypeBox schema builders for the surface. One schema drives validation,
- * serialization, and the static type at once. The branded-id builder attaches
- * the nominal BrandedId<NS> type to a pattern-checked string, so a route's
- * params are typed and shape-validated from a single definition.
+ * TypeBox schema builders. One schema drives validation, serialization, and the
+ * static type at once. The branded-id builder is generic over the namespace: it
+ * attaches the nominal `BrandedId<NS>` static to a pattern-checked string, so a
+ * route's params are typed and shape-validated from a single definition. The
+ * pattern rejects a malformed id at the validator; the authoritative decode is
+ * `@echo/fx`.
  */
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
-import type { Namespace } from "./namespace.js";
 import type { BrandedId } from "./branded.js";
 
 export { Type };
 export type { Static, TSchema };
 
-/**
- * A branded-id schema for `ns`: a fixed-length, pattern-checked string whose
- * static type is BrandedId<NS>. The pattern rejects a malformed id at the
- * validator; the authoritative decode remains `@echo/fx`.
- */
-export function BrandedIdSchema<NS extends Namespace>(
+/** A branded-id schema for `ns`: fixed-length, pattern-checked, typed as `BrandedId<NS>`. */
+export function BrandedIdSchema<NS extends string>(
   ns: NS,
   opts: { description?: string } = {},
 ) {
@@ -29,6 +26,9 @@ export function BrandedIdSchema<NS extends Namespace>(
     }),
   );
 }
+
+/** The concrete schema type returned by {@link BrandedIdSchema} for `ns`. */
+export type TBrandedId<NS extends string> = ReturnType<typeof BrandedIdSchema<NS>>;
 
 /** Allow a schema's value to also be null (mirrors a nullable column). */
 export function Nullable<T extends TSchema>(schema: T) {
