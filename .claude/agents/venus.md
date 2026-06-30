@@ -43,7 +43,14 @@ prose, so "done" is a closure over checks:
   tier "skips when the key is absent" but never required a PRESENT key to exercise G6, so a
   token-clobber let the Operator's live hard gate no-op to false-green; the post-fix spec-sync
   tightened INV-8/G5/G6 to require the live tier to prove its own liveness). Same "a check counts
-  only if it RUNS" class, written into the acceptance.
+  only if it RUNS" class, written into the acceptance. **The type system is a gate too — verify it
+  actually NARROWS.** When an invariant names a typed value as its backstop ("a typed name makes
+  typecheck reject a bad value"), check the type literally narrows: a `: Record<string, _>` annotation
+  widens `keyof` to `string`, so every value type-checks and the gate no-ops to false-green. Where the
+  type does not narrow, specify a REAL gate (a test/grep that the value ∈ the set) or state the
+  enforcement is MANUAL (mx.7.3.2: INV-5 claimed the live `IconName` made typecheck reject an invented
+  glyph, but `IconName = keyof (ICONS: Record<string, ReactNode>)` = `string`, so `<Icon
+  name="chevron-left">` type-checks — the glyph was right by manual verification, not the type).
 Derive all three FROM the spec body; never edit them to fork from it (adapt: feedback edits the spec, and
 the stories re-derive).
 
