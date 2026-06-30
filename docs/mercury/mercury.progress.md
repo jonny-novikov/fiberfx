@@ -24,7 +24,9 @@ host-config edit. **The tail was re-scoped 2026-06-29 (Operator-ruled):** `mx.6`
 components into `@mercury/ui`, a **5-batch epic** (`mx.7.1`–`mx.7.5`; 30 net-new + 2 folds; design
 flows DOWN only) — then **`mx.8`** (enrich the stories) and **`mx.9`** (one comprehensive showcase app
 replacing the retired apps). **All three tail triads are authored**; **`mx.7.1`+`mx.7.2` are BUILT** (gate-green 2026-06-30 — 15 components,
-barrel 107→160, 0 removed). The frontier is **`mx.7.3`** (the +6 input/selection composites + 2 folds). Forward
+barrel 107→160, 0 removed). **`mx.7.3` was Operator-SPLIT 2026-06-30** into `mx.7.3.1` (DateField) · `mx.7.3.2`
+(Calendar) · `mx.7.3.3` (the 4 selection composites + 2 folds) — the heavy date pair shed one machine each. The
+frontier is **`mx.7.3.1`** (DateField; shipping via a REAL aaw Trio, scope `mx-7-3-1`). Forward
 plan: [`mercury.roadmap.md`](./mercury.roadmap.md); architecture:
 [`mercury.design.md`](./mercury.design.md).
 
@@ -64,7 +66,10 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   mx.7   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  IMPORT the Claude-Design bundle's net-new components → @mercury/ui · 5-batch epic (30 net-new + 2 folds) · design flows DOWN only
     7.1  ✅ BUILT     ████████████████████  foundational primitives — Heading·Text·Label·IconButton·Separator (+5) — gate-green 2026-06-30
     7.2  ✅ BUILT     ████████████████████  feedback/display+layout — Callout·Spinner·Skeleton·Blockquote·DataList·Code·Kbd·AspectRatio·Collapsible·ScrollArea (+10) — gate-green 2026-06-30
-    7.3  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  input/selection composites — DateField·Calendar·Checkbox/Radio groups+cards (+6) + folds TextArea/ToggleGroup
+    7.3  🪟 SPLIT     ────────────────────  input/selection composites — Operator-split 2026-06-30 into 7.3.1/7.3.2/7.3.3 (date pair shed one machine each)
+    7.3.1 🚧 IN PROG  ████░░░░░░░░░░░░░░░░  DateField — segmented date input (+1) · A2 date-lib fork · REAL aaw Trio (mx-7-3-1)
+    7.3.2 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  Calendar — month-grid picker (+1) · A2 date-lib fork
+    7.3.3 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  selection composites — CheckboxGroup·CheckboxCards·RadioGroup·RadioCards (+4) + folds Textarea/ToggleGroup
     7.4  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  overlay-floor primitive + Dialog·AlertDialog·Popover (+3) · Squad-tier
     7.5  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  menus/hover/nav (consume the floor) — Dropdown·ContextMenu·HoverCard·LinkPreview·Menubar·TabNav (+6) · Squad-tier
   mx.8   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  enrich the stories — palette · roundings · variant switching · actions · real-world scenes (@mercury/ui surface frozen)
@@ -129,9 +134,12 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   `Popover`, 7.5 = the menus/hover/nav). Each batch ships through an **Operator → Agent → Agent** loop
   with the Operator in the seat between batches. Then **`mx.8`** (enrich the stories) and **`mx.9`**
   (one comprehensive showcase app replacing the retired apps). **`mx.7.1` is BUILT** (gate-green 2026-06-30;
-  Fork A → `Separator` net-new + `Divider` kept; barrels 107→160, 0 removed; +15 components). The frontier is **`mx.7.3`** (the date-lib batch).
-  Open forks for the later batches: the bundle's git fate · the overlay-floor ADR (7.4) · the date-lib
-  dependency (7.3) · mx.8's palette mechanism. Design flows DOWN from Claude Web only — `/design-sync` forbidden.
+  Fork A → `Separator` net-new + `Divider` kept; barrels 107→160, 0 removed; +15 components). **`mx.7.3` was
+  Operator-SPLIT 2026-06-30** into 7.3.1 (DateField) / 7.3.2 (Calendar) / 7.3.3 (the 4 selection composites + 2
+  folds); the frontier is **`mx.7.3.1`** (DateField, REAL aaw Trio).
+  Open forks for the later batches: the bundle's git fate · the overlay-floor ADR (7.4) · **the date-lib dependency
+  (7.3.1 + 7.3.2 — grounded: no ready `@mercury/core` hook, arm (a)=from-scratch build; Operator rules per
+  machine)** · mx.8's palette mechanism. Design flows DOWN from Claude Web only — `/design-sync` forbidden.
 - **Deferred / open.** Widening `@mercury/core`'s public barrel beyond `cx` + `date` (the deeper
   foundation lives in core as files, surfaced when a consumer needs it); whether design tokens later
   migrate into `@mercury/core`; the `.design-sync` pipeline re-alignment (`mx.7` — its

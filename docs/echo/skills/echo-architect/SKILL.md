@@ -1,7 +1,7 @@
 ---
-name: echo-architect
+name: echo-mq-architect
 description: >-
-  Provision a developer bench for the Echo Team working on echo_mq umbrella and boot codemojex
+  Provision a developer bench for the fiberfx echo_mq umbrella and boot codemojex
   end to end. Use whenever the user wants to set up, clone, download, or work on the
   fiberfx / echo_mq / EchoMQ / BCS source; says "clone the echo_mq branch", "set me up
   to work on echo_mq", "boot codemojex", "run the e2e", or needs a Valkey + Postgres +
@@ -11,9 +11,10 @@ description: >-
   PostgreSQL, Python, Go 1.25, Node 22+ with corepack + pnpm, `mix deps.get`,
   `mix compile`, `ecto.create` + migrate, a boot smoke, a FULL end-to-end game against
   live Postgres + Valkey, and a generated Markdown bootstrap report attached at the end.
+  Bundles architecture references (vision, layering, per-component) under references/.
 ---
 
-# echo-architect
+# echo-mq-architect
 
 Stands up the bench for `jonny-novikov/fiberfx@echo_mq` and proves it by playing a real
 game through the codemojex engine against live Postgres and Valkey. One entry point runs
@@ -27,6 +28,23 @@ Every step is idempotent (detect-and-reuse / skip-if-present), so re-running is 
 verify. Most tools install out of the box (package managers, precompiled releases). The
 one deliberate exception is **Valkey, built from source** at the pinned 9.1.0 — the
 source build links the bundled jemalloc (`mem_allocator: jemalloc-5.3.0`).
+
+## Architecture references
+
+This skill bundles a reference set for the umbrella it provisions, under `references/`.
+Read these for the design context behind the bench — what the components are, how they
+layer, and why — rather than re-deriving it from the source:
+
+- `references/vision-and-purpose.md` — why Echo exists and the principles that hold across
+  every app (branded identity owned by one module, native-or-pure parity, declared-not-
+  discovered caches, fairness constructed not hashed, park-don't-poll, the named wire,
+  boot-time self-checks, a single scoring authority).
+- `references/architecture.md` — the dependency layering, the branded-id and Snowflake
+  contract, the life of a request through all the tiers, the boot order, and the
+  deployment surfaces.
+- `references/components.md` — a page per application: `echo_data`, `echo_wire`, `echo_mq`,
+  `echo_store`, `echo_bot`, `echo_graft`, and `codemojex`.
+- `references/README.md` — the one-screen overview and the map of the set.
 
 ## Environment (step 1)
 
@@ -247,6 +265,9 @@ Scripts (`scripts/`):
 - `e2e.sh` + `e2e_game.exs` — the full live game.
 - `verify.py` — toolchain table / CI gate.
 - `report.py` — the mandatory Markdown report generator.
+
+References (`references/`): `vision-and-purpose.md`, `architecture.md`, `components.md`,
+`README.md` — the design context for the umbrella the scripts provision.
 
 ## Bench facts & benchmark appendix
 
