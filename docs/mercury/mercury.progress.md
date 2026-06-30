@@ -28,7 +28,7 @@ barrel 107→160, 0 removed). **`mx.7.3` was Operator-SPLIT 2026-06-30** into `m
 (Calendar) · `mx.7.3.3` (the 4 selection composites + 2 folds) — the heavy date pair shed one machine each. The
 frontier was **`mx.7.3.1`** (DateField) — now ✅ **BUILT 2026-06-30** (BUILD-GRADE; composes `@mercury/core`'s
 new `useDateField` composable, A2 arm a; barrel 50→51 folders; a REAL aaw Trio in two
-connection-death-resilient mars waves, x.md §5 LAW-1b). The frontier is **`mx.7.3.2`** (Calendar). **Solo mx.7.x reconcile (2026-06-30): CLEAN** — `mx.7.1`+`mx.7.2`
+connection-death-resilient mars waves, x.md §5 LAW-1b). **`mx.7.3.2`** (Calendar) is now ✅ **BUILT 2026-06-30** (BUILD-GRADE; composes `@mercury/core`'s new `useCalendar` sibling composable, A2 arm a reusing the mx.7.3.1 date layer; barrel +1; a REAL aaw Trio + Apollo grid-machine verify in write-ready waves — Apollo's pass survived a parent-process death via recover-from-tree, x.md §5 LAW-1b). The frontier is **`mx.7.3.3`** (the 4 selection composites + 2 folds). **Solo mx.7.x reconcile (2026-06-30): CLEAN** — `mx.7.1`+`mx.7.2`
 committed (`5f4847f1`/`acf538dd`), gate-green, §9-reconciled (barrel 107→160, 0 removed); the 7.3 split is
 coherent; the date foundation is grounded (9 `internal/date-time` machinery files; the curated `useDateField`
 composes them) and **INV-6 holds** (`@internationalized/date` lives on `@mercury/core`, never `@mercury/ui`) →
@@ -74,7 +74,7 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
     7.2  ✅ BUILT     ████████████████████  feedback/display+layout — Callout·Spinner·Skeleton·Blockquote·DataList·Code·Kbd·AspectRatio·Collapsible·ScrollArea (+10) — gate-green 2026-06-30
     7.3  🪟 SPLIT     ────────────────────  input/selection composites — Operator-split 2026-06-30 into 7.3.1/7.3.2/7.3.3 (date pair shed one machine each)
     7.3.1 ✅ BUILT     ████████████████████  DateField — segmented spinbutton (+1) · composes @mercury/core useDateField (A2 arm a) · barrel 50→51 · REAL aaw Trio, 2 mars waves (LAW-1b) — gate-green 2026-06-30
-    7.3.2 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  Calendar — month-grid picker (+1) · A2 date-lib fork
+    7.3.2 ✅ BUILT     ████████████████████  Calendar — month-grid picker (+1) · composes @mercury/core useCalendar (A2 arm a) · barrel +1 · grid machine — REAL aaw Trio + Apollo, write-ready waves (LAW-1b) — gate-green 2026-06-30
     7.3.3 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  selection composites — CheckboxGroup·CheckboxCards·RadioGroup·RadioCards (+4) + folds Textarea/ToggleGroup
     7.4  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  overlay-floor primitive + Dialog·AlertDialog·Popover (+3) · Squad-tier
     7.5  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  menus/hover/nav (consume the floor) — Dropdown·ContextMenu·HoverCard·LinkPreview·Menubar·TabNav (+6) · Squad-tier
@@ -144,7 +144,7 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   Operator-SPLIT 2026-06-30** into 7.3.1 (DateField) / 7.3.2 (Calendar) / 7.3.3 (the 4 selection composites + 2
   folds); **`mx.7.3.1`** (DateField) is ✅ BUILT 2026-06-30 (BUILD-GRADE; composes `@mercury/core`'s new
 `useDateField`; the connection-death deaths surfaced the write-ready-dispatch discipline, x.md §5 LAW-1b);
-the frontier is **`mx.7.3.2`** (Calendar — reuses the same date foundation via a sibling `useCalendar`).
+**`mx.7.3.2`** (Calendar) is ✅ BUILT 2026-06-30 (BUILD-GRADE; reuses the same date foundation via a sibling `useCalendar`, INV-6 intact); the frontier is **`mx.7.3.3`** (the 4 selection composites + 2 folds).
   Open forks for the later batches: the bundle's git fate · the overlay-floor ADR (7.4) · **the date-lib dependency
   (7.3.1 + 7.3.2 — grounded: no ready `@mercury/core` hook, arm (a)=from-scratch build; Operator rules per
   machine)** · mx.8's palette mechanism. Design flows DOWN from Claude Web only — `/design-sync` forbidden.

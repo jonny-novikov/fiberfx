@@ -138,8 +138,87 @@ As mx.7.3.1 §8 (the REAL aaw Trio, scope slug `mx-7-3-2`), carrying mx.7.3.1's 
 lessons (incl. whether arm (a)'s core date hook is reused). Verify the controlled/uncontrolled split, month
 paging, the today/selected/outside cell states, the real-glyph nav chevron, and the INV-6 dep-graph compile.
 
-## 9 · As-built (the verifier — filled post-build)
+## 9 · As-built (the verifier — filled post-build, 2026-06-30)
 
-> Classify K-1..K-9 / INV-1..INV-12 / S-1..S-6; **record the ruled A2 arm** + its outcome (and whether it reused
-> the mx.7.3.1 date layer); list the home shipped + the public value type + the live `IconName` used for the nav
-> chevron; reproduce the gate (EXIT 0). Carry forward to mx.7.3.3 any token/font lines added (reuse, don't re-add).
+**Verdict: BUILD-GRADE.** Every K / INV / S is MATCH. One honest caveat on INV-5 (recorded below): the
+invariant holds *as-built* (a real glyph) but is enforced by manual verification, not the type system.
+
+**The ruled A2 arm — (a), consistent with mx.7.3.1.** `Calendar` reuses the owned date foundation via a
+sibling `useCalendar` in `@mercury/core`
+(`packages/mercury-core/src/internal/date-time/calendar/use-calendar.ts`), composing the same
+`internal/date-time` machinery the mx.7.3.1 `DateField` established — `createFormatter` (month/weekday
+labels), `getLastFirstDayOfWeek` (grid alignment), `toDate` (value→native conversion) — over
+`@internationalized/date` values. The mx.7.3.1 carry-forward (reuse the foundation via a sibling
+composable) is fulfilled: `@mercury/ui` consumes dates only through `@mercury/core`, so INV-6 extends
+unchanged.
+
+**Home shipped (4-file, K-1).** `packages/mercury-ui/src/components/inputs/Calendar/`:
+`Calendar.tsx` · `index.ts` · `Calendar.prompt.md` (D-7) · `Calendar.stories.tsx` (CSF3, 4 stories:
+Playground / Uncontrolled / Accent / Controlled). Styles: `.mx-calendar` block at
+`src/styles/additions.css:565–610` (+47 lines, additive).
+
+- **Public value type:** `DateValue` (re-exported from `@mercury/core`; under arm (a), not native `Date`).
+  `CalendarProps` adds `locale` + `firstDayOfWeek` beyond the §3 seed surface — both are arm (a)'s i18n
+  surface (`@mercury/core` `useCalendar` options), not invented.
+- **Live `IconName` for the nav chevron:** `chevron-right` — a real glyph (`Icon.tsx:56`, ∈ `ICONS`).
+  Both prev + next use it; the prev control is CSS-flipped (`.mx-calendar__nav--prev svg { transform:
+  rotate(180deg) }`, `additions.css:592`). No `chevron-left` glyph exists or was invented.
+
+**Delta table (promise → as-built → verdict).**
+
+| Promise | As-built `file:line` | Verdict |
+|---|---|---|
+| K-1 4-file home | `inputs/Calendar/{Calendar.tsx,index.ts,Calendar.prompt.md,Calendar.stories.tsx}` | MATCH |
+| K-2 barrel +1 additive | `mercury-ui/src/index.ts:51` (`export * …/Calendar`); git `+1`, 0 removed | MATCH |
+| K-3 live idiom (`.mx-calendar` + tokens, class-driven accent) | `additions.css:575–610`; `Calendar.tsx:40` | MATCH |
+| K-4 composition real (live `Icon`) | `Calendar.tsx:43,47` `Icon name="chevron-right"` | MATCH |
+| K-5 date-lib arm (a), no `@internationalized/date` in ui | `use-calendar.ts`; `Calendar.tsx:1–2` core-only | MATCH |
+| K-6 D-7 contract + cross-links | `Calendar.prompt.md:29` DateField · `:31` Popover · `:33` Icon | MATCH |
+| K-7 1:1 story↔folder; sb:build prior+1 | one `*.stories.tsx`; `sb:build` EXIT 0, `Inputs/Calendar` registered | MATCH |
+| K-8 token/font additive; design DOWN | `additions.css` +47 / 0 removed; no DesignSync | MATCH |
+| K-9 gate green | see gate below, EXIT 0 | MATCH |
+| INV-1 master invariant additive | dist `index.d.ts:33` resolves Calendar; build green (no `export *` collision); +1 / 0 removed | MATCH |
+| INV-2 no inline color leak | grep empty | MATCH |
+| INV-3 no raw hex | grep empty (folder + `.mx-calendar` CSS) | MATCH |
+| INV-4 no `mercAccent` | grep empty | MATCH |
+| INV-5 real glyph | `chevron-right` ∈ `ICONS` (`Icon.tsx:56`) | MATCH **as-built** — see caveat |
+| INV-6 date-lib dep-graph | no `@internationalized/date` *import* in `mercury-ui/src` (textual hits are doc-comments); core typecheck 0 | MATCH |
+| INV-7 | not present in this spec | N/A |
+| INV-8 D-7 no bundle framing | grep empty | MATCH |
+| INV-9 1:1 story + `sb:typecheck` | `sb:typecheck` EXIT 0; one story; `sb:build` prior+1 | MATCH |
+| INV-10 token/font additive-only | `git diff` = added lines only | MATCH |
+| INV-11 design flows DOWN | no `/design-sync`/`DesignSync` artifact | MATCH |
+| INV-12 the package gate | all legs EXIT 0 (below) | MATCH |
+| S-1..S-6 | proven by the K/INV rows above (S-1 grid+accent+arm; S-2 barrel; S-3 dep-edge; S-4 story; S-5 token additive; S-6 gate) | MATCH |
+
+**INV-5 — honest enforcement record.** The glyph is real, so the invariant *holds*. But its enforcement is
+**manual verification, not the type system**: `Icon.tsx:4` declares `const ICONS: Record<string,
+ReactNode>`, so `IconName = keyof typeof ICONS` widens to `string` — `<Icon name="chevron-left" />` (a
+non-existent glyph) type-checks clean. The "a typed name makes typecheck the backstop" framing is
+**illusory**. This is PRE-EXISTING (the `Icon` foundation, shipped before this rung) and OUT of this rung's
+edit surface; tightening it (`satisfies Record<string, ReactNode>`) is an Operator fork (it would break any
+dynamic-name consumer), surfaced in `mx-7-3-2.progress.md`, not applied here.
+
+**Gate reproduced — independent re-run, all EXIT 0** (Node 22.18.0 · pnpm 10.17.1; scoped to `@mercury/*`,
+**not** the `./packages/*` glob, which is foreign-contaminated by the `codemojex-node` sub-workspace):
+- `pnpm --filter @mercury/core --filter @mercury/ui --filter @mercury/effector typecheck` → EXIT 0 (3 × `tsc Done`)
+- `pnpm --filter @mercury/ui build` → EXIT 0 (`✓ built in 944ms`; dist `index.d.ts` carries Calendar)
+- `pnpm sb:typecheck` → EXIT 0
+- `pnpm sb:build` → EXIT 0 (275 modules, `✓ built in 8.88s`, `Inputs/Calendar` registered)
+- apps build (`!@mercury/storybook`) — Director + Mars confirmed EXIT 0 (covered transitively by the package
+  typechecks + resolve-from-source aliasing; not re-run — bounded turn). No determinism loop: pure React DS,
+  no id-mint / process / lease surface.
+
+**Carry-forward to mx.7.3.3.**
+- **Token/font lines added (reuse, do not re-add):** the `.mx-calendar` block (`additions.css:565–610`) and
+  its `--mx-cal-accent` ramp (reuses the mx.7.1 `--<id>-9` set + `--fg-on-brand`); no new tokens minted.
+- **The owned date layer is established** — `@mercury/core` `internal/date-time/*` now backs both
+  `useDateField` and `useCalendar`. A further date component composes a sibling composable; it does not
+  re-import `@internationalized/date` into `@mercury/ui` (INV-6).
+- **Observation (not a defect):** `visibleMonth` is independent navigation state seeded once from
+  `value ?? defaultValue ?? today` (`use-calendar.ts:84–86`); a *later* controlled `value` change to a
+  different month updates the selection but does not auto-page the visible month. Spec-consistent (paging is
+  scoped separate from selection; arrow-key roving is out of batch). For the mx.7.4 `Popover` date-picker
+  (mount-on-open) this is moot; flagged for the Operator should value→month follow be wanted.
+- **Operator fork pending (pre-existing, see INV-5 above):** tighten `ICONS` so `IconName` narrows to the
+  literal union (a real type-level glyph gate).
