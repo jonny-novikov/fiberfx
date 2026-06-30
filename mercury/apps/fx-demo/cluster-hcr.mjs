@@ -23,7 +23,7 @@ const NS = "JOB";
 
 function loadFx() {
   // wasm-pack --target nodejs emits a CommonJS module; load it via require.
-  return require("../pkg/echo_fx.js");
+  return require("../../packages/fx/pkg/echo_fx.js");
 }
 
 // ── worker ──────────────────────────────────────────────────────────────────
