@@ -256,7 +256,7 @@ the gate that keeps it correct.
 | R0 | BrandedId codec + Snowflake minter | Rust → wasm, per-isolate | shipped |
 | R1 | Fusion Tasks | fused map/filter/fold in the kernel | seed shipped |
 | R2 | Work-stealing | Chase-Lev deque over SharedArrayBuffer + Atomics | proposed |
-| R3 | Parallel execution | Node Cluster, one kernel per core | shipped (demo) |
+| R3 | Parallel execution | Forked processes, one kernel per core | shipped (demo) |
 | R4 | Hot code replacement | rolling worker generations | shipped (demo) |
 
 **R0 — identity (shipped).** The fourteen-byte codec, the per-isolate Snowflake
@@ -282,16 +282,7 @@ the intended mechanism. This is the rung that takes on memory ordering and race
 conditions, so it is gated hardest: a single-threaded model test first, then a
 stress test under contention, before it carries real work.
 
-**R3 — parallel execution on Node Cluster (shipped as a demo).** The cluster
-module forks one process per core; each loads the same wasm kernel and carries a
-disjoint node id, so minting stays collision-free without coordination. Work is
-fanned round-robin — fairness by rotation, not by hash. Cluster is the right
-primitive here rather than worker threads because the processes are fault-
-isolated: one crashing or pausing does not take its siblings down. The runnable
-proof is `echo/fx/examples/cluster-hcr.mjs`, which fans branded-id minting and
-the fused primitive across the cores and asserts the minted ids are disjoint and
-collision-free. The standing caution is to cap the worker count near the physical
-core count, since oversubscription trades throughput for context-switching.
+**R3 — parallel execution across forked processes (shipped as a demo).** The pool forks one process per core with `node:child_process`; each loads the same wasm kernel and carries a disjoint node id, so minting stays collision-free without coordination. Work is fanned round-robin — fairness by rotation, not by hash. Separate processes are the right primitive here rather than worker threads because they are fault-isolated: one crashing or pausing does not take its siblings down. `fork` carries that property without `node:cluster`'s socket-sharing, which a compute pool does not use, and `node:child_process` is implemented by both Node and Bun, so the pool runs on either with no branch. The runnable proof is `packages/fx/examples/cluster-fork.ts`, which exercises the typed pool over the wasm kernel and passes on both runtimes, asserting the minted ids are disjoint and collision-free. The standing caution is to cap the worker count near the physical core count, since oversubscription trades throughput for context-switching.
 
 **R4 — hot code replacement on more than one core (shipped as a demo).** A
 rolling reload brings a fresh generation of workers online before draining the

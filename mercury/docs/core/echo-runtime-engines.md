@@ -213,12 +213,13 @@ portable default, and a V8-direct addon would pin the surface to V8. The
 foreign-function paths differ too (`bun:ffi`, Deno's FFI, `libffi` in `txiki.js`),
 but they are runtime-specific and are not the portable route the kernel takes.
 
-One portability note on the scheduler rather than the kernel: the Cluster and
-hot-code-replacement harness from the prior work is written against Node's
-`node:cluster` and worker model. Bun implements much of that surface but with
-documented edge cases, so a move of the scheduler onto Bun is a thing to validate,
-not assume — the same caution the tail-call section applies, pointed at the
-process model instead of the stack.
+One portability note on the scheduler rather than the kernel, now validated: the
+compute pool forks one process per core with `node:child_process`, which both Node
+and Bun implement, so the same pool runs on either runtime with no branch — the
+typed pool and its hot-code-replacement reload pass on both. The earlier
+`node:cluster` harness was checked too and carries onto Bun unchanged. The caution
+the tail-call section raises about the process model is, for this pool, discharged
+by running it on both engines rather than assuming the move.
 
 ## A proposed engine strategy for echo
 
