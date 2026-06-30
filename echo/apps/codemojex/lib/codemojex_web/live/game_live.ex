@@ -6,10 +6,11 @@ defmodule CodemojexWeb.GameLive do
   populated — no client fetch, no spinner.
 
   The component CODE is not baked into this release: `Codemojex.Edge.game_url/0`
-  resolves the current bundle on edge.codemoji.games and the `EdgeReact` hook
-  dynamic-imports it, so a game change is an edge deploy, not a `fly deploy`. The
-  LiveReact bridge pattern (props in, `pushEvent` out over the live socket) is
-  preserved; only the bundle's origin moves.
+  resolves the current bundle on edge.codemoji.games, `Codemojex.GameBundle` pulls
+  those bytes once and serves them **same-origin** from memory, and the `EdgeReact`
+  hook dynamic-imports `GameBundle.src/0` — so a game change is an edge deploy, not a
+  `fly deploy`. The LiveReact bridge pattern (props in, `pushEvent` out over the live
+  socket) is preserved; only the bundle's serve layer moves on-machine.
 
   The game never scores. A submitted guess is `Codemojex.submit/3`, which enqueues
   a `JOB` on the player's lane (the engine is async); the score lands later as a
@@ -19,7 +20,7 @@ defmodule CodemojexWeb.GameLive do
   """
   use CodemojexWeb, :live_view
 
-  alias Codemojex.{Edge, Session, Store}
+  alias Codemojex.{GameBundle, Session, Store}
 
   @impl true
   def mount(%{"gam" => gam}, session, socket) do
@@ -30,7 +31,7 @@ defmodule CodemojexWeb.GameLive do
 
       {:ok,
        socket
-       |> assign(player: plr, game: gam, page_title: "Codemoji", game_bundle: Edge.game_url())
+       |> assign(player: plr, game: gam, page_title: "Codemoji", game_bundle: GameBundle.src())
        |> assign(game_props: game_props(gam, plr, view))}
     else
       _ -> {:ok, socket |> put_flash(:error, "Room not found") |> push_navigate(to: ~p"/lobby")}
@@ -40,6 +41,8 @@ defmodule CodemojexWeb.GameLive do
   @impl true
   def render(assigns) do
     ~H"""
+    <%!-- warm the same-origin game bytes while LiveView boots; strictly additive --%>
+    <link :if={@game_bundle} rel="modulepreload" href={@game_bundle} />
     <div
       id="game-root"
       class="game-root"

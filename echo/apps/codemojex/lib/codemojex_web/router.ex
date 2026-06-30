@@ -32,6 +32,14 @@ defmodule CodemojexWeb.Router do
     get "/", PageController, :home
   end
 
+  # Arm B: the React game island bytes, pulled from the edge by Codemojex.GameBundle and
+  # served same-origin from memory. A public scope — a JS module needs no session/auth and
+  # should be cacheable; the content-hashed filename is immutable. A distinct prefix so it
+  # collides with neither /game (LiveView) nor /assets (Plug.Static).
+  scope "/", CodemojexWeb do
+    get "/game-bundle/:file", GameBundleController, :show
+  end
+
   # Tier 2/3: the lobby and the game, both LiveViews. join_room returns a GAM, so
   # the game LiveView is keyed by the game id.
   scope "/", CodemojexWeb do

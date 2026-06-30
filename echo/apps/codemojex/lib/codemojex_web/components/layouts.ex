@@ -17,10 +17,24 @@ defmodule CodemojexWeb.Layouts do
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="csrf-token" content={Plug.CSRFProtection.get_csrf_token()} />
         <.live_title default="Codemoji">{assigns[:page_title]}</.live_title>
+        <%!-- warm the phoenix modules in PARALLEL with app.js (HTTP/2 multiplexed) — kills the waterfall --%>
+        <link rel="modulepreload" href={~p"/assets/phoenix.js"} />
+        <link rel="modulepreload" href={~p"/assets/phoenix_live_view.js"} />
+        <%!-- the import map MUST precede the first module script; {} is not interpolated
+             inside <script>, so the bare specifiers resolve via <%= ~p %> --%>
+        <script type="importmap">
+          {
+            "imports": {
+              "@echo/phoenix": "<%= ~p"/assets/phoenix.js" %>",
+              "@echo/phoenix_live_view": "<%= ~p"/assets/phoenix_live_view.js" %>",
+              "phoenix": "<%= ~p"/assets/phoenix.js" %>"
+            }
+          }
+        </script>
         <script src="https://telegram.org/js/telegram-web-app.js"></script>
         <link phx-track-static rel="stylesheet" href={~p"/assets/app.css"} />
-        <script defer phx-track-static type="text/javascript" src={~p"/assets/app.js"}>
-        </script>
+        <%!-- module scripts defer by default; keep phx-track-static for cache-busting --%>
+        <script type="module" phx-track-static src={~p"/assets/app.js"}></script>
       </head>
       <body class="cm-body">
         {@inner_content}
