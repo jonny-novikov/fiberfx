@@ -23,8 +23,8 @@ host-config edit. **The tail was re-scoped 2026-06-29 (Operator-ruled):** `mx.6`
 **DROPPED** ("skip apps"); the frontier is **`mx.7`** — import the Claude-Design bundle's net-new
 components into `@mercury/ui`, a **5-batch epic** (`mx.7.1`–`mx.7.5`; 30 net-new + 2 folds; design
 flows DOWN only) — then **`mx.8`** (enrich the stories) and **`mx.9`** (one comprehensive showcase app
-replacing the retired apps). **All three tail triads are authored**; **`mx.7.1` is BUILT** (gate-green 2026-06-30 — 5 primitives,
-barrel 107→127, 0 removed). The frontier is **`mx.7.2`** (the +10 feedback/display+layout batch). Forward
+replacing the retired apps). **All three tail triads are authored**; **`mx.7.1`+`mx.7.2` are BUILT** (gate-green 2026-06-30 — 15 components,
+barrel 107→160, 0 removed). The frontier is **`mx.7.3`** (the +6 input/selection composites + 2 folds). Forward
 plan: [`mercury.roadmap.md`](./mercury.roadmap.md); architecture:
 [`mercury.design.md`](./mercury.design.md).
 
@@ -63,7 +63,7 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   mx.6   ❌ DROPPED   ────────────────────  apps-side Pages — DROPPED 2026-06-29 (Operator "skip apps"); value moves to mx.9
   mx.7   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  IMPORT the Claude-Design bundle's net-new components → @mercury/ui · 5-batch epic (30 net-new + 2 folds) · design flows DOWN only
     7.1  ✅ BUILT     ████████████████████  foundational primitives — Heading·Text·Label·IconButton·Separator (+5) — gate-green 2026-06-30
-    7.2  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  feedback/display+layout — Callout·Spinner·Skeleton·Blockquote·DataList·Code·Kbd·AspectRatio·Collapsible·ScrollArea (+10)
+    7.2  ✅ BUILT     ████████████████████  feedback/display+layout — Callout·Spinner·Skeleton·Blockquote·DataList·Code·Kbd·AspectRatio·Collapsible·ScrollArea (+10) — gate-green 2026-06-30
     7.3  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  input/selection composites — DateField·Calendar·Checkbox/Radio groups+cards (+6) + folds TextArea/ToggleGroup
     7.4  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  overlay-floor primitive + Dialog·AlertDialog·Popover (+3) · Squad-tier
     7.5  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  menus/hover/nav (consume the floor) — Dropdown·ContextMenu·HoverCard·LinkPreview·Menubar·TabNav (+6) · Squad-tier
@@ -129,7 +129,7 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   `Popover`, 7.5 = the menus/hover/nav). Each batch ships through an **Operator → Agent → Agent** loop
   with the Operator in the seat between batches. Then **`mx.8`** (enrich the stories) and **`mx.9`**
   (one comprehensive showcase app replacing the retired apps). **`mx.7.1` is BUILT** (gate-green 2026-06-30;
-  Fork A → `Separator` net-new, `Divider` kept; barrel 107→127, 0 removed). The frontier is **`mx.7.2`**.
+  Fork A → `Separator` net-new + `Divider` kept; barrels 107→160, 0 removed; +15 components). The frontier is **`mx.7.3`** (the date-lib batch).
   Open forks for the later batches: the bundle's git fate · the overlay-floor ADR (7.4) · the date-lib
   dependency (7.3) · mx.8's palette mechanism. Design flows DOWN from Claude Web only — `/design-sync` forbidden.
 - **Deferred / open.** Widening `@mercury/core`'s public barrel beyond `cx` + `date` (the deeper

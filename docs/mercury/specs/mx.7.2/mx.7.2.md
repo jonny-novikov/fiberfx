@@ -145,9 +145,43 @@ Operator sharpens (carrying mx.7.1's lessons) → Agent-1 reconciles + builds th
 hardens + fills §9 → Operator reviews the +10 homes + gate, carries lessons into mx.7.3, releases batch 3.
 Feedback edits this spec, never the code.
 
-## 9 · As-built (the verifier — filled post-build)
+## 9 · As-built (verified — BUILD-GRADE)
 
-> Classify K-1..K-8 / INV-1..INV-10 / S-1..S-14; list the 10 folders; reproduce the gate (EXIT 0) incl. the
-> barrel-diff (0 removed/renamed, +10), the `sb:build` +10 delta, and the idiom/hex/mercAccent/Icon/framing/
-> no-design-sync greps (empty); confirm `Callout`/`Collapsible` added net-new with `Alert`/`Accordion` untouched.
-> Carry forward to mx.7.3 the disclosure-state-machine + Icon-composition lessons.
+**Verdict: BUILD-GRADE** (Director independent verify, 2026-06-30; built in two sequential mars waves of 5). All
+K-1..K-8 / INV-1..INV-10 / S-1..S-14 **MATCH**. Fork A: `Callout` + `Collapsible` added **net-new**; `Alert` +
+`Accordion` byte-unchanged.
+
+**Shipped — 10 four-file homes** (40 files): `feedback/Callout` · `feedback/Spinner` · `feedback/Skeleton` ·
+`data-display/Blockquote` · `data-display/DataList` · `data-display/Code` · `data-display/Kbd` ·
+`layout/AspectRatio` · `layout/Collapsible` · `layout/ScrollArea`. Barrel **127 → 160** (+33 = 10 components +
+10 `Props` + 13 aux types), **0 removed/renamed** (collision sweep empty + index.ts additions-only + no existing
+folder edited). `additions.css` +2 wave blocks; `tokens.css` byte-unchanged (no DM Sans 600 — L2).
+
+**Gate (re-run independently, EXIT 0):** packages typecheck/build · apps build (echomq + mobile) · `sb:typecheck`
+· `sb:build` (50 homes). **Hygiene empty:** inline-color, raw-hex, `mercAccent`/`_lib/accent`, bundle-framing,
+**runtime style injection** (`document.head`/`createElement`). **No `/design-sync`.** **Mutation spot-check:**
+`ScrollArea` `size` default → invalid `"xl"` → `tsc` TS2322, restored net-zero — the gate has teeth.
+
+**§3-vs-bundle reconciles (the bundle `.tsx` + real tokens win — NO-INVENT):**
+1. **`Callout` has NO `accent`** — §3's grounded table + the bundle omit it (Callout colors via `intent` →
+   semantic families `--bg-<intent>-subtle`/`--fg-<intent>`/`--border-<intent>`); §4's listing of Callout as an
+   accent-bearer was a summary error.
+2. **`Skeleton` has NO `variant`** — §3 listed a stray "variant"; the bundle surface is
+   `width`/`height`/`radius`/`circle`. Built the real surface.
+3. **`DataList` HAS `labelWidth?: number` (default 140)** — real in the bundle, omitted from §3; kept (the
+   horizontal term-column width), realized as a non-color dynamic inline on the `<dt>`.
+
+**Translation notes (built to intent):** `Code` `accent` = per-component inline union → `.mx-code--accent-<id>`
+compounded with `--<variant>` (24 rules; the solid-fill ink uses `--slate-1`/`--slate-12` for contrast — a
+canon-permitted low-level swatch, no semantic "ink-on-accent" alias exists). `ScrollArea`'s bundle `document.head`
+`<style>` injection translated OUT into `.mx-scrollarea` webkit rules reading **semantic neutral tokens**
+(`--border-primary`/`--border-strong`, not the bundle's raw `--slate` ramps) — no runtime injection. `Skeleton`'s
+bundle keyframe injection likewise moved into `.mx-skeleton`. `Collapsible` chevron = `"chevron-down"` (the live
+Icon name; the bundle's `chevDown`/`warning`/`circleHelp` are absent → Callout icons remapped to
+`info`/`check`/`alert`/`help-circle`). `CollapsibleItem` (a bundle extra) NOT ported — out of the spec'd surface.
+
+**Carry to mx.7.3:** **(L4)** **ground every prop in the bundle `.tsx`, not the §3 summary** — §3/§4 drifted 3×
+this batch (Callout-accent, Skeleton-variant, DataList-labelWidth); the bundle source + real tokens are the
+truth. **(L5)** **bundle glyph names ≠ the live Icon set** — remap to a real `keyof typeof ICONS` (typed, so
+`sb:typecheck` backstops a miss). **(L6)** **translate runtime `<style>` injection OUT into `additions.css`** —
+never `document.head.appendChild` in a component.

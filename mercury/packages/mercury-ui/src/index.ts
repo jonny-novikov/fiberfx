@@ -58,6 +58,9 @@ export * from "./components/selection/Toggle";
 export * from "./components/feedback/Alert";
 export * from "./components/feedback/Progress";
 export * from "./components/feedback/PasswordStrength";
+export * from "./components/feedback/Callout";
+export * from "./components/feedback/Spinner";
+export * from "./components/feedback/Skeleton";
 // data-display
 export * from "./components/data-display/Chip";
 export * from "./components/data-display/Tag";
@@ -69,6 +72,10 @@ export * from "./components/data-display/Stat";
 export * from "./components/data-display/Chart";
 export * from "./components/data-display/Checklist";
 export * from "./components/data-display/ListRow";
+export * from "./components/data-display/Blockquote";
+export * from "./components/data-display/DataList";
+export * from "./components/data-display/Code";
+export * from "./components/data-display/Kbd";
 // navigation
 export * from "./components/navigation/Tabs";
 export * from "./components/navigation/Accordion";
@@ -78,3 +85,6 @@ export * from "./components/overlay/Modal";
 export * from "./components/overlay/Tooltip";
 // layout
 export * from "./components/layout/AuthLayout";
+export * from "./components/layout/Collapsible";
+export * from "./components/layout/AspectRatio";
+export * from "./components/layout/ScrollArea";
