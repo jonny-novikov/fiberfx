@@ -47,6 +47,7 @@ export * from "./components/inputs/Select";
 export * from "./components/inputs/AuthCode";
 export * from "./components/inputs/MoneyInput";
 export * from "./components/inputs/Label";
+export * from "./components/inputs/DateField";
 // selection
 export * from "./components/selection/Checkbox";
 export * from "./components/selection/Radio";

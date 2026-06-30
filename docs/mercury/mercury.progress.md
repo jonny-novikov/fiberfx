@@ -1,7 +1,7 @@
 # Mercury UI — Program Progress Dashboard
 
 **One-line state.** The docs floor (`mx.0` ✅) and **the structural rung `mx.1` ✅ are BUILT and
-gate-green on this machine (2026-06-28; commit pending)**: `@mercury/core` is extracted (the UI-free
+gate-green on this machine (committed)**: `@mercury/core` is extracted (the UI-free
 foundation, source-consumed), `@mercury/ui` is regrouped the Claude-Design way
 (`src/components/<group>/<Name>/`, the 5 aggregates split), the real source is salvaged out of the
 (now-deleted) ephemeral `mercury-ds`, and the public barrel is **byte-stable + additive only** — the
@@ -26,7 +26,13 @@ flows DOWN only) — then **`mx.8`** (enrich the stories) and **`mx.9`** (one co
 replacing the retired apps). **All three tail triads are authored**; **`mx.7.1`+`mx.7.2` are BUILT** (gate-green 2026-06-30 — 15 components,
 barrel 107→160, 0 removed). **`mx.7.3` was Operator-SPLIT 2026-06-30** into `mx.7.3.1` (DateField) · `mx.7.3.2`
 (Calendar) · `mx.7.3.3` (the 4 selection composites + 2 folds) — the heavy date pair shed one machine each. The
-frontier is **`mx.7.3.1`** (DateField; shipping via a REAL aaw Trio, scope `mx-7-3-1`). Forward
+frontier was **`mx.7.3.1`** (DateField) — now ✅ **BUILT 2026-06-30** (BUILD-GRADE; composes `@mercury/core`'s
+new `useDateField` composable, A2 arm a; barrel 50→51 folders; a REAL aaw Trio in two
+connection-death-resilient mars waves, x.md §5 LAW-1b). The frontier is **`mx.7.3.2`** (Calendar). **Solo mx.7.x reconcile (2026-06-30): CLEAN** — `mx.7.1`+`mx.7.2`
+committed (`5f4847f1`/`acf538dd`), gate-green, §9-reconciled (barrel 107→160, 0 removed); the 7.3 split is
+coherent; the date foundation is grounded (9 `internal/date-time` machinery files; the curated `useDateField`
+composes them) and **INV-6 holds** (`@internationalized/date` lives on `@mercury/core`, never `@mercury/ui`) →
+`mx.7.3.1` cleared to build. Forward
 plan: [`mercury.roadmap.md`](./mercury.roadmap.md); architecture:
 [`mercury.design.md`](./mercury.design.md).
 
@@ -53,10 +59,10 @@ Mercury UI · packages mercury-core (new) · mercury-ui · mercury-effector · d
 
 Movement I · the modular foundation & the Claude-Design structure
   mx.0   ✅ SHIPPED   ████████████████████  program docs floor — roadmap · design · progress · program · mx.1 triad (2026-06-28)
-  mx.1   ✅ BUILT     ████████████████████  extract @mercury/core · regroup @mercury/ui <group>/<Name> · salvage+delete mercury-ds · barrel 91→103 additive (gate-green 2026-06-28; commit pending)
+  mx.1   ✅ BUILT     ████████████████████  extract @mercury/core · regroup @mercury/ui <group>/<Name> · salvage+delete mercury-ds · barrel 91→103 additive (gate-green 2026-06-28; committed)
 
 Movement II · the authored contract layer   (laddered behind mx.1 — grounds on the grouped structure)
-  mx.2   ✅ BUILT     ████████████████████  33/33 hand-authored <Name>.prompt.md (grounded · enum language · Composition cross-links · real-call-site examples) + D-8 split ratified — gate-green 2026-06-28 (commit pending)
+  mx.2   ✅ BUILT     ████████████████████  33/33 hand-authored <Name>.prompt.md (grounded · enum language · Composition cross-links · real-call-site examples) + D-8 split ratified — gate-green 2026-06-28 (committed 5e229956)
 
 Movement III · the Design System Storybook   (laddered behind mx.2 — each story writes its controls from the contract)
   mx.3   ✅ BUILT     ████████████████████  Storybook host (apps/storybook · @storybook/react-vite 10.4.6) + light/dark decorator + foundations stories (Icon · tokens · Button) — gate-green 2026-06-28 (/mercury-ship mx.3)
@@ -67,7 +73,7 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
     7.1  ✅ BUILT     ████████████████████  foundational primitives — Heading·Text·Label·IconButton·Separator (+5) — gate-green 2026-06-30
     7.2  ✅ BUILT     ████████████████████  feedback/display+layout — Callout·Spinner·Skeleton·Blockquote·DataList·Code·Kbd·AspectRatio·Collapsible·ScrollArea (+10) — gate-green 2026-06-30
     7.3  🪟 SPLIT     ────────────────────  input/selection composites — Operator-split 2026-06-30 into 7.3.1/7.3.2/7.3.3 (date pair shed one machine each)
-    7.3.1 🚧 IN PROG  ████░░░░░░░░░░░░░░░░  DateField — segmented date input (+1) · A2 date-lib fork · REAL aaw Trio (mx-7-3-1)
+    7.3.1 ✅ BUILT     ████████████████████  DateField — segmented spinbutton (+1) · composes @mercury/core useDateField (A2 arm a) · barrel 50→51 · REAL aaw Trio, 2 mars waves (LAW-1b) — gate-green 2026-06-30
     7.3.2 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  Calendar — month-grid picker (+1) · A2 date-lib fork
     7.3.3 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  selection composites — CheckboxGroup·CheckboxCards·RadioGroup·RadioCards (+4) + folds Textarea/ToggleGroup
     7.4  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  overlay-floor primitive + Dialog·AlertDialog·Popover (+3) · Squad-tier
@@ -91,7 +97,7 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
 ## Roll-up
 
 - **Landed.** `mx.0` — the docs floor. `mx.1` — the structural rung, **built + gate-green**
-  (commit pending): `packages/mercury-core` (new, source-consumed, `react` peer + `@internationalized/date`),
+  (committed): `packages/mercury-core` (new, source-consumed, `react` peer + `@internationalized/date`),
   `@mercury/ui` regrouped into `components/<group>/<Name>/` (9 groups; the 5 aggregates split into
   per-component files), Accordion/Toggle/Pagination salvaged + exported, `mercury-ds` deleted, the
   `@mercury/core` alias added to all 5 apps (vite + tsconfig).
@@ -136,7 +142,9 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
   (one comprehensive showcase app replacing the retired apps). **`mx.7.1` is BUILT** (gate-green 2026-06-30;
   Fork A → `Separator` net-new + `Divider` kept; barrels 107→160, 0 removed; +15 components). **`mx.7.3` was
   Operator-SPLIT 2026-06-30** into 7.3.1 (DateField) / 7.3.2 (Calendar) / 7.3.3 (the 4 selection composites + 2
-  folds); the frontier is **`mx.7.3.1`** (DateField, REAL aaw Trio).
+  folds); **`mx.7.3.1`** (DateField) is ✅ BUILT 2026-06-30 (BUILD-GRADE; composes `@mercury/core`'s new
+`useDateField`; the connection-death deaths surfaced the write-ready-dispatch discipline, x.md §5 LAW-1b);
+the frontier is **`mx.7.3.2`** (Calendar — reuses the same date foundation via a sibling `useCalendar`).
   Open forks for the later batches: the bundle's git fate · the overlay-floor ADR (7.4) · **the date-lib dependency
   (7.3.1 + 7.3.2 — grounded: no ready `@mercury/core` hook, arm (a)=from-scratch build; Operator rules per
   machine)** · mx.8's palette mechanism. Design flows DOWN from Claude Web only — `/design-sync` forbidden.

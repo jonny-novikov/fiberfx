@@ -17,3 +17,9 @@ export type { ClassValue } from "./cx";
 
 // Locale-aware Intl formatters (pure — no React, no Effector).
 export * from "./date";
+
+// Date-field composable + value kit (consumed by @mercury/ui DateField; ui keeps no @internationalized/date dep — INV-6).
+export { useDateField } from "./internal/date-time/field/use-date-field";
+export type { UseDateFieldOptions, UseDateFieldReturn } from "./internal/date-time/field/use-date-field";
+export type { DateValue } from "@internationalized/date";
+export { CalendarDate, parseDate } from "@internationalized/date";
