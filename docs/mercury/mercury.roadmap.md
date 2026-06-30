@@ -186,7 +186,9 @@ Each rung is one shippable increment, run through a small fixed loop:
 ## Map
 
 This roadmap · the design canon [`mercury.design.md`](./mercury.design.md) · the dashboard
-[`mercury.progress.md`](./mercury.progress.md) · the build loop
+[`mercury.progress.md`](./mercury.progress.md) · the **component registry & developer reference**
+[`mercury-ui.registry.md`](./mercury-ui.registry.md) (the as-built index of every component, its
+Storybook status, and the `apps/showcase` plan) · the build loop
 [`program/mercury.program.md`](./program/mercury.program.md) · the rung triads under
 [`specs/`](./specs/). Code: [`../../mercury/packages`](../../mercury/packages). The Claude-Design
 conventions Mercury exports to: `mercury/.design-sync/conventions.md`.
