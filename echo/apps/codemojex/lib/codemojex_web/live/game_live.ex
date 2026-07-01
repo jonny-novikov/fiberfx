@@ -7,7 +7,7 @@ defmodule CodemojexWeb.GameLive do
 
   The component CODE is not baked into this release: `Codemojex.Edge.game_url/0`
   resolves the current bundle on edge.codemoji.games, `Codemojex.GameBundle` pulls
-  those bytes once and serves them **same-origin** from memory, and the `EdgeReact`
+  those bytes once and serves them **same-origin** from memory, and the `GameIsland`
   hook dynamic-imports `GameBundle.src/0` — so a game change is an edge deploy, not a
   `fly deploy`. The LiveReact bridge pattern (props in, `pushEvent` out over the live
   socket) is preserved; only the bundle's serve layer moves on-machine.
@@ -53,7 +53,7 @@ defmodule CodemojexWeb.GameLive do
     <div
       id="game-root"
       class="game-root"
-      phx-hook="EdgeReact"
+      phx-hook="GameIsland"
       phx-update="ignore"
       data-bundle={@game_bundle}
       data-component="GameEdge"

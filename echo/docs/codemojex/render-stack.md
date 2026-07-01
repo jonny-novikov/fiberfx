@@ -55,8 +55,8 @@ The dividing line is **"a fixed byte sequence vs a per-request render"**, not "f
 Tiers 2 and 3 are plain LiveView. The *only* framework boundary is the React game, and it is held
 together by a **three-part contract** that both sides must keep in lockstep across an edge swap:
 
-1. **The mount signature** — `mount(el, props, bridge)` (in [`assets/src/index.tsx`](../../apps/codemojex/assets/src/index.tsx)).
-2. **The `GameProps` shape** — declared in [`assets/src/types.ts`](../../apps/codemojex/assets/src/types.ts), built by `GameLive.game_props/3`.
+1. **The mount signature** — `mount(el, props, bridge)` (in [`game/src/index.tsx`](../../../mercury/codemojex/apps/game/src/index.tsx)).
+2. **The `GameProps` shape** — declared in [`game/src/types.ts`](../../../mercury/codemojex/apps/game/src/types.ts), built by `GameLive.game_props/3`.
 3. **The bridge events** — `submit_guess`/`lock`/`unlock` out; `game:update`/`guess_rejected`/`revealed`/`golden_win` in.
 
 Everything else — React version, CSS, component tree — lives entirely inside the game bundle. See
@@ -79,7 +79,7 @@ Telegram opens the Mini App
         │   "Enter Room" (phx-click) → Codemojex.join_room/2 → {:ok, GAM} → push_navigate
         ▼  /game/<GAM>
 [Tier 3] GameLive.mount: game_view/1 + leaderboard + history → game_props → render #game-root
-        │   EdgeReact hook: import(Edge.game_url()) → mount(el, props, bridge)
+        │   GameIsland hook: import(Edge.game_url()) → mount(el, props, bridge)
         ▼
    the game is live; picks are local, the submit crosses the wire, the score returns over PubSub
 ```
@@ -99,9 +99,9 @@ If there is no valid session at any browser route, the LiveView `mount` redirect
 | [`lib/codemojex_web/live/game_live.ex`](../../apps/codemojex/lib/codemojex_web/live/game_live.ex) | Tier 3 shell — props, the game mount point, the async submit round-trip |
 | [`lib/codemojex/edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex) | `game_url/0` — resolves the edge bundle pointer (cached, fallback) |
 | [`lib/codemojex_web/components/layouts.ex`](../../apps/codemojex/lib/codemojex_web/components/layouts.ex) | the root HTML shell (loads `app.js`/`app.css`) + flash group |
-| [`assets/js/app.js`](../../apps/codemojex/assets/js/app.js) | the `LiveSocket` + the `EdgeReact` hook (dynamic-import + bridge) |
-| [`assets/src/index.tsx`](../../apps/codemojex/assets/src/index.tsx) | the game bundle entry — `mount(el, props, bridge)` |
-| [`assets/src/types.ts`](../../apps/codemojex/assets/src/types.ts) | the `GameProps`/`Bridge`/`GameView` contract |
+| [`liveview-boot/app.ts`](../../../mercury/codemojex/apps/liveview-boot/src/app.ts) | the `LiveSocket` + the `GameIsland` hook (dynamic-import + bridge) |
+| [`game/src/index.tsx`](../../../mercury/codemojex/apps/game/src/index.tsx) | the game bundle entry — `mount(el, props, bridge)` |
+| [`game/src/types.ts`](../../../mercury/codemojex/apps/game/src/types.ts) | the `GameProps`/`Bridge`/`GameView` contract |
 
 ## 5. Invariants (carried by every change to this stack)
 

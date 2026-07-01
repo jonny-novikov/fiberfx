@@ -2,7 +2,7 @@ defmodule CodemojexWeb.GameBundleController do
   @moduledoc """
   Serves the React game island bytes same-origin (Arm B). `Codemojex.GameBundle` pulls
   the current content-hashed bundle from the edge and holds it in memory; this controller
-  hands those bytes to the browser, which dynamic-imports them via the `EdgeReact` hook.
+  hands those bytes to the browser, which dynamic-imports them via the `GameIsland` hook.
 
   The route is public (no session, no auth) and the filename is content-hashed, so the
   bytes are immutable — only the *pointer* moves, and that is resolved server-side. A

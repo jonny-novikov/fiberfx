@@ -51,13 +51,13 @@ curl -sI localhost:4000/lobby        # 302 → /   (auth gate; see §4)
 
 ## 3. Building the front-end assets
 
-There are **two** vite builds; only the first is needed for local dev:
+The JS is built in the **mercury** workspace (the echo image has no JS build step). Two builds; only
+the first is needed for local dev:
 
 ```bash
-cd echo/apps/codemojex/assets
-npm install
-npm run build:client     # → priv/static/assets/app.js  (LiveSocket + EdgeReact hook; COMMIT this)
-# npm run build          # → priv/static/game/game-<hash>.js  (the EDGE game; deferred — see hot-swap)
+cd mercury/codemojex/apps/game
+pnpm phoenix:build     # typecheck + build phoenix* + the boot → priv/static/assets/{phoenix.js, phoenix_live_view.js, app.js}  (COMMIT these)
+# pnpm build           # → priv/static/game/game-<hash>.js  (the EDGE game; deferred — see hot-swap)
 ```
 
 The image has no JS build step, so `app.js` is **committed**. The game bundle is **edge-delivered** and
@@ -133,7 +133,7 @@ handshake and mints a real `SES`. The bot token is read from the process env, el
 | Tier 1 — welcome shell | `/welcome/index.html` renders the play link |
 | Tier 2 — auth gate | unauthenticated `/lobby` redirects to `/` |
 | **Tier 2 — authenticated lobby** | `/lobby` renders the rooms **with a real session** |
-| Tier 3 — game shell | enter room → `/game/:gam`, `#game-root` + `EdgeReact` + server props |
+| Tier 3 — game shell | enter room → `/game/:gam`, `#game-root` + `GameIsland` + server props |
 | a11y (axe plugin) | no critical accessibility violations on the lobby |
 
 Each story attaches a full-page screenshot (`lib/shoot.ts`) plus trace + video to the report

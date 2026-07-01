@@ -6,7 +6,7 @@ of the [render stack](render-stack.md) that is genuinely a *hot swap*.
 
 > **TL;DR.** The game is a content-hashed ESM bundle (`game-<hash>.js`) living at
 > `edge.codemoji.games`, named by a short-cached `manifest.json` pointer. `Codemojex.Edge.game_url/0`
-> resolves the pointer at runtime; `GameLive` renders the URL into `#game-root`; the `EdgeReact` client
+> resolves the pointer at runtime; `GameLive` renders the URL into `#game-root`; the `GameIsland` client
 > hook dynamic-imports it and calls the bundle's `mount(el, props, bridge)`. Promotion = upload a new
 > hash + rewrite the pointer. Rollback = point at a previous hash. The contract held across a swap is
 > the `mount` signature + the `GameProps` shape + the bridge events — nothing else.
@@ -22,7 +22,7 @@ two homes:
 
 | Asset | Changes | Home |
 |---|---|---|
-| The **LiveView client** (`app.js`: `LiveSocket` + the `EdgeReact` hook) | rarely (only when the host wiring changes) | committed to `priv/static/assets/app.js`, served by `Plug.Static` |
+| The **LiveView client** (`app.js`: `LiveSocket` + the `GameIsland` hook) | rarely (only when the host wiring changes) | committed to `priv/static/assets/app.js`, served by `Plug.Static` |
 | The **React game** (the component tree) | often (every design/game iteration) | **edge** — `edge.codemoji.games/game-<hash>.js` |
 
 Putting the *fast-moving* asset at the edge means a game iteration is decoupled from the engine's
@@ -30,7 +30,7 @@ release cadence: you rebuild + upload the game, flip a pointer, and the next mou
 
 ## 2. The artifact — a content-hashed ESM bundle
 
-[`assets/vite.config.ts`](../../apps/codemojex/assets/vite.config.ts) builds the game as an ES module
+[`game/vite.config.ts`](../../../mercury/codemojex/apps/game/vite.config.ts) builds the game as an ES module
 into `priv/static/game/`, content-hashed, with a vite manifest:
 
 ```ts
@@ -50,8 +50,9 @@ build: {
 - **React is bundled inside** — the game owns its own runtime; there is no shared-runtime contract
   with the host page. The only outward contract is `mount(el, props, bridge)`.
 
-(The game is built with `npm run build`. The separate `npm run build:client` builds the committed
-`app.js` via [`vite.client.config.ts`](../../apps/codemojex/assets/vite.client.config.ts) — that one is
+(The game island is built with `pnpm build`. The committed `app.js` boot is built separately —
+typechecked and vite-built by [`phoenix-modules-build.sh`](../../../mercury/codemojex/apps/game/bin/phoenix-modules-build.sh)
+from [`liveview-boot/src/app.ts`](../../../mercury/codemojex/apps/liveview-boot/src/app.ts) — and is committed,
 *not* edge-delivered.)
 
 ## 3. The pointer — `manifest.json`
@@ -100,7 +101,7 @@ a sealed mount point carrying the bundle URL and the server props:
 
 ```heex
 <div id="game-root" class="game-root"
-     phx-hook="EdgeReact" phx-update="ignore"
+     phx-hook="GameIsland" phx-update="ignore"
      data-bundle={@game_bundle}
      data-component="GameEdge"
      data-props={Jason.encode!(@game_props)}>
@@ -110,7 +111,7 @@ a sealed mount point carrying the bundle URL and the server props:
 `phx-update="ignore"` is what **seals the React subtree**: LiveView renders this element once and never
 touches its children again, so React owns the DOM inside it and survives LiveView patches/reconnects.
 
-**Client side** — the `EdgeReact` hook in [`assets/js/app.js`](../../apps/codemojex/assets/js/app.js)
+**Client side** — the `GameIsland` hook in [`liveview-boot/app.ts`](../../../mercury/codemojex/apps/liveview-boot/src/app.ts)
 turns the data-attributes into a mounted game:
 
 ```js
@@ -134,10 +135,10 @@ edge bundle (game-<hash>.js)             the host page (app.js)
 
 ## 6. Promotion, rollback, and failure
 
-**Promote a new game** (the role of `scripts/edge-deploy.sh` — see §7, to be authored):
+**Promote a new game** (the role of `edge-deploy.sh` — see §7):
 
 ```
-1. npm run build                # vite → priv/static/game/game-<hash>.js (+ manifest)
+1. pnpm build                   # vite → priv/static/game/game-<hash>.js (+ manifest)
 2. upload game-<hash>.js       # → edge.codemoji.games, long immutable cache
 3. rewrite manifest.json        # { "game": ".../game-<hash>.js" }, short cache
    └─ within ~10s (Edge TTL) every new mount imports the new bundle. No release, no socket drop.
@@ -156,7 +157,7 @@ deleted, rollback is instant and safe.
 
 ## 7. Status & the contract to keep
 
-- **`scripts/edge-deploy.sh` ships the game.** Build → upload hashed-immutable → flip the pointer →
+- **`edge-deploy.sh` ships the game.** Build → upload hashed-immutable → flip the pointer →
   verify (with `--dry-run` and `--rollback`). Standing up the dedicated `edge.codemoji.games` bucket +
   custom domain and running the first deploy is [edge-bucket-setup.md](../edge-deliver/edge-bucket-setup.md).
 - **Until the first deploy, the game is absent in dev.** The pointer resolves to nothing and
@@ -176,6 +177,6 @@ deleted, rollback is instant and safe.
 
 [render-stack.md](render-stack.md) · [rendering.md](rendering.md) · [dev-and-testing.md](dev-and-testing.md)
 · [edge-bucket-setup.md](../edge-deliver/edge-bucket-setup.md) · source: [`edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex),
-[`edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh),
-[`app.js`](../../apps/codemojex/assets/js/app.js),
-[`vite.config.ts`](../../apps/codemojex/assets/vite.config.ts).
+[`edge-deploy.sh`](../../../mercury/codemojex/apps/game/bin/edge-deploy.sh),
+[`app.js`](../../../mercury/codemojex/apps/liveview-boot/src/app.ts),
+[`vite.config.ts`](../../../mercury/codemojex/apps/game/vite.config.ts).

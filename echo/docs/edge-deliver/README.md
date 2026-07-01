@@ -1,7 +1,7 @@
 # codemojex-edge-deliver — the ephemeral edge publisher
 
 A one-shot Fly machine that builds the Codemoji React game bundle and publishes it to the
-`edge.codemoji.games` Tigris bucket. It replaces "run `scripts/edge-deploy.sh` on the Operator's
+`edge.codemoji.games` Tigris bucket. It replaces "run `edge-deploy.sh` on the Operator's
 laptop" with "run a machine in `fra` beside the bucket".
 
 It talks to the live `codemojex` app **only through the bucket pointer**: the app's
@@ -9,7 +9,7 @@ It talks to the live `codemojex` app **only through the bucket pointer**: the ap
 (cached ~10s), so once this job flips the pointer the new bundle goes live within ~10s with **no app
 restart, no secret write, and no Fly token**.
 
-- **What it runs:** the canonical [`scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh) — build →
+- **What it runs:** the canonical [`edge-deploy.sh`](../../../mercury/codemojex/apps/game/bin/edge-deploy.sh) — build →
   upload immutable → flip `manifest.json` → verify. Nothing else.
 - **Design + the ruled decisions:**
   [`docs/codemojex-tma/kb/codemojex-edge-deploy/index.md`](../../../docs/codemojex-tma/kb/codemojex-edge-deploy/index.md).

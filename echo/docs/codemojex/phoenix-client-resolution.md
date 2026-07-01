@@ -166,7 +166,7 @@ Each package's entry map points at **source**:
 
 ### 3.3 The resolution walk (vendored)
 
-`assets/js/app.js` imports the **scoped** names (re-probed `app.js:5-6`):
+`liveview-boot/app.ts` imports the **scoped** names (re-probed `app.js:5-6`):
 
 ```js
 import { Socket } from "@echo/phoenix"
@@ -195,7 +195,7 @@ The host owns every byte of this build: the target, the minification, the shake.
 Pointing `exports["."]` at a `.ts` file is a **bundler-only** convention. `vite` / `esbuild` / `rollup`
 resolve a package's `exports` to a `.ts` entry and compile it; **Node's native ESM loader would not**
 (it cannot execute `.ts`). This is safe here precisely because the codemojex front end is *always* built
-through vite — both the LiveView client (`vite.client.config.ts`) and the edge game
+through vite — both the LiveView boot (`liveview-boot/vite.config.ts`) and the edge game
 (`vite.config.ts`) — and never `import`-ed by a raw Node runtime. Types flow for free: because the entry
 *is* TypeScript, the consumer type-checks against the real source (no separate `.d.ts` needed).
 
@@ -284,7 +284,7 @@ wherever LiveView is. Prefer the subpath for explicitness.
    `import` an `@echo/*` package from raw Node.
 3. **The public surface is the contract.** `@echo/phoenix` ⇒ `{ Socket, Channel, … }`;
    `@echo/phoenix_live_view` ⇒ `{ LiveSocket, createHook, ViewHook, … }` + the hook lifecycle
-   (`pushEvent`/`handleEvent`/`mounted`/`destroyed`) `EdgeReact` relies on. Changing it is breaking
+   (`pushEvent`/`handleEvent`/`mounted`/`destroyed`) `GameIsland` relies on. Changing it is breaking
    (INV-VENDORED-FAITHFUL — verify with a runtime LiveSocket-boot smoke, not just a green build).
 4. **`phoenix_html` is a deliberate subpath**, not a stray module — resolved via
    `@echo/phoenix_live_view/phoenix_html`, imported only where `data-method`/`data-confirm` links exist.
@@ -293,9 +293,9 @@ wherever LiveView is. Prefer the subpath for explicitness.
 
 ## 7. Map
 
-Source: the vendored packages [`assets/packages/phoenix`](../../apps/codemojex/assets/packages/phoenix) ·
-[`assets/packages/phoenix_live_view`](../../apps/codemojex/assets/packages/phoenix_live_view); the consumer
-[`assets/js/app.js`](../../apps/codemojex/assets/js/app.js). Upstream reference:
+Source: the vendored packages [`packages/phoenix`](../../../mercury/packages/phoenix) ·
+[`packages/phoenix_live_view`](../../../mercury/packages/phoenix_live_view); the consumer
+[`liveview-boot/app.ts`](../../../mercury/codemojex/apps/liveview-boot/src/app.ts). Upstream reference:
 [`deps/phoenix_live_view`](../../deps/phoenix_live_view) · [`deps/phoenix`](../../deps/phoenix) ·
 [`deps/phoenix_html`](../../deps/phoenix_html). Spec:
 [`docs/codemojex-tma/specs/cm-tma.1.md`](../../../docs/codemojex-tma/specs/cm-tma.1.md) (the vendoring +

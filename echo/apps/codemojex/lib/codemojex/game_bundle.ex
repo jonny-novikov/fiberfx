@@ -10,7 +10,7 @@ defmodule Codemojex.GameBundle do
   and returns the current bundle URL (briefly cached). This module learns the current
   hash from `Edge`, pulls that hash's **bytes** once, and holds
   `{file, bytes, content_type, exp}` in `:persistent_term`. `CodemojexWeb.GameBundleController`
-  serves those bytes; `GameLive` puts `src/0` in `data-bundle` and the `EdgeReact` hook
+  serves those bytes; `GameLive` puts `src/0` in `data-bundle` and the `GameIsland` hook
   dynamic-imports it from this origin.
 
   Safe hot replace: the new bytes are `put` only after the full body is fetched, and

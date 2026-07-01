@@ -142,7 +142,7 @@ today — no new machinery. (Content-hashing is the §6 minor fork; fixed-name i
 > below is kept for intent; the "copied raw" mechanics are superseded by §4b's typecheck+build step.
 
 `app.js` is the Operator's "trivial initialization": it imports phoenix + phoenix_live_view (by their
-bare specifiers, resolved by the import map), defines the `EdgeReact` hook, and boots `LiveSocket`.
+bare specifiers, resolved by the import map), defines the `GameIsland` hook, and boots `LiveSocket`.
 Its **canonical source** is the typed `mercury/codemojex/apps/liveview-boot/src/app.ts`, authored
 against the typed `@echo/phoenix*` packages — so the hook contract is compile-checked (the migration
 caught a real teardown bug: `handleEvent` returns a `CallbackRef`, removed via `removeHandleEvent`,
@@ -184,7 +184,7 @@ Edit `Layouts.root/1` (`layouts.ex:11-30`). Target order in `<head>`:
   connection, so the LiveSocket boot graph is in cache by the time `app.js` runs.
 - **Module scripts are deferred by default** — `app.js` runs after the document parses, so first
   paint (the LiveView-rendered shell) is never blocked by the socket boot.
-- **The game island stays lazy.** `EdgeReact.mounted()` still `await import(bundle)`s the game only
+- **The game island stays lazy.** `GameIsland.mounted()` still `await import(bundle)`s the game only
   after `#game-root` mounts (post-first-paint). Under Arm B (§3) that import is **same-origin**, so
   the player's critical path carries no cross-origin DNS/TLS handshake to `edge.codemoji.games`.
 - **Optional game preload.** In `GameLive.render/1` (`game_live.ex:41`), emit
@@ -272,7 +272,7 @@ codemojex-edge-deliver (Operator)         Phoenix (Codemojex.GameBundle)        
   **public** scope (no `:browser`/auth — a JS module needs no session and should be cacheable). It is
   not under `/assets` (Plug.Static) and not under `/game` (LiveView), so it collides with neither.
 - **`GameLive`** (`game_live.ex:33`): the **one-line** change `game_bundle: Edge.game_url()` →
-  `game_bundle: Codemojex.GameBundle.src()`. `data-bundle`, the `EdgeReact` hook, `game_props`, and
+  `game_bundle: Codemojex.GameBundle.src()`. `data-bundle`, the `GameIsland` hook, `game_props`, and
   the `mount(el, props, bridge)` engine contract are **all unchanged** — the cross-swap contract
   (`mount` signature · `GameProps` · the bridge events · `apiVersion`) is exactly as
   `livereact-hot-swap.md §7` states.
@@ -397,7 +397,7 @@ Operator rules — but §1–§2 + §4b are fork-free, build them first.
 | G4 | **one phoenix instance** | `grep -E 'from ?"phoenix"' priv/static/assets/phoenix_live_view.js` → either 0 (type-erased) or only the externalized bare `"phoenix"` the import map covers; **no inlined second Socket** |
 | G5 | the import map resolves | the three keys (`@echo/phoenix`, `@echo/phoenix_live_view`, `phoenix`) → the two real files; map precedes the module script |
 | G6 | app.js serves as a module | `priv/static/assets/app.js` is the ~2.4 KB raw module (not the 137 KB IIFE); tag is `type="module"` |
-| G7 | the game still mounts via `mount(el,props,bridge)` | the `index.tsx` export + `EdgeReact` path unchanged |
+| G7 | the game still mounts via `mount(el,props,bridge)` | the `index.tsx` export + `GameIsland` path unchanged |
 | G8 | deliver runs clean | `bin/edge-deploy.sh --dry-run` builds + lists the upload/flip with the **correct absolute** `priv/static/game` path (no `mercury/.../apps/priv`) |
 | G9 | **(Arm B)** pull+swap exercised | a unit/integration check: seed two hashes, assert `src/0` flips atomically and the controller serves the cached bytes with `content-type: text/javascript`; no half-served bundle |
 | G10 | Elixir gates | from `echo/apps/codemojex`: `TMPDIR=/tmp mix compile --warnings-as-errors` + `TMPDIR=/tmp mix test` clean |
@@ -437,9 +437,10 @@ literal name.
 
 ## 7. Map
 
-Reconciled-against (as-built): `mercury/codemojex/apps/game/{vite.config.ts, vite.client.config.ts,
-bin/edge-deploy.sh, package.json, src/index.tsx}` · `mercury/packages/{phoenix,phoenix_live_view}/{vite.config.ts,
-package.json}` · `echo/apps/codemojex/assets/js/app.js` · `echo/apps/codemojex/lib/codemojex_web/{components/layouts.ex,
+Reconciled-against (as-built): `mercury/codemojex/apps/game/{vite.config.ts,
+bin/edge-deploy.sh, package.json, src/index.tsx}` · `mercury/codemojex/apps/liveview-boot/{vite.config.ts, src/app.ts}` ·
+`mercury/packages/{phoenix,phoenix_live_view}/{vite.config.ts,
+package.json}` · `echo/apps/codemojex/priv/static/assets/app.js` · `echo/apps/codemojex/lib/codemojex_web/{components/layouts.ex,
 live/game_live.ex, router.ex}` · `echo/apps/codemojex/lib/codemojex/edge.ex`.
 Superseded/owed doc-sync: `phoenix-client-resolution.md` (§6 INV-1, §3.4) · `livereact-hot-swap.md`
 (the `assets/` paths) · `edge-bucket-setup.md` + `edge.ex` moduledoc (the `scripts/edge-deploy.sh`

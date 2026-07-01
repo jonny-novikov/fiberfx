@@ -9,7 +9,7 @@ defmodule Codemojex.Edge do
   `GameLive` renders into the game mount point. The browser dynamic-imports it.
   `GAME_EDGE_HOST` overrides the host (dev/staging point elsewhere).
 
-  Promotion is therefore an edge operation: `scripts/edge-deploy.sh` uploads a new
+  Promotion is therefore an edge operation: `edge-deploy.sh` uploads a new
   hashed bundle and rewrites `manifest.json`; within the cache TTL this machine
   serves the new URL. No `mix release`, no `fly deploy`, no socket drop. The Engine
   contract (the props shape `GameLive` sends and the events it accepts) is the only

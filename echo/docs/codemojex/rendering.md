@@ -74,7 +74,7 @@ end
 
 The render emits the sealed mount point (`#game-root`, `phx-update="ignore"`) carrying
 `data-bundle` (the edge URL), `data-component`, and `data-props` (`Jason.encode!` of the props). The
-`EdgeReact` hook imports the bundle and calls `mount(el, props, bridge)` — see
+`GameIsland` hook imports the bundle and calls `mount(el, props, bridge)` — see
 [livereact-hot-swap.md §5](livereact-hot-swap.md).
 
 ### 3.1 The props — `game_props/3`
@@ -93,13 +93,13 @@ defp game_props(gam, plr, view) do
 end
 ```
 
-The TypeScript mirror is [`assets/src/types.ts`](../../apps/codemojex/assets/src/types.ts)
+The TypeScript mirror is [`game/src/types.ts`](../../../mercury/codemojex/apps/game/src/types.ts)
 (`GameProps`, `GameView`, `LeaderRow`, `HistoryRow`). **Keep `types.ts` and `game_props/3` in
 lockstep** — they are the cross-swap contract (see hot-swap §7).
 
 ### 3.2 The game entry — `mount(el, props, bridge)`
 
-[`assets/src/index.tsx`](../../apps/codemojex/assets/src/index.tsx):
+[`game/src/index.tsx`](../../../mercury/codemojex/apps/game/src/index.tsx):
 
 ```tsx
 export function mount(el: HTMLElement, props: GameProps, bridge: Bridge) {
@@ -156,7 +156,7 @@ transient UI (toasts, the reveal):
 | `handle_info({:revealed, payload})` → `push_event(… "revealed" …)` + `push_props` | `revealed` | reveal the secret/payouts |
 | `handle_info({:golden_win, payload})` → `push_event(… "golden_win" …)` | `golden_win` | the golden close |
 
-The **bridge** ([`types.ts`](../../apps/codemojex/assets/src/types.ts)) is the game's only handle on
+The **bridge** ([`types.ts`](../../../mercury/codemojex/apps/game/src/types.ts)) is the game's only handle on
 the socket:
 
 ```ts
@@ -166,7 +166,7 @@ interface Bridge {
 }
 ```
 
-The `EdgeReact` hook implements `pushEvent` as `this.pushEvent` and fans the one-off `handleEvent`s
+The `GameIsland` hook implements `pushEvent` as `this.pushEvent` and fans the one-off `handleEvent`s
 out to every `onServerEvent` listener (returning an unsubscribe).
 
 There are also two per-slot events the game can send — `lock` (`%{pos, code}`) and `unlock`
@@ -198,4 +198,4 @@ to) the server.
 [dev-and-testing.md](dev-and-testing.md) · source:
 [`game_live.ex`](../../apps/codemojex/lib/codemojex_web/live/game_live.ex),
 [`lobby_live.ex`](../../apps/codemojex/lib/codemojex_web/live/lobby_live.ex),
-[`types.ts`](../../apps/codemojex/assets/src/types.ts).
+[`types.ts`](../../../mercury/codemojex/apps/game/src/types.ts).

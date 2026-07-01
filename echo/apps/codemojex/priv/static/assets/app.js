@@ -1,13 +1,13 @@
 import { Socket as h } from "@echo/phoenix";
-import { LiveSocket as u } from "@echo/phoenix_live_view";
-const l = {
+import { LiveSocket as l } from "@echo/phoenix_live_view";
+const u = {
   async mounted() {
     const t = this.el, s = t.dataset.bundle;
     if (!s) {
-      console.error("EdgeReact: no game bundle url (edge pointer + GAME_ASSET_URL both empty)");
+      console.error("GameIsland: no game bundle url (edge pointer + GAME_ASSET_URL both empty)");
       return;
     }
-    const a = p(t.dataset.props), o = [];
+    const c = m(t.dataset.props), o = [];
     this.refs = o;
     const d = {
       pushEvent: (e, n) => {
@@ -22,10 +22,10 @@ const l = {
       s
     ))?.mount;
     if (typeof r != "function") {
-      console.error("EdgeReact: game bundle has no mount(el, props, bridge) export");
+      console.error("GameIsland: game bundle has no mount(el, props, bridge) export");
       return;
     }
-    this.handle = r(t, a, d), o.push(this.handleEvent("game:update", (e) => this.handle?.update(e))), ["guess_rejected", "revealed", "golden_win"].forEach((e) => {
+    this.handle = r(t, c, d), o.push(this.handleEvent("game:update", (e) => this.handle?.update(e))), ["guess_rejected", "revealed", "golden_win"].forEach((e) => {
       o.push(
         this.handleEvent(
           e,
@@ -38,16 +38,16 @@ const l = {
     this.handle?.unmount?.(), this.refs?.forEach((t) => this.removeHandleEvent(t));
   }
 };
-function p(t) {
+function m(t) {
   try {
     return JSON.parse(t || "{}");
   } catch {
     return {};
   }
 }
-const m = document.querySelector("meta[name='csrf-token']")?.content ?? "", c = new u("/live", h, {
-  params: { _csrf_token: m },
-  hooks: { EdgeReact: l }
+const p = document.querySelector("meta[name='csrf-token']")?.content ?? "", a = new l("/live", h, {
+  params: { _csrf_token: p },
+  hooks: { GameIsland: u }
 });
-c.connect();
-window.liveSocket = c;
+a.connect();
+window.liveSocket = a;

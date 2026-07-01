@@ -2,13 +2,13 @@
 
 How to stand up the **dedicated Tigris bucket** that serves the hot-swappable React game at
 `edge.codemoji.games`, wire the env, and run the first deploy with
-[`scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh). The Tier-1 welcome is served
+[`edge-deploy.sh`](../../../mercury/codemojex/apps/game/bin/edge-deploy.sh). The Tier-1 welcome is served
 **same-origin by the app** (`/` + `Plug.Static`), so this bucket serves only the Tier-3 game — see
 [livereact-hot-swap.md](../codemojex/livereact-hot-swap.md) for why the game lives at the edge.
 
 > **TL;DR.** Create a **public** Tigris bucket → set `TIGRIS_EDGE_*` in `echo/.env` (for the deploy
 > script) → point `edge.codemoji.games` at it (custom domain + CNAME) → `source echo/.env && bash
-> apps/codemojex/scripts/edge-deploy.sh` → set `GAME_ASSET_URL` as the fly fallback. `Codemojex.Edge`
+> mercury/codemojex/apps/game/bin/edge-deploy.sh` → set `GAME_ASSET_URL` as the fly fallback. `Codemojex.Edge`
 > then resolves `https://edge.codemoji.games/manifest.json` at runtime (cached 10s) and the game
 > hot-swaps on every deploy.
 
@@ -136,8 +136,8 @@ they agree on the host with no further wiring.
 ```bash
 cd /Users/jonny/dev/jonnify/echo
 set -a && source .env && set +a            # the script does NOT auto-load .env
-bash apps/codemojex/scripts/edge-deploy.sh --dry-run   # build + show what would upload/flip
-bash apps/codemojex/scripts/edge-deploy.sh             # build → upload immutable → flip pointer → verify
+bash mercury/codemojex/apps/game/bin/edge-deploy.sh --dry-run   # build + show what would upload/flip
+bash mercury/codemojex/apps/game/bin/edge-deploy.sh             # build → upload immutable → flip pointer → verify
 ```
 
 The script (full contract in its header and in [livereact-hot-swap.md §6](../codemojex/livereact-hot-swap.md)):
@@ -157,7 +157,7 @@ Old hashes are immutable and never deleted, so rollback is a pointer flip — no
 
 ```bash
 set -a && source .env && set +a
-bash apps/codemojex/scripts/edge-deploy.sh --rollback game-<previous-hash>.js
+bash mercury/codemojex/apps/game/bin/edge-deploy.sh --rollback game-<previous-hash>.js
 ```
 
 (List previous hashes with `aws s3 ls s3://$TIGRIS_EDGE_BUCKET/ --endpoint-url $TIGRIS_EDGE_ENDPOINT_URL`.)
@@ -188,6 +188,6 @@ render path:
 
 [livereact-hot-swap.md](../codemojex/livereact-hot-swap.md) · [render-stack.md](../codemojex/render-stack.md) ·
 [dev-and-testing.md](../codemojex/dev-and-testing.md) · the script:
-[`apps/codemojex/scripts/edge-deploy.sh`](../../apps/codemojex/scripts/edge-deploy.sh) · the resolver:
+[`mercury/codemojex/apps/game/bin/edge-deploy.sh`](../../../mercury/codemojex/apps/game/bin/edge-deploy.sh) · the resolver:
 [`apps/codemojex/lib/codemojex/edge.ex`](../../apps/codemojex/lib/codemojex/edge.ex) · env template:
 [`echo/.env.example`](../../.env.example).
