@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test"; // SB 10.4.6 CORE subpath — zero new dependency (mx.8.2-INV6)
 import { Button, Icon } from "@mercury/ui";
 import type { ButtonVariant, ButtonSize } from "@mercury/ui";
 
@@ -29,6 +30,7 @@ const meta: Meta<typeof Button> = {
     disabled: { control: "boolean" },
     leading: { control: false },
     trailing: { control: false },
+    onClick: { control: false }, // spied via args, not a control widget (mx.8.2-D2)
   },
   args: {
     children: "Button",
@@ -37,6 +39,7 @@ const meta: Meta<typeof Button> = {
     loading: false,
     fullWidth: false,
     disabled: false,
+    onClick: fn(), // the spy — logs to the SB core Actions panel on click (mx.8.2-INV7)
   },
 };
 export default meta;

@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { fn } from "storybook/test"; // SB 10.4.6 CORE subpath — zero new dependency (mx.8.2-INV6)
 import { Link, Icon } from "@mercury/ui";
 import type { LinkSize, LinkProps } from "@mercury/ui";
 
@@ -37,6 +38,7 @@ const meta: Meta<typeof Link> = {
     muted: false,
     disabled: false,
     type: "button",
+    onClick: fn(), // the spy — logs to the SB core Actions panel on click (mx.8.2-INV7; onClick argType already control:false)
   },
 };
 export default meta;
