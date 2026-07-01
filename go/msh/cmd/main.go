@@ -78,6 +78,9 @@ func newRootCmd() *cobra.Command {
 	// `msh specs [AREA]` — check a docs/specs tree for stale markdown links.
 	root.AddCommand(newSpecsCmd())
 
+	// `msh history QUERY...` — search Claude Code session transcripts.
+	root.AddCommand(newHistoryCmd())
+
 	return root
 }
 
@@ -172,6 +175,7 @@ func buildMCPServer(root string) *mcp.Server {
 	registerMemoryTools(server, root)
 	registerMintTool(server)
 	registerSpecsTool(server)
+	registerHistoryTool(server, root)
 	return server
 }
 

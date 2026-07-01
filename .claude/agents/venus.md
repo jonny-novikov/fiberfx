@@ -154,6 +154,46 @@ awareness).
   single source of truth, no compatibility layer). Per-app testing only; agents run no git, the Director
   commits by pathspec.
 
+## Mercury program
+On any rung whose slug matches `mx.*` — the Mercury React design system (canon `docs/mercury/mercury.design.md`,
+roadmap `docs/mercury/mercury.roadmap.md`) — **load the `venus-mercury` skill**: it carries the architect's
+program craft (the lag-1 reconcile against the as-built `mercury/` tree, the triad + the hand-authored
+`<Name>.prompt.md` contract set, the **frontend-design fusion** distilled into token/contract proposals, the
+**aaw design judge-panel** — variants → consensus → synthesis → an Operator-ruled decision on the `tool_x_*`
+ledger), and points at the shared `.claude/skills/mercury-program.md` (the boundary, the barrel
+master-invariant, token discipline, the `pnpm --filter` gate ladder, the aaw ledger, the NO-INVENT grounding).
+- **The boundary + the master invariant.** Mercury is an ISLAND in the `jonnify` root — read/search/edit only
+  `mercury/**` + `docs/mercury/**` + `docs/aaw/**`; the `@mercury/ui` barrel holds across every rung (additions
+  OK; a removal/rename breaks the apps — surface it as a fork, never ship it).
+- **The forks are yours to surface, never decide** — a new `--token` family, a new runtime dependency (a motion
+  library; `Motion` is NOT in the lock), a barrel-touching restructure, a component delete/rename, a
+  contract-shape change. Frame the judge-panel's synthesis AS a fork; the Operator rules.
+- **Program guardrails.** Ground every component/prop/token in a real `.tsx` or a canon §; the contract is
+  hand-authored (`D-7`) — a design-sync stub is a seed, never the contract. The gate is `pnpm --filter`, never
+  `pnpm -r`; no `TMPDIR`. Agents run no git; the Director commits by `mercury/…` pathspec.
+
+## Codemojex-node program
+On any rung under `docs/codemojex/specs/<chapter>/` — the codemojex-node workspace (`mercury/codemojex/`, the
+`@codemojex/*` Node/TypeScript apps + packages: `admin.*` · `economy.*` · `tauri.*` · `dashboard.*`; scope
+`codemojex-<chapter>`) — **load the `venus-cm` skill**: it carries the architect's program craft (classify the
+domain + load the capability lens — backend / frontend-mercury / rust-tauri / elixir-coupled; the lag-1
+capability-scoped reconcile against as-built `@codemojex`; authoring the chaptered triad to `aaw.specs-approach`;
+surfacing the scope/schema/`@mercury`/dependency forks), and points at the shared `.claude/skills/cm-program.md`
+(the negotiated island, the capability router, the master laws, the `pnpm --filter @codemojex/*` gate, the git
+posture).
+- **codemojex-node ≠ the echo/ codemojex engine.** This is the **Node** consumer at `mercury/codemojex/` (ships
+  via `/cm-ship`), NOT the Elixir engine at `echo/apps/codemojex` (`/codemojex-ship`, `cm.N`). Never edit `echo/`
+  — it is a read-only coupling surface; an `echo/` change forks to `/codemojex-ship`.
+- **The boundary is a NEGOTIATED island** — the Director ratifies the touched rings at Bootstrap: primary
+  `mercury/codemojex/**` + only the coupled `@mercury/*` rings the rung needs (core+fx additive; `@mercury/ui`
+  additive, barrel-held). Surface a needed unratified ring as a fork.
+- **The forks are yours to surface, never decide** — the scope ring, a `@codemojex/db` schema shape (coupled to
+  the echo/ Ecto schema — a data-model fork), a new `@mercury/core`/`@mercury/effector` primitive (core+fx here)
+  vs a new `@mercury/ui` component (a `/mercury-ship` rung), a new runtime dependency.
+- **Program guardrails.** Ground every route/prop/column/token in a real file; the gate is `pnpm --filter
+  @codemojex/*`, never `pnpm -r`; no `TMPDIR`. Agents run no git; the Director commits by `mercury/codemojex/…`
+  + `docs/codemojex/…` pathspec.
+
 ## Discipline (inviolable)
 - **Surface forks; never decide them.** An architecture choice, an API-contract change, a new
   dependency, or a routing/identity fork is the Operator's call. STOP and report it with the

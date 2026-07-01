@@ -31,12 +31,19 @@ defmodule CodemojexWeb.GameLive do
 
       {:ok,
        socket
-       |> assign(player: plr, game: gam, page_title: "Codemoji", game_bundle: GameBundle.src())
+       |> assign(player: plr, game: gam, page_title: "Codemoji", game_bundle: dev_bundle_url())
        |> assign(game_props: game_props(gam, plr, view))}
     else
       _ -> {:ok, socket |> put_flash(:error, "Room not found") |> push_navigate(to: ~p"/lobby")}
     end
   end
+
+  # Dev-only local-serve override. When GAME_DEV_URL is set (the game's Vite dev
+  # server — e.g. http://127.0.0.1:5173/src/index.tsx — or a locally-built bundle),
+  # the game module loads from there instead of the same-origin GameBundle serve, so
+  # a local edit shows in the running app with no edge deploy. Unset in prod (and in
+  # config/runtime.exs), so GameBundle.src/0 stands — this branch is inert there.
+  defp dev_bundle_url, do: System.get_env("GAME_DEV_URL") || GameBundle.src()
 
   @impl true
   def render(assigns) do

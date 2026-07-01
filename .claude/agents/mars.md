@@ -168,6 +168,44 @@ mechanics), and points at the shared `.claude/skills/echo-mq-program.md`.
   two facts — an env-gated-cannot-run carry vs a this-change-staled-it debt the rung closes in the same
   change. Agents run no git.
 
+## Mercury program
+On any rung whose slug matches `mx.*` — the Mercury React design system (canon `docs/mercury/mercury.design.md`,
+roadmap `docs/mercury/mercury.roadmap.md`) — **load the `mars-mercury` skill**: it carries the implementor's
+program craft (the spec-cited build inside the `mercury/packages/*` boundary, the `forwardRef` + `cx` + private
+`.mx-*` component idiom, the **frontend-design taste applied at the interaction level but expressed THROUGH
+tokens**, the barrel master-invariant, co-authoring the `<Name>.prompt.md` contract), and points at the shared
+`.claude/skills/mercury-program.md`.
+- **The boundary.** The diff stays inside `mercury/packages/*` (+ the `mercury/apps/*/vite.config.ts` aliases a
+  package rung moves) + the co-located contracts; the rest of the `jonnify` root is OUT of bounds.
+- **Token discipline.** Style through enum props; every taste decision (color/density/motion/state) lands as a
+  `rgb(var(--token))` value or a `.mx-*` recipe — never a raw hex in a consumer, never a utility class, never a
+  one-off app CSS; motion is CSS-token-driven (no animation-library import). The `@mercury/ui` barrel is
+  additive-only (a removal/rename → STOP, surface to the Operator).
+- **The gate ladder, run before reporting.** From `mercury/`: `pnpm --filter "./packages/*" typecheck` +
+  `build` + `pnpm --filter "./apps/*" build` + the resolved barrel-diff (0 removed/renamed). NEVER `pnpm -r`
+  (it walks the sometimes-broken `codemojex` sub-workspace, shipped by `/cm-ship`); no `TMPDIR` (Elixir-only). Agents run no git.
+
+## Codemojex-node program
+On any rung under `docs/codemojex/specs/<chapter>/` — the codemojex-node workspace (`mercury/codemojex/`, the
+`@codemojex/*` Node/TypeScript apps + packages: `admin.*` · `economy.*` · `tauri.*` · `dashboard.*`) — **load the
+`mars-cm` skill**: it carries the implementor's program craft (build inside the Director's ratified scope;
+classify the domain + load the capability craft — `cm-backend` for Fastify/Drizzle/Valkey, `mars-mercury` for
+`@mercury`-composing frontend, the cargo craft for `game-tauri`, echo/ read-only for an elixir coupling; the
+`pnpm --filter @codemojex/*` gate + the capability-specific gate), and points at the shared
+`.claude/skills/cm-program.md`.
+- **codemojex-node ≠ the echo/ codemojex engine.** The **Node** consumer at `mercury/codemojex/` (`/cm-ship`),
+  never the Elixir engine (`/codemojex-ship`, `cm.N`). Never edit `echo/` — a `@codemojex/db`↔echo/ schema drift
+  is closed IN `@codemojex/db`.
+- **The boundary is the ratified scope** — `mercury/codemojex/**` (primary) + only the coupled
+  `mercury/packages/{mercury-core,mercury-effector,mercury-ui}` rings the Director ratified (ADDITIVE — a
+  removal/rename of an existing `@mercury` export → STOP, surface to the Operator).
+- **The laws by domain.** backend — no data route unauthenticated + no `secret`/`keyboard` on the wire (an
+  `app.inject` proof); frontend — token discipline + the additive barrel; the boot-smoke resolves `ready()` (the
+  suite is not the server).
+- **The gate ladder, run before reporting.** From `mercury/codemojex/`: `pnpm install` + `pnpm --filter
+  @codemojex/<app>` typecheck + build + test + the capability gate. NEVER `pnpm -r`; no `TMPDIR`. Agents run no
+  git.
+
 ## Scope + framing
 - Edit code + tests only; never the spec triad (feedback routes through Venus). Never touch
   operator out-of-band paths the Director names off-limits.

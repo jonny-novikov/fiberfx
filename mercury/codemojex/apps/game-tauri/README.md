@@ -74,6 +74,23 @@ cargo tauri dev        # waits for build.devUrl (localhost:4000); start Phoenix 
 cargo tauri build
 ```
 
+## Local game-dev loop (develop the island in this shell)
+
+By default the wrapped app pulls the game bundle from `edge.codemoji.games`. To develop the
+game **locally** and see edits in this shell, `bin/dev-local.sh` starts the game's **Vite dev
+server** + this shell; run Phoenix with `GAME_DEV_URL` pointed at Vite, and `GameLive` imports
+the game module from Vite (fast reload) instead of the same-origin `GameBundle`:
+
+```bash
+bin/dev-local.sh   # starts vite (game island) + the shell; prints the Phoenix command
+# then, in echo/apps/codemojex:
+GAME_DEV_URL=http://127.0.0.1:5173/src/index.tsx mix phx.server
+```
+
+Edit `mercury/codemojex/apps/game/src/**` → reload the game view → fresh code (Vite transforms
+on the fly; no rebuild, no Phoenix restart). Unset `GAME_DEV_URL` to fall back to the edge serve.
+The dev-only override is `dev_bundle_url/0` in `…/live/game_live.ex` (inert in prod).
+
 Toggle the panel with **Ctrl + `** or the `events` button. Rows show time,
 direction (↑ out / ↓ in), topic, event, and ref; click to expand the decoded
 payload. Heartbeats are dimmed, `phx_reply` is green, `phx_error`/`phx_close` red.

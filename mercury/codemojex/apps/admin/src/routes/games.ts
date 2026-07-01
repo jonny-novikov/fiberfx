@@ -3,9 +3,9 @@ import { ok, err, type Result, type Static } from "@echo/core";
 import { db, games, guesses, rooms, type GameId } from "@codemojex/db";
 import { eq, desc } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import * as S from "../schemas.js";
-import { send, notFound, type ApiError } from "../reply.js";
-import { readBoard } from "../valkey.js";
+import * as S from "../schemas";
+import { send, notFound, type ApiError } from "../reply";
+import { readBoard } from "../valkey";
 
 // Explicit public columns — secret and keyboard are never selected.
 const gameCols = {

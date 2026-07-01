@@ -7,7 +7,7 @@
  * in ONE place here rather than scattering literals through the routes.
  */
 import { Redis } from "iovalkey";
-import type { Env } from "./env.js";
+import type { Env } from "./env";
 
 export type Board = Array<{ player: string; score: number }>;
 

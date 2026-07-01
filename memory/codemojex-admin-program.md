@@ -1,0 +1,14 @@
+---
+name: codemojex-admin-program
+description: "codemojex admin = a Fastify operator-API control plane (@codemojex/admin, mercury/codemojex/apps/admin) — NOT a Mercury frontend; spec chapter docs/codemojex/specs/admin authored to aaw.specs-approach.md; admin.1 = the gated read foundation (bearer ADMIN_TOKEN)"
+metadata: 
+  node_type: memory
+  type: project
+  originSessionId: bcd9b57a-f3d4-44ec-bde7-93fbc0a81666
+---
+
+**The codemojex admin control plane** = `@codemojex/admin` at `mercury/codemojex/apps/admin/` — a **Fastify + Drizzle + Valkey backend API** (NOT a Mercury/React frontend), one of four apps in the `mercury/codemojex/` Node/TS monorepo (siblings: `economy`, `game`, `game-tauri`; packages `db`/`domain`/`types`). Charter (its own `server.ts`): "an operator surface for browsing rooms, active games, and players, plus light management. Postgres (via `@codemojex/db`) is the system of record; ValKey (:6390) is read for the live board; the server never scores." Schema-driven via `@fastify/type-provider-typebox` (one TypeBox schema → static type + validator + serializer); the game **secret is stripped at the wire** (`gameCols`/`GameSummary` list only public columns). Boots solo (`main.ts` → `start`) and clustered (`cluster.ts` → `@echo/cluster` `runCluster`). As-built read plane: `/health`, `/rooms`(+`:id`,`PATCH :id/status`), `/games`(+`:id`), `/players`(+`:id`). **`mercury/codemojex` is its OWN pnpm workspace, deps NOT installed** (a `--filter` from `mercury/` matches nothing) — install/typecheck/boot is real bootstrap work.
+
+**Spec chapter** = `docs/codemojex/specs/admin/` authored 2026-07-01 to [[aaw-specs-approach]] (`docs/aaw/aaw.specs-approach.md`): the index `admin.md` (value ladder · master invariant *no-secret-on-wire + no-data-route-unauthenticated* · closed error set 401/400/404/500), `admin.roadmap.md` (Milestone A), and the `admin.1` triad (`.md`/`.stories.md`/`.llms.md`). aaw scope **`codemojex-admin`** (ledger `docs/codemojex/specs/admin/codemojex-admin.progress.md`). Ladder: **admin.1** gated read foundation → admin.2 lifecycle mgmt → admin.3 economy/treasury (cm.8 withdrawals) → admin.4 players/moderation → admin.5 (optional) Mercury-UI console.
+
+**Operator rulings (ledger D-1/D-2):** admin.1 = the **gated read foundation** (this week); auth = an **operator bearer token** (Fastify preHandler vs env `ADMIN_TOKEN`, `/health` exempt, zero new deps — coarse, per-operator identity deferred). **admin.1 SPECCED + six-gates-GREEN (sharpen done); NEXT = build via `/cm-ship`** (a backend rung — loads `cm-backend`: env `adminToken` + the preHandler + an `app.inject` test suite [401/200/secret-strip/health-open] + `pnpm install` + typecheck + boot smoke). Gate the triad with the sweep + `mcp__msh__specs` (links). [[cm-ship-program]] [[codemojex-program]] [[mercury-design-system]]

@@ -73,7 +73,8 @@ Mercury but the directory: a Mercury rung must treat the rest of the tree as if 
     the three design-system packages (the edit surface for a component/package rung).
   - `mercury/apps/{showcase,echomq,mobile,catalogue,docs}/` — the five composing apps (grounding for
     contracts + the `apps/*` build gate; **apps only compose — never house a reusable component**).
-  - `mercury/codemojex-node/apps/{economy,api}/` — a sub-workspace whose `economy` app is a grounding source;
+  - `mercury/codemojex/apps/{admin,economy,game,game-tauri}/` — the `@codemojex/*` sub-workspace (shipped by
+    `/cm-ship`) whose `economy` app is a grounding source;
     **its build state is independent and may be broken** — never let it into the gate (use `--filter`, below).
 - `docs/mercury/**` — the canon, the program manual, the specs (`docs/mercury/specs/<rung>/`).
 - `docs/aaw/**` — the workflow framework + the architect's contract-set method (**read-only reference**).
@@ -93,7 +94,7 @@ edit no one can review.** Enforce it mechanically:
 
 - **Every `Glob`/`Grep`/`find` roots at `mercury/` or `docs/mercury/`** — never a bare search from the jonnify
   root. (`Grep` with `path: "mercury"`, `find mercury/… `, `Glob` `mercury/**`.)
-- **The gate uses `pnpm --filter`, never a blind `pnpm -r`** — `-r` walks into the `codemojex-node`
+- **The gate uses `pnpm --filter`, never a blind `pnpm -r`** — `-r` walks into the `codemojex`
   sub-workspace (sometimes-broken) and is the wrong scope.
 - **The commit is a `mercury/…` (and `docs/mercury/…`) pathspec** — re-verify `git diff --cached --name-only`
   is purely Mercury before committing (the §LAW below).
@@ -108,7 +109,7 @@ edit no one can review.** Enforce it mechanically:
 | **The public barrel (the master invariant)** | `mercury/packages/mercury-ui/src/index.ts` |
 | The tokens (the `.mx-*` recipes + `--token` vars) | `mercury/packages/mercury-ui/src/styles/` |
 | State adapters (theme · toast · form · strength · cooldown) | `mercury/packages/mercury-effector/src/` |
-| The composing apps (contract grounding + the `apps/*` build gate) | `mercury/apps/*/src/` + `mercury/codemojex-node/apps/economy/src/` |
+| The composing apps (contract grounding + the `apps/*` build gate) | `mercury/apps/*/src/` + `mercury/codemojex/apps/economy/src/` |
 | The app vite aliases (`@mercury/*` → source) | `mercury/apps/*/vite.config.ts` + `tsconfig` paths |
 | The canon / ladder / dashboard | `docs/mercury/mercury.{design,roadmap,progress}.md` |
 | The contract format note (`D-7` template) | `docs/mercury/contracts.md` |
@@ -118,15 +119,21 @@ edit no one can review.** Enforce it mechanically:
 
 ## What is different from a generic /x-mode run (the Mercury binding)
 
-- **The team is GENERIC and LIGHT.** There are no `mercury-*` role skills. Spawn each peer
-  `subagent_type: "general-purpose"` and adopt its `.claude/agents/<role>.md` charter, mapped to the AAW-light
-  roles (`docs/aaw/aaw.framework.md`):
-  - **the architect / spec-steward** = `venus` — reconciles the triad lag-1 against as-built `mercury/`,
-    authors the build brief, frames forks as four-part Arms (Rationale/5W/Steelman/Steward), and **authors the
-    contract set** (the `<Name>.prompt.md` hypotheses — the method is `aaw.architect-approach.md`). Edits ONLY
-    the spec triad + the co-located contracts.
-  - **the implementor** = `mars` — builds to the brief inside `mercury/packages/*`, cites the spec/source for
-    every public call, invents nothing, runs the gate. Two-pass (build, then harden). Edits code + tests + the
+- **The team is LIGHT, and ROLE-SPECIALIZED on the build legs.** Spawn each peer
+  `subagent_type: "general-purpose"` and adopt its `.claude/agents/<role>.md` charter; on an `mx.*` rung that
+  charter routes the architect + implementor to the **Mercury role skills** (the same way an `emq.*` rung
+  routes to `echo-mq-*`), both standing on the shared floor `.claude/skills/mercury-program.md`. Mapped to the
+  AAW-light roles (`docs/aaw/aaw.framework.md`):
+  - **the architect / spec-steward** = `venus` → **loads `venus-mercury`** — reconciles the triad lag-1 against
+    as-built `mercury/`, authors the build brief, **authors the contract set** (the `<Name>.prompt.md`
+    hypotheses — `aaw.architect-approach.md`), runs the **frontend-design fusion** (divergent look discovery
+    distilled into token/contract proposals) + the **aaw design judge-panel** (variants → consensus →
+    synthesis → an Operator-ruled `tool_x_decision`), and frames forks as four-part Arms
+    (Rationale/5W/Steelman/Steward). Edits ONLY the spec triad + the co-located contracts.
+  - **the implementor** = `mars` → **loads `mars-mercury`** — builds to the brief inside `mercury/packages/*`
+    (the `forwardRef` + `cx` + private `.mx-*` idiom), the **frontend-design taste applied at the interaction
+    level but expressed THROUGH tokens** (never raw hex / one-off app CSS), cites the spec/source for every
+    public call, invents nothing, runs the gate. Two-pass (build, then harden). Edits code + tests + the
     co-located contracts, never the spec body.
   - **the verifier + team mentor** = `apollo` — re-runs the gate, reconciles spec↔code (post), renders
     BUILD-GRADE / BLOCKED. **Mandatory as the in-pipeline verifier only on a high-risk rung** (below); but
@@ -136,7 +143,8 @@ edit no one can review.** Enforce it mechanically:
     peer's self-edit, so Apollo proposes the diff and the Director applies it). On a normal rung that is a
     short, post-ship, read-only mentoring pass — never skipped.
   The peers self-register via `mcp__aaw__agent_register` from their own context (LAW-1; no narrated spawns).
-  The "## The Mercury facts" block below is the pre-loaded context they would otherwise re-derive.
+  The shared floor `.claude/skills/mercury-program.md` (cited by both role skills) is the pre-loaded context
+  they would otherwise re-derive — the `## The Mercury facts` pointer below summarizes it.
 - **Spawn resilience — the write-ready dispatch (x.md §5 LAW-1b).** A spawned peer dies to `ECONNRESET` on a
   long, read-heavy run (files on disk survive; the final report does not). So the Director **pre-grounds** every
   dispatch — front-load the exact signatures, file paths, the import convention, a usage sketch, and the gate
@@ -240,32 +248,16 @@ close gate after building (catches the build drifting from the contract). **Appl
 explicit `apply` ask** — otherwise report and let the architect apply (never edit a spec the same turn you
 judge it). The reconcile mode is a **Duo** (Director + one architect, or direct) — it builds nothing.
 
-## The Mercury facts (the pre-loaded context for the peers)
+## The Mercury facts (now in the shared floor — `.claude/skills/mercury-program.md`)
 
-- **The three packages** (canon `mercury.design.md`): `@mercury/core` (UI-free foundation — headless hooks,
-  the reuse barrel, `cx`/`date`/`types`; **zero JSX**; React a peer; source-consumed) → `@mercury/ui` (the
-  component library, Claude-Design grouped; tokens live here; builds to `dist/`) + `@mercury/effector`
-  (Effector state adapters — theme · toast · `createForm` · strength · cooldown; components stay
-  presentational). Apps resolve all three **from source** via a vite alias + tsconfig `paths` — a package edit
-  is live in dev, no prebuild.
-- **The component library** — **33 components across 9 groups** under
-  `mercury/packages/mercury-ui/src/components/<group>/<Name>/` (each `<Name>.tsx` + `index.ts` + the
-  hand-authored `<Name>.prompt.md`): `actions` (Button · Link) · `foundations` (Icon · Divider) · `inputs`
-  (Input · Textarea · Search · Select · AuthCode) · `selection` (Checkbox · Radio · Switch · Segmented ·
-  Slider · Toggle) · `feedback` (Alert · Progress · PasswordStrength) · `data-display` (Chip · Tag · Badge ·
-  Avatar · Card · Table · Stat · Chart · Checklist) · `navigation` (Tabs · Accordion · Pagination) · `overlay`
-  (Modal · Tooltip) · `layout` (AuthLayout). **NO-INVENT:** ground every component / prop / token in a real
-  `.tsx` or a canon §; forward-tense ("mx.N adds …") for an unshipped surface.
-- **The three Movements** (`mercury.roadmap.md`): **I** — modular foundation & Claude-Design structure
-  (`mx.0` docs ✅, `mx.1` the structural rung ✅ BUILT — `@mercury/core` extracted, `mercury-ui` regrouped,
-  `mercury-ds` deleted). **II** — **the authored contract layer** (`mx.2`: hand-author every component's
-  `<Name>.prompt.md`). **III** — the Design System Storybook (`mx.3` host → `mx.4` component stories → `mx.5`
-  effector stories → `mx.6` build/deploy + design-sync reconcile). Re-sequencing is Operator-ruled.
-- **The decisions** (`mercury.design.md` §7): `D-1` core scope = utils/types/hooks only · `D-2` `mercury-ds`
-  ephemeral → salvaged then deleted · `D-3` core source-consumed, React a peer · `D-7` the hand-authored
-  contract (the 6-section shape) · `D-8` the app/library split ratified (marginal candidates kept internal).
-- **The git posture.** The root is `jonnify`; the Operator pre-stages out-of-band, so the tree is routinely
-  entangled with sibling programs. The rung commit is the rung's **measured surface ONLY**.
+The pre-loaded context the peers would otherwise re-derive lives in the single authority
+**`.claude/skills/mercury-program.md`** (cited by both role skills) — read it at Bootstrap; do not re-derive
+the facts here. It carries: the **three packages** (`@mercury/core` UI-free → `@mercury/ui` components+tokens +
+`@mercury/effector` state; apps consume from source); the **33 components across 9 groups**; the **tokens**
+(the semantic `--token` families + the three font roles); the **three Movements** + the `D-` decisions; the
+**frontend-design valve** (taste → tokens → system); the **aaw ledger** (the `tool_x_*` primitives — `V-n`
+alternatives, `C-n` consensus, `S-n` synthesis, `D-n` decisions, `L-n` learnings); and the **git posture**
+(the Operator pre-stages out-of-band, so the rung commit is the rung's **measured surface ONLY**).
 
 ## 0. Bootstrap (Director, before any spawn)
 
@@ -353,4 +345,4 @@ frontier.
 - The operating manual: `docs/mercury/program/mercury.program.md`.
 - The specs (source of truth): `docs/mercury/specs/<rung>/<rung>.{md,stories.md,llms.md}`.
 - The code (the boundary): `mercury/packages/{mercury-core,mercury-ui,mercury-effector}/` + the composing
-  `mercury/apps/*/` + `mercury/codemojex-node/apps/economy/`.
+  `mercury/apps/*/` + `mercury/codemojex/apps/economy/`.
