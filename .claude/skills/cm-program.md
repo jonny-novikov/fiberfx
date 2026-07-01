@@ -156,3 +156,11 @@ or a design judge-panel opens the ledger.
   Director; the canon is the authority; a deterministic re-grep/probe (the barrel export set, a `curl`/inject, a
   `package.json` read) closes every escalation. Ground every module / route / prop / token / table in a real file
   or a canon § — forward-tense for an unbuilt surface.
+- **Spawn resilience + single-writer (dispatch discipline).** A peer dies to `ECONNRESET` on a long read-heavy
+  run — files on disk survive, the final report does NOT → **write-ready dispatch** (pre-ground the brief so the
+  peer's first actions are writes, split into short waves, `agent_heartbeat` after each file, recover from the
+  on-disk tree — never the lost report; `x.md` §5 LAW-1b). A peer may also **dedup a follow-up message** as a
+  stale echo when it resembles a task it thinks is done ("nothing to do") — restate the NEW content as a **delta**
+  to unstick it. During a multi-actor fold of the SAME file, hold **one writer per file**: the Director assigns
+  the file and HOLDS OFF co-editing, never racing (a concurrent edit is a lost-update / `modified-since-read`
+  collision — recover by restating + reassigning, not by co-editing).
