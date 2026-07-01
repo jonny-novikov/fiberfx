@@ -1,5 +1,14 @@
 # MX.9 · acceptance stories
 
+> **EPIC-LEVEL after the 2026-07-02 split** ([`mx.9.md`](./mx.9.md) is now the SUB-EPIC frame): these stories
+> route to the sub-rungs that realize them — **S-1, S-2 → mx.9.1** · **S-3, S-4 → mx.9.2** · **S-5 → mx.9.3**
+> · **S-6, S-7 → mx.9.4** · **S-8 → mx.9.2** (the toggle mechanism) **+ mx.9.5** (the dual-theme acceptance)
+> · **S-9, S-10 → mx.9.1** (the join/wiring) **+ mx.9.5** (the whole-epic closure re-run). Each sub-rung's own
+> `.stories.md` is the acceptance face at its ship; this file is the epic contract, re-verified whole at the
+> mx.9.5 closer. Where a sentence below disagrees with the reconciled body (the `dev:showcase` ADD · the 11
+> `storybook/test` value-imports + the shim · the lockfile importer posture · the automatic stylesheet · the
+> 65 count), **the body wins**.
+
 Given/When/Then for [`mx.9.md`](./mx.9.md). Each story is in Connextra form, names the deliverable it
 realizes and the invariant(s) it proves, and states concrete, checkable criteria — "done" is a closure over
 these checks, not prose. Authored at **SOLID-FORWARD** grain; re-sharpened at the rung's ship against the

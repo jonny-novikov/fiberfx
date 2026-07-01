@@ -1,5 +1,15 @@
 # MX.9 · build context (the agent brief)
 
+> **EPIC-LEVEL after the 2026-07-02 split** ([`mx.9.md`](./mx.9.md) is now the SUB-EPIC frame): **no agent
+> builds from this file alone** — the build-grade briefs live with the sub-rungs
+> ([`../mx.9.1/mx.9.1.llms.md`](../mx.9.1/mx.9.1.llms.md) · [`../mx.9.2/mx.9.2.llms.md`](../mx.9.2/mx.9.2.llms.md)
+> · [`../mx.9.3/mx.9.3.llms.md`](../mx.9.3/mx.9.3.llms.md) · [`../mx.9.4/mx.9.4.llms.md`](../mx.9.4/mx.9.4.llms.md)
+> · [`../mx.9.5/mx.9.5.llms.md`](../mx.9.5/mx.9.5.llms.md)). The S-n routing: S-1, S-2 → mx.9.1 · S-3, S-4 → mx.9.2 ·
+> S-5 → mx.9.3 · S-6, S-7 → mx.9.4 · S-8 → mx.9.2 (mechanism) + mx.9.5 (acceptance) · S-9, S-10 → mx.9.1
+> (join/wiring) + mx.9.5 (closure re-run). Where a sentence below disagrees with the reconciled body (the
+> `dev:showcase` ADD · the 11 `storybook/test` value-imports + the shim · the lockfile importer posture · the
+> automatic stylesheet · the 65 count), **the body wins**.
+
 Build context for [`mx.9.md`](./mx.9.md) (authoritative body) + [`mx.9.stories.md`](./mx.9.stories.md)
 (acceptance). The body wins on any disagreement; this brief lags it. **SOLID-FORWARD** — re-sharpened at the
 rung's ship against the as-built `@mercury/ui` (mx.7.4 import + mx.8 stories). **NO-INVENT**: every public call

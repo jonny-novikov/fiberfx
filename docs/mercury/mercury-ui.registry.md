@@ -292,14 +292,14 @@ The Surface column above names axes; here is the token language they resolve to 
 
 ---
 
-## 4. `apps/showcase` — the Developer Reference (planned · `mx.9`)
+## 4. `apps/showcase` — the Developer Reference (planned · the `mx.9.1`–`mx.9.5` epic; split 2026-07-02)
 
 The forward target: **one comprehensive showcase application**, a *first-in-class Developer
 Reference* for a broad audience — the place a developer lands to learn the system, browse every
 component live, read its API, and copy a grounded example. It **replaces the retired demo apps**
 and is the public face of `@mercury/ui`.
 
-> **Status — the `mx.7.4` §F foundation was RETIRED (`0a5e59a1`); `apps/showcase/` is NOT in the tree. The full app is `mx.9` (Squad-tier, from-scratch).**
+> **Status — the `mx.7.4` §F foundation was RETIRED (`0a5e59a1`); `apps/showcase/` is NOT in the tree. The full app is the `mx.9.1`–`mx.9.5` epic (Operator-SPLIT 2026-07-02; the Squad-tier verifier mandate lands at the mx.9.5 closer).**
 > The thin mx.7.4 §F scaffold (shell + Overview + an Overlays demo — commit `3d9c90a4`) was intentionally
 > retired; `apps/showcase/` does not currently exist. mx.9 re-founds it from scratch, grounded in the
 > prototype below. The mx.9 spec triad (`docs/mercury/specs/mx.9/`, SOLID-FORWARD) rules the architecture
@@ -310,7 +310,9 @@ and is the public face of `@mercury/ui`.
 > **Pre-build blocker to rule first:** 11 of 65 stories RUNTIME-import `storybook/test` (the `fn`/`play`
 > value imports from mx.8.2 + mx.7.5), so `import.meta.glob`-ing the stories pulls a Storybook runtime into
 > the build — resolve via a `storybook/test`→no-op-shim vite alias (keeps the spec's zero-new-dependency
-> posture). This section is the mx.9 north star, grounded in the prototype it translates.
+> posture). The architecture now lives in the five sub-rung triads (`docs/mercury/specs/mx.9.1/`–`mx.9.5/`,
+> authored 2026-07-02; forks A–E RULED; the shim above is baked into `mx.9.1` and proved live at `mx.9.3`).
+> This section is the mx.9 north star, grounded in the prototype it translates.
 
 ### 4.1 Scaffolded from the `mercury-ds` prototype
 
