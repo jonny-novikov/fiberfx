@@ -28,6 +28,14 @@ fragile, recover from the tree.)
    writes a typed skeleton early, fills it in passes, `agent_heartbeat`s after each file + the gate.
 3. **Recover from the tree, never the message.** When a spawn dies, read the on-disk tree (files survive) —
    never assume zero progress, never trust the lost report.
+4. **Message-dedup + single-writer (the fold corollary).** A follow-up message that RESEMBLES a task the peer
+   believes it finished gets DEDUPED as a stale echo ("nothing to do") — when reassigning, frame the NEW content
+   as a **delta**, not a re-issue, and **restate the decision explicitly** (restating unsticks the dedup). During
+   a multi-actor fold of the SAME file, hold **one writer per file**: the orchestrator assigns the file and HOLDS
+   OFF co-editing — never races (a concurrent edit is a lost-update / `modified-since-read` collision). Recover a
+   stuck peer by restating + reassigning, not by co-editing. (admin.5 Wave-2: venus deduped the rulings-fold as an
+   echo → the Director restated the rulings, venus folded correctly, and the shared-triad collision was avoided by
+   the single-writer hand-off.)
 
 **Why:** the REAL-teammate (aaw Trio) model is correct and Operator-mandated; the deaths were a *process/messaging*
 failure, not a reason to abandon the formation or to let the Director write the code (which would forfeit
@@ -35,7 +43,7 @@ verify-independence). The write-ready dispatch keeps the formation AND survives 
 
 **How to apply:** on any `Agent`-tool spawn for a non-trivial build, pre-ground the dispatch and keep each spawn
 a short wave; recover from the tree on death. Calibrated 2026-06-30 into `x.md` §5 LAW-1b, the
-`.claude/agents/{venus,mars,apollo}.md` charters, and `.claude/skills/mercury-ship/SKILL.md`. **Apollo is now the
+`.claude/agents/{venus,mars,apollo}.md` charters, and `.claude/skills/mercury-ship/SKILL.md`; the **message-dedup + single-writer** corollary folded 2026-07-01 into `.claude/skills/cm-program.md` (Process locks) on admin.5. **Apollo is now the
 team's STANDING mentor** (Operator-directed): it folds craft + contract + **spawn-resilience** findings forward
 into the peer charters every rung (one guardrail per recurring finding, Director-ratified — the harness fences a
 peer's self-edit, so Apollo proposes and the Director applies). See [[apollo-mentoring-loop]]
