@@ -47,7 +47,9 @@ interface GameIslandState {
 // The bridge between the edge-loaded React game and the LiveView socket. The game
 // bundle owns its own React; the host owns the socket. Typing it as Hook<GameIslandState>
 // gives `this` the full HookInterface (el, pushEvent, handleEvent, removeHandleEvent).
-const GameIsland: Hook<GameIslandState> = {
+// Exported for unit tests (the lib build has a single side-effect entry, so a named
+// export changes nothing the browser evaluates — the module still bootstraps on import).
+export const GameIsland: Hook<GameIslandState> = {
   async mounted() {
     const el = this.el;
     const bundle = el.dataset.bundle;
@@ -97,7 +99,7 @@ const GameIsland: Hook<GameIslandState> = {
   },
 };
 
-function safeParse(s: string | undefined): unknown {
+export function safeParse(s: string | undefined): unknown {
   try {
     return JSON.parse(s || "{}");
   } catch {
