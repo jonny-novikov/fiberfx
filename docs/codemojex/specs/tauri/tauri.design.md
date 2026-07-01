@@ -1,7 +1,10 @@
 # codemojex Tauri track — the native desktop shell over the three-tier game
 
-> **Status:** DESIGN v0 (Director scaffold, 2026-07-01). **DESIGN/SPEC ONLY** — no production code is
-> committed from this doc. Grounded **NO-INVENT** against the as-built `echo/apps/codemojex`,
+> **Status:** DESIGN v1 — the scaffold **SHIPPED**. **cmt.1** (shell run-loop) · **cmt.2** (local hot-load
+> wiring) · **cmt.3 Phase A** (Effector channel-state foundation) are **shipped/committed**; the frontier is
+> **cmt.4** (the golden in-progress screen). The **live per-rung ladder is [`./tauri.specs.md`]** — update
+> status there, not here (this canon carries the frame; §4 below is a mirror, re-synced 2026-07-01). Grounded
+> **NO-INVENT** against the as-built `echo/apps/codemojex`,
 > `mercury/codemojex/apps/{game,game-tauri}`, and `node/codemoji-design`; every surface named below is a
 > real file, or is marked **forward-tense**. Canon: [`../../codemojex.design.md`],
 > [`../../codemojex.roadmap.md`], the manual [`../../program/codemojex.program.md`]. The rung index and
@@ -120,17 +123,19 @@ Rungs are thin and provable; this-week = **cmt.1 – cmt.5**. Risk drives format
 
 | Rung | Title | App(s) | Risk | Depends | Status |
 |---|---|---|---|---|---|
-| **cmt.1** | **Shell run-loop** — game-tauri wraps local Phoenix; welcome → lobby → game verified in the native window + dev panel | game-tauri | LOW | — | 📋 near-floor (binary builds; formalize + verify) |
-| **cmt.2** | **Local-bundle dev wiring** — Phoenix serves the LOCAL game bundle (not the edge pointer); a scripted, documented dev env | codemojex (+ game) | LOW–MED | cmt.1, **F2** | 📋 forward |
-| **cmt.3** | **DS foundation in the island** — Tailwind v4 + token theme + `gold.png` + `cn` + i18n init in the game's Vite build; the ESM bundle still builds; a smoke render | game (+ codemoji-design) | MED | cmt.2, **F1** | 📋 forward |
-| **cmt.4** | **The real screen (in-progress)** — port `GoldenInProgressScreen`; map live `GameProps` → golden props; replace the `GameEdge` UI | game | MED–HIGH | cmt.3, **F3** | 📋 forward |
+| **cmt.1** | **Shell run-loop** — game-tauri wraps local Phoenix; welcome → lobby → game verified in the native window + dev panel | game-tauri | LOW | — | ✅ **shipped** (2026-07-01) |
+| **cmt.2** | **Local hot-load wiring** — the `GAME_DEV_URL` override + `bin/dev-local.sh` (GameLive imports the game from the Vite dev server / HMR, not the edge pointer) | codemojex (+ game) | LOW–MED | cmt.1, **F2✓** | ✅ **shipped** (2026-07-01) |
+| **cmt.3** | **Effector Phoenix-channel state foundation** — `@mercury/effector` `createChannel` + game `channel/{model,PhoenixGame}` driving `GameEdge` from `$props`; the `RoomChannel` twin (**D4**) + the Arm-B flip (**Phase B**) deferred to `/codemojex-ship` | game (+ additive `@mercury/effector`, + echo/ `RoomChannel`) | MED–HIGH | cmt.2, **F1✓** | ✅ **shipped Phase A** ([`./cmt.3.md`]) |
+| **cmt.4** | **The real screen (in-progress)** — **Tailwind v4 + golden tokens** (deferred here from cmt.3) + native `GoldenInProgressScreen` on the cmt.3 state layer; map live `GameProps` → golden props, replacing the plain `GameEdge` UI | game | MED–HIGH | cmt.3, **F3** | 📋 **frontier** (Venus carves the triad at ship) |
 | **cmt.5** | **The real screen (finished) + events** — `GoldenFinishedScreen` + `GoldenAnswerReveal` on settle; wire `guess_rejected`/`revealed`/`golden_win` + `submit_guess` | game | MED | cmt.4 | 📋 forward |
 | cmt.6 | **Tier-1/2 fidelity** — welcome + lobby polish in the desktop window | codemojex | LOW–MED | cmt.5 | later |
 | cmt.7 | **Dev-panel as product** — the event panel integrated + `export_events` via Tauri IPC; privileged runtime taps | game-tauri | MED | cmt.1 | later |
 | cmt.8 | **Distributable** — prod build/sign/installers; `check_origin` allowlist for the Tauri origin; the edge/pointer story | game-tauri (+ codemojex) | MED–HIGH | cmt.5 | later |
 
-**Build order:** cmt.1 → cmt.2 → cmt.3 → cmt.4 → cmt.5 → (cmt.6/cmt.7/cmt.8). cmt.3+ are gated on the
-Operator ruling **F1**; cmt.4 on **F3**.
+**Build order:** cmt.1 → cmt.2 → cmt.3 → cmt.4 → cmt.5 → (cmt.6/cmt.7/cmt.8). **cmt.1 · cmt.2 · cmt.3 Phase A
+are shipped** (F1 + F2 ruled closed — see §5); the frontier is **cmt.4**, gated on **F3** (the golden data gap).
+cmt.3's **D4 (`RoomChannel` twin) + Phase B (the Arm-B `mount`→`PhoenixGame` flip)** are deferred to
+`/codemojex-ship` (an echo/ change + a live round-trip proof, Operator-observed).
 
 ## 5. Open decisions for the Operator (frame only — the Director rules via `AskUserQuestion`)
 
