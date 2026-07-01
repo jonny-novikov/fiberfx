@@ -19,9 +19,9 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { connect } from "node:net";
 import type { FastifyInstance } from "fastify";
-import { buildServer } from "../src/server.js";
-import type { Env } from "../src/env.js";
-import { GameSummary } from "../src/schemas.js";
+import { buildServer } from "../src/server";
+import type { Env } from "../src/env";
+import { GameSummary } from "../src/schemas";
 
 const testEnv: Env = {
   port: 0,

@@ -2,8 +2,8 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { ok, err, type Result, type Static } from "@echo/core";
 import { db, rooms, games, type RoomId } from "@codemojex/db";
 import { eq, desc } from "drizzle-orm";
-import * as S from "../schemas.js";
-import { send, notFound, type ApiError } from "../reply.js";
+import * as S from "../schemas";
+import { send, notFound, type ApiError } from "../reply";
 
 const roomSummaryCols = {
   id: rooms.id,

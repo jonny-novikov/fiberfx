@@ -9,9 +9,9 @@
  */
 import { runCluster } from "@echo/cluster";
 import type { FastifyInstance } from "fastify";
-import type { Env } from "./env.js";
-import { loadEnv } from "./env.js";
-import { buildServer } from "./server.js";
+import type { Env } from "./env";
+import { loadEnv } from "./env";
+import { buildServer } from "./server";
 
 const port = Number(process.env.PORT ?? 3000);
 const workersRaw = Number(process.env.WORKERS ?? 0);

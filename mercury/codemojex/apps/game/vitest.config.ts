@@ -12,7 +12,15 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": r("./src") },
+    // Mirror the bundler alias so the model test resolves `@mercury/effector` from source
+    // (the game carries no `@mercury/*` node_modules entry — it is self-contained).
+    alias: {
+      "@": r("./src"),
+      "@mercury/effector": r("../../../packages/mercury-effector/src/index.ts"),
+    },
+    // Single Effector copy across the aliased channel plug and the island's own model —
+    // otherwise `sample` cannot connect units minted by two physical installs.
+    dedupe: ["effector", "effector-react"],
   },
   test: {
     environment: "jsdom",

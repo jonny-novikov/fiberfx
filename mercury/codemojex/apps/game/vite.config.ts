@@ -17,7 +17,19 @@ const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": r("./src") },
+    // `@mercury/effector` resolves from SOURCE (the economy precedent) — the game is a
+    // self-contained pnpm workspace (excluded from mercury/'s), so it carries no
+    // `@mercury/*` node_modules entry; the alias is the only resolution path. THREE `../`
+    // reach mercury/packages (game sits at mercury/codemojex/apps/game).
+    alias: {
+      "@": r("./src"),
+      "@mercury/effector": r("../../../packages/mercury-effector/src/index.ts"),
+    },
+    // The aliased `channel.ts` lives under mercury/packages while the island's own
+    // `model.ts` imports `effector` directly — dedupe forces both to the game's single
+    // copy so the Effector graph (sample over shared units) does not split across two
+    // physical installs.
+    dedupe: ["effector", "effector-react"],
   },
   build: {
     outDir: r("../../../../echo/apps/codemojex/priv/static/game"),
