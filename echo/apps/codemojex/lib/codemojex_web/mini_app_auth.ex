@@ -21,6 +21,9 @@ defmodule CodemojexWeb.MiniAppAuth do
   @behaviour Plug
   @max_age_seconds 86_400
 
+  # A fixed, obviously-fake Telegram uid for the dev-bypass player (see maybe_dev_bypass/1).
+  @dev_tg_uid 999_000_001
+
   @impl true
   def init(opts), do: opts
 
@@ -28,7 +31,7 @@ defmodule CodemojexWeb.MiniAppAuth do
   def call(conn, _opts) do
     case resolve_existing(conn) do
       {:ok, plr} -> assign(conn, :player, plr)
-      :none -> handshake_from_cookie(conn)
+      :none -> conn |> handshake_from_cookie() |> maybe_dev_bypass()
     end
   end
 
@@ -59,6 +62,26 @@ defmodule CodemojexWeb.MiniAppAuth do
       |> assign(:player, plr)
     else
       _ -> assign(conn, :player, nil)
+    end
+  end
+
+  # Dev-only: when the real handshake yields no player and `:dev_auth_bypass` is enabled
+  # (set ONLY in dev.exs — never prod/runtime), mint a session for a fixed local "dev"
+  # player so the LiveView lobby/game is reachable from a plain browser with no Telegram
+  # initData. Same single-writer mint as the real path, minus the initData verification, so
+  # it needs no bot token (works on a tokenless local boot). Off by default in every env.
+  defp maybe_dev_bypass(%{assigns: %{player: player}} = conn) when not is_nil(player), do: conn
+
+  defp maybe_dev_bypass(conn) do
+    if Application.get_env(:codemojex, :dev_auth_bypass, false) do
+      with {:ok, plr} <- Codemojex.resolve_player_by_tg(@dev_tg_uid, name: "dev"),
+           {:ok, ses} <- Codemojex.Session.mint(plr, "telegram", %{"tg_user_id" => @dev_tg_uid}) do
+        conn |> put_session("ses", ses) |> assign(:player, plr)
+      else
+        _ -> conn
+      end
+    else
+      conn
     end
   end
 

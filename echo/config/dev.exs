@@ -15,6 +15,11 @@ config :codemojex, Codemojex.Repo,
   pool_size: 10,
   show_sensitive_data_on_connection_error: true
 
+# Dev-only auth bypass: let a plain browser (no Telegram initData) reach the LiveView
+# lobby/game. When on, CodemojexWeb.MiniAppAuth mints a session for a fixed local "dev"
+# player. NEVER set in prod — prod.exs/runtime.exs keep the real signed-initData gate.
+config :codemojex, dev_auth_bypass: true
+
 config :codemojex, CodemojexWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4000],
   # Dev convenience: accept WebSocket connections regardless of Origin host, so the
