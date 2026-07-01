@@ -18,7 +18,7 @@ Roadmap: [`admin.roadmap.md`](./admin.roadmap.md) · Approach: [`../../../aaw/aa
 | [admin.5](./admin.5.md) | **the dashboard Shell — BUILT** | the `@codemojex/dashboard` SPA skeleton (Vite + React, composing `@mercury/ui` + `@mercury/effector`): an operator shell layout, the Bearer-gated admin API client, and ONE end-to-end DB view (games), on a two-clock data seam (HTTP now, effector `channel` later) |
 | [admin.5.1](./admin.5.1.md) | **rooms + players list desks — BUILT** | the two remaining list views over the Shell (`@mercury/ui` `Table`), client-side search + pagination — the read plane's full browser surface; frontend-only, no open fork |
 | [admin.5.2](./admin.5.2.md) | **master-detail — BUILT** | room / player detail (`GET /:id`) on a selected-id + keyed-detail seam (selection-filtered), rendered in a side pane beside the narrowed list (ruled Arm C) — the seam admin.5.3 extends |
-| admin.5.3 | the live game path | room → game → the embedded `@codemojex/game` live view, split game / events; subsumes the old live-pubsub slot — forks (embed / spectator bridge / split) in [`admin.5.desks.design.md`](./admin.5.desks.design.md) |
+| [admin.5.3](./admin.5.3.md) | **the live game path — INTERIM BUILT** | room → game → a near-live spectator view (polled `GET /games/:id`, side-by-side game / events split); the true island-mount + engine spectator topic remain the later `/codemojex-ship` live-upgrade fork (D-6 phased) |
 | admin.5.4 | PROPOSED forward slot | undescribed by the Operator; two candidates sketched (cross-desk observability · operator actions) — needs confirmation |
 
 **Two tracks.** Milestone A (admin.1–4) is the **backend** control plane — the gated Fastify read plane and its

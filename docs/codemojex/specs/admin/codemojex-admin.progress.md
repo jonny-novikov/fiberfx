@@ -174,6 +174,49 @@ sibling work EXCLUDED. NEXT: `/cm-ship admin.5.3` (the live game path, node-only
 by venus-cm from the D-6 phased ruling; its keyed `$gameDetail` + POLL seam must reuse the [[L-2]] filtered-sample
 guard) · the prod `@fastify/static` serve (standing follow-up). [[P-6]] [[P-7]] [[D-6]] [[L-2]]
 
+### P-9
+
+admin.5.3 (the live game path — room → game → the near-live spectator view; the D-6 PHASED ruling's NODE-ONLY
+INTERIM) AUTHORED + BUILT + gate GREEN via `/cm-ship` — a **Trio** (venus-cm triad author + Director gate +
+mars-cm build), the first admin rung whose triad was authored IN the ship run (P-6 prescribed it). **The
+authoring leg** ran CONCURRENTLY with the admin.5.2 harden (docs-only, file-disjoint, single-writer held):
+venus-cm authored `admin.5.3.{md,stories.md,llms.md}` from the ruled design entry
+(`admin.5.desks.design.md` § 5.3 — F1→Arm C re-render interim · F2→Arm C poll interim · F3→Arm A side-by-side;
+the island-mount + engine `game:spectate:<id>` topic stay a LATER `/codemojex-ship` fork), six gates +
+`mcp__msh__specs` clean, four defaults pinned (POLL_MS 5000 · the spectator view REPLACES the master-detail
+body at desk width · `$health` fans the game effect's done/fail ONLY — a loading flip would strobe the topbar
+at poll cadence · back = a `Button` firing `gameDeselected()`), no open fork. **The Director gate then folded a
+pre-build delta** (a resumed venus pass, announced as a DELTA to defeat msg-dedup): D1's `.on(doneData)` shape —
+authored before [[L-2]] existed — was upgraded to the L-2 selection-filtered `sample` BEFORE the build (with a
+poll, in-flight multiplicity makes the stale-reply race the COMMON case), and the two "re-confirm at build"
+hedges were retired against the shipped 5.2 surface (`roomDeselected` · the 860px breakpoint, not the 960px
+contingency). **The build** (write-ready dispatch; all under `apps/dashboard/`): EDIT `src/types.ts`
+(`BoardEntry`/`GameGuessItem`/`GameDetail`) · EDIT `src/api/client.ts` (the keyed game seam: `gameSelected`/
+`gameDeselected`; `$selectedGameId` + `$gameDetail` BOTH reset on `gameDeselected` AND `roomDeselected` — the
+desk-switch clear rides the 5.2 chain, **zero App.tsx edit**; the L-2 done-guard; the poll seam `gamePollTicked`
++ a null-guarded `sample` with an `(id): id is string` predicate; `$health` done/fail only) · EDIT
+`RoomDetailPane.tsx` (the Watch `Column.render` cell) · NEW `views/GameSpectatorView.tsx` (ONE `[]`-dep
+`useEffect` interval at `POLL_MS = 5000`, `clearInterval` cleanup = the structural stop, INV6; back button
+reachable during first load; the split: summary `DataList` + `Stat` pair + status `Badge` + the
+score-descending board `Table` | the guesses feed newest-first as `ListRow`s with the defensive `guessWhen`;
+**both sorts COPY first** — `[...board].sort` / `[...guesses].sort` — no in-place mutation of store state) ·
+EDIT `RoomsView.tsx` (while `$selectedGameId` non-null the spectator replaces the whole `dsh-md` body; the
+early return sits AFTER all hooks) · EDIT `dashboard.css` (`dsh-watch__*` head + `3fr/2fr` split grid; the
+stacked fallback in the existing 860px block; tokens only). **Director verify: ZERO findings** (the L-2 guard
+was specced in pre-build — the harden wave collapsed, the P-7 precedent): independent gates green (typecheck 0 ·
+build 252.18 kB / gzip 81.50 · the Bearer/secret + fetch-in-view + single-poll-owner + no-raw-hex greps all 0,
+every run anchored `cd mercury/codemojex` per the L-2 corollary); probes HELD (copy-before-sort · one-interval
+lifecycle · rules-of-hooks · `getRowKey` uniqueness per board row). Net-zero mutation kill: `getRowKey={(r) =>
+r.missing}` → `TS2322 (r) => unknown not assignable to (row, index) => string | number` → reverted, green.
+Attribution: 6 dashboard files ONLY (the concurrent `apps/game/*` hotswap track excluded per the pre-spawn
+baseline; that track's earlier fallout was committed out-of-band at `1c99cfa6`). Liveness: the interim spectator
+is served-pending a standing admin service (the [[P-4]] posture); the LIVE upgrade `sample`s the engine channel
+into the SAME `$gameDetail` store and retires the poll — no view rewrite. NEXT: **the desk ladder's build track
+is CLOSED through 5.3-interim** — remaining: admin.5.4 (observability, ruled 5.4-a — needs its triad) · the
+5.3 live-upgrade (`/codemojex-ship`: the engine spectator topic + the island-mount) · the prod
+`@fastify/static` serve (standing follow-up) · admin.2–4 (the backend desks). [[P-6]] [[P-7]] [[P-8]] [[D-6]]
+[[L-2]]
+
 ## {codemojex-admin-learnings} Learnings
 
 ### L-2

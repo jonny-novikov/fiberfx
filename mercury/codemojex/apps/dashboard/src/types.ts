@@ -71,3 +71,27 @@ export interface PlayerDetail {
   guesses: GuessDetail[];
   ledger: unknown[];
 }
+
+// The game-detail shapes (admin.5.3-D2) — grounded in @codemojex/admin
+// src/schemas.ts (GameDetail / BoardEntry / GuessSummary, admin.1). The wire
+// serializer lists only the public read-plane columns, so every declared field
+// below is public by contract; no privileged field is declared (admin.5.3-INV2).
+export interface BoardEntry {
+  player: string; // PLR branded id
+  score: number;
+}
+
+export interface GameGuessItem {
+  id: string; // GES branded id
+  gameId?: string;
+  playerId?: string;
+  points: number;
+  atMs?: number | null; // epoch ms — untyped at the wire, rendered defensively
+  insertedAt: string; // ISO
+}
+
+export interface GameDetail {
+  game: GameSummary;
+  board: BoardEntry[];
+  guesses: GameGuessItem[];
+}

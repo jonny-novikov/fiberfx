@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useUnit } from "effector-react";
 import { Button, Card, Pagination, Search, Table, Tabs } from "@mercury/ui";
 import type { Column } from "@mercury/ui";
-import { $rooms, roomSelected, roomsRequested } from "@/api/client";
+import { $rooms, $selectedGameId, roomSelected, roomsRequested } from "@/api/client";
 import type { RoomSummary } from "@/types";
 import { usePagedList } from "@/lib/usePagedList";
+import { GameSpectatorView } from "@/views/GameSpectatorView";
 import { RoomDetailPane } from "@/views/RoomDetailPane";
 
 // A precise RoomSummary interface does NOT satisfy `Record<string, unknown>`
@@ -66,6 +67,7 @@ const matchRoom = (r: RoomSummary, q: string) =>
 
 export function RoomsView() {
   const rooms = useUnit($rooms); // the store is the seam — no fetch in the view
+  const watchedGameId = useUnit($selectedGameId);
   const [status, setStatus] = useState<Filter>("all");
 
   // Fire the one mount request; the raw network call stays confined to api/client.ts.
@@ -81,6 +83,14 @@ export function RoomsView() {
 
   const list = usePagedList(byStatus, matchRoom, status);
   const rows = list.paged.map(toRow);
+
+  // While a game is selected the spectator view replaces the whole master-detail
+  // body — the side-by-side split takes the desk's width (admin.5.3-D4); a
+  // deselect (back / room deselect / desk switch, chained through the client
+  // resets) restores the list + pane below.
+  if (watchedGameId !== null) {
+    return <GameSpectatorView />;
+  }
 
   // The master-detail layout (admin.5.2-D5): the narrowed list region beside the
   // side detail pane, app-local dsh-md* chrome.

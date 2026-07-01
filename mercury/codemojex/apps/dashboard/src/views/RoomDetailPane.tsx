@@ -1,7 +1,7 @@
 import { useUnit } from "effector-react";
-import { Badge, Card, DataList, ScrollArea, Spinner, Table } from "@mercury/ui";
+import { Badge, Button, Card, DataList, ScrollArea, Spinner, Table } from "@mercury/ui";
 import type { Column } from "@mercury/ui";
-import { $roomDetail, $selectedRoomId, fetchRoomDetailFx } from "@/api/client";
+import { $roomDetail, $selectedRoomId, fetchRoomDetailFx, gameSelected } from "@/api/client";
 import type { RoomGameItem } from "@/types";
 
 // The local Record-extending display row — the GamesView precedent (a precise
@@ -17,7 +17,9 @@ interface RoomGameRow extends Record<string, unknown> {
 }
 
 // Public read-plane columns only (admin.5.2-INV2) — the room's games carry no
-// privileged field on the detail wire.
+// privileged field on the detail wire. The room -> game navigation rides a
+// Column.render action cell (admin.5.3-D4) — Table carries no row-click prop,
+// so the barrel is untouched.
 const GAME_COLUMNS: Column<RoomGameRow>[] = [
   { key: "id", label: "Game" },
   { key: "status", label: "Status" },
@@ -25,6 +27,15 @@ const GAME_COLUMNS: Column<RoomGameRow>[] = [
   { key: "prizePool", label: "Prize", align: "right" },
   { key: "ends", label: "Ends", align: "right" },
   { key: "created", label: "Created", align: "right" },
+  {
+    key: "watch",
+    label: "",
+    render: (g) => (
+      <Button size="sm" variant="ghost" onClick={() => gameSelected(g.id)}>
+        Watch
+      </Button>
+    ),
+  },
 ];
 
 function toGameRow(g: RoomGameItem): RoomGameRow {

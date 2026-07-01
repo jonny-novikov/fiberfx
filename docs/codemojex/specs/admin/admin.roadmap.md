@@ -156,7 +156,22 @@ design system it composes is mature. Two shipped foundations carry it:
   [`admin.5.2.stories.md`](./admin.5.2.stories.md) · [`admin.5.2.llms.md`](./admin.5.2.llms.md); the arms are kept
   as decision-context in [`admin.5.desks.design.md`](./admin.5.desks.design.md) (admin.5.2-F1).
 
-### admin.5.3 · the live game path — room → game → the game view — RULED PHASED (interim now / live later)
+### admin.5.3 · the live game path — room → game → the game view — INTERIM BUILT ✓ (node-only; the live upgrade stays a later `/codemojex-ship` fork)
+- **Built (the ruled interim).** The room → game path at `mercury/codemojex/apps/dashboard/src/`: a Watch
+  `Column.render` cell on the `RoomDetailPane` games table fires `gameSelected(id)` into the keyed
+  `fetchGameDetailFx` → `$gameDetail` seam (`api/client.ts`), guarded by the L-2 **selection-filtered
+  `sample`** (a late reply for a superseded/cleared game is dropped; a current-id poll reply passes) and reset
+  on `gameDeselected` AND `roomDeselected` (a game selection never outlives its room — desk switch clears
+  through the 5.2 chain, no App.tsx edit). `GameSpectatorView` (NEW) renders the side-by-side game | events
+  split (F3→A): summary `DataList`/`Stat` + status `Badge` + the score-descending board `Table` beside the
+  guesses feed newest-first (`ListRow`s, defensive `atMs`); ONE `useEffect` interval fires `gamePollTicked()`
+  every `POLL_MS = 5000` through a null-guarded `sample`, cleared on unmount (back / deselect / desk switch =
+  the structural stop, INV6); `$health` fans in the game effect's `done`/`fail` only (no poll strobe). The
+  split takes the rooms desk's width while watching; the stacked fallback lives in the 860px block; tokens
+  only. `typecheck` + `build` green (bundle 252 kB / gzip 81.5 kB); the barrel untouched; the secret /
+  `fetch`-in-view / single-poll-owner greps read 0. Via `/cm-ship` (Trio: venus-cm triad + Director gate/L-2
+  pre-build fold + mars-cm build; zero verify findings). The **live upgrade** (island-mount + the engine
+  `game:spectate:<id>` topic) swaps into the SAME `$gameDetail` store later — a `/codemojex-ship` fork.
 - **Ships (interim, node-only).** The critical navigational path — room → game → the game view — as a spectator
   board **re-rendered** from the shipped `GET /games/:id` (board + guesses) via `@mercury/ui` + a poll for
   near-live, on a **side-by-side split** (game | events/guesses), the room→game nav extending admin.5.2's
