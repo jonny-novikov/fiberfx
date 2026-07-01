@@ -98,7 +98,10 @@ round-trips). Three JS/TS layers land additively (a generic `createChannel` Effe
 - **cmt.3-D4 — the echo/ `RoomChannel` twin.** `room_channel.ex.diff` applied (the 48-line thin channel →
   the 109-line `GameLive` twin) — `Codemojex.submit`/`lock`/`unlock`, `game_props`/`named`/`player_name`
   copied from `GameLive`, `push_props` → `game:update`. Committed as a **separate echo/ concern** by the
-  Director.
+  Director. **Preserved reference** (the prototype's authored twin + diff, relocated here before
+  `mercury/docs/game-effector/` is deleted): [`./cmt.3-D4.room_channel.ex`] (the 109-line twin) +
+  [`./cmt.3-D4.room_channel.ex.diff`]. The as-built `room_channel.ex` is the 48-line thin original
+  (`2248ea6d`) until `/codemojex-ship` applies this.
 - **cmt.3-D5 — the live proof, then the Arm-B flip.** Phase A: mount `PhoenixGame` (a second/flagged path)
   and **prove the round-trip live** in the shell. Phase B (post-proof): the default-`mount` flip + the
   `GameLive` slim to the page host; the channel is THE transport.
