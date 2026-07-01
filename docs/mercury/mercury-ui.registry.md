@@ -13,7 +13,7 @@ its co-located contract (`<Name>.prompt.md`) and its stories (`<Name>.stories.ts
 
 > **Grounding (as-built 2026-07-01).** Every **shipped** row below is verified present on disk —
 > `mercury/packages/mercury-ui/src/components/<group>/<Name>/` carries `<Name>.tsx`,
-> `<Name>.stories.tsx`, `<Name>.prompt.md`, and `index.ts` for all 61. Story names are read from the
+> `<Name>.stories.tsx`, `<Name>.prompt.md`, and `index.ts` for all 65. Story names are read from the
 > `.stories.tsx` exports; prop axes from the `.tsx` source. **Pending** rows are forward-tense from
 > the roadmap (`mx.7.3.3` only — `mx.7.4`+`mx.7.5` have since shipped) — they name a planned surface, not a shipped one.
 
@@ -23,10 +23,10 @@ its co-located contract (`<Name>.prompt.md`) and its stories (`<Name>.stories.ts
 
 | | Count |
 |---|---|
-| **Shipped components** | **61**, across **9 groups** — each with `.tsx` + `.stories.tsx` + `.prompt.md` + `index.ts` |
-| **Storybook coverage** | **61 / 61** — every component has a co-located CSF3 story file (a `Playground` + variant/usage stories) |
-| **Contract coverage** | **61 / 61** — every component carries a hand-authored `<Name>.prompt.md` (the `D-7` six-section shape) |
-| **Pending (planned)** | **+5 rows** — `mx.7.3.3` (4 selection composites + `ToggleGroup` + a `Textarea` enrichment fold) |
+| **Shipped components** | **65**, across **9 groups** — each with `.tsx` + `.stories.tsx` + `.prompt.md` + `index.ts` |
+| **Storybook coverage** | **65 / 65** — every component has a co-located CSF3 story file (a `Playground` + variant/usage stories) |
+| **Contract coverage** | **65 / 65** — every component carries a hand-authored `<Name>.prompt.md` (the `D-7` six-section shape) |
+| **Pending (planned)** | **none** — the **mx.7 import epic is COMPLETE** (`mx.7.3.3` shipped 2026-07-01: +4 selection composites + the `Textarea`(+`size`)/`ToggleGroup`(+`accent`/group-`disabled`) folds) |
 | **Public surface** | every component exports from the `@mercury/ui` barrel — `import { <Name> } from "@mercury/ui"` |
 
 The export surface only ever **grows** (the master invariant — additions OK; removals/renames are a
@@ -200,7 +200,11 @@ Colour shows through the **accent ramp** — `accent="iris | indigo | green | or
 | `Switch` | on/off states — *Playground · States* | *Playground only* |
 | `Segmented` | `size` · rail switch — *Playground · Sizes* | *RailSwitch* |
 | `Slider` | `size` · calibration — *Playground · Sizes* | *Calibration* |
-| `Toggle` | `size` · icon · group — *Playground · Sizes* | *WithIcon · Group* |
+| `Toggle` | `size` · icon · group (`ToggleGroup` ✦ +`accent`/group-`disabled`) — *Playground · Sizes · AccentGroup* | *WithIcon · Group* |
+| `CheckboxGroup` ✦ | composes live `Checkbox` · multi-select · `accent` (6-ramp, at the group) · `orientation` — *Playground · States* | *States* |
+| `CheckboxCards` ✦ | composes live `Checkbox` in a card shell · `columns`/`size`/`icon`/`description` · multi-select · `accent` — *Playground · States* | *States* |
+| `RadioGroup` ✦ | composes live `Radio` · single-select · `accent` (6-ramp, at the group) · `orientation`/`name` — *Playground · States* | *States* |
+| `RadioCards` ✦ | composes live `Radio` in a card shell · single-select · `columns`/`size`/`icon` · `accent` — *Playground · States* | *States* |
 
 ### `data-display`
 | Component | Surface — variants · colors · actions | Usage stories |
@@ -295,14 +299,18 @@ Reference* for a broad audience — the place a developer lands to learn the sys
 component live, read its API, and copy a grounded example. It **replaces the retired demo apps**
 and is the public face of `@mercury/ui`.
 
-> **Status — FOUNDATION SHIPPED (`mx.7.4` §F, 2026-07-01) · full Reference PLANNED (`mx.9`, Squad-tier).**
-> `apps/showcase/` is scaffolded: the shell (sidebar · topbar with a theme toggle wired to the
-> `@mercury/effector` theme adapter · source-resolving `@mercury/*` like the other apps) + an
-> **Overview** page + an **Overlays** live demo driving the mx.7.4 `Dialog`/`AlertDialog`/`Popover`
-> through the disclosure bridge (the two modals stack + lock body scroll; the non-modal `Popover` does
-> not). The full per-component Developer Reference (the Components · Foundations · Patterns routes
-> below) remains the `mx.9` scope.
-> This section is the build brief's north star, grounded in the prototype it is scaffolded from.
+> **Status — the `mx.7.4` §F foundation was RETIRED (`0a5e59a1`); `apps/showcase/` is NOT in the tree. The full app is `mx.9` (Squad-tier, from-scratch).**
+> The thin mx.7.4 §F scaffold (shell + Overview + an Overlays demo — commit `3d9c90a4`) was intentionally
+> retired; `apps/showcase/` does not currently exist. mx.9 re-founds it from scratch, grounded in the
+> prototype below. The mx.9 spec triad (`docs/mercury/specs/mx.9/`, SOLID-FORWARD) rules the architecture
+> as Operator forks: **a conventional vite/React app resolving `@mercury/*` from source via the alias —
+> NOT the bundle's `loader.js` in-browser `@babel/standalone` transpiler (Fork C→B); a registry DERIVED
+> by glob over the real `@mercury/ui` tree, not the bundle `registry.ts` (INV-6); MVP-first — the
+> component-browser spine serves all five surfaces as cuts of the one contract + stories source (Fork A)**.
+> **Pre-build blocker to rule first:** 11 of 65 stories RUNTIME-import `storybook/test` (the `fn`/`play`
+> value imports from mx.8.2 + mx.7.5), so `import.meta.glob`-ing the stories pulls a Storybook runtime into
+> the build — resolve via a `storybook/test`→no-op-shim vite alias (keeps the spec's zero-new-dependency
+> posture). This section is the mx.9 north star, grounded in the prototype it translates.
 
 ### 4.1 Scaffolded from the `mercury-ds` prototype
 
