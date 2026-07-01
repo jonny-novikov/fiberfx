@@ -11,7 +11,7 @@ Three tiers, two homes:
 | Tier | Asset | Built in | Committed to git? | Changes |
 |---|---|---|---|---|
 | **phoenix\*** (ship-with) | `phoenix.js` · `phoenix_live_view.js` | Mercury (build **once**) | **yes** → `echo/apps/codemojex/priv/static/assets/` | rarely (lib bump) |
-| **host** (boot) | `app.js` (trivial init) · `app.css` | hand-authored (no bundle) | **yes** → same dir | rarely |
+| **host** (boot) | `app.js` (typed init) · `app.css` | Mercury (`app.js` TS-built) · css hand-authored | **yes** → same dir | rarely |
 | **game** (dynamic load) | `game-<hash>.js` | Mercury | **no** → pushed to Tigris, **pulled** by Phoenix | often (every iteration) |
 
 The Operator's intent, decoded and confirmed by the reconcile (§0):
@@ -39,7 +39,7 @@ committed in `priv/static/` (so the app still serves), but every config that reb
 | # | Claim / surface | Cite | Class | Correction |
 |---|---|---|---|---|
 | R1 | game island outDir `../priv/static/game` | `mercury/codemojex/apps/game/vite.config.ts:21` | **STALE** | from the new home resolves to `mercury/codemojex/apps/priv/...`; retarget to the absolute echo path via the existing `r()` helper |
-| R2 | host build `input:"js/app.js"`, `outDir:"../priv/static/assets"`, IIFE | `mercury/codemojex/apps/game/vite.client.config.ts:9,13` | **STALE → RETIRE** | both paths broken from the new home; the new design serves `app.js` raw (no bundle) — retire this config |
+| R2 | host build `input:"js/app.js"`, `outDir:"../priv/static/assets"`, IIFE | `mercury/codemojex/apps/game/vite.client.config.ts:9,13` | **STALE → RETIRE** | both paths broken from the new home; `app.js` is now a typed, vite-built module in mercury (§2, §4b) — retire this IIFE config |
 | R3 | `phoenix_live_view` vite emits `fileName:()=>"phoenix.js"`, no `external` | `mercury/packages/phoenix_live_view/vite.config.ts:18` | **BUG** | name collision with phoenix.js; must emit `phoenix_live_view.js` **and** externalize `phoenix` |
 | R4 | phoenix vite emits `phoenix.js`, no outDir (→ `dist/`), no external | `mercury/packages/phoenix/vite.config.ts:18` | **MATCH** (phoenix has zero deps) | leave the lib config; the orchestration script copies `dist/phoenix.js` → echo |
 | R5 | LV imports `phoenix` **type-only**; `morphdom` real | `phoenix_live_view/src/live_socket.ts:1`, `dom_patch.ts:27` | **MATCH** (informs R3) | externalize `phoenix` (defensive + correct); **bundle** morphdom |
@@ -135,13 +135,22 @@ today — no new machinery. (Content-hashing is the §6 minor fork; fixed-name i
 
 ## 2. The `app.js` boot refactor (player UX is the goal)
 
-`app.js` keeps its **canonical source** at `echo/apps/codemojex/assets/js/app.js` (plain ESM, no
-TS/JSX). It is no longer bundled — it is the Operator's "trivial initialization": it imports phoenix +
-phoenix_live_view (resolved by the import map), defines the `EdgeReact` hook, and boots `LiveSocket`.
-**The body of `app.js` does not change** — only how it is delivered:
+> **Update (2026-07-01):** the boot's source moved to **TypeScript** at
+> `mercury/codemojex/apps/liveview-boot/src/app.ts`, now **typechecked (`tsc --noEmit`) and
+> vite-built** (lib mode, phoenix externalized) — the same reuse model as the game island and the
+> same ship-with delivery as phoenix\*. `echo/apps/codemojex/assets/js/` is removed. The description
+> below is kept for intent; the "copied raw" mechanics are superseded by §4b's typecheck+build step.
 
-- It is **copied raw** (no transpile) into `priv/static/assets/app.js` by the build script (§4b),
-  replacing the 137 KB IIFE with the ~2.4 KB module.
+`app.js` is the Operator's "trivial initialization": it imports phoenix + phoenix_live_view (by their
+bare specifiers, resolved by the import map), defines the `EdgeReact` hook, and boots `LiveSocket`.
+Its **canonical source** is the typed `mercury/codemojex/apps/liveview-boot/src/app.ts`, authored
+against the typed `@echo/phoenix*` packages — so the hook contract is compile-checked (the migration
+caught a real teardown bug: `handleEvent` returns a `CallbackRef`, removed via `removeHandleEvent`,
+not invoked as a function). Only how it is delivered changed from the original plan:
+
+- It is **typechecked + vite-built** (phoenix externalized, so the import map still supplies one
+  shared Socket), then the built `app.js` (~1.5 KB) is copied into `priv/static/assets/app.js` by the
+  build script (§4b) — replacing the old 137 KB IIFE.
 - The `vite.client.config.ts` IIFE builder is **retired** (R2); the `build:client`/`dev` package
   scripts that point at it are removed or repointed (§4b).
 
@@ -309,20 +318,21 @@ Naming: keep the file `bin/edge-deploy.sh` (preserves git history + the `--dry-r
 contract); expose the Operator-facing verb via a package script (§4c). Literal rename to
 `codemojex-edge-deliver` is the §6 minor fork.
 
-### 4b. `phoenix-modules-build` — phoenix\* → committed ESM (+ copy app.js)
+### 4b. `phoenix-modules-build` — phoenix\* + boot → committed ESM
 
-A new script `mercury/codemojex/apps/game/bin/phoenix-modules-build.sh`. Contract:
+The script `mercury/codemojex/apps/game/bin/phoenix-modules-build.sh`. Contract:
 
 ```
-1. build both lib packages (each emits dist/<name>.js per §1):
-     pnpm --filter @echo/phoenix build              → mercury/packages/phoenix/dist/phoenix.js
-     pnpm --filter @echo/phoenix_live_view build     → mercury/packages/phoenix_live_view/dist/phoenix_live_view.js
-2. copy the two dist modules into the committed home (absolute paths):
+1. typecheck the boot, then build the three ESM modules (each emits dist/<name>.js per §1):
+     pnpm --filter @codemojex/liveview-boot typecheck    (gate the boot on types before shipping)
+     pnpm --filter @echo/phoenix build                   → mercury/packages/phoenix/dist/phoenix.js
+     pnpm --filter @echo/phoenix_live_view build          → mercury/packages/phoenix_live_view/dist/phoenix_live_view.js
+     pnpm --filter @codemojex/liveview-boot build         → mercury/codemojex/apps/liveview-boot/dist/app.js
+2. copy the three dist modules into the committed home (absolute paths):
      cp mercury/packages/phoenix/dist/phoenix.js                       "$ECHO_STATIC/assets/phoenix.js"
      cp mercury/packages/phoenix_live_view/dist/phoenix_live_view.js   "$ECHO_STATIC/assets/phoenix_live_view.js"
-3. copy app.js RAW (no transpile) into the committed home:
-     cp echo/apps/codemojex/assets/js/app.js                          "$ECHO_STATIC/assets/app.js"
-4. (optional) print the resulting byte sizes for the commit message.
+     cp mercury/codemojex/apps/liveview-boot/dist/app.js               "$ECHO_STATIC/assets/app.js"
+3. (optional) print the resulting byte sizes for the commit message.
 ```
 
 **Why a copy step, not a package `outDir` into echo:** the phoenix\* packages are app-agnostic
