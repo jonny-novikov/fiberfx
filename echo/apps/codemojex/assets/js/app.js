@@ -2,8 +2,12 @@
 // committed to priv/static/assets (the Engine image has no JS build step), so the
 // machine serves it via Plug.Static. It carries NO game code: the EdgeReact hook
 // dynamic-imports the game bundle from edge.codemoji.games at runtime.
-import { Socket } from "./phoenix.js";
-import { LiveSocket } from "./phoenix_live_view.js";
+// Bare specifiers, resolved by the <head> import map (Layouts.root) to the committed
+// /assets/phoenix*.js. Same reuse convention as the edge game island
+// (`import { Socket } from "@echo/phoenix"`), so there is exactly one Socket class in
+// the page and the boot has no relative dependency on sibling files in this dir.
+import { Socket } from "@echo/phoenix";
+import { LiveSocket } from "@echo/phoenix_live_view";
 
 // The bridge between the edge-loaded React game and the LiveView socket. The game
 // bundle owns its own React; the host owns the socket. The contract is this object
