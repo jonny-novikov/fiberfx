@@ -52,6 +52,15 @@ export function buildServer(env: Env): FastifyInstance {
   app.register(cors, { origin: true });
   app.register(sensible);
 
+  // admin.1 — the operator bearer gate. Every route except /health requires the
+  // credential; a missing or wrong token is 401 { error: "unauthorized" }.
+  app.addHook("preHandler", async (req, reply) => {
+    if (req.url === "/health") return;
+    if (req.headers.authorization !== `Bearer ${env.adminToken}`) {
+      return reply.code(401).send({ error: "unauthorized" });
+    }
+  });
+
   const vk = makeValkey(env);
   app.decorate("valkey", vk);
 

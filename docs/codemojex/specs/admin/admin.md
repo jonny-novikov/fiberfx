@@ -20,7 +20,7 @@ Roadmap: [`admin.roadmap.md`](./admin.roadmap.md) · Approach: [`../../../aaw/aa
 ## The master invariant
 
 **No secret on the wire, and no data route answers unauthenticated.** Every rung holds two properties: a game's
-server-side `secret` (and its `keyboard` snapshot) is never serialized on any response, and every data route
+server-side `secret` (and its `cell_codes` keyboard snapshot) is never serialized on any response, and every data route
 requires the operator credential — only the `/health` liveness route answers without it.
 
 ## The closed error set

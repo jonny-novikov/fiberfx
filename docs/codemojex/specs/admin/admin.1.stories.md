@@ -19,7 +19,7 @@ As an operator, I want a game's detail without its secret, so that reading the l
 
 **Acceptance criteria.**
 - **Given** a game row, **when** `GET /games/:id` is called with the token, **then** the 200 body has `game`,
-  `board`, and `guesses`, and the `game` object has no `secret` key and no `keyboard` key.
+  `board`, and `guesses`, and the `game` object has no `secret` key and no `cell_codes` key.
 - **Given** `GET /games` with the token, **then** each item carries the `GameSummary` public columns and no `secret`.
 
 INVEST: independent of the gate; verifiable by a response-key assertion; encodes admin.1-INV2.

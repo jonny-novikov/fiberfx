@@ -71,8 +71,10 @@ export const gameStatus = pgEnum("game_status", [
 ]);
 
 // ── players ────────────────────────────────────────────────────────────────
-// The wallet is the player row: three currencies, with the diamond rail split
-// into available / bonus / locked. Mutated atomically through Codemojex.Wallet.
+// The wallet is the player row: three currencies (keys · clips · diamonds), the
+// diamond rail carrying bonus + locked sub-balances. Every balance is bigint and
+// non-negative (a DB CHECK backstops the wallet). Mutated atomically through
+// Codemojex.Wallet. Telegram identity is carried as `tg_user_id` and `tg_chat_id`.
 export const players = pgTable(
   "players",
   {
@@ -81,20 +83,16 @@ export const players = pgTable(
     tgUserId: bigint("tg_user_id", { mode: "number" }),
     tgChatId: bigint("tg_chat_id", { mode: "number" }),
 
-    clips: integer("clips").notNull().default(0),
-
-    diamonds: integer("diamonds").notNull().default(0),
-    availableDiamonds: integer("available_diamonds").notNull().default(0),
-    bonusDiamonds: integer("bonus_diamonds").notNull().default(0),
-    lockedDiamonds: integer("locked_diamonds").notNull().default(0),
-
-    keys: integer("keys").notNull().default(0),
-    availableKeys: integer("available_keys").notNull().default(0),
+    keys: bigint("keys", { mode: "number" }).notNull().default(0),
+    clips: bigint("clips", { mode: "number" }).notNull().default(0),
+    diamonds: bigint("diamonds", { mode: "number" }).notNull().default(0),
+    bonusDiamonds: bigint("bonus_diamonds", { mode: "number" }).notNull().default(0),
+    lockedDiamonds: bigint("locked_diamonds", { mode: "number" }).notNull().default(0),
 
     insertedAt,
     updatedAt,
   },
-  (t) => [index("players_tg_user_id_idx").on(t.tgUserId)],
+  (t) => [index("players_tg_chat_id_idx").on(t.tgChatId)],
 );
 
 // ── emoji_sets ───────────────────────────────────────────────────────────────
@@ -113,17 +111,35 @@ export const emojiSets = pgTable("emoji_sets", {
 });
 
 // ── rooms ────────────────────────────────────────────────────────────────────
-// A room templates games. `golden_rooms` (below) is the tournament tier.
+// A room templates games. `status` is a plain string under a CHECK constraint
+// (not a pg enum); `emojiset` holds an EmojiSetId string. The golden levers below
+// are snapshotted room→game for the tournament tier (the `golden_rooms` migration).
 export const rooms = pgTable(
   "rooms",
   {
     id: id<RoomId>("id").primaryKey(),
     name: text("name").notNull(),
-    emojiSetId: id<EmojiSetId>("emoji_set_id").references(() => emojiSets.id),
-    free: boolean("free").notNull(),
-    clipCost: integer("clip_cost"),
-    durationMs: bigint("duration_ms", { mode: "number" }),
-    status: gameStatus("status").notNull().default("open"),
+    emojiset: text("emojiset").notNull(),
+    type: text("type").notNull().default("classic"),
+    durationMs: bigint("duration_ms", { mode: "number" }).notNull(),
+    seedPool: bigint("seed_pool", { mode: "number" }).notNull().default(0),
+    guessFee: integer("guess_fee").notNull().default(1),
+    free: boolean("free").notNull().default(false),
+    clipCost: integer("clip_cost").notNull().default(1),
+    status: text("status").notNull().default("waiting"),
+    game: text("game"),
+    golden: boolean("golden").notNull().default(false),
+    payoutSplit: integer("payout_split").array().notNull().default([40, 25, 15, 12, 8]),
+    cellCount: integer("cell_count"),
+
+    // golden levers (the `golden_rooms` migration; nullable = not a golden config)
+    startThreshold: integer("start_threshold"),
+    entryFeeKeys: integer("entry_fee_keys"),
+    virtualDeposit: bigint("virtual_deposit", { mode: "number" }),
+    firstMovers: integer("first_movers"),
+    entryFeeRevenuePercentage: integer("entry_fee_revenue_percentage"),
+    roomDeadline: timestamp("room_deadline", { withTimezone: true, mode: "date" }),
+
     insertedAt,
     updatedAt,
   },
@@ -131,58 +147,75 @@ export const rooms = pgTable(
 );
 
 // ── games ────────────────────────────────────────────────────────────────────
-// The playable entity inside a room. Secret + keyboard are snapshotted at join.
+// The playable entity. `room` is a nullable RoomId string (not a FK, not
+// `room_id`); `status`/`type` are plain strings under CHECK constraints. `secret`
+// and `cell_codes` are the server-side secrets (string arrays) — present here but
+// held OUT of every admin response by the read-plane schemas.
 export const games = pgTable(
   "games",
   {
     id: id<GameId>("id").primaryKey(),
-    roomId: id<RoomId>("room_id")
-      .references(() => rooms.id)
-      .notNull(),
-    emojiSetId: id<EmojiSetId>("emoji_set_id").references(() => emojiSets.id),
-    free: boolean("free").notNull(),
-    guessFee: integer("guess_fee"),
-    prizePool: bigint("prize_pool", { mode: "number" }),
-    prizeUsd: numeric("prize_usd", { precision: 12, scale: 2 }),
-    endsMs: bigint("ends_ms", { mode: "number" }).notNull(),
-    status: gameStatus("status").notNull().default("active"),
-    totals: jsonb("totals").$type<Record<string, number>>(),
-    // snapshotted at join; withheld from player reads by Codemojex.View
-    secret: jsonb("secret").$type<string[]>(),
-    keyboard: jsonb("keyboard").$type<string[]>(),
+    room: id<RoomId>("room"),
+    emojiset: text("emojiset"),
+    type: text("type").notNull().default("classic"),
+    feedback: text("feedback").notNull().default("score"),
+    scoring: text("scoring").notNull().default("linear"),
+    settlement: text("settlement").notNull().default("live"),
+    economy: text("economy").notNull().default("winner_take_all"),
+
+    // server-side secrets — never selected by a player- or operator-facing read
+    secret: text("secret").array().notNull(),
+    cellCodes: text("cell_codes").array().notNull().default([]),
+
+    // commit-reveal (golden games only; NULL + inert for a classic game)
+    commitment: text("commitment"),
+    nonce: text("nonce"),
+    revealedMs: bigint("revealed_ms", { mode: "number" }),
+
+    topK: integer("top_k").notNull().default(5),
+    payoutSplit: integer("payout_split").array().notNull().default([40, 25, 15, 12, 8]),
+    startedMs: bigint("started_ms", { mode: "number" }).notNull(),
+    endsMs: bigint("ends_ms", { mode: "number" }),
+    prizePool: bigint("prize_pool", { mode: "number" }).notNull().default(0),
+    guessFee: integer("guess_fee").notNull().default(1),
+    free: boolean("free").notNull().default(false),
+    clipCost: integer("clip_cost").notNull().default(1),
+    status: text("status").notNull().default("open"),
+    golden: boolean("golden").notNull().default(false),
+
+    // golden levers (the `golden_rooms` migration; snapshotted room→game)
+    startThreshold: integer("start_threshold"),
+    entryFeeKeys: integer("entry_fee_keys"),
+    virtualDeposit: bigint("virtual_deposit", { mode: "number" }),
+    firstMovers: integer("first_movers"),
+    entryFeeRevenuePercentage: integer("entry_fee_revenue_percentage"),
+    roomDeadline: timestamp("room_deadline", { withTimezone: true, mode: "date" }),
+
     insertedAt,
     updatedAt,
   },
   (t) => [
-    index("games_room_id_idx").on(t.roomId),
+    index("games_room_idx").on(t.room),
     index("games_status_idx").on(t.status),
   ],
 );
 
 // ── guesses ──────────────────────────────────────────────────────────────────
-// Append-only. Written by the scoring consumer (the single authority), not by
-// the surface that accepts the guess. `pct` and `eff` mirror the scored event.
+// Append-only, written by the scoring consumer (the single authority). Linear
+// scoring only: `points` is the sole score (no tier/percentage). `inserted_at`
+// only — a guess is never updated.
 export const guesses = pgTable(
   "guesses",
   {
     id: id<GuessId>("id").primaryKey(),
-    gameId: id<GameId>("game_id")
-      .references(() => games.id)
-      .notNull(),
-    playerId: id<PlayerId>("player_id")
-      .references(() => players.id)
-      .notNull(),
-    codes: jsonb("codes").$type<string[]>().notNull(),
-    score: integer("score"),
-    percentage: integer("percentage"),
-    effort: integer("effort"),
-    breakdown: jsonb("breakdown").$type<unknown[]>(),
+    game: id<GameId>("game").notNull(),
+    player: id<PlayerId>("player").notNull(),
+    emojis: text("emojis").array().notNull(),
+    points: integer("points").notNull(),
+    atMs: bigint("at_ms", { mode: "number" }),
     insertedAt,
   },
-  (t) => [
-    index("guesses_game_id_idx").on(t.gameId),
-    index("guesses_player_id_idx").on(t.playerId),
-  ],
+  (t) => [index("guesses_game_player_idx").on(t.game, t.player)],
 );
 
 // ── PROVISIONAL — reconcile column sets via `pnpm db:pull` ────────────────────

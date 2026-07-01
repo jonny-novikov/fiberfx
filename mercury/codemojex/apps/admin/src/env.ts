@@ -15,6 +15,7 @@ export interface Env {
   readonly databaseUrl: string;
   readonly valkeyHost: string;
   readonly valkeyPort: number;
+  readonly adminToken: string;
 }
 
 export function loadEnv(): Env {
@@ -25,5 +26,6 @@ export function loadEnv(): Env {
     databaseUrl: r.str("DATABASE_URL"),
     valkeyHost: r.str("VALKEY_HOST", "localhost"),
     valkeyPort: r.int("VALKEY_PORT", 6390),
+    adminToken: r.str("ADMIN_TOKEN"),
   }));
 }

@@ -10,14 +10,12 @@ import { readBoard } from "../valkey";
 // Explicit public columns — secret and keyboard are never selected.
 const gameCols = {
   id: games.id,
-  roomId: games.roomId,
+  roomId: games.room,
   status: games.status,
   free: games.free,
   guessFee: games.guessFee,
   prizePool: games.prizePool,
-  prizeUsd: games.prizeUsd,
   endsMs: games.endsMs,
-  totals: games.totals,
   insertedAt: games.insertedAt,
 } as const;
 
@@ -27,14 +25,13 @@ async function getGame(app: FastifyInstance, id: GameId): Promise<Result<Static<
   const recent = await db
     .select({
       id: guesses.id,
-      playerId: guesses.playerId,
-      percentage: guesses.percentage,
-      effort: guesses.effort,
-      score: guesses.score,
+      playerId: guesses.player,
+      points: guesses.points,
+      atMs: guesses.atMs,
       insertedAt: guesses.insertedAt,
     })
     .from(guesses)
-    .where(eq(guesses.gameId, id))
+    .where(eq(guesses.game, id))
     .orderBy(desc(guesses.insertedAt))
     .limit(50);
   const board = await readBoard(app.valkey, id, 25);
@@ -50,7 +47,7 @@ export const gameRoutes: FastifyPluginAsyncTypebox = async (app) => {
       const all = await db
         .select({ ...gameCols, roomName: rooms.name })
         .from(games)
-        .leftJoin(rooms, eq(games.roomId, rooms.id))
+        .leftJoin(rooms, eq(games.room, rooms.id))
         .orderBy(desc(games.insertedAt))
         .limit(200);
       return status ? all.filter((g) => g.status === status) : all;

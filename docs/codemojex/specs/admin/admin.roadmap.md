@@ -13,10 +13,11 @@ is already scaffolded (`server.ts` `buildServer`/`start`, `routes/{rooms,games,p
 
 ## The iterations
 
-### admin.1 · the gated read foundation — THIS WEEK
-- **Ships.** A Fastify `preHandler` bearer gate (`ADMIN_TOKEN`) over every data route; the as-built read plane
-  (`/health`, `/rooms`, `/rooms/:id`, `/games`, `/games/:id`, `/players`, `/players/:id`) confirmed schema-typed and
-  secret-stripped; the `mercury/codemojex` workspace installed, typechecked, and boot-smoked solo + clustered.
+### admin.1 · the gated read foundation — SHIPPED ✓
+- **Ships.** A Fastify `preHandler` bearer gate (`ADMIN_TOKEN`) over every data route; the read plane
+  (`/health`, `/rooms`, `/rooms/:id`, `/games`, `/games/:id`, `/players`, `/players/:id`) schema-typed and
+  secret-stripped, its `@codemojex/db` read-model reconciled to the engine's real DDL (games/guesses/players so the
+  reads return live data); the `mercury/codemojex` workspace installed, typechecked, and boot-smoked solo + clustered.
 - **Demo.** A `curl` with no token → 401; with `Authorization: Bearer $ADMIN_TOKEN` → the rooms / games / players
   JSON; `GET /games/:id` returns a board and recent guesses and no `secret`; `GET /health` answers 200 tokenless.
 - **Harness.** `app.inject` tests (401 gate · 200 with token · secret-strip · health-open) + `pnpm --filter

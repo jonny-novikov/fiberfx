@@ -28,7 +28,7 @@ async function getRoom(id: RoomId): Promise<Result<Static<typeof S.RoomDetail>, 
       insertedAt: games.insertedAt,
     })
     .from(games)
-    .where(eq(games.roomId, id))
+    .where(eq(games.room, id))
     .orderBy(desc(games.insertedAt));
   return ok({ room, games: roomGames });
 }

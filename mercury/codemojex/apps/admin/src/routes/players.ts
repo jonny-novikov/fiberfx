@@ -11,11 +11,9 @@ const walletCols = {
   tgUserId: players.tgUserId,
   clips: players.clips,
   diamonds: players.diamonds,
-  availableDiamonds: players.availableDiamonds,
   bonusDiamonds: players.bonusDiamonds,
   lockedDiamonds: players.lockedDiamonds,
   keys: players.keys,
-  availableKeys: players.availableKeys,
   insertedAt: players.insertedAt,
 } as const;
 
@@ -25,13 +23,13 @@ async function getPlayer(id: PlayerId): Promise<Result<Static<typeof S.PlayerDet
   const recent = await db
     .select({
       id: guesses.id,
-      gameId: guesses.gameId,
-      percentage: guesses.percentage,
-      score: guesses.score,
+      gameId: guesses.game,
+      points: guesses.points,
+      atMs: guesses.atMs,
       insertedAt: guesses.insertedAt,
     })
     .from(guesses)
-    .where(eq(guesses.playerId, id))
+    .where(eq(guesses.player, id))
     .orderBy(desc(guesses.insertedAt))
     .limit(50);
 

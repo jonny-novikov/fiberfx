@@ -58,14 +58,12 @@ export const RoomDetail = Type.Object({
 // Public game shape — note: no `secret`, no `keyboard`.
 export const GameSummary = Type.Object({
   id: GamId,
-  roomId: RomId,
+  roomId: Nullable(RomId),
   status: Type.String(),
   free: Type.Boolean(),
   guessFee: Loose,
   prizePool: Loose,
-  prizeUsd: Loose,
   endsMs: Loose,
-  totals: Loose,
   insertedAt: Ts,
   roomName: Type.Optional(Nullable(Type.String())),
 });
@@ -80,9 +78,8 @@ export const GuessSummary = Type.Object({
   id: GesId,
   gameId: Type.Optional(GamId),
   playerId: Type.Optional(PlrId),
-  percentage: Loose,
-  effort: Type.Optional(Loose),
-  score: Loose,
+  points: Type.Integer(),
+  atMs: Type.Optional(Loose),
   insertedAt: Ts,
 });
 
@@ -98,11 +95,9 @@ export const PlayerSummary = Type.Object({
   tgUserId: Loose,
   clips: Type.Integer(),
   diamonds: Type.Integer(),
-  availableDiamonds: Type.Integer(),
   bonusDiamonds: Type.Integer(),
   lockedDiamonds: Type.Integer(),
   keys: Type.Integer(),
-  availableKeys: Type.Integer(),
   insertedAt: Ts,
 });
 export const PlayersList = Type.Array(PlayerSummary);
