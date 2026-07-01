@@ -32,7 +32,7 @@ export default class Ajax {
     let controller: AbortController | null = null
     if(timeout){
       controller = new AbortController()
-      const _timeoutId = setTimeout(() => controller!.abort(), timeout)
+      setTimeout(() => controller!.abort(), timeout)
       options.signal = controller.signal
     }
     ;(global as any).fetch(endPoint, options)

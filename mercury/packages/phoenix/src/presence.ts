@@ -184,7 +184,7 @@ export default class Presence {
    * @returns {Presence}
    */
   static list<T = PresenceEntry>(presences: object, chooser?: (key: string, presence: PresenceEntry) => T): T[]{
-    if(!chooser){ chooser = function (key, pres){ return pres as unknown as T } }
+    if(!chooser){ chooser = function (_key, pres){ return pres as unknown as T } }
 
     return this.map(presences, (key, presence) => {
       // chooser is guaranteed defined by the guard above.

@@ -9,4 +9,5 @@ export * from "./form";
 export * from "./strength";
 export * from "./cooldown";
 export * from "./formatter";
+export * from "./channel";
 export * from "./disclosure";

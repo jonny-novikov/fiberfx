@@ -12,8 +12,8 @@
 |---|---|---|---|---|---|
 | **cmt.1** | Shell run-loop (wrap local Phoenix; welcome → lobby → game in-window + dev panel) | game-tauri | LOW | — | ✅ **shipped** (stub below) |
 | **cmt.2** | Local-bundle dev wiring (serve the LOCAL bundle, not the edge pointer) | codemojex (+ game) | LOW–MED | cmt.1, F2 | ✅ **shipped** (stub below) |
-| **cmt.3** | DS foundation in the island (Tailwind v4 + tokens + gold + `cn` + i18n) | game (+ codemoji-design) | MED | cmt.2, F1 | stub below |
-| **cmt.4** | The real screen — in-progress (port `GoldenInProgressScreen`; live prop map) | game | MED–HIGH | cmt.3, F3 | stub below |
+| **cmt.3** | **Effector Phoenix-channel state foundation** (integrate the Operator prototype: `createChannel` + `PhoenixGame` + the `RoomChannel` twin; Arm B, A-first; prove live) | game + additive `@mercury/effector` + echo/ `RoomChannel` | MED–HIGH | cmt.2 | ✅ **shipped Phase A** ([`./cmt.3.md`]) |
+| **cmt.4** | The real screen — in-progress (**Tailwind v4 + golden tokens** [deferred from cmt.3] + re-implement `GoldenInProgressScreen` natively on the cmt.3 state layer; live prop map) | game | MED–HIGH | cmt.3, F3 | stub below |
 | **cmt.5** | The real screen — finished + events (`GoldenAnswerReveal`; bridge events) | game | MED | cmt.4 | stub below |
 | cmt.6 | Tier-1/2 fidelity (welcome + lobby in the desktop window) | codemojex | LOW–MED | cmt.5 | later |
 | cmt.7 | Dev-panel as product (`export_events` IPC; privileged runtime taps) | game-tauri | MED | cmt.1 | later |
@@ -33,7 +33,10 @@ verified free against the catalog in [`../../codemojex.roadmap.md`].)
 Wider than a standard codemojex rung (see [`./tauri.design.md`] §6): three trees —
 `mercury/codemojex/apps/game-tauri` (shell), `mercury/codemojex/apps/game` (island), and — for wiring
 rungs only — `echo/apps/codemojex` (`static_paths` / `check_origin` / `game_props`). `node/codemoji-design`
-is **read-only** reuse (vendored under F1-A). The four BCS libs are never edited. **Pathspec commits
+is **read-only** — a **visual reference only** (**[RECONCILE]** the Operator ruled the golden components
+**re-implemented natively** in `@codemojex/game` (cmt.4–cmt.5), **not** vendored; the old "vendored under
+F1-A" is superseded. cmt.3 is the upstream **Effector Phoenix-channel state layer** — see the cmt.3 stub +
+[`./cmt.3.md`]). The four BCS libs are never edited. **Pathspec commits
 per-tree; never `git add -A`.** A rung touching `echo/apps/codemojex` runs that app's full gate ladder.
 
 ## Determinism posture
@@ -94,24 +97,58 @@ the shell renders the game under development. Grounded in `Edge.game_url/0 = fet
   LOCAL bundle (verified by a hash/marker); reverting restores the edge pointer. **Mutation guard:**
   without `GAME_EDGE_HOST` black-holing, the live edge pointer wins (the override is load-bearing).
 
-### cmt.3 — DS foundation in the island
-Bring the `@codemoji/design` runtime foundation into the island's Vite build — Tailwind v4 + the token
-theme + `gold.png` + the `cn` util + a react-i18next init (bundled ru/en) — **without breaking the ESM
-`mount` contract or the bundle's self-containment**. A smoke render of one vendored DS atom proves it.
-- **Scope In:** the ruled F1 path (vendor / package / dist); Tailwind v4 in `vite.config.ts`; the token
-  theme + gold texture; `cn` + an i18n init module; a smoke render of a DS atom (e.g. `EmojiTile`).
-- **Scope Out:** the full golden composition (cmt.4); live-data mapping.
-- **Risk:** MED — build-config surgery on a self-contained workspace; the `mount` export + bundle self-
-  containment must survive. **Formation:** Trio.
-- **Depends:** cmt.2; ruling **F1**.
-- **Acceptance (sketch):** `pnpm --filter @codemojex/game build` still emits a single self-contained
-  `game-[hash].js` exporting `mount` (grep: no bare external imports); the smoke atom is styled by the
-  tokens (gold texture resolves); `useTranslation()` returns real ru copy. **Mutation guard:** removing
-  the i18n init makes the smoke render show raw keys.
+### cmt.3 — Effector Phoenix-channel state foundation
+**Full triad carved:** [`./cmt.3.md`] (authoritative) · [`./cmt.3.stories.md`] · [`./cmt.3.llms.md`].
+**[RECONCILE] — the Operator ruled the forks + supplied a prototype** (`mercury/docs/game-effector/`, a
+complete unapplied Effector Phoenix-channel slice). cmt.3 is now the **channel / Effector STATE foundation
+only**; all Tailwind / golden-token / golden-screen work **moves to cmt.4** (F-cmt3-3 deferred). Integrate
+the prototype's three layers into the real trees + fix the workspace glob + apply the echo/ `RoomChannel`
+diff + **prove a live round-trip**, reaching the ruled **Arm B** transport (the raw `game:<gam>` channel is
+THE transport) **A-first**.
+- **Status:** ✅ **SHIPPED — Phase A (mercury foundation) 2026-07-01** (`/cm-ship`, Duo). Delivered **D1**
+  `createChannel` (additive, effector-only) · **D2** `channel/{model,PhoenixGame}` · **D3** consumption +
+  **Arm A** — the "workspace-glob fix" became *fold the game into the mercury workspace* (delete the
+  vestigial nested `pnpm-workspace.yaml` + drop the `!codemojex/apps/game` exclusion), since the Operator's
+  reorg had moved `@echo/phoenix*` into `mercury/packages/` (Operator-ruled). Harden: a jest-dom
+  **dual-`vitest`-major** fix (`test/setup.ts` + `src/vitest.d.ts`) + 3 ratified `phoenix/src`
+  `noUnusedLocals` fixes. **Gate GREEN:** `@codemojex/game` typecheck 0 · build (self-contained `mount`) ·
+  **23/23** · `model.test.ts` mutation-verified. **Deferred to `/codemojex-ship`** (echo/ + live-proof-gated):
+  **D4** the `RoomChannel` twin + **Phase B** the Arm-B flip (`game_live.ex`/`index.tsx` + the INV7 SES
+  caveat), after the Operator observes the live round-trip (INV5, TCC fallback). **Follow-ons:** the edge
+  Docker deploy → rewrite to build from the `mercury/` workspace context; the dual `vitest` major (3.x
+  hoisted vs 4.x game) wants convergence (separate concern).
+- **Scope In:** `@mercury/effector` `createChannel` (additive: new `channel.ts` + a barrel line, no
+  `@echo/phoenix` dep); the game `channel/{model.ts,PhoenixGame.tsx}` (a `Socket` + `game:<id>` channel →
+  Effector `$props`; renders `GameEdge` untouched); `@mercury/effector` consumed from source (vite alias +
+  tsconfig paths, the economy precedent) + `+3` island deps; the **workspace-glob fix**
+  (`codemojex-node/` → `codemojex/`); the echo/ `RoomChannel` twin of `GameLive` (the Operator's diff); a
+  proven **live round-trip** (join → props → `submit_guess`), then the **Arm-B flip** (default `mount` →
+  `PhoenixGame`; `GameLive` slims to the page host).
+- **Scope Out:** all Tailwind / golden tokens / golden screen (cmt.4); `GameProps` balance/boost (cmt.4, F3);
+  react-i18next (cmt.4); any echo/ edit beyond the channel-transport concern (`room_channel.ex` + the Arm-B
+  host).
+- **Risk:** MED–HIGH — an echo/ channel **contract change** (`RoomChannel` twin) + a transport flip + a live
+  proof. **Formation:** Trio.
+- **Depends:** cmt.2. **Forks — RULED (folded, no gate before build):** F-cmt3-1 = integrate the prototype
+  from source + fix the glob · F-cmt3-2 = **Arm B, reached A-first** (prove live, then flip; the SES rides a
+  socket param — INV7 caveat) · F-cmt3-3 = **Tailwind deferred to cmt.4**. See [`./cmt.3.llms.md`] § Rulings.
+- **Boundary:** JS under `mercury/…` (+ the one glob line) + `docs/…` = one commit; `echo/…/room_channel.ex`
+  (+ the Arm-B `game_live.ex`/host) = a **separate** echo/ commit (the Director; that app's gate ladder).
+- **Acceptance (sketch):** `typecheck:mercury && build:mercury` green; `pnpm --filter @codemojex/game build`
+  emits one self-contained `game-[hash].js` exporting `mount` (grep: no bare external import, no
+  `@mercury/ui`); the `@mercury/effector` export set is a superset + `createChannel`; economy still builds;
+  `mix compile --warnings-as-errors` + `mix test` green in codemojex; the **live round-trip** holds.
+  **Mutation guard:** an unbound channel / unfed model leaves the "Подключение…" fallback (the channel feed
+  is load-bearing).
 
 ### cmt.4 — The real screen (in-progress)
 Port `GoldenInProgressScreen` into the island as the rendered surface, fed by **live** `GameProps` mapped
 onto the golden component props, replacing the plain `GameEdge` UI.
+> **[RECONCILE] (cmt.4 owed at its ship).** Per the Operator's ruling, "port/vendored/consumed" below means
+> **re-implement natively inside `@codemojex/game`** on the **cmt.3 Effector Phoenix-channel state layer**
+> (`createChannel` / `PhoenixGame` / `$props`) — **no `@codemoji/design` dependency**. cmt.4's own first
+> tasks are the **Tailwind v4 + golden-token `@theme`** (deferred here from cmt.3) + react-i18next, then the
+> native `GoldenInProgressScreen` fed by `$props`. cmt.4's own Venus authors the full triad.
 - **Scope In:** vendored/consumed board + golden components; a `GameProps → golden props` mapping (`view`
   → `GoldenHero`/`StatusBar`/`EmojiSlots`/`GuessActions`/`EmojiKeyboard`; `leaderboard` →
   `GoldenLeaderboard`); the in-progress state rendered from real props via `mount`.

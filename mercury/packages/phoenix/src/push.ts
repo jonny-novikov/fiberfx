@@ -96,7 +96,7 @@ export default class Push {
   /**
    * @private
    */
-  matchReceive({status, response, _ref}: {status: string; response?: any; _ref?: unknown}): void{
+  matchReceive({status, response}: {status: string; response?: any; _ref?: unknown}): void{
     this.recHooks.filter(h => h.status === status)
       .forEach(h => h.callback(response))
   }
