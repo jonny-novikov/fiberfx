@@ -44,6 +44,54 @@ interface GameIslandState {
   handle?: GameHandle | null;
 }
 
+// --- Vite dev hot-wire -------------------------------------------------------------
+// GAME_DEV_URL points data-bundle at the game's Vite dev server SOURCE entry (e.g.
+// http://127.0.0.1:5173/src/index.tsx). A built bundle is always game-[hash].js, so a
+// .ts/.tsx pathname on an absolute http(s) URL is a structural dev signal — no host
+// attribute, no echo/ edit. In that case the page must install Vite's HMR client and
+// the react-refresh preamble BEFORE the entry executes (the documented Vite
+// backend-integration contract); the imports are awaited so ordering is deterministic.
+
+/** The dev-server origin when `bundle` is a Vite source entry, else null. */
+export function devOriginOf(bundle: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(bundle);
+  } catch {
+    return null; // relative specifiers are never a dev server
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const path = url.pathname;
+  return path.endsWith(".ts") || path.endsWith(".tsx") ? url.origin : null;
+}
+
+type Importer = (url: string) => Promise<unknown>;
+interface RefreshRuntime {
+  injectIntoGlobalHook(w: Window): void;
+}
+
+/** Install the react-refresh preamble + the Vite HMR client from the dev origin.
+ *  Idempotent (keyed on the preamble flag); throws on an unreachable dev server —
+ *  the caller downgrades that to a warning and proceeds with the plain import. */
+export async function wireViteDev(
+  origin: string,
+  importer: Importer = (u) => import(/* @vite-ignore */ u),
+): Promise<void> {
+  const w = window as unknown as Record<string, unknown>;
+  if (w.__vite_plugin_react_preamble_installed__) return;
+
+  const refresh = (await importer(`${origin}/@react-refresh`)) as { default?: RefreshRuntime };
+  if (typeof refresh?.default?.injectIntoGlobalHook !== "function") {
+    throw new Error(`no react-refresh runtime at ${origin}/@react-refresh`);
+  }
+  refresh.default.injectIntoGlobalHook(window);
+  w.$RefreshReg$ = () => {};
+  w.$RefreshSig$ = () => (type: unknown) => type;
+  w.__vite_plugin_react_preamble_installed__ = true;
+
+  await importer(`${origin}/@vite/client`);
+}
+
 // The bridge between the edge-loaded React game and the LiveView socket. The game
 // bundle owns its own React; the host owns the socket. Typing it as Hook<GameIslandState>
 // gives `this` the full HookInterface (el, pushEvent, handleEvent, removeHandleEvent).
@@ -72,7 +120,25 @@ export const GameIsland: Hook<GameIslandState> = {
       },
     };
 
-    const mod = (await import(/* @vite-ignore */ bundle)) as Partial<GameModule>;
+    // Dev only: a .tsx/.ts source bundle means the Vite dev server — wire HMR first.
+    const devOrigin = devOriginOf(bundle);
+    if (devOrigin) {
+      try {
+        await wireViteDev(devOrigin);
+      } catch (e) {
+        console.warn("GameIsland: vite dev wire failed (dev server up?)", devOrigin, e);
+      }
+    }
+
+    // In the dev loop a not-yet-started server is a routine state, not an exception —
+    // fail loud in the console, leave the page (and the LiveView socket) alive.
+    let mod: Partial<GameModule>;
+    try {
+      mod = (await import(/* @vite-ignore */ bundle)) as Partial<GameModule>;
+    } catch (e) {
+      console.error("GameIsland: game bundle failed to load", bundle, e);
+      return;
+    }
     const mount = mod?.mount;
     if (typeof mount !== "function") {
       console.error("GameIsland: game bundle has no mount(el, props, bridge) export");

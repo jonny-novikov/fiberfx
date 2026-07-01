@@ -59,12 +59,52 @@ export function createGameModel() {
     target: serverEvent,
   });
 
+  // Derived slices of $props — fine-grained effector-react consumption
+  // (useUnit/useStoreMap subscribers re-render per slice, not per full props).
+  const $view = $props.map((p) => p?.view ?? null);
+  const $leaderboard = $props.map((p) => p?.leaderboard ?? []);
+  const $history = $props.map((p) => p?.history ?? []);
+  const $me = $props.map((p) => p?.me ?? null);
+
+  // Typed one-off events — the client-side terminus of the server's
+  // Phoenix.PubSub fan-out ("game:"<>gam), one Effector event per frame name.
+  const guessRejected = createEvent<unknown>();
+  const revealed = createEvent<unknown>();
+  const goldenWin = createEvent<unknown>();
+  (
+    [
+      ["guess_rejected", guessRejected],
+      ["revealed", revealed],
+      ["golden_win", goldenWin],
+    ] as const
+  ).forEach(([name, target]) => {
+    sample({
+      clock: serverEvent,
+      filter: (e) => e.name === name,
+      fn: (e) => e.payload,
+      target,
+    });
+  });
+
   // Outbound, matching the GameEdge bridge contract.
   const submitGuess = (emojis: string[]): void => chan.push("submit_guess", { emojis });
   const lock = (pos: number, code: string): void => chan.push("lock", { pos, code });
   const unlock = (pos: number): void => chan.push("unlock", { pos });
 
-  return { chan, $props, serverEvent, propsReceived, submitGuess, lock, unlock };
+  return {
+    chan,
+    $props,
+    $view,
+    $leaderboard,
+    $history,
+    $me,
+    serverEvent,
+    events: { guessRejected, revealed, goldenWin },
+    propsReceived,
+    submitGuess,
+    lock,
+    unlock,
+  };
 }
 
 export type GameModel = ReturnType<typeof createGameModel>;

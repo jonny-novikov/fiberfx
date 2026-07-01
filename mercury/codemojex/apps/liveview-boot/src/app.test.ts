@@ -11,7 +11,7 @@ vi.mock("@echo/phoenix_live_view", () => ({
   },
 }));
 
-import { GameIsland, safeParse } from "./app";
+import { GameIsland, safeParse, devOriginOf, wireViteDev } from "./app";
 
 // Fixture bundle specifiers. app.ts's `import(el.dataset.bundle)` resolves them relative
 // to app.ts (both live in src/), exactly as it would an edge URL at runtime. One exports
@@ -68,6 +68,11 @@ const callDestroyed = (hook: TestHook): void =>
 beforeEach(() => {
   setSink({});
   vi.restoreAllMocks();
+  // Isolate the dev-wire idempotency flag + preamble globals between tests.
+  const w = window as unknown as Record<string, unknown>;
+  delete w.__vite_plugin_react_preamble_installed__;
+  delete w.$RefreshReg$;
+  delete w.$RefreshSig$;
 });
 
 describe("safeParse", () => {
@@ -183,6 +188,85 @@ describe("GameIsland.mounted", () => {
     await callMounted(hook);
 
     expect(mountSpy.mock.calls[0]?.[1]).toEqual({});
+  });
+});
+
+describe("devOriginOf", () => {
+  it("returns the origin for an absolute http(s) .tsx/.ts source entry (the Vite dev server)", () => {
+    expect(devOriginOf("http://127.0.0.1:5173/src/index.tsx")).toBe("http://127.0.0.1:5173");
+    expect(devOriginOf("https://dev.local:5173/src/app.ts")).toBe("https://dev.local:5173");
+  });
+
+  it("returns null for every built-bundle shape (edge + same-origin .js)", () => {
+    expect(devOriginOf("https://edge.codemoji.games/game-abc123.js")).toBeNull();
+    expect(devOriginOf("http://localhost:4000/game/bundle")).toBeNull();
+  });
+
+  it("returns null for relative specifiers and non-http(s) protocols", () => {
+    expect(devOriginOf("./__fixtures__/mock-game.ts")).toBeNull();
+    expect(devOriginOf("/assets/game.ts")).toBeNull();
+    expect(devOriginOf("ws://127.0.0.1:5173/src/index.tsx")).toBeNull();
+  });
+});
+
+describe("wireViteDev", () => {
+  const ORIGIN = "http://127.0.0.1:5173";
+
+  function makeImporter() {
+    const inject = vi.fn();
+    const calls: string[] = [];
+    const importer = vi.fn(async (url: string) => {
+      calls.push(url);
+      return url.endsWith("/@react-refresh") ? { default: { injectIntoGlobalHook: inject } } : {};
+    });
+    return { importer, inject, calls };
+  }
+
+  it("installs the preamble then the HMR client, in order, from the dev origin", async () => {
+    const { importer, inject, calls } = makeImporter();
+
+    await wireViteDev(ORIGIN, importer);
+
+    expect(calls).toEqual([`${ORIGIN}/@react-refresh`, `${ORIGIN}/@vite/client`]);
+    expect(inject).toHaveBeenCalledExactlyOnceWith(window);
+    const w = window as unknown as Record<string, unknown>;
+    expect(w.__vite_plugin_react_preamble_installed__).toBe(true);
+    expect(typeof w.$RefreshReg$).toBe("function");
+    const sig = (w.$RefreshSig$ as () => (t: unknown) => unknown)();
+    expect(sig("x")).toBe("x"); // the identity transform the preamble contract specifies
+  });
+
+  it("is idempotent — a second wire (re-mount) never re-imports", async () => {
+    const { importer } = makeImporter();
+    await wireViteDev(ORIGIN, importer);
+    await wireViteDev(ORIGIN, importer);
+    expect(importer).toHaveBeenCalledTimes(2); // refresh + client, once
+  });
+
+  it("throws when the origin serves no react-refresh runtime (caller downgrades to a warning)", async () => {
+    const importer = vi.fn(async () => ({}));
+    await expect(wireViteDev(ORIGIN, importer)).rejects.toThrow(/react-refresh/);
+    const w = window as unknown as Record<string, unknown>;
+    expect(w.__vite_plugin_react_preamble_installed__).toBeUndefined();
+  });
+});
+
+describe("GameIsland.mounted — the dev loop's failure states stay non-fatal", () => {
+  it("an unreachable dev bundle warns (dev wire) + errors (entry) and leaves the hook inert", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const el = document.createElement("div");
+    // A source-entry URL (dev shape) on a port nothing listens on: the dev wire
+    // rejects -> warn; the entry import rejects -> error; mounted never throws.
+    el.dataset.bundle = "http://127.0.0.1:59999/src/index.tsx";
+    const { hook } = makeHook(el);
+
+    await expect(callMounted(hook)).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(hook.handle).toBeUndefined();
+    expect(hook.handleEvent).not.toHaveBeenCalled();
   });
 });
 
