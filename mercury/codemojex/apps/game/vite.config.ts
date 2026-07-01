@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 // priv/static/game (an ABSOLUTE echo path — the source reorg moved this config under
 // mercury/, so a relative ../priv no longer resolves), with a vite manifest the
 // edge-deploy script reads. This is the artifact uploaded to edge.codemoji.games and
-// dynamic-imported by the EdgeReact hook. React is bundled (the game owns its runtime);
+// dynamic-imported by the GameIsland hook. React is bundled (the game owns its runtime);
 // the only outward contract is mount(el, props, bridge).
 
 // Resolve a path relative to this config to an ABSOLUTE one — used for both the `@`

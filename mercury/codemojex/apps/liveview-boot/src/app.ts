@@ -2,7 +2,7 @@
 // typed @echo/phoenix* packages, typechecked (`tsc --noEmit`) and built here (vite lib
 // mode, phoenix externalized), then the built app.js is committed to echo's
 // priv/static/assets — the same "ship-with" tier as phoenix.js / phoenix_live_view.js.
-// It carries NO game code: the EdgeReact hook dynamic-imports the game bundle from the
+// It carries NO game code: the GameIsland hook dynamic-imports the game bundle from the
 // edge (edge.codemoji.games) at runtime and bridges it to the LiveView socket.
 import { Socket } from "@echo/phoenix";
 import { LiveSocket, type Hook, type HookInterface } from "@echo/phoenix_live_view";
@@ -38,21 +38,21 @@ interface Bridge {
 
 // Per-hook instance state (the `T` in Hook<T>): the server-event refs to unregister on
 // destroy, the game's listener set, and the live game handle.
-interface EdgeReactState {
+interface GameIslandState {
   refs?: EventRef[];
   listeners?: Set<(name: string, payload: unknown) => void>;
   handle?: GameHandle | null;
 }
 
 // The bridge between the edge-loaded React game and the LiveView socket. The game
-// bundle owns its own React; the host owns the socket. Typing it as Hook<EdgeReactState>
+// bundle owns its own React; the host owns the socket. Typing it as Hook<GameIslandState>
 // gives `this` the full HookInterface (el, pushEvent, handleEvent, removeHandleEvent).
-const EdgeReact: Hook<EdgeReactState> = {
+const GameIsland: Hook<GameIslandState> = {
   async mounted() {
     const el = this.el;
     const bundle = el.dataset.bundle;
     if (!bundle) {
-      console.error("EdgeReact: no game bundle url (edge pointer + GAME_ASSET_URL both empty)");
+      console.error("GameIsland: no game bundle url (edge pointer + GAME_ASSET_URL both empty)");
       return;
     }
     const props = safeParse(el.dataset.props);
@@ -73,7 +73,7 @@ const EdgeReact: Hook<EdgeReactState> = {
     const mod = (await import(/* @vite-ignore */ bundle)) as Partial<GameModule>;
     const mount = mod?.mount;
     if (typeof mount !== "function") {
-      console.error("EdgeReact: game bundle has no mount(el, props, bridge) export");
+      console.error("GameIsland: game bundle has no mount(el, props, bridge) export");
       return;
     }
     this.handle = mount(el, props, bridge);
@@ -110,7 +110,7 @@ const csrfToken =
 
 const liveSocket = new LiveSocket("/live", Socket, {
   params: { _csrf_token: csrfToken },
-  hooks: { EdgeReact },
+  hooks: { GameIsland },
 });
 liveSocket.connect();
 window.liveSocket = liveSocket;
