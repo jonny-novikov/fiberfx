@@ -79,3 +79,19 @@ export const Group: Story = {
     );
   },
 };
+
+// The ToggleGroup accent + group-disabled fold (mx.7.3.3): each accent tints the
+// on-state (--<id>-3 soft fill + --<id>-11 text); `disabled` grays the whole group.
+// source-grounded; no app call site
+export const AccentGroup: Story = {
+  render: () => {
+    const [align, setAlign] = useState("center");
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+        <ToggleGroup type="single" accent="iris" value={align} onValueChange={(v) => setAlign(v as string)} items={ALIGN_ITEMS} />
+        <ToggleGroup type="single" accent="green" defaultValue="center" items={ALIGN_ITEMS} />
+        <ToggleGroup type="single" accent="plum" defaultValue="left" disabled items={ALIGN_ITEMS} />
+      </div>
+    );
+  },
+};

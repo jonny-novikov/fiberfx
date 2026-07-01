@@ -56,6 +56,10 @@ export * from "./components/selection/Switch";
 export * from "./components/selection/Segmented";
 export * from "./components/selection/Slider";
 export * from "./components/selection/Toggle";
+export * from "./components/selection/CheckboxGroup";
+export * from "./components/selection/CheckboxCards";
+export * from "./components/selection/RadioGroup";
+export * from "./components/selection/RadioCards";
 // feedback
 export * from "./components/feedback/Alert";
 export * from "./components/feedback/Progress";

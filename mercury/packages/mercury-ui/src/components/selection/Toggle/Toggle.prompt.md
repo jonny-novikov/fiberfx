@@ -32,6 +32,9 @@ the `--ring-focus` halo. (Inside a `ToggleGroup`, an on item uses `--bg-secondar
   icon-only or icon+label toggle.
 - **Composed by:** nothing yet — a leaf with no app call site. The co-located `ToggleGroup` (same
   module) arranges several toggles as a bordered single-/multiple-select row.
+- **Peers:** [Segmented](../Segmented/Segmented.prompt.md) — the other bordered single-select row;
+  reach for Segmented for a mutually-exclusive view switch, `ToggleGroup` when items may be
+  multi-select or individually pressable.
 
 ## Examples
 
@@ -64,6 +67,8 @@ the `--ring-focus` halo. (Inside a `ToggleGroup`, an on item uses `--bg-secondar
   reflects the live state, so an icon-only toggle still needs an `aria-label`.
 - **`ToggleGroup` (co-located export, same module):** props `items: ToggleGroupItem[]` (each
   `{ value; label?; icon?; disabled?; ariaLabel? }`), `type` `"single"` (default) | `"multiple"`,
-  `value` / `defaultValue` (`string | string[]`), `onValueChange(value)`, `size`, `className`. In
-  `single` mode `onValueChange` yields the lone value; in `multiple` it yields the array. It is a
-  `role="group"` of `aria-pressed` buttons — likewise no app call site.
+  `value` / `defaultValue` (`string | string[]`), `onValueChange(value)`, `size`, `accent`
+  (`"iris" | "indigo" | "green" | "orange" | "plum" | "red"` — recolors each item's on-state to the
+  `--<id>-3` soft fill + `--<id>-11` text), `disabled` (a group-wide flag composing with each item's
+  own `disabled`), `className`. In `single` mode `onValueChange` yields the lone value; in `multiple`
+  it yields the array. It is a `role="group"` of `aria-pressed` buttons — likewise no app call site.

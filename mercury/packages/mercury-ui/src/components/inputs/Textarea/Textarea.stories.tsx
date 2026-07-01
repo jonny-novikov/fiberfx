@@ -2,10 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { Textarea } from "@mercury/ui";
 
-// Textarea has NO enum props (Textarea.prompt.md "Notes") and NO app call site —
-// source-grounded; no app call site. The controls restate Textarea.prompt.md's
-// Props table: label/hint/error/placeholder (text), resizable/disabled/required
-// (boolean), rows/maxLength (number). NO-INVENT (mx.4.md INV-5).
+// Textarea's only enum is `size` (mx.7.3.3 fold — sm|md|lg, padding+font scale);
+// otherwise NO app call site — source-grounded. The controls restate
+// Textarea.prompt.md's Props table: label/hint/error/placeholder (text),
+// resizable/disabled/required (boolean), rows/maxLength (number), size (enum).
+// NO-INVENT (mx.4.md INV-5).
 const meta: Meta<typeof Textarea> = {
   title: "Inputs/Textarea",
   component: Textarea,
@@ -17,6 +18,7 @@ const meta: Meta<typeof Textarea> = {
     resizable: { control: "boolean" },
     disabled: { control: "boolean" },
     required: { control: "boolean" },
+    size: { control: "inline-radio", options: ["sm", "md", "lg"] },
     rows: { control: { type: "number", min: 1, max: 20, step: 1 } },
     maxLength: { control: { type: "number", min: 1, max: 1000, step: 1 } },
   },
@@ -27,6 +29,7 @@ const meta: Meta<typeof Textarea> = {
     resizable: false,
     disabled: false,
     required: false,
+    size: "md",
     rows: 4,
   },
 };
@@ -68,4 +71,16 @@ export const WithCounter: Story = {
       </div>
     );
   },
+};
+
+// The size ramp (mx.7.3.3 fold) — sm | md | lg scale padding + font-size only.
+// source-grounded; no app call site
+export const Sizes: Story = {
+  render: () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", maxWidth: "360px" }}>
+      <Textarea label="Small" size="sm" defaultValue="sm — compact padding, 13px" />
+      <Textarea label="Medium" size="md" defaultValue="md — the default" />
+      <Textarea label="Large" size="lg" defaultValue="lg — roomier padding, 15px" />
+    </div>
+  ),
 };

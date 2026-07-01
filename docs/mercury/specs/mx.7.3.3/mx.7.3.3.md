@@ -1,6 +1,6 @@
 # mx.7.3.3 · the selection composites + the two folds
 
-> **Status: 📋 PLANNED — build-ready; sub-batch 3 of the mx.7.3 split (ships after the date pair).** Inherits the
+> **Status: ✅ BUILT — shipped 2026-07-01 via `/mercury-ship mx.7.3.3` (Duo+; BUILD-GRADE). Closes the mx.7 import epic.** Inherits the
 > sub-epic [`../mx.7.3/mx.7.3.md`](../mx.7.3/mx.7.3.md) and the mx.7 epic [`../mx.7/mx.7.md`](../mx.7/mx.7.md).
 > This batch imports the **four managed selection sets** — `CheckboxGroup` · `CheckboxCards` · `RadioGroup` ·
 > `RadioCards` — translated into `@mercury/ui`'s `.mx-*` + token idiom, additively, **composing the live
@@ -187,9 +187,37 @@ As the sub-epic cadence (the REAL aaw Trio, scope slug `mx-7-3-3`), carrying the
 Pure-presentational → NORMAL verify (no Apollo needed); the Director's solo verify is the gate (composition-real +
 accent-not-forwarded + the exactly-one-`ToggleGroup` barrel check + a net-zero mutation spot-check).
 
-## 9 · As-built (the verifier — filled post-build)
+## 9 · As-built (Director-verified — 2026-07-01, `/mercury-ship mx.7.3.3`)
 
-> Classify K-1..K-9 / INV-1..INV-12 / S-1..S-10; record the ratified §A·A1/A3 arms; list the 4 net-new folders +
-> the two folds applied (the exact props added — `Textarea.size`, `ToggleGroup.accent`/`disabled`); reproduce the
-> gate (EXIT 0) incl. the barrel-diff (+4, exactly one `ToggleGroup`), the `sb:build` +4 home delta, and the
-> idiom/hex/mercAccent/accent-not-forwarded/no-duplicate-folder/framing/no-design-sync greps (empty).
+**Verdict: BUILD-GRADE.** Duo+ formation (Director + Mars two-pass; NORMAL risk per §8 — no in-pipeline Apollo;
+the architect's lag-1 reconcile folded into Bootstrap, the brief authored by the Director). Operator-ruled arms:
+**A1 = compose the live primitive** in a card shell; **A3 = fold** into the live `ToggleGroup`. `TextArea` fold =
+`size` (epic-ruled).
+
+- **K-1 ✓** 4 net-new 4-file homes under `selection/`: `CheckboxGroup` · `CheckboxCards` · `RadioGroup` ·
+  `RadioCards`. Groups compose the live `Checkbox`/`Radio` directly; the `*Cards` wrap the primitive in a `<div>`
+  card shell with the body in the primitive's `label` slot — **nested-label-safe** (no card `onClick`, no
+  double-fire, native keyboard from the primitive).
+- **K-2 ✓** 2 folds, 0 new export: `inputs/Textarea/Textarea.tsx` += `size?: "sm"|"md"|"lg"` (→ `.mx-ta--<size>`);
+  `selection/Toggle/Toggle.tsx` `ToggleGroup` += `accent?` (6-family → `.mx-tgl-grp--accent-<id>`) + group
+  `disabled?`. `onValueChange`/`ariaLabel` **kept**; the single `Toggle` is byte-untouched.
+- **K-3 / INV-1 ✓** barrel +4 (+ their `Props`), 0 removed/renamed; folds **widen** the existing
+  `TextareaProps`/`ToggleGroupProps` (0 barrel-name delta) — resolved-export barrel-diff = `23a24,27`; exactly one
+  `ToggleGroup`, one `Textarea`.
+- **K-4/K-5 / INV-2/3/4/5 ✓** live `.mx-*` + token idiom; `accent` realized ONLY as the group/card wrapper class,
+  **never forwarded** to the primitive (INV-5 grep empty); no `mercAccent` (INV-4 empty); no inline-color/raw-hex
+  (INV-2/3 empty). Real `Icon` glyphs only (7 used — `bank·bolt·credit-card·home·shield·trending-up·users`).
+- **K-6 / INV-8 ✓** hand-authored D-7 contracts per net-new + the 2 folds refreshed; sibling cross-links resolve;
+  no bundle/`window.MercuryUI`/design-sync framing.
+- **K-7 / INV-7/9 ✓** 1:1 story↔folder; **no** `selection/ToggleGroup/` folder; `sb:typecheck` EXIT 0; `sb:build`
+  registers prior + 4.
+- **K-8/K-9 / INV-10/11/12 ✓** token/font additive-only; design flowed DOWN; the scoped `@mercury/*` gate is green:
+  `typecheck:mercury` · `build:mercury` · apps (`!@mercury/storybook`) · `sb:typecheck` · `sb:build` all EXIT 0.
+- **Gate note.** The raw `./packages/*` sweep surfaces a **pre-existing, environmental** `@echo/fx` failure (Rust
+  `wasm32-unknown-unknown` target absent on this host) — outside the Mercury boundary, `packages/fx` untouched by
+  this rung. The canonical `@mercury/*`-scoped gate (`typecheck:mercury`/`build:mercury`) is the ship gate.
+- **Load-bearing proof.** Net-zero mutation spot-check: `accent="chartreuse"` → `sb:typecheck` EXIT 2
+  (`TS2322: '"chartreuse"' is not assignable to 'Accent'`) → restored byte-exact (sha unchanged).
+
+**Stories → verdict:** S-1..S-4 (composition + accent-at-group) ✓ · S-5/S-6 (folds, no new export) ✓ · S-7 (barrel
++4) ✓ · S-8 (1:1 story↔folder) ✓ · S-9 (token additive) ✓ · S-10 (gate green) ✓.

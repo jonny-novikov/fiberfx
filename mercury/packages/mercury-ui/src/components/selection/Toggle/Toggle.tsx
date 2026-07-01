@@ -57,6 +57,10 @@ export interface ToggleGroupProps {
   defaultValue?: string | string[];
   onValueChange?: (value: string | string[]) => void;
   size?: ToggleSize;
+  /** Recolors the on-state of every item; omit for the neutral fill. */
+  accent?: "iris" | "indigo" | "green" | "orange" | "plum" | "red";
+  /** Disables every item (composes with per-item `disabled`). */
+  disabled?: boolean;
   className?: string;
 }
 
@@ -73,6 +77,8 @@ export function ToggleGroup({
   defaultValue,
   onValueChange,
   size = "md",
+  accent,
+  disabled,
   className,
 }: ToggleGroupProps) {
   const [internal, setInternal] = useState<string[]>(() => toArr(defaultValue));
@@ -90,14 +96,14 @@ export function ToggleGroup({
   };
 
   return (
-    <div className={cx("mx-tgl-grp", `mx-tgl-grp--${size}`, className)} role="group">
+    <div className={cx("mx-tgl-grp", `mx-tgl-grp--${size}`, accent && `mx-tgl-grp--accent-${accent}`, className)} role="group">
       {items.map((it) => {
         const on = sel.includes(it.value);
         return (
           <button
             key={it.value}
             type="button"
-            disabled={it.disabled}
+            disabled={disabled || it.disabled}
             aria-label={it.ariaLabel}
             aria-pressed={on}
             className={cx("mx-tgl", "mx-tgl--grouped", `mx-tgl--${size}`, on && "is-on")}

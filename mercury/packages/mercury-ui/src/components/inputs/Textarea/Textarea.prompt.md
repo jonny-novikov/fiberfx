@@ -12,6 +12,7 @@ bio, a message. Import: `import { Textarea } from "@mercury/ui"`.
 | `hint` | `string` | — | Helper copy in the footer. Shown only when there is no `error`. |
 | `error` | `string` | — | Error message in the footer; sets `aria-invalid` + the error styling. Takes precedence over `hint`. |
 | `resizable` | `boolean` | `false` | Allows the user to drag-resize the field (`is-resize`). |
+| `size` | `"sm" \| "md" \| "lg"` | `"md"` | Dimensional ramp — scales the field padding + font-size (see the enum language). |
 | `rows` | `number` | `4` | Native; the initial visible row count. |
 | `maxLength` | `number` | — | Native; also drives the `count/maxLength` footer counter (flags `is-over` at the cap). |
 | `value` | `string \| number \| readonly string[]` | — | Native; the controlled value (a `string` value is measured for the counter). |
@@ -19,6 +20,13 @@ bio, a message. Import: `import { Textarea } from "@mercury/ui"`.
 | `required` | `boolean` | — | Native; also renders the ` *` marker beside the label. |
 | `id` | `string` | auto (`useId`) | Ties the `<label htmlFor>` to the `<textarea>`; auto-generated when omitted. |
 | …rest | `TextareaHTMLAttributes<HTMLTextAreaElement>` | — | `placeholder`, `onChange`, `onBlur`, `name`, `aria-*`, `className` pass through to the `<textarea>` (`forwardRef` to it). |
+
+## The enum language
+
+`size` is a dimensional ramp — padding + font-size only, no color change: `sm` (`8px 12px` · 13px) ·
+`md` (`12px 14px` · 14px, the default — no extra rule) · `lg` (`14px 16px` · 15px). `error` remains a
+status state, not an enum: its presence flips the field to the **`negative`** family and sets
+`aria-invalid`.
 
 ## Composition
 
@@ -46,9 +54,9 @@ bio, a message. Import: `import { Textarea } from "@mercury/ui"`.
 
 - **No app call site** — the snippets above are constructed from the live interface and labeled
   *(source-grounded; no app call site)*.
-- **No enum props** — no enum-language section. The only stylistic state is `error`: its presence
-  flips the field to the **`negative`** status family and sets `aria-invalid="true"`; the `error` text
-  takes the place of `hint` in the footer.
+- **`size` is the only enum** (a dimensional ramp — see the enum language); the other stylistic state
+  is `error`: its presence flips the field to the **`negative`** status family and sets
+  `aria-invalid="true"`, and the `error` text takes the place of `hint` in the footer.
 - **The counter** renders only when `maxLength` is set, and only a `string` `value` is measured
   (`typeof value === "string"`); it adds the `is-over` class once the length reaches the cap.
 - **Accessibility** — wrapped in its `<label>` and tied by `id` (auto via `useId` when not supplied).

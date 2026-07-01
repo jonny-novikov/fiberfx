@@ -7,10 +7,11 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   hint?: string;
   error?: string;
   resizable?: boolean;
+  size?: "sm" | "md" | "lg";
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { label, hint, error, resizable = false, id, className, rows = 4, maxLength, value, required, disabled, ...rest },
+  { label, hint, error, resizable = false, size = "md", id, className, rows = 4, maxLength, value, required, disabled, ...rest },
   ref,
 ) {
   const uid = useId();
@@ -18,7 +19,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   const count = typeof value === "string" ? value.length : 0;
   const msg = error || hint;
   return (
-    <label htmlFor={fieldId} className={cx("mx-ta", error && "mx-ta--err", disabled && "mx-ta--dis", className)}>
+    <label htmlFor={fieldId} className={cx("mx-ta", `mx-ta--${size}`, error && "mx-ta--err", disabled && "mx-ta--dis", className)}>
       {label && (
         <span className="mx-ta__lbl">
           {label}
