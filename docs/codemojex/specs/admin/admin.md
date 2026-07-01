@@ -15,14 +15,19 @@ Roadmap: [`admin.roadmap.md`](./admin.roadmap.md) · Approach: [`../../../aaw/aa
 | admin.2 | lifecycle management | open / close / void a game, create + configure a room (the explicit management endpoints) |
 | admin.3 | the economy & treasury desk | balances, the `TXN` + `RVL` ledgers, cm.8 withdrawal review + approve |
 | admin.4 | players & moderation | player detail, membership (`RMP`), adjust / ban, the append-only analytics view (`AEV`) |
-| [admin.5](./admin.5.md) | **the dashboard Shell — the focus** | the `@codemojex/dashboard` SPA skeleton (Vite + React, composing `@mercury/ui` + `@mercury/effector`): an operator shell layout, the Bearer-gated admin API client, and ONE end-to-end DB view, on a two-clock data seam (HTTP now, effector `channel` later) |
-| admin.6 | the DB-view desks | rooms / games / players list + detail over the shell (`@mercury/ui` tables, pagination + search) |
-| admin.7 | the live pubsub channel | the live-data slot filled on the `@mercury/effector` `channel` adapter (the `game` channel pattern) |
+| [admin.5](./admin.5.md) | **the dashboard Shell — BUILT** | the `@codemojex/dashboard` SPA skeleton (Vite + React, composing `@mercury/ui` + `@mercury/effector`): an operator shell layout, the Bearer-gated admin API client, and ONE end-to-end DB view (games), on a two-clock data seam (HTTP now, effector `channel` later) |
+| [admin.5.1](./admin.5.1.md) | rooms + players list desks | the two remaining list views over the Shell (`@mercury/ui` `Table`), client-side search + pagination — the read plane's full browser surface; frontend-only, no open fork |
+| admin.5.2 | master-detail | room / player detail (`GET /:id`) on a selected-id seam, surfaced through the ruled detail-interaction model (Collapsible / Popover / Panel) — fork in [`admin.5.desks.design.md`](./admin.5.desks.design.md) |
+| admin.5.3 | the live game path | room → game → the embedded `@codemojex/game` live view, split game / events; subsumes the old live-pubsub slot — forks (embed / spectator bridge / split) in [`admin.5.desks.design.md`](./admin.5.desks.design.md) |
+| admin.5.4 | PROPOSED forward slot | undescribed by the Operator; two candidates sketched (cross-desk observability · operator actions) — needs confirmation |
 
 **Two tracks.** Milestone A (admin.1–4) is the **backend** control plane — the gated Fastify read plane and its
-write / economy / moderation desks. Milestone B (admin.5–7) is the **operator console** — a `@codemojex/dashboard`
-React SPA over that same read plane. The console composes `@mercury/ui` (mature; the Shell houses no reusable
-component) and seats its future live feed on `@mercury/effector`'s `channel` adapter. The console reads only the
+write / economy / moderation desks. Milestone B (admin.5, then the admin.5.1–5.4 desk ladder) is the **operator
+console** — a `@codemojex/dashboard` React SPA over that same read plane. The Shell (admin.5) shipped; the desk
+ladder fills it (admin.5.1 list desks → admin.5.2 master-detail → admin.5.3 the live game path → admin.5.4 a
+proposed slot), with the fork-heavy rungs framed in [`admin.5.desks.design.md`](./admin.5.desks.design.md). The
+console composes `@mercury/ui` (mature; the Shell houses no reusable component) and seats its future live feed on
+`@mercury/effector`'s `channel` adapter. The console reads only the
 `@codemojex/admin` API; the `@codemojex/economy` app is a separate **static** `/economy` calibration console with
 no API (a structural sibling, not a data source), and is distinct from admin.3's economy & treasury **desk**.
 

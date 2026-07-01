@@ -58,7 +58,7 @@ design system it composes is mature. Two shipped foundations carry it:
   package/app split — a reusable primitive is a `/mercury-ship` concern, surfaced as a fork).
 - **`@mercury/effector`'s `channel` adapter is the pubsub foundation** — `createChannel` + the
   `mercury/codemojex/apps/game/src/channel/model.ts` + `PhoenixGame.tsx` pattern already bind a Phoenix
-  channel to an Effector model. The dashboard's live-data slot (admin.7) seats on this exact adapter, so it is
+  channel to an Effector model. The dashboard's live-data slot (admin.5.3) seats on this exact adapter, so it is
   added later with no rewrite of the Shell's data layer.
 
 > **`@codemojex/economy` disambiguation.** The `economy` **app** (`mercury/codemojex/apps/economy`) is a
@@ -77,14 +77,14 @@ design system it composes is mature. Two shipped foundations carry it:
   admin client (`$games` + a derived `$health` store; the token from config), and the live **games** DB view
   (`useUnit($games)` → `@mercury/ui` `Table`; a client-side All/Live/Ended filter off `endsMs`; no
   `secret`/`cell_codes`). `typecheck` + `build` green (bundle 236 kB / gzip 78 kB); the two-clock store seam holds
-  (admin.7 seats a `channel` model into `$games`). Via `/cm-ship` (Director + mars-cm Duo); the prod
+  (admin.5.3 seats a `channel` model into `$games`). Via `/cm-ship` (Director + mars-cm Duo); the prod
   `@fastify/static` same-origin serve remains the named `apps/admin` follow-up.
 - **Ships.** The `@codemojex/dashboard` app skeleton (a Vite + React SPA in the mercury workspace, mirroring
   the `economy`/`game` scaffolding): an operator **shell layout** (sidebar + topbar + content) composed from
   `@mercury/ui`; the **admin API client** (Bearer `$ADMIN_TOKEN` → the read plane) as an
   `@mercury/effector`-style model; and ONE end-to-end **DB view** (the games or rooms list) proving the full
   stack against the live gated API. The data layer is a **two-clock seam** — admin HTTP now, the effector
-  `channel` pubsub later — so admin.7 adds live data without a rewrite.
+  `channel` pubsub later — so admin.5.3 adds live data without a rewrite.
 - **Demo.** An operator opens the console in a browser; the shell renders; the one DB view lists live
   games/rooms from the gated API (the Bearer flowing from config, never hard-coded); no `secret` / `cell_codes`
   appears on any row.
@@ -95,19 +95,74 @@ design system it composes is mature. Two shipped foundations carry it:
   extraction is the ruled-deferred item, rule-of-three: a later `/mercury-ship` rung once a 2nd console proves
   the shape.)
 
-### admin.6 · the DB-view desks (sketch)
-- **Ships.** The remaining read desks over the shell — rooms, games, players list + detail, each a
-  `@mercury/ui` `Table`/`DataList` view reading the gated API, with pagination + search + navigation across
-  rooms/games/players/board. Consumes the Shell's client + layout; adds no new data-transport.
-- **Demo.** The operator browses every read surface from the console instead of `curl`.
-- **Harness.** Each desk builds + reads the gated API; the barrel holds.
+> **The Shell desk ladder (admin.5.1–5.4).** The coarse admin.6 (DB-view desks) + admin.7 (live pubsub) sketches
+> are dissolved into a finer sub-ladder under the shipped admin.5 Shell — each a thin, frontend-only increment on
+> the `@codemojex/dashboard` console that composes the Shell's client + layout. admin.5.3 **subsumes** the old
+> admin.7 (the live-channel slot arrives folded into the room→game navigational path). The framed forks for
+> admin.5.2 (the detail-interaction model) and admin.5.3 (the game-embed model · the spectator bridge · the
+> split-view) live in the desk-ladder design doc [`admin.5.desks.design.md`](./admin.5.desks.design.md); the
+> Operator rules them before those rungs build. Pagination + search across the desks are **client-side** (filter /
+> page the ≤200 rows the read routes already return, in the browser) — Operator-ruled — so admin.5.1/5.2 are
+> **frontend-only** (`apps/dashboard`), no backend edit.
 
-### admin.7 · the live pubsub channel (sketch)
-- **Ships.** The live-data slot filled — a Phoenix-channel feed (a live board / room state) seated on the
-  `@mercury/effector` `channel` adapter (the `game/src/channel/model.ts` pattern), so a desk updates in place
-  off server pushes rather than a poll. This wires the two-clock seam's second clock; the engine-side channel
-  is a coupling surface (an `echo/` concern, forked to `/codemojex-ship`).
-- **Demo.** A live game's board updates in the console with no refresh.
-- **Harness.** The channel model binds; a desk re-renders off a push.
+### admin.5.1 · rooms + players list desks
+- **Ships.** The two remaining LIST desks over the Shell — `RoomsView` + `PlayersView`, each mirroring the
+  as-built `GamesView` (`useUnit` a store → a `@mercury/ui` `Table`), reading the gated `GET /rooms` + `GET
+  /players` through the Bearer client. Client-side **search** (`@mercury/ui` `Search`) + **pagination**
+  (`@mercury/ui` `Pagination`) over the ≤200 client-held rows, and a rooms All/Open/Closed status filter. The
+  sidebar's Rooms/Players nav is enabled; `types.ts`'s `RoomSummary`/`PlayerSummary` stubs are completed to the
+  real `schemas.ts` shapes; no `secret`/`cell_codes` on any row; the barrel untouched.
+- **Demo.** The operator switches to Rooms, searches by name, pages through the list; switches to Players, same;
+  every row is a public column only — no secret leaks.
+- **Harness.** `pnpm --filter @codemojex/dashboard typecheck` + `build` green; a grep confirms no `fetch(` in
+  `src/views/` and no `secret`/`cell_codes` field; the `@mercury/ui` resolved export set is unchanged.
+- **Feedback.** Whether client-side search/paging over ≤200 rows is the right ceiling before a server-paged desk
+  is wanted (the `/players` server `?q` exists, deliberately unused this rung).
+
+### admin.5.2 · master-detail (the side-panel detail desk) — SPECCED ✓ (RULED Arm C, BUILD-GRADE)
+- **Ships.** The detail layer over the list desks, the ruled **Arm C (master-detail)** — a room's games and a
+  player's guesses/ledger, read from the shipped `GET /rooms/:id` + `GET /players/:id` on a `$selectedId` + keyed
+  `fetchDetailFx(id)` store seam, rendered in a **side pane** (`Card` + `ScrollArea`, composed locally — no new
+  primitive) beside the narrowed list: the room summary (`DataList`/`Badge`) + its games (nested `Table`); the
+  player summary/balances (`DataList`/`Stat`) + guesses + wallet ledger (`DataList`/`ListRow`). Selection rides a
+  `Column.render` action cell (`Table` has no row-click prop — so the barrel holds). Frontend-only; no backend
+  edit; no `secret`/`cell_codes`.
+- **Demo.** The operator selects a room and views its games (and a player and their recent guesses/balances) in a
+  side pane without leaving the console; switching desks clears the pane.
+- **Harness.** `pnpm --filter @codemojex/dashboard typecheck` + `build` green; the panes read the gated `:id`
+  routes via keyed effects; a grep confirms no `fetch(` in `src/views/` and no secret field; the barrel holds.
+- **Feedback.** Whether the side-panel density reads well before the live game path extends the same seam.
+- **Ruled (Operator, D-6 → Arm C).** Triad authored: [`admin.5.2.md`](./admin.5.2.md) ·
+  [`admin.5.2.stories.md`](./admin.5.2.stories.md) · [`admin.5.2.llms.md`](./admin.5.2.llms.md); the arms are kept
+  as decision-context in [`admin.5.desks.design.md`](./admin.5.desks.design.md) (admin.5.2-F1).
+
+### admin.5.3 · the live game path — room → game → the game view — RULED PHASED (interim now / live later)
+- **Ships (interim, node-only).** The critical navigational path — room → game → the game view — as a spectator
+  board **re-rendered** from the shipped `GET /games/:id` (board + guesses) via `@mercury/ui` + a poll for
+  near-live, on a **side-by-side split** (game | events/guesses), the room→game nav extending admin.5.2's
+  `$selectedId` seam. Frontend-only, ZERO echo/ coupling.
+- **Ships (live upgrade, later — a `/codemojex-ship` engine fork).** The TRUE live view — `mount`-ing the
+  `@codemojex/game` island + a read-only engine `game:spectate:<id>` topic seated on the `@mercury/effector`
+  `channel` adapter — swaps in with **no rewrite** (the two-clock seam's second clock). The engine topic + authz
+  is an `echo/` concern, out of the codemojex-node boundary.
+- **Demo.** The operator navigates room → game and watches the board update (interim: a polled re-render; live
+  upgrade: the actual island), beside a live guesses feed.
+- **Harness.** The game view builds + reads the gated `:id` route; the split renders; the barrel holds; (live
+  upgrade) the spectator feed binds once the engine channel exists.
+- **Feedback.** Whether the re-rendered split is enough before the live island-mount is worth the engine fork.
+- **Ruled (Operator, D-6 → phased):** F1 → Arm C (re-render) interim / Arm A (island-mount) later · F2 → Arm C
+  (poll) interim / Arm A (engine topic) later · F3 → Arm A (side-by-side). The full triad is authored at admin.5.3's
+  own build run; the ruled design entry is [`admin.5.desks.design.md`](./admin.5.desks.design.md) (admin.5.3-F1/F2/F3).
+
+### admin.5.4 · observability & shared filter-state — RULED (5.4-a)
+- **Ships.** The ruled **5.4-a** — a console-wide observability surface: a header `Stat` strip (live counts —
+  open games, active rooms, players) + a URL-encoded filter/search state (linkable, refresh-surviving) + a
+  per-desk auto-refresh cadence. Frontend-only (reads the existing read plane, computes counts client-side).
+- **Demo.** The operator reads live counts at a glance and shares a URL that restores a filtered desk view.
+- **Harness.** `typecheck` + `build` green; the counts derive from the existing stores; the barrel holds.
+- **Feedback.** Whether observability is the right next step before the write twin (5.4-b).
+- **Ruled (Operator, D-6 → 5.4-a).** 5.4-b (operator actions / the read-plane write twin) is deferred to pair with
+  admin.2. Stays a roadmap entry (no triad yet); the candidate sketches are in
+  [`admin.5.desks.design.md`](./admin.5.desks.design.md) § admin.5.4.
 
 Index: [`admin.md`](./admin.md) · Approach: [`../../../aaw/aaw.specs-approach.md`](../../../aaw/aaw.specs-approach.md)
