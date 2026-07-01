@@ -85,6 +85,9 @@ export * from "./components/navigation/Pagination";
 // overlay
 export * from "./components/overlay/Modal";
 export * from "./components/overlay/Tooltip";
+export * from "./components/overlay/Dialog";
+export * from "./components/overlay/AlertDialog";
+export * from "./components/overlay/Popover";
 // layout
 export * from "./components/layout/AuthLayout";
 export * from "./components/layout/Collapsible";

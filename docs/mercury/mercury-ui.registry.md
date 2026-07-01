@@ -23,10 +23,10 @@ its co-located contract (`<Name>.prompt.md`) and its stories (`<Name>.stories.ts
 
 | | Count |
 |---|---|
-| **Shipped components** | **52**, across **9 groups** — each with `.tsx` + `.stories.tsx` + `.prompt.md` + `index.ts` |
-| **Storybook coverage** | **52 / 52** — every component has a co-located CSF3 story file (a `Playground` + variant/usage stories) |
-| **Contract coverage** | **52 / 52** — every component carries a hand-authored `<Name>.prompt.md` (the `D-7` six-section shape) |
-| **Pending (planned)** | **+14 rows** — `mx.7.3.3` (4 selection composites + `ToggleGroup` + a `Textarea` enrichment fold) · `mx.7.4` (overlay floor + 3) · `mx.7.5` (6 menus/nav) |
+| **Shipped components** | **55**, across **9 groups** — each with `.tsx` + `.stories.tsx` + `.prompt.md` + `index.ts` |
+| **Storybook coverage** | **55 / 55** — every component has a co-located CSF3 story file (a `Playground` + variant/usage stories) |
+| **Contract coverage** | **55 / 55** — every component carries a hand-authored `<Name>.prompt.md` (the `D-7` six-section shape) |
+| **Pending (planned)** | **+11 rows** — `mx.7.3.3` (4 selection composites + `ToggleGroup` + a `Textarea` enrichment fold) · `mx.7.5` (6 menus/nav) |
 | **Public surface** | every component exports from the `@mercury/ui` barrel — `import { <Name> } from "@mercury/ui"` |
 
 The export surface only ever **grows** (the master invariant — additions OK; removals/renames are a
@@ -126,9 +126,9 @@ ship) it.
 |---|---|---|
 | `Modal` | ✅ | the original 33 |
 | `Tooltip` | ✅ | the original 33 |
-| `Dialog` | 📋 | `mx.7.4` (on the new overlay floor) |
-| `AlertDialog` | 📋 | `mx.7.4` |
-| `Popover` | 📋 | `mx.7.4` |
+| `Dialog` | ✅ | `mx.7.4` (on the new overlay floor) |
+| `AlertDialog` | ✅ | `mx.7.4` |
+| `Popover` | ✅ | `mx.7.4` |
 | `Dropdown` | 📋 | `mx.7.5` |
 | `ContextMenu` | 📋 | `mx.7.5` |
 | `HoverCard` | 📋 | `mx.7.5` |
@@ -242,6 +242,9 @@ Colour shows through the **accent ramp** — `accent="iris | indigo | green | or
 |---|---|---|
 | `Modal` | `size` · open/close · backdrop — *Playground · Sizes* | *Confirm* |
 | `Tooltip` | trigger modes · side — *Playground* | *OnTriggers* |
+| `Dialog` | `size` (sm/md/lg) · open/close · focus-trap + return · description slot — *Playground · Sizes · a11y — focus trap* | *Playground* |
+| `AlertDialog` | `destructive` · confirm/cancel · Escape-only dismiss (no backdrop) — *Playground · a11y* | *Playground* |
+| `Popover` | `placement` (4) · controlled + uncontrolled · anchored non-modal dismiss — *Playground · a11y* | *Playground* |
 
 ### `layout`
 | Component | Surface — variants · colors · actions | Usage stories |
@@ -251,7 +254,7 @@ Colour shows through the **accent ramp** — `accent="iris | indigo | green | or
 | `Collapsible` ✦ | `accent` (6-ramp) · open/closed — *Playground · Accents* | *Open* |
 | `ScrollArea` | sizes · custom scrollbar — *Playground · Sizes* | *Playground only* |
 
-> **Pending components carry no stories yet** — `mx.7.3.3`/`mx.7.4`/`mx.7.5` add the
+> **Pending components carry no stories yet** — `mx.7.3.3`/`mx.7.5` add the
 > `<Name>.stories.tsx` in the same rung that adds the `.tsx` and the `.prompt.md` (the contract +
 > story land with the component, never after).
 

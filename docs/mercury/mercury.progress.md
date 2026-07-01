@@ -76,7 +76,7 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
     7.3.1 ✅ BUILT     ████████████████████  DateField — segmented spinbutton (+1) · composes @mercury/core useDateField (A2 arm a) · barrel 50→51 · REAL aaw Trio, 2 mars waves (LAW-1b) — gate-green 2026-06-30
     7.3.2 ✅ BUILT     ████████████████████  Calendar — month-grid picker (+1) · composes @mercury/core useCalendar (A2 arm a) · barrel +1 · grid machine — REAL aaw Trio + Apollo, write-ready waves (LAW-1b) — gate-green 2026-06-30
     7.3.3 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  selection composites — CheckboxGroup·CheckboxCards·RadioGroup·RadioCards (+4) + folds Textarea/ToggleGroup
-    7.4  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  overlay-floor primitive + Dialog·AlertDialog·Popover (+3) · Squad-tier
+    7.4  ✅ BUILT     ████████████████████  overlay-floor (@core, headless: trap·dismiss·anchored) + Dialog·AlertDialog·Popover (+3, @ui) + effector bridge (createDisclosure + scroll-lock singleton) · Squad · Apollo a11y (1 block remediated) · barrels @ui+3/@core+floor/@effector+disclosure · gate-green 2026-07-01 (showcase = commit #2)
     7.5  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  menus/hover/nav (consume the floor) — Dropdown·ContextMenu·HoverCard·LinkPreview·Menubar·TabNav (+6) · Squad-tier
   mx.8   🪟 EPIC      ░░░░░░░░░░░░░░░░░░░░  enrich the stories — palette · roundings · variants · actions · scenes · now an EPIC, sliced by group (@mercury/ui surface frozen)
     8.1  ✅ BUILT     ████████████████████  foundations slice — Palette+Roundings brand-only toolbar globals (host-wide) · foundations variant audit (Heading `as` gap filled) · 2 foundations-in-context scenes (Profile·Article) · barrel byte-identical · K-4 deferred — gate-green 2026-07-01 (/mercury-ship mx.8.1)

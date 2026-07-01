@@ -2,7 +2,7 @@
 
 Given/When/Then for [`mx.7.4.md`](./mx.7.4.md). Connextra form; each names the deliverable + the invariant(s)
 it proves. **Coverage:** K-1 → S-1, S-7 ; K-2 → S-2..S-4 ; K-3 → S-5 ; K-4 → S-2..S-4, S-8 ; K-5 → S-7 ; K-6 →
-S-2..S-4 ; K-7 → S-6 ; K-8 → S-2, S-5 ; K-9 → S-8 ; K-10 → S-8.
+S-2..S-4 ; K-7 → S-6 ; K-8 → S-2, S-5 ; K-9 → S-8 ; K-10 → S-8 ; **K-11 → S-9 ; K-12 → S-10**.
 
 ## S-1 · The overlay-floor is one shared primitive, published for 7.5 (K-1)
 *As an **overlay author**, I want portal + focus-trap + focus-return + dismiss + anchored-positioning as one
@@ -80,3 +80,29 @@ the animations are **static `@keyframes` in `additions.css`** (no `document.crea
 `ensureKeyframes` in any component), any `tokens.css` change is an **added** line only (no changed value), the
 idiom/hex/framing greps are empty, and **no** `/design-sync`/`DesignSync` invocation occurred. *(Proves INV-2 +
 INV-4 + INV-7 + INV-DOWN + INV-8.)*
+
+## S-9 · The Effector disclosure bridge drives the overlays from outside (K-11) — commit #1
+*As a **product author**, I want an Effector adapter that produces an overlay's open/close state and locks body
+scroll while any overlay is open, so that I can drive `Dialog`/`Popover` from my app's state — without the
+overlays holding application state.*
+**Given** the presentational overlays (`open`/`onOpenChange`/`onClose`) and the 7-module `@mercury/effector`
+barrel, **when** `disclosure.ts` lands as `createDisclosure()` (the `createCooldown` factory idiom → `{ $open,
+open, close, toggle, useOpen }`) **plus** a global overlay-stack + body-scroll-lock singleton (`$openOverlays`
+LIFO, `$anyOverlayOpen`, an idempotent `initOverlayLock()` that padding-compensates + releases on the last
+close), **then** the `@mercury/effector` barrel grows **additively** (7 → 8 `export *`, prior byte-present),
+`@mercury/ui`'s `package.json` gains **no** `@mercury/effector` dep (the arrow is effector → ui), the overlays'
+prop surface is **unchanged**, and `apps/storybook/stories/effector/Overlay.stories.tsx` (`Effector/Overlay`)
+wires `createDisclosure` + the scroll-lock model to a real `Dialog` + `Popover`, registered by `pnpm sb:build`.
+*(Proves INV-EFFECTOR — the bridge is proven **live**; a story that renders neither does not satisfy it.)*
+
+## S-10 · The showcase foundation is a from-source app that composes, never houses (K-12) — commit #2
+*As a **developer learning Mercury**, I want a showcase app whose shell and first demo run against the live
+`@mercury/*` source, so that the Developer Reference has a real, theme-toggling home to grow into.*
+**Given** no `apps/showcase/` exists and `pnpm-workspace.yaml` already globs `apps/*`, **when** the foundation
+lands as a new `mercury/apps/showcase/` (mirroring `apps/mobile`'s vite alias + tsconfig `paths` + package shape)
+with the translated shell (sidebar + topbar + the `@mercury/effector` **theme toggle**) and the new overlays as
+the first live demo driven by the §E disclosure adapter, **then** `pnpm --filter @mercury/showcase build` exits 0
+resolving `@mercury/*` **from source**, the app imports only from `@mercury/{ui,effector,core}` + React and
+defines **no** reusable component app-side (canon §7 `D-8` — composes, never houses), it adds **nothing** to the
+`@mercury/ui` barrel, and **no** `pnpm-workspace.yaml` edit was needed. *(Proves INV-SHOWCASE + the §F
+theme-adapter composition; this is commit #2 — commit #1 is K-1..K-11, gate-green.)*

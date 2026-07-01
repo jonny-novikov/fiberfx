@@ -27,3 +27,20 @@ export { CalendarDate, parseDate } from "@internationalized/date";
 // Month-grid calendar composable (consumed by @mercury/ui Calendar; reuses the date value kit above — INV-6).
 export { useCalendar } from "./internal/date-time/calendar/use-calendar";
 export type { UseCalendarOptions, UseCalendarReturn, CalendarCell, CalendarCellProps, CalendarNavProps } from "./internal/date-time/calendar/use-calendar";
+
+// Overlay-floor headless hooks (consumed by @mercury/ui overlays; published for mx.7.5 — mx.7.4 §A, D-5).
+export { useFocusTrap } from "./internal/use-focus-trap";
+export type { UseFocusTrapOptions } from "./internal/use-focus-trap";
+export { useDismiss } from "./internal/use-dismiss";
+export type { UseDismissOptions } from "./internal/use-dismiss";
+export { useAnchoredPosition } from "./internal/use-anchored-position";
+export type {
+	UseAnchoredPositionOptions,
+	UseAnchoredPositionReturn,
+	AnchoredPlacement,
+	AnchoredAlign,
+	AnchoredPoint,
+} from "./internal/use-anchored-position";
+// Stable-id + arrow-nav helpers for aria wiring (useId now; useArrowNavigation published for mx.7.5's menus).
+export { useId } from "./internal/use-id";
+export { useArrowNavigation } from "./internal/use-arrow-navigation";
