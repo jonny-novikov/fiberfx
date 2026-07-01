@@ -112,8 +112,11 @@ that the source does not show.
 
 This batch builds **no** primitive — it composes 7.4's. The mapping:
 
-- **`useDismiss(ref, { onDismiss, outsideClick, escapeKey })`** — every menu + hover card; `ContextMenu` adds
-  `scroll`-dismiss (the prototype dismisses the pointer-anchored menu on scroll).
+- **`useDismiss(ref, { onDismiss, outsideClick, escapeKey })`** — every **menu** (`Dropdown`/`ContextMenu`/
+  `Menubar`); `ContextMenu` adds `scroll`-dismiss (the prototype dismisses the pointer-anchored menu on scroll).
+  The **hover cards are non-modal** — they dismiss on blur/mouse-leave via local open/close timers (§5), **not**
+  `useDismiss`. *(As-built sync: the original bullet said "every menu + hover card"; the code composes
+  `useDismiss` on the menus only, matching §5's non-modal hover-card intent.)*
 - **`useAnchoredPosition(anchorRef, floatRef, { placement, align, width })`** — the menus' `align: start|end`,
   the hover cards' `top/bottom/left/right`, and `ContextMenu`'s pointer-`fixed` viewport-clamped case.
 - **`useArrowNavigation`** — `Dropdown`/`ContextMenu`/`Menubar` item navigation (Arrow/Home/End).
@@ -266,11 +269,114 @@ MATCH/STALE/INVENTED/MISSING, fills §11 → Operator reviews the +6 Storybook h
 - Editing the roadmap/progress/design/epic — the Director folds at ship (the 7.5 row → BUILT, a `D-` for the
   ruled group placement, the running barrel-jump, **the import-complete milestone**).
 
-## 11 · As-built (the verifier — filled post-build)
+## 11 · As-built (the verifier — Apollo, HIGH-risk mandatory pass)
 
-> Classify K-1..K-10 / INV-1..INV-8 + INV-FLOOR-CONSUMED/INV-A11Y/INV-DOWN / S-1..S-11 MATCH/STALE/INVENTED/
-> MISSING; record the ratified §A group placement; confirm the 6 menus/cards compose the 7.4 floor (no inline
-> re-roll); list the 6 folders shipped; reproduce the gate (EXIT 0) incl. the barrel-diff (0 removed/renamed,
-> +6), the `sb:build` +6 home delta, and the idiom/hex/`mercAccent`/keyframe/framing/no-design-sync greps
-> (empty); **reproduce the INV-A11Y proofs** (menu arrow-nav, hover-on-focus, dismiss). Record the **mx.7 import
-> as complete** (the 31 net-new + the folds across 7.1–7.5) for the Director's epic fold.
+**Verdict: BUILD-GRADE.** Every promise MATCH; zero STALE / INVENTED / MISSING; zero blocking deltas. Two
+non-blocking notes recorded below (the INV-A11Y execution posture; a §4 spec-body sync).
+
+### 11.1 · The 6 folders shipped (each a 4-file home)
+
+`overlay/Dropdown`, `overlay/ContextMenu`, `overlay/HoverCard`, `overlay/LinkPreview`, `navigation/Menubar`,
+`navigation/TabNav` — each `{<Name>.tsx, index.ts, <Name>.prompt.md, <Name>.stories.tsx}` (24 new files,
+untracked; + `M src/index.ts` + `M src/styles/additions.css`). **§A group placement RATIFIED: `navigation/`**
+for `Menubar` + `TabNav` (beside `Tabs`/`Accordion`/`Pagination`) — no rename of any existing export.
+
+### 11.2 · Deliverables & invariants — classification (grounded)
+
+| Promise | Verdict | As-built ground |
+|---|---|---|
+| K-1 six 4-file homes | MATCH | each of the 6 folders holds the 4 files (verified) |
+| K-2 menus/cards compose the floor | MATCH | `useAnchoredPosition`×5, `useDismiss`×3, `useArrowNavigation`×3, `useId`×2 from `@mercury/core`; `TabNav` none |
+| K-3 barrel +6 additive | MATCH | `index.ts:85-86,93-96`; 0 removed, +6 lines; 20 export names all present in the `.tsx` |
+| K-4 live idiom (`.mx-*`+tokens, no hex, static `@keyframes`, accent-classes) | MATCH | all idiom/hex greps empty; `@keyframes merc-{dd,cm,menu,hc}-in` at `additions.css:846-880` |
+| K-5 a11y is part of the component | MATCH | roles/`aria-haspopup`/`aria-expanded`/arrow-nav/hover+focus/restored ring/real `<button>` triggers — traced in the 6 `.tsx` |
+| K-6 hand-authored contract per overlay | MATCH | 6 `.prompt.md`, full mx.2 sections, cross-links resolve on disk, "(source-grounded; no app call site)" note |
+| K-7 1:1 story↔folder | MATCH | 61 stories == 61 component folders (`_overlay/Portal` internal, no story) |
+| K-8 `Menubar`/`TabNav` group ruled | MATCH | both in `navigation/`; barrel `navigation/*` block; no rename |
+| K-9 token/font additive-only | MATCH | `tokens.css` untouched (git-diff empty); no new weight |
+| K-10 gate green + design DOWN | MATCH | see 11.3; no `/design-sync` |
+| INV-1 master invariant additive | MATCH | barrel git-diff 0 removed/+6; Director's `getExportsOfModule` + empty collision-grep authoritative |
+| INV-FLOOR-CONSUMED (no re-roll) | MATCH | `mousedown`-outside grep empty over the 5 menu/card dirs; floor hooks imported; `ContextMenu` `scroll`-dismiss is §4-sanctioned (`ContextMenu.tsx:66-71`), not a re-roll |
+| INV-A11Y (exercise the outcome) | MATCH (see 11.4 note) | all 5 mandatory `play`s exercise the real outcome; sound-by-construction (a broken component fails each) |
+| INV-2 no inline colour | MATCH | grep empty (6 dirs) |
+| INV-3 no raw hex | MATCH | grep empty (6 dirs + new CSS `686-919`) |
+| INV-4 no `mercAccent`; no runtime keyframes | MATCH | `mercAccent`/`_lib/accent` + `createElement("style")`/`ensureKeyframes` greps empty |
+| INV-5 D-7 contract, no bundle framing | MATCH | framing grep empty over the 6 contracts |
+| INV-6 1:1 story↔folder + `sb:typecheck` | MATCH | 61==61; `sb:typecheck` EXIT 0; `sb:build` prior+6 |
+| INV-7 token/font additive-only | MATCH | `tokens.css` untouched |
+| INV-DOWN design flows DOWN | MATCH | no `DesignSync`/`/design-sync` in components; no `.design-sync/` staged |
+| INV-8 the package gate | MATCH | see 11.3 (all EXIT 0) |
+| S-1 compose floor, no re-roll | MATCH | = INV-FLOOR-CONSUMED |
+| S-2 Dropdown keyboard menu | MATCH | `Dropdown.tsx` + `Dropdown.stories.tsx:63` play |
+| S-3 ContextMenu opens at pointer | MATCH | `ContextMenu.tsx:110-119` (`onContextMenu`→`point`) + play `:58` (note 11.4b) |
+| S-4 HoverCard hover+focus | MATCH | `HoverCard.tsx:75-83` (`onFocus`→show) + focus-proof play `:64` |
+| S-5 LinkPreview | MATCH | `LinkPreview.tsx` + render/states story; cross-links `HoverCard`/`Link` |
+| S-6 Menubar | MATCH | `Menubar.tsx` + play `Menubar.stories.tsx:72` |
+| S-7 TabNav aria-current + ring, ruled group | MATCH | `TabNav.tsx:48-63`; `.mx-tabnav__link:focus-visible` real `outline` `additions.css:912-915`; active border `--bg-brand` `:907` |
+| S-8 a11y exercised not rendered | MATCH (see 11.4 note) | the 5 plays assert outcomes (not render-only) |
+| S-9 barrel +6 additive | MATCH | = INV-1 |
+| S-10 accent-classes/static keyframes/gate/tokens/DOWN | MATCH | = INV-2/4/7/DOWN/8 |
+| S-11 1:1 story↔folder | MATCH | = INV-6 |
+
+### 11.3 · Gate reproduced (independent, from `mercury/`, EXIT 0 each)
+
+- `pnpm --filter "@mercury/*" typecheck` → **EXIT 0** (mercury-core/ui/effector + apps echomq/mobile/storybook).
+- `pnpm --filter "@mercury/*" --filter "!@mercury/storybook" build` → **EXIT 0** (ui + effector + echomq + mobile).
+- `pnpm sb:typecheck` → **EXIT 0** (the authoritative story NO-INVENT gate).
+- `pnpm sb:build` → **EXIT 0**, "Storybook build completed successfully"; the **+6 home delta** (66→72 total
+  story files = 61 co-located component stories + 11 app scenes) — all 6 new chunks present
+  (Dropdown/ContextMenu/HoverCard/LinkPreview/Menubar/TabNav `.stories`).
+- **Barrel-diff:** `src/index.ts` git-diff = **0 removed/renamed, +6** added lines (strictly additive).
+- **Idiom/hygiene greps — all EMPTY:** inline colour · raw hex (6 dirs + new CSS) · `mercAccent`/`_lib/accent` ·
+  `createElement("style")`/`ensureKeyframes` · `mousedown`-outside re-roll (5 menu/card dirs) · bundle framing
+  in the 6 contracts · `DesignSync`/`/design-sync`.
+
+### 11.4 · Adversarial a11y probe — the 5 mandatory `play`s (each traced component↔play)
+
+Each play queries the **portaled** panel through `canvasElement.ownerDocument.body` (a canvas-scoped query
+would find nothing) and exercises the real outcome — a no-op / subtly-broken component **fails** it:
+
+- **Dropdown** (`Dropdown.stories.tsx:63`) — asserts `aria-haspopup="menu"`, click flips `aria-expanded`
+  false→true, `body.findByRole("menu")`, `{ArrowDown}`→ `Profile` `toHaveFocus()` (the arrow-nav floor: on
+  open focus moves to the panel `tabIndex=-1`; `onKeyDown`→`useArrowNavigation` with `indexOf(panel)=-1`→first
+  item), `{Escape}`→ menu null + `aria-expanded` false. **Live, not dead code.**
+- **Menubar** (`Menubar.stories.tsx:72`) — trigger is `role="menuitem"` (menubar semantics), `aria-haspopup`,
+  click→`aria-expanded`, portaled submenu, `{ArrowDown}`→ `New File` focus, `{Escape}`→ null. Sound.
+- **ContextMenu** (`ContextMenu.stories.tsx:58`) — `fireEvent.contextMenu` opens the portaled menu, `Delete`
+  carries `.mx-ctx__item--danger`, `{Escape}` dismisses. Sound *(11.4b)*.
+- **HoverCard** (`HoverCard.stories.tsx:64`) — dialog null pre; `userEvent.tab()` focuses the real `<button>`
+  → `onFocus` bubbles to the wrapper span → `body.findByRole("dialog")`. **Proves FOCUS (not only hover) opens
+  it** — a hover-only build times out and fails.
+- **TabNav** (`TabNav.stories.tsx:55`) — `aria-current="page"` on the active link; after `tab()`,
+  `getComputedStyle(...).outlineStyle).not.toBe("none")`. **Coherent with the CSS:** unlike the overlays
+  (`outline:none; box-shadow`), TabNav ships a real `outline: 2px solid` (`additions.css:913`), so the
+  assertion holds in a real browser. Play + rule co-designed.
+
+**11.4a — INV-A11Y execution posture (note, not a block).** `apps/storybook` has **no** test-runner
+(`dev`/`build`/`typecheck` only) and `.storybook/main.ts` `addons: []`. The `play`s are therefore
+**type-checked (`sb:typecheck`) + build-registered (`sb:build`) + sound-by-construction, but NOT machine-executed
+in the gate ladder** — they run only in `sb:dev`'s interactions. The runner-of-record for INV-A11Y in this
+program is the **mandatory Apollo adversarial trace** (this §11.4) — which is exactly why the verifier is
+mandatory on a HIGH-risk a11y rung (§9). This matches mx.7.4 and every prior a11y batch; it is a program-level
+gate-coverage posture, not a mx.7.5 defect. *Cost if unaddressed:* a future a11y regression could pass a green
+`sb:build`; *mitigation:* the plays are sound and would fire in dev/Chromatic, or once a play-runner is wired
+(a Director/Operator call — see the mentoring note).
+
+**11.4b — ContextMenu pointer position (named uncertainty).** The play proves right-click→open + danger +
+Escape, but not the literal pixel anchor (`getBoundingClientRect` is 0 in jsdom, so position is not reliably
+assertable). The positioning path is the **7.4 floor's** `useAnchoredPosition({ point })`, unit-proven there
+and shared with the other overlays. Acceptable.
+
+### 11.5 · Spec synced to shipped reality
+
+- **§4 bullet 1** — was "`useDismiss` … every menu + hover card"; synced to "every **menu**" (the hover cards
+  are non-modal → blur/mouse-leave timers, matching §5 + the as-built `HoverCard`/`LinkPreview`). Recording
+  reality, not redesign. (The derived `.llms.md` "Ground facts — useDismiss (every menu/card)" line carries the
+  same lag; historical build brief, left as-is.)
+
+### 11.6 · The mx.7 import — COMPLETE
+
+mx.7.5 adds the final **6** net-new components → the mx.7 import epic reaches **31 net-new** across 7.1–7.5
+(+ the folds). The full `@mercury/ui` surface is imported; mx.8 (Storybook enrichment) and mx.9 (the showcase)
+can now render the whole surface. **For the Director's epic fold:** 7.5 row → BUILT; a `D-` for the ratified
+`navigation/` group placement; the running barrel-jump (+6); the **import-complete** milestone.

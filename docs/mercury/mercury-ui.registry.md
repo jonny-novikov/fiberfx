@@ -11,11 +11,11 @@ its co-located contract (`<Name>.prompt.md`) and its stories (`<Name>.stories.ts
 > [`mercury.progress.md`](./mercury.progress.md); the contract format is
 > [`contracts.md`](./contracts.md). This registry is the **as-built index** those documents point at.
 
-> **Grounding (as-built 2026-06-30).** Every **shipped** row below is verified present on disk —
+> **Grounding (as-built 2026-07-01).** Every **shipped** row below is verified present on disk —
 > `mercury/packages/mercury-ui/src/components/<group>/<Name>/` carries `<Name>.tsx`,
-> `<Name>.stories.tsx`, `<Name>.prompt.md`, and `index.ts` for all 52. Story names are read from the
+> `<Name>.stories.tsx`, `<Name>.prompt.md`, and `index.ts` for all 61. Story names are read from the
 > `.stories.tsx` exports; prop axes from the `.tsx` source. **Pending** rows are forward-tense from
-> the roadmap (`mx.7.3.3` · `mx.7.4` · `mx.7.5`) — they name a planned surface, not a shipped one.
+> the roadmap (`mx.7.3.3` only — `mx.7.4`+`mx.7.5` have since shipped) — they name a planned surface, not a shipped one.
 
 ---
 
@@ -23,10 +23,10 @@ its co-located contract (`<Name>.prompt.md`) and its stories (`<Name>.stories.ts
 
 | | Count |
 |---|---|
-| **Shipped components** | **55**, across **9 groups** — each with `.tsx` + `.stories.tsx` + `.prompt.md` + `index.ts` |
-| **Storybook coverage** | **55 / 55** — every component has a co-located CSF3 story file (a `Playground` + variant/usage stories) |
-| **Contract coverage** | **55 / 55** — every component carries a hand-authored `<Name>.prompt.md` (the `D-7` six-section shape) |
-| **Pending (planned)** | **+11 rows** — `mx.7.3.3` (4 selection composites + `ToggleGroup` + a `Textarea` enrichment fold) · `mx.7.5` (6 menus/nav) |
+| **Shipped components** | **61**, across **9 groups** — each with `.tsx` + `.stories.tsx` + `.prompt.md` + `index.ts` |
+| **Storybook coverage** | **61 / 61** — every component has a co-located CSF3 story file (a `Playground` + variant/usage stories) |
+| **Contract coverage** | **61 / 61** — every component carries a hand-authored `<Name>.prompt.md` (the `D-7` six-section shape) |
+| **Pending (planned)** | **+5 rows** — `mx.7.3.3` (4 selection composites + `ToggleGroup` + a `Textarea` enrichment fold) |
 | **Public surface** | every component exports from the `@mercury/ui` barrel — `import { <Name> } from "@mercury/ui"` |
 
 The export surface only ever **grows** (the master invariant — additions OK; removals/renames are a
@@ -119,7 +119,8 @@ ship) it.
 | `Tabs` | ✅ | the original 33 |
 | `Accordion` | ✅ | the original 33 |
 | `Pagination` | ✅ | the original 33 |
-| `TabNav` | 📋 | `mx.7.5` — link-based nav tabs (distinct from the button/panel `Tabs`) |
+| `Menubar` | ✅ | `mx.7.5` — desktop command bar (consumes the 7.4 overlay-floor; `navigation/` group ruled) |
+| `TabNav` | ✅ | `mx.7.5` — link-based nav tabs (distinct from the button/panel `Tabs`) |
 
 ### `overlay` — float above the page
 | Component | Status | Origin |
@@ -129,11 +130,10 @@ ship) it.
 | `Dialog` | ✅ | `mx.7.4` (on the new overlay floor) |
 | `AlertDialog` | ✅ | `mx.7.4` |
 | `Popover` | ✅ | `mx.7.4` |
-| `Dropdown` | 📋 | `mx.7.5` |
-| `ContextMenu` | 📋 | `mx.7.5` |
-| `HoverCard` | 📋 | `mx.7.5` |
-| `LinkPreview` | 📋 | `mx.7.5` |
-| `Menubar` | 📋 | `mx.7.5` |
+| `Dropdown` | ✅ | `mx.7.5` (consumes the 7.4 overlay-floor) |
+| `ContextMenu` | ✅ | `mx.7.5` |
+| `HoverCard` | ✅ | `mx.7.5` |
+| `LinkPreview` | ✅ | `mx.7.5` |
 
 ### `layout` — structural shells
 | Component | Status | Origin |
@@ -143,10 +143,10 @@ ship) it.
 | `Collapsible` | ✅ | `mx.7.2` |
 | `ScrollArea` | ✅ | `mx.7.2` |
 
-> **`mx.7.4`/`mx.7.5` also ship a headless overlay floor** in `@mercury/core` (positioning +
-> dismiss + focus-trap) that the overlay/menu components consume — the same compose-the-foundation
-> pattern the date pair set (`useDateField`/`useCalendar`). It is a foundation primitive, not a
-> `@mercury/ui` export, so it is not a catalogue row.
+> **The `mx.7.4` overlay-floor** in `@mercury/core` (positioning + dismiss + focus-trap + arrow-nav)
+> is **consumed** by the `mx.7.5` menu/hover components — the same compose-the-foundation pattern the
+> date pair set (`useDateField`/`useCalendar`). It is a foundation primitive, not a `@mercury/ui`
+> export, so it is not a catalogue row.
 
 ---
 
@@ -236,6 +236,8 @@ Colour shows through the **accent ramp** — `accent="iris | indigo | green | or
 | `Tabs` | `variant` (underline/pills) · disabled tab — *Playground · Variants* | *WithDisabledTab* |
 | `Accordion` | modes (single/multiple) · disabled item — *Playground · Modes* | *WithDisabledItem* |
 | `Pagination` | `size` · windowing — *Playground · Sizes* | *Windowed* |
+| `Menubar` ✦ | `role=menubar` · check/radio/shortcut items · click-open + hover-switch · arrow-nav · `accent` (6-ramp) — *Playground · Accents · a11y* | *Playground* |
+| `TabNav` | `size` (sm/md) · link `aria-current` nav · restored `:focus-visible` ring — *Playground · Sizes · a11y* | *Playground* |
 
 ### `overlay`
 | Component | Surface — variants · colors · actions | Usage stories |
@@ -245,6 +247,10 @@ Colour shows through the **accent ramp** — `accent="iris | indigo | green | or
 | `Dialog` | `size` (sm/md/lg) · open/close · focus-trap + return · description slot — *Playground · Sizes · a11y — focus trap* | *Playground* |
 | `AlertDialog` | `destructive` · confirm/cancel · Escape-only dismiss (no backdrop) — *Playground · a11y* | *Playground* |
 | `Popover` | `placement` (4) · controlled + uncontrolled · anchored non-modal dismiss — *Playground · a11y* | *Playground* |
+| `Dropdown` ✦ | `align` · `accent` (6-ramp) · item/label/separator/check rows · `aria-haspopup` menu + arrow-nav — *Playground · States · a11y* | *Playground* |
+| `ContextMenu` | right-click pointer-anchored · `danger` item · scroll/Escape/outside dismiss — *Playground · a11y* | *Playground* |
+| `HoverCard` | `placement` (4) · hover **and** focus open · open/close delays · non-modal `role=dialog` — *Playground · Placements · a11y* | *Playground* |
+| `LinkPreview` | `placement` (top/bottom) · hover+focus link preview · `openDelay` — *Playground · Placements* | *Playground* |
 
 ### `layout`
 | Component | Surface — variants · colors · actions | Usage stories |

@@ -82,12 +82,18 @@ export * from "./components/data-display/Kbd";
 export * from "./components/navigation/Tabs";
 export * from "./components/navigation/Accordion";
 export * from "./components/navigation/Pagination";
+export * from "./components/navigation/Menubar";
+export * from "./components/navigation/TabNav";
 // overlay
 export * from "./components/overlay/Modal";
 export * from "./components/overlay/Tooltip";
 export * from "./components/overlay/Dialog";
 export * from "./components/overlay/AlertDialog";
 export * from "./components/overlay/Popover";
+export * from "./components/overlay/Dropdown";
+export * from "./components/overlay/ContextMenu";
+export * from "./components/overlay/HoverCard";
+export * from "./components/overlay/LinkPreview";
 // layout
 export * from "./components/layout/AuthLayout";
 export * from "./components/layout/Collapsible";
