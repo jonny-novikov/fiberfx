@@ -16,7 +16,7 @@ Roadmap: [`admin.roadmap.md`](./admin.roadmap.md) · Approach: [`../../../aaw/aa
 | admin.3 | the economy & treasury desk | balances, the `TXN` + `RVL` ledgers, cm.8 withdrawal review + approve |
 | admin.4 | players & moderation | player detail, membership (`RMP`), adjust / ban, the append-only analytics view (`AEV`) |
 | [admin.5](./admin.5.md) | **the dashboard Shell — BUILT** | the `@codemojex/dashboard` SPA skeleton (Vite + React, composing `@mercury/ui` + `@mercury/effector`): an operator shell layout, the Bearer-gated admin API client, and ONE end-to-end DB view (games), on a two-clock data seam (HTTP now, effector `channel` later) |
-| [admin.5.1](./admin.5.1.md) | rooms + players list desks | the two remaining list views over the Shell (`@mercury/ui` `Table`), client-side search + pagination — the read plane's full browser surface; frontend-only, no open fork |
+| [admin.5.1](./admin.5.1.md) | **rooms + players list desks — BUILT** | the two remaining list views over the Shell (`@mercury/ui` `Table`), client-side search + pagination — the read plane's full browser surface; frontend-only, no open fork |
 | admin.5.2 | master-detail | room / player detail (`GET /:id`) on a selected-id seam, surfaced through the ruled detail-interaction model (Collapsible / Popover / Panel) — fork in [`admin.5.desks.design.md`](./admin.5.desks.design.md) |
 | admin.5.3 | the live game path | room → game → the embedded `@codemojex/game` live view, split game / events; subsumes the old live-pubsub slot — forks (embed / spectator bridge / split) in [`admin.5.desks.design.md`](./admin.5.desks.design.md) |
 | admin.5.4 | PROPOSED forward slot | undescribed by the Operator; two candidates sketched (cross-desk observability · operator actions) — needs confirmation |

@@ -38,7 +38,8 @@ title>` + `<Table columns data striped getRowKey>`); the admin client (`src/api/
 `src/types.ts`'s `RoomSummary` / `PlayerSummary` completed to the real `apps/admin/src/schemas.ts` shapes;
 `src/App.tsx` enabling the Rooms / Players nav and mounting each desk by `desk` state, with the Refresh action
 made desk-aware; **client-side search** (`@mercury/ui` `Search` over name + id) and **client-side pagination**
-(`@mercury/ui` `Pagination` over the filtered rows) per desk, plus a rooms All/Open/Closed status filter
+(`@mercury/ui` `Pagination` over the filtered rows) per desk — realized as the shared app-local
+`src/lib/usePagedList.ts` hook (the R6 optional DRY, as-built) — plus a rooms All/Open/Closed status filter
 (`@mercury/ui` `Tabs`, the `GamesView` precedent); the small app-local layout CSS for the desk toolbar / pager.
 
 **Out.** Room / player **detail** (a room's games, a player's guesses / ledger) and the detail-interaction model
@@ -116,20 +117,21 @@ app-local this rung). Any edit to `@codemojex/db`, `apps/admin`, `packages/*`, o
   primitive). Exercised by the typecheck + build commands.
 
 ## Definition of Done
-- [ ] admin.5.1-D1 extends the admin client with the rooms / players store seams and the `$health` fan-in;
+- [x] admin.5.1-D1 extends the admin client with the rooms / players store seams and the `$health` fan-in;
   admin.5.1-INV1 (Bearer from config) + admin.5.1-INV4 (store seam) pass (admin.5.1-US1).
-- [ ] admin.5.1-D2 completes `RoomSummary` / `PlayerSummary` to the real `schemas.ts` shapes with no secret
+- [x] admin.5.1-D2 completes `RoomSummary` / `PlayerSummary` to the real `schemas.ts` shapes with no secret
   field; admin.5.1-INV2 passes (admin.5.1-US2).
-- [ ] admin.5.1-D3 renders the rooms desk (list + status filter + client-side search + pagination) reading
-  `$rooms` via `useUnit`; admin.5.1-INV4 + admin.5.1-INV5 pass (admin.5.1-US3).
-- [ ] admin.5.1-D4 renders the players desk (list + client-side search + pagination) reading `$players`;
+- [x] admin.5.1-D3 renders the rooms desk (list + status filter + client-side search + pagination) reading
+  `$rooms` via `useUnit` — built + wired, the live read served-pending a standing admin service (the admin.5
+  posture); admin.5.1-INV4 + admin.5.1-INV5 pass (admin.5.1-US3).
+- [x] admin.5.1-D4 renders the players desk (list + client-side search + pagination) reading `$players`;
   admin.5.1-INV2 + admin.5.1-INV5 pass (admin.5.1-US4).
-- [ ] admin.5.1-D5 enables the Rooms / Players nav, mounts each desk, and makes Refresh desk-aware;
+- [x] admin.5.1-D5 enables the Rooms / Players nav, mounts each desk, and makes Refresh desk-aware;
   admin.5.1-INV3 (barrel holds) passes (admin.5.1-US5).
-- [ ] admin.5.1-D6 + admin.5.1-INV6: `typecheck` exits 0, `build` produces a bundle, the barrel is unchanged, and
+- [x] admin.5.1-D6 + admin.5.1-INV6: `typecheck` exits 0, `build` produces a bundle, the barrel is unchanged, and
   the secret / `fetch`-in-view greps read 0 (admin.5.1-US6).
-- [ ] The six spec gates pass on this triad; the ledger records the close. This rung surfaces **no open fork**
-  (the client-side + frontend-only ruling is in hand); admin.5.2's detail-interaction fork and admin.5.3's
+- [x] The six spec gates pass on this triad; the ledger records the close (P-7). This rung surfaced **no open
+  fork** (the client-side + frontend-only ruling is in hand); admin.5.2's detail-interaction fork and admin.5.3's
   game-embed forks are framed in `admin.5.desks.design.md` for their own rungs.
 
 Stories: [`admin.5.1.stories.md`](./admin.5.1.stories.md) · Agent brief: [`admin.5.1.llms.md`](./admin.5.1.llms.md) · Index: [`admin.md`](./admin.md) · Approach: [`../../../aaw/aaw.specs-approach.md`](../../../aaw/aaw.specs-approach.md)

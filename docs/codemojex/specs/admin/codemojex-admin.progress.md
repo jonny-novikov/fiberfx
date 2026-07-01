@@ -95,6 +95,45 @@ Wave 2 — the three forks RULED (D-6) + admin.5.2 authored BUILD-GRADE. A spec-
 
 **Authored `admin.5.2.{md,stories.md,llms.md}` to build-grade** — the master-detail rung over the admin.5.1 list desks. Reads the SHIPPED (admin.1) `GET /rooms/:id` → `RoomDetail { room, games:[{id,status,free,prizePool,endsMs,insertedAt}] }` + `GET /players/:id` → `PlayerDetail { player, guesses:[{id,gameId,points,atMs,insertedAt}], ledger: unknown[] }` through keyed `fetchRoomDetailFx(id)` / `fetchPlayerDetailFx(id)` effects + a `$selectedRoomId` / `$selectedPlayerId` store; a side pane (`Card` + `ScrollArea`, LOCAL) renders the detail (room summary as `DataList`/`Stat` + its games as a nested `Table`; player summary + guesses + ledger as `DataList`/`ListRow`/`Stat`) beside the narrowed list. **Grounded the detail-pane primitives against the real `.tsx`** (`DataList`{items}, `ListRow`{label,onClick→interactive-button}, `Stat`{label,value,delta}, `Badge`{children,variant}). Fork-avoidance pinned: `Table` has NO `onClick`/row-selection prop → selection goes through a `Column.render` action cell (the `render?` hook is real), NEVER a new Table prop (a `/mercury-ship` barrel fork). Same INV spine as admin.5.1 (Bearer-from-config · public-schema-only, no secret/cell_codes · barrel-holds, compose-only · two-clock store seam, the detail store a channel can later target · green); frontend-only (`apps/dashboard`), no echo/ / apps/admin / packages/* edit. Six spec gates GREEN (`mcp__msh__specs` no findings). admin.5.2 = BUILD-GRADE. NEXT: `/cm-ship admin.5.1` then `/cm-ship admin.5.2` (each reconciles against the as-built at build time — 5.2 extends 5.1's views + client seam). [[P-5]] [[D-6]]
 
+### P-7
+
+admin.5.1 (rooms + players list desks) BUILT + gate GREEN via `/cm-ship` — a **Duo** (Director + mars-cm), the
+write-ready dispatch spawned from `admin.5.1.llms.md` as-is (no fork to rule; the P-5/P-6 client-side +
+frontend-only rulings in hand). Built, all under `mercury/codemojex/apps/dashboard/`: NEW
+`src/views/RoomsView.tsx` (Room·Name·Status·Free·Clip cost·Duration·Created; All/Open/Closed `Tabs` off
+`status`) · NEW `src/views/PlayersView.tsx` (Player·Name·Diamonds·Clips·Keys·Created; no status filter) · NEW
+`src/lib/usePagedList.ts` (the R6 optional-DRY shared hook: PAGE_SIZE 25, `pageCount = max(1,
+ceil(filtered/25))`, page clamped + reset-to-1 on query/resetKey change, the `Showing X–Y of Z` caption) · EDIT
+`src/api/client.ts` (`fetchRoomsFx`/`$rooms`/`roomsRequested` + the players trio mirroring the games seam, ONE
+`auth()` path; `$health` fanned into all three effects via the array `.on` form) · EDIT `src/types.ts`
+(`RoomSummary` +`clipCost`/`durationMs`, `PlayerSummary` +`tgUserId`/`clips`/`bonusDiamonds`/`lockedDiamonds` —
+the real `schemas.ts` shapes) · EDIT `src/App.tsx` (NAV `enabled: true`, the stale `"admin.6"` hints dropped;
+both desks mounted; Refresh desk-aware via a `REFRESH: Record<Desk, () => void>` map + `buildMenus(desk)` under
+`useMemo`) · EDIT `src/dashboard.css` (`.dsh-desk__tools` + `.dsh-desk__pager`, token-driven, no raw hex, no
+`.mx-*`). Director verify (independent): `pnpm --filter @codemojex/dashboard typecheck` exit 0 + `build` green
+(bundle 241.75 kB / gzip 79.17 kB); `grep -rnE '"Bearer |secret|cell_codes' apps/dashboard/src/` → 0 (INV1/INV2)
+· `grep -rn 'fetch(' apps/dashboard/src/views/` → 0 (INV4) · INV3 barrel held by authorship disjointness (only
+`apps/dashboard` touched; a concurrent run is minting `mercury/packages/mercury-ds/` — the [[P-4]] text-diff
+caveat applies) · INV5 by construction (no server param added in `client.ts`; 0 `apps/admin` files in the diff).
+Adversarial probe HELD: `schemas.ts` types `clipCost`/`durationMs`/`tgUserId` as `Loose = Type.Any()` — the TS
+pins mirror the shipped `GameSummary`-over-`Loose` precedent, and a string-on-the-wire `durationMs` coerces
+safely through JS division (no NaN path short of garbage; the wire typing is admin.1's serialization concern).
+Net-zero mutation kill: `count={list.pageCount}` → `count={list.caption}` on `<Pagination>` → `TS2322 Type
+'string' is not assignable to type 'number'` → reverted, typecheck green again (the typecheck gate has teeth;
+no unit suite in this SPA). Deviations (all Director-verified sound): the shared `usePagedList` hook (brief-
+sanctioned) · `Search` nested in a `.dsh-desk__tools` group inside the reused `.dsh-desk__bar` (R7's toolbar
+made real) · the Refresh label dynamic (`Refresh ${desk}`; R5 pins the event, not the label) · display picks
+(`duration` = `${round(ms/1000)}s` with the null em-dash, `free` = yes/no — the `GamesView` precedent).
+REMEDIATE loop closed at ZERO findings — the mars-cm-2 harden wave collapsed (right-size). Liveness: the
+config→Bearer-fetch→store→render pipeline is proven by build + greps; the LIVE gated read stays served-pending
+a standing admin service (dev: the Vite proxy → the admin service, the [[P-4]] posture). Boundary held:
+`mercury/codemojex/apps/dashboard/**` ONLY; **lockfile again EXCLUDED** (the pre-existing entangled
+`mercury/pnpm-lock.yaml` modification is concurrent-work fallout, not this rung's). Spec folded: DoD [x] (+ the
+as-built `usePagedList` note in Scope In); roadmap → BUILT ✓; the `admin.md` ladder row bolded. NEXT: `/cm-ship
+admin.5.2` (master-detail, ruled Arm C — triad authored BUILD-GRADE) · admin.5.3 authors its triad at build time
+(ruled phased) · the prod `@fastify/static` same-origin serve (the standing `apps/admin` follow-up, deploy-
+gated). [[P-4]] [[P-5]] [[P-6]] [[D-6]] [[L-1]]
+
 ## {codemojex-admin-learnings} Learnings
 
 ### L-1

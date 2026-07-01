@@ -15,19 +15,27 @@ export interface GameSummary {
   roomName?: string | null;
 }
 
-// Stubs for admin.6 (rooms / players desks) — shaped now, filled then.
+// The rooms / players read-plane shapes (admin.5.1-D2) — completed to the real
+// apps/admin schemas.ts columns; every field is public (rooms and players carry
+// no privileged column server-side).
 export interface RoomSummary {
-  id: string;
+  id: string; // ROM branded id
   name: string;
   free: boolean;
+  clipCost: number | string; // decimal — untyped at the wire
+  durationMs: number | null;
   status: string;
-  insertedAt: string;
+  insertedAt: string; // ISO
 }
 
 export interface PlayerSummary {
-  id: string;
+  id: string; // PLR branded id
   name: string;
+  tgUserId: string | number | null;
+  clips: number;
   diamonds: number;
+  bonusDiamonds: number;
+  lockedDiamonds: number;
   keys: number;
-  insertedAt: string;
+  insertedAt: string; // ISO
 }

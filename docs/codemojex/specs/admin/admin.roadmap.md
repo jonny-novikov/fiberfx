@@ -105,7 +105,16 @@ design system it composes is mature. Two shipped foundations carry it:
 > page the ≤200 rows the read routes already return, in the browser) — Operator-ruled — so admin.5.1/5.2 are
 > **frontend-only** (`apps/dashboard`), no backend edit.
 
-### admin.5.1 · rooms + players list desks
+### admin.5.1 · rooms + players list desks — BUILT ✓ (gate green; live read served-pending a standing admin service)
+- **Built.** `RoomsView` + `PlayersView` at `mercury/codemojex/apps/dashboard/src/views/`, each mirroring the
+  shipped `GamesView` (`useUnit` a store → a `@mercury/ui` `Table`), reading the gated `GET /rooms` + `GET
+  /players` through the extended Bearer client — `fetchRoomsFx`/`$rooms`/`roomsRequested` + the players trio,
+  one `auth()` path, `$health` fanned into all three effects. Client-side `Search` (name + id) + `Pagination`
+  (PAGE_SIZE 25, page-reset on query/filter change, a `Showing X–Y of Z` caption) via the shared app-local
+  `src/lib/usePagedList.ts` hook (the R6 optional DRY); the rooms desk adds the All/Open/Closed `Tabs` filter;
+  `types.ts` completed to the real `schemas.ts` shapes; the sidebar nav enabled + the Menubar Refresh
+  desk-aware. `typecheck` + `build` green (bundle 242 kB / gzip 79 kB); the barrel untouched; the secret /
+  `fetch`-in-view greps read 0. Via `/cm-ship` (Director + mars-cm Duo).
 - **Ships.** The two remaining LIST desks over the Shell — `RoomsView` + `PlayersView`, each mirroring the
   as-built `GamesView` (`useUnit` a store → a `@mercury/ui` `Table`), reading the gated `GET /rooms` + `GET
   /players` through the Bearer client. Client-side **search** (`@mercury/ui` `Search`) + **pagination**
