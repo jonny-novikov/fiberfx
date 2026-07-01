@@ -1,5 +1,4 @@
 # Mercury · The workspace, its layout, principles, and developer roadmap
-<show-structure depth="2"/>
 
 Mercury is one pnpm workspace, split between a generic Echo core and the codemojex product. This article is the developer's map: the layout as it stands after the restructure, the principles that hold it together, what ships today, and the roadmap from the running admin to a `@echo/mq` bus. Decision of record: the earlier `mercury/echo/` layout described in `docs/mercury-echo-architecture.md` is superseded here — the core packages moved under `packages/`, the product moved under `codemojex/`, and `@echo/core` was made namespace-agnostic with a BCS registry rather than carrying a fixed product namespace set.
 

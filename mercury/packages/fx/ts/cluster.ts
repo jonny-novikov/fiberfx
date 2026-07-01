@@ -1,22 +1,25 @@
 /**
- * Node-Cluster orchestration for echo/fx — the typed library behind the
- * `examples/cluster-hcr.mjs` demo.
+ * A forked-process compute pool for echo/fx, and the typed library behind the
+ * `examples/cluster-*.mjs` proof.
  *
  * The scheduler is deliberately in TypeScript, not Rust: a wasm instance is one
- * V8 isolate with private linear memory, so cross-core work cannot share a Rust
- * deque. The cores are OS processes (`node:cluster`); each loads the same wasm
- * kernel and carries a distinct fx node id, which is what keeps minted ids
- * disjoint without a shared lock. Fairness is a property of the round-robin
- * rotation, not of a hash.
+ * isolate with private linear memory, so cross-core work cannot share a Rust
+ * deque. The cores are separate OS processes, forked with `node:child_process`
+ * — process isolation is the property that matters here (one worker crashing or
+ * pausing does not take its siblings down), and it is what `node:cluster` was
+ * chosen for at the R3 rung. The pool uses `fork` rather than `cluster` because
+ * this is a compute pool, not a server: it shares no listening socket, only an
+ * IPC job/reply channel, and `fork` is the primitive for that. `child_process`
+ * is implemented by both Node and Bun, so the same pool runs on either runtime
+ * with no branch. Each worker loads the same wasm kernel and carries a distinct
+ * fx node id, which keeps minted ids disjoint without a shared lock; fairness is
+ * a property of the round-robin rotation, not of a hash.
  *
  * Hot code replacement is a rolling reload: a fresh generation of workers is
  * brought online before the previous one is drained, so there is never a window
  * with zero workers serving.
- *
- * This module typechecks and documents the surface; the runnable proof is the
- * `.mjs` example (no build step required there).
  */
-import cluster, { type Worker } from "node:cluster";
+import { fork, type ChildProcess } from "node:child_process";
 import os from "node:os";
 import process from "node:process";
 
@@ -34,13 +37,15 @@ export interface Reply<R> {
 }
 
 export interface PoolOptions {
+  /** Path to the worker module the pool forks (it calls {@link runWorker}). */
+  readonly worker: string;
   /** Worker count. Defaults to available parallelism, clamped to 2..1024. */
   readonly workers?: number;
 }
 
 interface Generation {
   readonly gen: number;
-  readonly workers: Worker[];
+  readonly workers: ChildProcess[];
   readonly online: Promise<void>;
 }
 
@@ -52,34 +57,38 @@ function workerCount(requested: number | undefined): number {
 }
 
 /**
- * A primary-side pool. Construct it in `cluster.isPrimary`; the worker side is
- * `runWorker`. Each generation occupies a fresh band of node ids so a reload
- * never reuses a live id.
+ * A primary-side pool. Construct it in the primary process; each forked worker
+ * runs the worker module and calls {@link runWorker}. Each generation occupies a
+ * fresh band of node ids so a reload never reuses a live id.
  */
 export class ClusterPool<P, R> {
   private readonly size: number;
+  private readonly worker: string;
   private current: Generation;
   private corr = 0;
 
-  private constructor(size: number) {
+  private constructor(size: number, worker: string) {
     this.size = size;
-    cluster.setupPrimary({ serialization: "json" });
+    this.worker = worker;
     this.current = this.spawn(0);
   }
 
-  static async start<P, R>(opts: PoolOptions = {}): Promise<ClusterPool<P, R>> {
-    const pool = new ClusterPool<P, R>(workerCount(opts.workers));
+  static async start<P, R>(opts: PoolOptions): Promise<ClusterPool<P, R>> {
+    const pool = new ClusterPool<P, R>(workerCount(opts.workers), opts.worker);
     await pool.current.online;
     return pool;
   }
 
   private spawn(gen: number): Generation {
     const base = gen * this.size;
-    const workers: Worker[] = [];
+    const workers: ChildProcess[] = [];
     const ready: Array<Promise<void>> = [];
     for (let i = 0; i < this.size; i++) {
       const node = (base + i) % 1024;
-      const w = cluster.fork({ WORKER_NODE: String(node), GEN: String(gen) });
+      const w = fork(this.worker, [], {
+        env: { ...process.env, WORKER_NODE: String(node), GEN: String(gen) },
+        serialization: "json",
+      });
       ready.push(
         new Promise<void>((res) => {
           w.on("message", (m: { type?: string }) => {
@@ -140,7 +149,8 @@ export class ClusterPool<P, R> {
 
 /**
  * Worker entry point. Register a handler that maps a payload to a result; the
- * transport, correlation, and ready signal are handled here.
+ * transport, correlation, and ready signal are handled here. Runs the same way
+ * under a Node or a Bun fork.
  */
 export function runWorker<P, R>(handler: (payload: P, node: number) => R): void {
   const node = Number(process.env["WORKER_NODE"] ?? "0");
