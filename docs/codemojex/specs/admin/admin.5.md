@@ -25,7 +25,7 @@ no rewrite. It is the frontend floor Milestone B stands on.
 
 ## Scope
 **In.** The `@codemojex/dashboard` app skeleton (`package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`,
-`src/main.tsx`, `src/App.tsx`, `src/types.ts`) mirroring the `economy` SPA precedent; the `@mercury/*` source
+`src/main.tsx`, `src/App.tsx`, `src/types.ts`, `src/vite-env.d.ts`) mirroring the `economy` SPA precedent; the `@mercury/*` source
 aliases (vite + tsconfig, THREE `../` to `mercury/packages`); an operator **shell layout** (sidebar + topbar +
 content) composed from `@mercury/ui`; the **admin API client** (`src/api/client.ts`) — an `@mercury/effector`-style
 model attaching `Authorization: Bearer <token>` (from config) to the read plane, exposing effector stores; ONE
@@ -63,7 +63,7 @@ the Shell `dist/` exists), NOT this rung's build gate.
   `@fastify/static` serve (the named follow-up). The client consumes the **public** read-plane shapes
   (`src/types.ts`, secret-free) — it assumes no `secret` / `cell_codes` on any body.
 - **admin.5-D4 — one end-to-end DB view.** `src/views/GamesView.tsx` renders the `$games` store as a
-  `@mercury/ui` `Table` / `DataList` — id, room, status, prize, player / attempt counts — proving the full stack
+  `@mercury/ui` `Table` / `DataList` — id, room, status, prize, ends (from `endsMs`; the public `GameSummary` carries no count field) — proving the full stack
   (config → Bearer fetch → effector store → `@mercury/ui` render) against the live gated `GET /games`. No column
   is a `secret` or `cell_codes` (the games entity is the one that carries server-side secrets, so the games view
   is the secret-strip proof).
@@ -96,13 +96,13 @@ the Shell `dist/` exists), NOT this rung's build gate.
   Exercised by the typecheck + build commands.
 
 ## Definition of Done
-- [ ] admin.5-D1 lands the SPA skeleton mirroring the `economy` precedent; the `@mercury/*` aliases resolve (admin.5-US1).
-- [ ] admin.5-D2 renders the operator shell layout from `@mercury/ui`; admin.5-INV3 (barrel holds) passes (admin.5-US2).
-- [ ] admin.5-D3 + admin.5-D4 read the gated API through the Bearer client and render the games DB view live; admin.5-INV1 (Bearer from config) + admin.5-INV2 (no secret) pass (admin.5-US3, admin.5-US4).
-- [ ] admin.5-D5 + admin.5-INV4: the data layer is an effector store a channel can later target — the two-clock seam holds (admin.5-US5).
-- [ ] admin.5-D6 + admin.5-INV5: `typecheck` exits 0, `build` produces a bundle, the barrel is unchanged (admin.5-US6).
+- [x] admin.5-D1 lands the SPA skeleton mirroring the `economy` precedent; the `@mercury/*` aliases resolve (admin.5-US1).
+- [x] admin.5-D2 renders the operator shell layout from `@mercury/ui`; admin.5-INV3 (barrel holds) passes (admin.5-US2).
+- [x] admin.5-D3 + admin.5-D4 read the gated API through the Bearer client and render the games DB view — built + wired, the live read served-pending a standing admin service; admin.5-INV1 (Bearer from config) + admin.5-INV2 (no secret) pass (admin.5-US3, admin.5-US4).
+- [x] admin.5-D5 + admin.5-INV4: the data layer is an effector store a channel can later target — the two-clock seam holds (admin.5-US5).
+- [x] admin.5-D6 + admin.5-INV5: `typecheck` exits 0, `build` produces a bundle, the barrel is unchanged (admin.5-US6).
 - [x] The three forks are **ruled** (Wave 2): admin.5-F1 → Arm B (local compose, no barrel touch, cm-ship Duo; `AppShell` extraction ruled-deferred) · admin.5-F2 → Arm A same-origin + a Vite dev proxy (prod `@fastify/static` serve a named follow-up) · admin.5-F3 → confirmed (no channel, no new effector API this rung).
-- [ ] The six spec gates pass on this triad; the ledger records the close.
+- [x] The six spec gates pass on this triad; the ledger records the close.
 
 ## Forks (RULED by the Operator — Wave 2; the framed four-part arms are in `admin.5.llms.md`)
 - **admin.5-F1 → Arm B (compose locally).** The operator shell frame is composed **locally in `apps/dashboard`**

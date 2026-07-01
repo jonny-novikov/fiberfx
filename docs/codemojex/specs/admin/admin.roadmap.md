@@ -70,7 +70,15 @@ design system it composes is mature. Two shipped foundations carry it:
 > `docs/codemojex/specs/dashboard/` chapter (the anticipated `dashboard.*` home). Kept in `admin.*` for now to
 > preserve continuity with the read plane it consumes.
 
-### admin.5 · the dashboard Shell — THE FOCUS
+### admin.5 · the dashboard Shell — BUILT ✓ (gate green; live read served-pending a standing admin service)
+- **Built.** `@codemojex/dashboard` — a Vite+React SPA at `mercury/codemojex/apps/dashboard` (11 files, mirroring
+  `economy`): the operator shell (a `Menubar` topbar + a local token-styled sidebar + a `ScrollArea` content
+  region, composed from `@mercury/ui` per F1→Arm B, the barrel untouched), the Bearer `@mercury/effector`-style
+  admin client (`$games` + a derived `$health` store; the token from config), and the live **games** DB view
+  (`useUnit($games)` → `@mercury/ui` `Table`; a client-side All/Live/Ended filter off `endsMs`; no
+  `secret`/`cell_codes`). `typecheck` + `build` green (bundle 236 kB / gzip 78 kB); the two-clock store seam holds
+  (admin.7 seats a `channel` model into `$games`). Via `/cm-ship` (Director + mars-cm Duo); the prod
+  `@fastify/static` same-origin serve remains the named `apps/admin` follow-up.
 - **Ships.** The `@codemojex/dashboard` app skeleton (a Vite + React SPA in the mercury workspace, mirroring
   the `economy`/`game` scaffolding): an operator **shell layout** (sidebar + topbar + content) composed from
   `@mercury/ui`; the **admin API client** (Bearer `$ADMIN_TOKEN` → the read plane) as an

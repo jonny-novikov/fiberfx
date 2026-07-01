@@ -53,7 +53,7 @@ Carried inline (do NOT re-read — the shapes are here):
   `$games = createStore<GameSummary[]>([])`. Add `.env.example` with `VITE_ADMIN_TOKEN=` + `VITE_ADMIN_API_BASE=`
   (ruled admin.5-F2 → same-origin, blank base; the R8 dev proxy forwards the call in dev). [US: admin.5-US3]
 - **admin.5-R6** — `src/views/GamesView.tsx`: `const games = useUnit($games)` → a `@mercury/ui` `<Table>` (the
-  `economy/src/components/SplitLadderTable.tsx` pattern) of id / room / status / prize / counts. No `fetch` in the
+  `economy/src/components/SplitLadderTable.tsx` pattern) of id / room / status / prize / ends. No `fetch` in the
   view; no `secret` / `cell_codes` column. [US: admin.5-US4, admin.5-US5]
 - **admin.5-R7** — from `mercury/codemojex`: `pnpm install`; `pnpm --filter @codemojex/dashboard typecheck` exits
   0; `pnpm --filter @codemojex/dashboard build` produces the bundle; the `@mercury/ui` resolved export set is
