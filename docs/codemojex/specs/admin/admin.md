@@ -15,7 +15,16 @@ Roadmap: [`admin.roadmap.md`](./admin.roadmap.md) · Approach: [`../../../aaw/aa
 | admin.2 | lifecycle management | open / close / void a game, create + configure a room (the explicit management endpoints) |
 | admin.3 | the economy & treasury desk | balances, the `TXN` + `RVL` ledgers, cm.8 withdrawal review + approve |
 | admin.4 | players & moderation | player detail, membership (`RMP`), adjust / ban, the append-only analytics view (`AEV`) |
-| admin.5 | the console UI (optional) | a Mercury-UI frontend over the admin API |
+| [admin.5](./admin.5.md) | **the dashboard Shell — the focus** | the `@codemojex/dashboard` SPA skeleton (Vite + React, composing `@mercury/ui` + `@mercury/effector`): an operator shell layout, the Bearer-gated admin API client, and ONE end-to-end DB view, on a two-clock data seam (HTTP now, effector `channel` later) |
+| admin.6 | the DB-view desks | rooms / games / players list + detail over the shell (`@mercury/ui` tables, pagination + search) |
+| admin.7 | the live pubsub channel | the live-data slot filled on the `@mercury/effector` `channel` adapter (the `game` channel pattern) |
+
+**Two tracks.** Milestone A (admin.1–4) is the **backend** control plane — the gated Fastify read plane and its
+write / economy / moderation desks. Milestone B (admin.5–7) is the **operator console** — a `@codemojex/dashboard`
+React SPA over that same read plane. The console composes `@mercury/ui` (mature; the Shell houses no reusable
+component) and seats its future live feed on `@mercury/effector`'s `channel` adapter. The console reads only the
+`@codemojex/admin` API; the `@codemojex/economy` app is a separate **static** `/economy` calibration console with
+no API (a structural sibling, not a data source), and is distinct from admin.3's economy & treasury **desk**.
 
 ## The master invariant
 
