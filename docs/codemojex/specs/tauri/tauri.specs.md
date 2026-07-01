@@ -10,8 +10,8 @@
 
 | Rung | Title | App(s) | Risk | Depends | Triad |
 |---|---|---|---|---|---|
-| **cmt.1** | Shell run-loop (wrap local Phoenix; welcome → lobby → game in-window + dev panel) | game-tauri | LOW | — | stub below |
-| **cmt.2** | Local-bundle dev wiring (serve the LOCAL bundle, not the edge pointer) | codemojex (+ game) | LOW–MED | cmt.1, F2 | stub below |
+| **cmt.1** | Shell run-loop (wrap local Phoenix; welcome → lobby → game in-window + dev panel) | game-tauri | LOW | — | ✅ **shipped** (stub below) |
+| **cmt.2** | Local-bundle dev wiring (serve the LOCAL bundle, not the edge pointer) | codemojex (+ game) | LOW–MED | cmt.1, F2 | ✅ **shipped** (stub below) |
 | **cmt.3** | DS foundation in the island (Tailwind v4 + tokens + gold + `cn` + i18n) | game (+ codemoji-design) | MED | cmt.2, F1 | stub below |
 | **cmt.4** | The real screen — in-progress (port `GoldenInProgressScreen`; live prop map) | game | MED–HIGH | cmt.3, F3 | stub below |
 | **cmt.5** | The real screen — finished + events (`GoldenAnswerReveal`; bridge events) | game | MED | cmt.4 | stub below |
@@ -51,6 +51,12 @@ edit under F3-A that touches `game_props` runs codemojex's own suite, not a dete
 The `game-tauri` Tauri shell builds and launches, wraps the locally-running Phoenix on `:4000`, and the
 full three-tier flow renders in the native window with the dev panel available. **Near-floor:** the debug
 binary already builds; this rung formalizes the run entrypoint and *verifies the loop end-to-end*.
+- **Status:** ✅ **SHIPPED 2026-07-01** (Director-solo). Delivered `bin/run.sh` + the README run-section
+  (the CLI-free `cargo run` path) + the build-unblock (`src`→`src-tauri` reconcile · generated icon set ·
+  the three JSON-comment config keys `tauri-build` rejected). Verified: `cargo build` clean → `cargo run` →
+  window process alive; the webview loaded Tier-1 welcome (Phoenix logged `GET /` from the webview, distinct
+  from curls); `/` + `/lobby` serve 200 under `dev_auth_bypass`. Not agent-verifiable (macOS TCC blocks
+  screen-capture + AppleScript): the visual click-through + the Ctrl+` panel — Operator-observed in-window.
 - **Scope In:** a documented run entrypoint (a `cargo run` / `cargo tauri dev` script + a README run
   section + the `PHX_APP_URL` knob); verify welcome → lobby → game in-window; verify the dev panel taps
   the LiveView `/live` frames (Ctrl+`).
@@ -66,6 +72,17 @@ binary already builds; this rung formalizes the run entrypoint and *verifies the
 Make the running Phoenix serve the **locally-built** game bundle instead of the deployed edge pointer, so
 the shell renders the game under development. Grounded in `Edge.game_url/0 = fetch_pointer() || fallback()`
 (`edge.ex:42-44`) + the `static_paths` gotcha (`codemojex_web.ex:8`).
+- **Status:** ✅ **SHIPPED 2026-07-01** (Director-solo). **F2 RULED → Arm D (new): a prod-safe `GAME_DEV_URL`
+  override in `GameLive`** (`dev_bundle_url/0`: `System.get_env("GAME_DEV_URL") || GameBundle.src()`) so the
+  game module loads from the game's **Vite dev server** (fast reload — no rebuild, no Phoenix restart),
+  bypassing `GameBundle`'s immutable same-origin serve. (Arms A/B/C retained for a committed static bundle.)
+  Delivered: the `GameLive` override + `bin/dev-local.sh` orchestrator + the README "Local game-dev loop".
+  Verified: `mix compile --warnings-as-errors` clean; `GET /game/<GAM>` renders
+  `data-bundle="http://127.0.0.1:5173/src/index.tsx"`; Vite serves that module with
+  `Access-Control-Allow-Origin: http://localhost:4000` (cross-origin `import()` allowed). Boundary: this rung
+  edited `echo/apps/codemojex` (one dev-gated line) — codemojex compile gate run. Not agent-verifiable (TCC):
+  the pixel render — Operator-observed. **True hot-swap** (vs. fast-reload) is a follow-up (needs Vite's
+  `/@vite/client` in the module graph).
 - **Scope In:** the ruled F2 arm — `GAME_EDGE_HOST=<unreachable>` + `GAME_ASSET_URL=<local>`; if Arm A,
   the one-line `game` add to `static_paths`; a scripted, documented dev env (env + start order).
 - **Scope Out:** changing bundle *contents* (cmt.3+); the golden screen.
