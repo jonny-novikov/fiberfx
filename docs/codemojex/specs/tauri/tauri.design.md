@@ -55,7 +55,7 @@ plain screen — *not yet* the golden design.
   `push_navigate` to `~p"/game/#{gam}"` (`lobby_live.ex:62-67`).
 - **Tier 3 (game):** `live "/game/:gam", GameLive` (`router.ex:45-51`); `mount` assigns
   `game_bundle: GameBundle.src()` + `game_props` (`game_live.ex:26-38`) into a div
-  `phx-hook="EdgeReact"` (`game_live.ex:48-55`). The `EdgeReact` hook dynamic-imports the bundle and
+  `phx-hook="GameIsland"` (`game_live.ex:48-55`). The `GameIsland` hook dynamic-imports the bundle and
   calls `mod.mount(el, props, bridge)` (`assets/js/app.js:33-42`). Events **out**: `submit_guess` /
   `lock` / `unlock`; **in**: `game:update` / `guess_rejected` / `revealed` / `golden_win`.
 
@@ -134,7 +134,15 @@ Operator ruling **F1**; cmt.4 on **F3**.
 
 ## 5. Open decisions for the Operator (frame only — the Director rules via `AskUserQuestion`)
 
-- **F1 — How does the island consume `@codemoji/design`?**
+- **F1 — How does the island consume `@codemoji/design`? — [RECONCILE] RULED CLOSED (2026-07-01).** The
+  Operator ruled a path outside A/B/C: the golden components are **re-implemented natively inside
+  `@codemojex/game`** with **no `@codemoji/design` dependency** (`node/codemoji-design` = visual reference
+  only), state via an **additively-extended `@mercury/effector`**. **Split across the ladder:** cmt.3 is now
+  the **Effector Phoenix-channel STATE foundation** (the Operator's prototype — `createChannel` +
+  `PhoenixGame` + a `RoomChannel` twin; Arm B, A-first; the three forks resolved F-cmt3-1/2/3 in
+  [`./cmt.3.llms.md`] § Rulings); the **Tailwind v4 + golden-token + native golden-screen** work is **cmt.4**,
+  built on that state layer. §3's "vendoring DS components" framing is superseded for cmt.4–cmt.5. Arms A/B/C
+  below are retained for the record.**
   - *Arm A — Vendor/copy* the needed `board/` + golden components + tokens + i18n into the island (self-
     contained; matches the island's `INV-VENDORED-FAITHFUL` ethos — it already vendors `@echo/phoenix`).
   - *Arm B — Depend on `@codemoji/design`* as a workspace package (single source of truth; couples the
