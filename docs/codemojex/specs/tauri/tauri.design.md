@@ -1,9 +1,11 @@
 # codemojex Tauri track — the native desktop shell over the three-tier game
 
 > **Status:** DESIGN v1 — the scaffold **SHIPPED**. **cmt.1** (shell run-loop) · **cmt.2** (local hot-load
-> wiring) · **cmt.3 Phase A** (Effector channel-state foundation) are **shipped/committed**; the frontier is
-> **cmt.4** (the golden in-progress screen). The **live per-rung ladder is [`./tauri.specs.md`]** — update
-> status there, not here (this canon carries the frame; §4 below is a mirror, re-synced 2026-07-01). Grounded
+> wiring) · **cmt.3 Phase A** (Effector channel-state foundation) · **cmt.4.1** (the game DS + i18n
+> foundation — cmt.4 was SPLIT and re-aimed **Classic-first**, **R-classic** 2026-07-02) are
+> **shipped/built**; the frontier is **cmt.4.2** (the Classic `BoardScreen`; the golden variant is
+> deferred to cmt.5). The **live per-rung ladder is [`./tauri.specs.md`]** — update
+> status there, not here (this canon carries the frame; §4 below is a mirror, re-synced 2026-07-02). Grounded
 > **NO-INVENT** against the as-built `echo/apps/codemojex`,
 > `mercury/codemojex/apps/{game,game-tauri}`, and `node/codemoji-design`; every surface named below is a
 > real file, or is marked **forward-tense**. Canon: [`../../codemojex.design.md`],
@@ -117,7 +119,8 @@ Four alignments make it tractable, and one gap makes it a design decision:
 
 ## 4. The rung ladder (the spec-driven build plan)
 
-Rungs are thin and provable; this-week = **cmt.1 – cmt.5**. Risk drives formation
+Rungs are thin and provable; the near ladder = **cmt.1 – cmt.4.3** (the Classic line; cmt.5 = the
+deferred golden variant). Risk drives formation
 (`program.md` topology router). The full per-rung triads are carved at ship time; stubs live in
 [`./tauri.specs.md`].
 
@@ -126,14 +129,18 @@ Rungs are thin and provable; this-week = **cmt.1 – cmt.5**. Risk drives format
 | **cmt.1** | **Shell run-loop** — game-tauri wraps local Phoenix; welcome → lobby → game verified in the native window + dev panel | game-tauri | LOW | — | ✅ **shipped** (2026-07-01) |
 | **cmt.2** | **Local hot-load wiring** — the `GAME_DEV_URL` override + `bin/dev-local.sh` (GameLive imports the game from the Vite dev server / HMR, not the edge pointer) | codemojex (+ game) | LOW–MED | cmt.1, **F2✓** | ✅ **shipped** (2026-07-01) |
 | **cmt.3** | **Effector Phoenix-channel state foundation** — `@mercury/effector` `createChannel` + game `channel/{model,PhoenixGame}` driving `GameEdge` from `$props`; the `RoomChannel` twin (**D4**) + the Arm-B flip (**Phase B**) deferred to `/codemojex-ship` | game (+ additive `@mercury/effector`, + echo/ `RoomChannel`) | MED–HIGH | cmt.2, **F1✓** | ✅ **shipped Phase A** ([`./cmt.3.md`]) |
-| **cmt.4** | **The real screen (in-progress)** — **Tailwind v4 + golden tokens** (deferred here from cmt.3) + native `GoldenInProgressScreen` on the cmt.3 state layer; map live `GameProps` → golden props, replacing the plain `GameEdge` UI | game | MED–HIGH | cmt.3, **F3** | 📋 **frontier** (Venus carves the triad at ship) |
-| **cmt.5** | **The real screen (finished) + events** — `GoldenFinishedScreen` + `GoldenAnswerReveal` on settle; wire `guess_rejected`/`revealed`/`golden_win` + `submit_guess` | game | MED | cmt.4 | 📋 forward |
-| cmt.6 | **Tier-1/2 fidelity** — welcome + lobby polish in the desktop window | codemojex | LOW–MED | cmt.5 | later |
+| **cmt.4.1** | **The game DS + i18n foundation** — Tailwind v4 + the verbatim token `@theme` (asset-backed values excluded) + `cn` + react-i18next + the `?inline` CSS delivery + the dev-flagged `GameSmoke` | game | MED | cmt.3 | ✅ **BUILT** (2026-07-02, [`./cmt.4.1.md`]) |
+| **cmt.4.2** | **The Classic `BoardScreen`** — compose the Classic Free/Paid board natively on the cmt.4.1 stack; the `GameProps`→board mapping replacing the plain `GameEdge` internals; balances omit/neutralize per **F3✓** | game | MED–HIGH | cmt.4.1 | 📋 **frontier** (Venus carves the triad at ship) |
+| **cmt.4.3** | **The Classic finished-state + events** — settle/reveal + `guess_rejected`/`revealed`/win over the bridge (folded from the old cmt.5 scope) | game | MED | cmt.4.2 | 📋 forward |
+| **cmt.5** | **The GOLDEN variant (deferred by R-classic)** — the golden screens + the gold texture + `GoldenAnswerReveal` + the boost surface | game | MED–HIGH | cmt.4.3 | later |
+| cmt.6 | **Tier-1/2 fidelity** — welcome + lobby polish in the desktop window | codemojex | LOW–MED | cmt.4.3 | later |
 | cmt.7 | **Dev-panel as product** — the event panel integrated + `export_events` via Tauri IPC; privileged runtime taps | game-tauri | MED | cmt.1 | later |
-| cmt.8 | **Distributable** — prod build/sign/installers; `check_origin` allowlist for the Tauri origin; the edge/pointer story | game-tauri (+ codemojex) | MED–HIGH | cmt.5 | later |
+| cmt.8 | **Distributable** — prod build/sign/installers; `check_origin` allowlist for the Tauri origin; the edge/pointer story | game-tauri (+ codemojex) | MED–HIGH | cmt.4.3 | later |
 
-**Build order:** cmt.1 → cmt.2 → cmt.3 → cmt.4 → cmt.5 → (cmt.6/cmt.7/cmt.8). **cmt.1 · cmt.2 · cmt.3 Phase A
-are shipped** (F1 + F2 ruled closed — see §5); the frontier is **cmt.4**, gated on **F3** (the golden data gap).
+**Build order:** cmt.1 → cmt.2 → cmt.3 → cmt.4.1 → cmt.4.2 → cmt.4.3 → (cmt.5-golden/cmt.6/cmt.7/cmt.8).
+**cmt.1 · cmt.2 · cmt.3 Phase A · cmt.4.1 are shipped/built** (F1 + F2 ruled closed — see §5; **F3 ruled**:
+omit/neutralize for the Classic rungs, the server `game_props` extension deferred to `/codemojex-ship`);
+the frontier is **cmt.4.2** (the Classic board — the **R-classic** re-aim, 2026-07-02).
 cmt.3's **D4 (`RoomChannel` twin) + Phase B (the Arm-B `mount`→`PhoenixGame` flip)** are deferred to
 `/codemojex-ship` (an echo/ change + a live round-trip proof, Operator-observed).
 
@@ -147,7 +154,9 @@ cmt.3's **D4 (`RoomChannel` twin) + Phase B (the Arm-B `mount`→`PhoenixGame` f
   `PhoenixGame` + a `RoomChannel` twin; Arm B, A-first; the three forks resolved F-cmt3-1/2/3 in
   [`./cmt.3.llms.md`] § Rulings); the **Tailwind v4 + golden-token + native golden-screen** work is **cmt.4**,
   built on that state layer. §3's "vendoring DS components" framing is superseded for cmt.4–cmt.5. Arms A/B/C
-  below are retained for the record.**
+  below are retained for the record.** *(Re-aimed **Classic-first** by **R-classic**, 2026-07-02: cmt.4.1 =
+  the DS/i18n foundation — BUILT, with the token `@theme` ported minus the asset-backed gold texture; the
+  native target is the CLASSIC `BoardScreen` at cmt.4.2; the golden-screen work defers to cmt.5.)*
   - *Arm A — Vendor/copy* the needed `board/` + golden components + tokens + i18n into the island (self-
     contained; matches the island's `INV-VENDORED-FAITHFUL` ethos — it already vendors `@echo/phoenix`).
   - *Arm B — Depend on `@codemoji/design`* as a workspace package (single source of truth; couples the
@@ -161,7 +170,11 @@ cmt.3's **D4 (`RoomChannel` twin) + Phase B (the Arm-B `mount`→`PhoenixGame` f
   - *Arm C — the game's Vite dev server* (HMR) + `GAME_ASSET_URL` at it (fastest iteration).
   - **REC: Arm C for dev iteration** (HMR in the shell), **Arm A for a committed, stable bundle.** Either
     also needs `GAME_EDGE_HOST=<unreachable>` so the live edge pointer stops winning.
-- **F3 — Close the golden data gap (`diamonds`/`clips`/`keys`/`boost`).**
+- **F3 — Close the golden data gap (`diamonds`/`clips`/`keys`/`boost`). [RULED 2026-07-01, folded into
+  R-classic 2026-07-02]:** **omit/neutralize now** (the Arm-B substance) for the Classic rungs — nothing
+  fabricated, `me` stays a bare PLR string, the balance cells neutralize in cmt.4.2; the server
+  `game_props` extension (the Arm-A substance — balances + boost) is a **deferred `/codemojex-ship`
+  rung** and gates the golden cmt.5. Arms retained for the record:
   - *Arm A — extend `GameLive.game_props/3`* to carry the player balances + golden boost (the honest,
     server-authoritative source).
   - *Arm B — the island derives/omits* (forward-tense placeholders until the server carries them).

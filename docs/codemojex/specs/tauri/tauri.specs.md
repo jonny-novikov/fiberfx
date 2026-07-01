@@ -13,13 +13,16 @@
 | **cmt.1** | Shell run-loop (wrap local Phoenix; welcome → lobby → game in-window + dev panel) | game-tauri | LOW | — | ✅ **shipped** (stub below) |
 | **cmt.2** | Local-bundle dev wiring (serve the LOCAL bundle, not the edge pointer) | codemojex (+ game) | LOW–MED | cmt.1, F2 | ✅ **shipped** (stub below) |
 | **cmt.3** | **Effector Phoenix-channel state foundation** (integrate the Operator prototype: `createChannel` + `PhoenixGame` + the `RoomChannel` twin; Arm B, A-first; prove live) | game + additive `@mercury/effector` + echo/ `RoomChannel` | MED–HIGH | cmt.2 | ✅ **shipped Phase A** ([`./cmt.3.md`]) |
-| **cmt.4** | The real screen — in-progress (**Tailwind v4 + golden tokens** [deferred from cmt.3] + re-implement `GoldenInProgressScreen` natively on the cmt.3 state layer; live prop map) | game | MED–HIGH | cmt.3, F3 | stub below |
-| **cmt.5** | The real screen — finished + events (`GoldenAnswerReveal`; bridge events) | game | MED | cmt.4 | stub below |
-| cmt.6 | Tier-1/2 fidelity (welcome + lobby in the desktop window) | codemojex | LOW–MED | cmt.5 | later |
+| **cmt.4.1** | **The game DS + i18n foundation** (Tailwind v4 + the verbatim token `@theme` + `cn` + react-i18next + the `?inline` CSS delivery + the dev-flagged `GameSmoke`; the gold texture EXCLUDED — defers with the golden rung) | game | MED | cmt.3 | ✅ **BUILT** (2026-07-02, [`./cmt.4.1.md`]) |
+| **cmt.4.2** | **The Classic `BoardScreen`** (compose the Classic Free/Paid board natively on the cmt.4.1 stack; the `GameProps`→board mapping replacing the plain `GameEdge` internals; balances omit/neutralize per **F3✓**) | game | MED–HIGH | cmt.4.1 | 📋 **frontier** (Venus carves the triad at ship) |
+| **cmt.4.3** | **The Classic finished-state + events** (settle/reveal composition; `guess_rejected`/`revealed`/win handling over the bridge — folded from the old cmt.5 scope) | game | MED | cmt.4.2 | stub below |
+| **cmt.5** | **The GOLDEN variant — deferred by R-classic** (the golden screens + the gold texture + `GoldenAnswerReveal` + the boost surface) | game | MED–HIGH | cmt.4.3 | later (stub below) |
+| cmt.6 | Tier-1/2 fidelity (welcome + lobby in the desktop window) | codemojex | LOW–MED | cmt.4.3 | later |
 | cmt.7 | Dev-panel as product (`export_events` IPC; privileged runtime taps) | game-tauri | MED | cmt.1 | later |
-| cmt.8 | Distributable (build/sign/installers; prod `check_origin` allowlist) | game-tauri (+ codemojex) | MED–HIGH | cmt.5 | later |
+| cmt.8 | Distributable (build/sign/installers; prod `check_origin` allowlist) | game-tauri (+ codemojex) | MED–HIGH | cmt.4.3 | later |
 
-**Build order:** cmt.1 → cmt.2 → cmt.3 → cmt.4 → cmt.5 → (cmt.6 ∥ cmt.7 ∥ cmt.8). **This week = cmt.1–cmt.5.**
+**Build order:** cmt.1 → cmt.2 → cmt.3 → cmt.4.1 → cmt.4.2 → cmt.4.3 → (cmt.5-golden ∥ cmt.6 ∥ cmt.7 ∥ cmt.8).
+**cmt.1–cmt.4.1 shipped/built; the frontier is cmt.4.2** (the Classic board — the **R-classic** re-aim, 2026-07-02).
 
 ## Brands
 
@@ -141,36 +144,36 @@ THE transport) **A-first**.
   **Mutation guard:** an unbound channel / unfed model leaves the "Подключение…" fallback (the channel feed
   is load-bearing).
 
-### cmt.4 — The real screen (in-progress)
-Port `GoldenInProgressScreen` into the island as the rendered surface, fed by **live** `GameProps` mapped
-onto the golden component props, replacing the plain `GameEdge` UI.
-> **[RECONCILE] (cmt.4 owed at its ship).** Per the Operator's ruling, "port/vendored/consumed" below means
-> **re-implement natively inside `@codemojex/game`** on the **cmt.3 Effector Phoenix-channel state layer**
-> (`createChannel` / `PhoenixGame` / `$props`) — **no `@codemoji/design` dependency**. cmt.4's own first
-> tasks are the **Tailwind v4 + golden-token `@theme`** (deferred here from cmt.3) + react-i18next, then the
-> native `GoldenInProgressScreen` fed by `$props`. cmt.4's own Venus authors the full triad.
-- **Scope In:** vendored/consumed board + golden components; a `GameProps → golden props` mapping (`view`
-  → `GoldenHero`/`StatusBar`/`EmojiSlots`/`GuessActions`/`EmojiKeyboard`; `leaderboard` →
-  `GoldenLeaderboard`); the in-progress state rendered from real props via `mount`.
-- **Scope Out:** the finished state + one-off event paths (cmt.5). Under **F3-Arm-A** the server
-  `game_props` extension (balances/boost) is this rung's codemojex sub-slice.
-- **Risk:** MED–HIGH — the real-screen swap + the data mapping (+ a possible `game_props` change).
-  **Formation:** Trio/Squad.
-- **Depends:** cmt.3; ruling **F3**.
-- **Acceptance (sketch):** the `/game/:gam` page renders the golden in-progress screen from the live
-  `game_props`; tapping a keyboard emoji fills a slot; `submit_guess` fires over the bridge (seen in the
-  dev panel); the leaderboard shows live standings. **Mutation guard:** a `game:update` prop diff
-  re-renders the screen.
+### cmt.4 — The Classic game screen (SPLIT: cmt.4.1 · cmt.4.2 · cmt.4.3)
+The Operator SPLIT cmt.4 at Bootstrap and re-aimed the split **Classic-first** (**R-classic**,
+2026-07-02): the Classic Free/Paid board ships before any golden surface — "Free/Paid" is the existing
+`view.free` / `view.guess_fee` distinction already in `GameProps` (no new flow). The native-reimplement
+ruling stands (no `@codemoji/design` dependency; `node/codemoji-design` = visual reference only); the
+target is the **Classic `BoardScreen`** (`stories/board/BoardScreen.tsx`, the "Game (Free)" board, Figma
+94:2974), NOT the golden screen — the golden variant moved whole to cmt.5.
 
-### cmt.5 — The real screen (finished) + events
-Add `GoldenFinishedScreen` + `GoldenAnswerReveal` on settle, and wire the full event set so the golden
-screen is live end-to-end.
-- **Scope In:** the finished-state composition + the reveal; the one-off handlers (`guess_rejected` →
-  reject toast, `revealed` → reveal, `golden_win` → win toast) via `bridge.onServerEvent`; the
-  `submit_guess`/`lock`/`unlock` round-trips via `bridge.pushEvent`.
+- **cmt.4.1 — the game DS + i18n foundation. ✅ BUILT (2026-07-02, Director-verified); triad
+  [`./cmt.4.1.md`].** Tailwind v4 (`@tailwindcss/vite`) in the island build; the verbatim token `@theme`
+  port of `tokens.mjs` (asset-backed values excluded); `cn`; react-i18next (bundled ru/en, the `smoke.*`
+  seed); the ruled CSS delivery (`?inline` → one `<style data-cmjx-game>` at `mount()`, preflight
+  skipped); the dev-flagged `GameSmoke` (`VITE_GAME_SMOKE`, off by default — the branch is folded out of
+  the default artifact). The pixel proof stays OWED Operator-observed via the cmt.2 hot-load loop.
+- **cmt.4.2 — the Classic `BoardScreen` composition (the frontier).** Compose the Classic board natively
+  on the cmt.4.1 stack: the `GameProps`→board mapping replacing the plain `GameEdge` internals; the
+  `board.*`/`game.*` i18n namespaces port here; **balances omit/neutralize per the F3 ruling** (nothing
+  fabricated; the server `game_props` extension is a deferred `/codemojex-ship` rung). Venus carves the
+  triad at its ship. **Risk:** MED–HIGH. **Formation:** Trio/Squad. **Depends:** cmt.4.1.
+- **cmt.4.3 — the Classic finished-state + events.** The settle/reveal composition + the one-off event
+  handlers (`guess_rejected` → reject, `revealed` → reveal, win handling) via `bridge.onServerEvent`; the
+  `submit_guess`/`lock`/`unlock` round-trips via `bridge.pushEvent` (folded from the old cmt.5 scope).
+  **Risk:** MED. **Depends:** cmt.4.2.
+
+### cmt.5 — The GOLDEN variant (deferred by R-classic, 2026-07-02)
+The golden surface, whole: the golden screen treatments (`GoldenInProgressScreen`/`GoldenFinishedScreen`
+re-implemented natively on the Classic stack) + `GoldenAnswerReveal`; the gold texture (`gold.png` /
+`--gold-texture` / `bg-gold-texture` — the asset-backed tokens excluded from cmt.4.1's port land here,
+with the 1.39 MB raster's delivery-at-scale fork); the `golden_win`/boost surface (needs the server
+`game_props` extension — a `/codemojex-ship` rung).
 - **Scope Out:** welcome/lobby polish (cmt.6); the toolkit dev-panel (cmt.7); distribution (cmt.8).
-- **Risk:** MED. **Formation:** Trio.
-- **Depends:** cmt.4.
-- **Acceptance (sketch):** on settle the screen shows the finished state + the revealed answer;
-  `golden_win` shows the win toast with diamonds; a rejected guess shows the reason; each event is
-  visible in the dev panel. **Mutation guard:** unsubscribing `onServerEvent` stops the toasts.
+- **Risk:** MED–HIGH. **Formation:** Trio/Squad.
+- **Depends:** cmt.4.3 (+ the `/codemojex-ship` `game_props` extension for balances/boost).

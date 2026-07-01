@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 
 // Builds the game island as a content-hashed ESM bundle into codemojex's committed
@@ -15,7 +16,7 @@ import { fileURLToPath } from "node:url";
 const r = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     // `@mercury/effector` resolves from SOURCE (the economy precedent) — the game is a
     // self-contained pnpm workspace (excluded from mercury/'s), so it carries no
@@ -38,6 +39,11 @@ export default defineConfig({
     target: "es2024",
     rollupOptions: {
       input: r("./src/index.tsx"),
+      // The bundle is dynamic-imported and its NAMED exports (mount/GameEdge) ARE the
+      // outward contract. An app-mode build otherwise drops the entry signature (the
+      // rollup facade optimization), emitting a mount-less module — invisible to every
+      // gate except an actual import of the artifact.
+      preserveEntrySignatures: "strict",
       output: {
         format: "es",
         entryFileNames: "game-[hash].js",
