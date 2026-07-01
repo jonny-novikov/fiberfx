@@ -289,8 +289,13 @@ Reference* for a broad audience — the place a developer lands to learn the sys
 component live, read its API, and copy a grounded example. It **replaces the retired demo apps**
 and is the public face of `@mercury/ui`.
 
-> **Status — PLANNED (`mx.9`, Squad-tier).** Not yet scaffolded. The current `mercury/apps/` holds
-> `echomq · fx-demo · marketing-site · mobile · storybook · website` — there is no `showcase/` yet.
+> **Status — FOUNDATION SHIPPED (`mx.7.4` §F, 2026-07-01) · full Reference PLANNED (`mx.9`, Squad-tier).**
+> `apps/showcase/` is scaffolded: the shell (sidebar · topbar with a theme toggle wired to the
+> `@mercury/effector` theme adapter · source-resolving `@mercury/*` like the other apps) + an
+> **Overview** page + an **Overlays** live demo driving the mx.7.4 `Dialog`/`AlertDialog`/`Popover`
+> through the disclosure bridge (the two modals stack + lock body scroll; the non-modal `Popover` does
+> not). The full per-component Developer Reference (the Components · Foundations · Patterns routes
+> below) remains the `mx.9` scope.
 > This section is the build brief's north star, grounded in the prototype it is scaffolded from.
 
 ### 4.1 Scaffolded from the `mercury-ds` prototype
