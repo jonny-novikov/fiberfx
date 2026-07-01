@@ -78,7 +78,9 @@ Movement III · the Design System Storybook   (laddered behind mx.2 — each sto
     7.3.3 📋 PLANNED  ░░░░░░░░░░░░░░░░░░░░  selection composites — CheckboxGroup·CheckboxCards·RadioGroup·RadioCards (+4) + folds Textarea/ToggleGroup
     7.4  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  overlay-floor primitive + Dialog·AlertDialog·Popover (+3) · Squad-tier
     7.5  📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  menus/hover/nav (consume the floor) — Dropdown·ContextMenu·HoverCard·LinkPreview·Menubar·TabNav (+6) · Squad-tier
-  mx.8   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  enrich the stories — palette · roundings · variant switching · actions · real-world scenes (@mercury/ui surface frozen)
+  mx.8   🪟 EPIC      ░░░░░░░░░░░░░░░░░░░░  enrich the stories — palette · roundings · variants · actions · scenes · now an EPIC, sliced by group (@mercury/ui surface frozen)
+    8.1  ✅ BUILT     ████████████████████  foundations slice — Palette+Roundings brand-only toolbar globals (host-wide) · foundations variant audit (Heading `as` gap filled) · 2 foundations-in-context scenes (Profile·Article) · barrel byte-identical · K-4 deferred — gate-green 2026-07-01 (/mercury-ship mx.8.1)
+    8.2+ 📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  remaining groups' audit + scenes (actions activates on interactive groups) as mx.7.4/7.5 land the library
   mx.9   📋 PLANNED   ░░░░░░░░░░░░░░░░░░░░  ONE comprehensive showcase app (library · docs · API · do/don't · recipes) replacing retired apps · Squad-tier
 ```
 

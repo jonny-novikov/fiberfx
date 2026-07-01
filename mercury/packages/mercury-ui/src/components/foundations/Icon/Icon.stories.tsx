@@ -2,8 +2,10 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Icon } from "@mercury/ui";
 import type { IconName } from "@mercury/ui";
 
-// The full IconName set, traced from Icon.tsx (the ICONS keys) and restated in
-// Icon.prompt.md — NO-INVENT (mx.3.md INV-7). An unknown name is a compile error.
+// The full IconName set, traced from Icon.tsx (the ICONS keys) and restated in Icon.prompt.md.
+// NO-INVENT (mx.8.1-INV8): IconName = keyof (ICONS: Record<string, ReactNode>) widens to `string`,
+// so an unknown name is NOT a compile error — this array is verified against the ICONS keys by
+// hand (set-equality), not the type.
 const ICON_NAMES: IconName[] = [
   "arrow",
   "arrow-up-right",

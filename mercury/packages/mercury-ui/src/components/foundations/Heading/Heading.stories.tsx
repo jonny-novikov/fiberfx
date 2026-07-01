@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { Heading } from "@mercury/ui";
-import type { HeadingProps, HeadingSize, HeadingWeight } from "@mercury/ui";
+import type { HeadingProps, HeadingSize, HeadingTag, HeadingWeight } from "@mercury/ui";
 
 // Enum domains traced from Heading.tsx (HeadingSize / HeadingWeight exported
 // types; the `accent` union is inline on HeadingProps) — NO-INVENT (mx.4 INV-5):
@@ -9,6 +9,8 @@ const SIZES: HeadingSize[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const WEIGHTS: HeadingWeight[] = ["regular", "medium", "semibold", "bold"];
 type HeadingAccent = NonNullable<HeadingProps["accent"]>;
 const ACCENTS: HeadingAccent[] = ["iris", "indigo", "green", "orange", "plum", "red"];
+// The render-tag union (HeadingTag) — the one mx.8.1 audit gap this rung fills.
+const TAGS: HeadingTag[] = ["h1", "h2", "h3", "h4", "h5", "h6", "div"];
 
 // Controls restate Heading.prompt.md: `size` (1..9, display sizes 5–9 ride DM
 // Mono), `weight`, `align`, `accent` (ramp ink) and `truncate`.
@@ -19,6 +21,7 @@ const meta: Meta<typeof Heading> = {
     size: { control: "inline-radio", options: SIZES },
     weight: { control: "inline-radio", options: WEIGHTS },
     align: { control: "inline-radio", options: ["left", "center", "right"] },
+    as: { control: "select", options: TAGS }, // the render tag (HeadingTag) — the mx.8.1 gap
     accent: { control: "select", options: ACCENTS },
     truncate: { control: "boolean" },
     children: { control: "text" },
