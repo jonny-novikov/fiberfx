@@ -1,7 +1,7 @@
 ---
 name: cm-ship
 description: >-
-  Use this skill to ship ONE spec-driven rung of codemojex-node — the Node/TypeScript consumer at
+  Use this skill to ship ONE spec-driven rung of Codemojex Game in Javascript — the Bun/Node/TypeScript consumer at
   mercury/codemojex/ (the @codemojex/* pnpm workspace: apps admin · economy · game · game-tauri, +dashboard;
   packages db · domain · types), COUPLED to the @mercury/* design system it composes (and may additively extend:
   @mercury/core + @mercury/effector) and to the echo/ codemojex Elixir engine's shared Postgres + Valkey

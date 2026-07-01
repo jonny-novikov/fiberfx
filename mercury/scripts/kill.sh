@@ -12,10 +12,10 @@
 #
 set -euo pipefail
 
-# Mercury apps: showcase · catalogue · echomq · docs · mobile (5173–5177) — kept
+# Mercury apps: showcase · echomq · mobile (5173–5177) — kept
 # in sync with package.json dev:* ports.
 # Codemojex family (cm-all.sh): the api on 3000; 5180 reserved for a future UI.
-PORTS=(5173 5174 5175 5176 5177 3000 5180 "$@")
+PORTS=(5174 5175 5176 3000 5180 "$@")
 
 killed=0
 for port in "${PORTS[@]}"; do

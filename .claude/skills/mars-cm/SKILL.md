@@ -42,17 +42,22 @@ never pulls Fastify.
   `mercury/packages/{mercury-core,mercury-effector,mercury-ui}` rings the Director ratified (ADDITIVE — a
   removal/rename of an existing `@mercury` export → STOP, surface to the Operator; the barrel holds). A change
   reaching an OUT-of-bounds dir, or an `echo/` edit, → STOP and re-scope (an `echo/` change forks to
-  `/codemojex-ship`).
+  `/codemojex-ship`). **Escalate out-of-boundary infra AND a coupling drift — never fix either silently:** admin.1
+  STOPPED + surfaced both a stale `mercury/` workspace glob and the `@codemojex/db` schema fiction (both outside
+  the island) rather than patching them under the rung.
 - **Cite, do not invent.** Every route / schema field / `@mercury` import / prop / `@codemojex/db` column /
   Valkey key you write already exists in the source or is named in the brief. Move-don't-rewrite where a rung
   relocates code; realization-over-literal where the literal breaches an invariant (flag the deviation with its
-  `file:line`). If the brief is silent or wrong, STOP and report — do not redefine an existing surface.
+  `file:line`) — a **module-singleton resource shapes the whole test lifecycle** (admin.1: `@codemojex/db`'s `sql`
+  is a shared singleton that `buildServer`'s onClose ends, so the brief's literal "fresh server per test" would
+  poison the pool; the realization = one shared app in before/after + read-only probes). If the brief is silent
+  or wrong, STOP and report — do not redefine an existing surface.
 
 ## 3 · The capability craft (through the loaded skill)
 
 - **backend (`cm-backend`)** — Fastify plugins + hooks; Drizzle over `@codemojex/db`; Valkey via `iovalkey`
   (:6390); TypeBox as the one schema → static type + validator + serializer. **The no-secret-on-wire law**: the
-  response schema lists only public columns, so the `secret`/`keyboard` never serialize even if a query selected
+  response schema lists only public columns, so the `secret`/`cell_codes` never serialize even if a query selected
   them — prove it with an `app.inject` response-key assertion, not by remembering to omit. Boot both entries
   (`start`, `runCluster`).
 - **frontend (`mars-mercury`)** — compose `@mercury/*` from source; the taste applied at the interaction level
@@ -78,7 +83,10 @@ pnpm --filter @codemojex/<app> test           # the Fastify inject suite / vites
 
 Node ≥20. **No `TMPDIR=/tmp`** (Elixir-only). **A check counts only if it RUNS** — the secret-strip is an inject
 response-key assertion, the dark theme is a real toggle, the boot-smoke resolves `buildServer(loadEnv()).ready()`
-against a reachable Postgres + Valkey (Operator runs deploys — hand off + verify, never deploy). On a rung that
+against a reachable Postgres + Valkey (Operator runs deploys — hand off + verify, never deploy). **A live proof
+ASSERTS, never skips to a false green:** a live coupling test REQUIRES its success code (admin.1's INV2 demands a
+200; a 500 is a CAUGHT regression) and skips ONLY on a genuinely-absent, explicitly-named precondition (Postgres
+down / an empty table) — never a fall-through to a vacuous pass (a 404 that greens without proving anything). On a rung that
 stands up a team: **self-register via `mcp__aaw__agent_register`** from your own context (LAW-1; no narrated
 spawns); `agent_heartbeat` after each file written + after the gate (partial work on disk is recoverable, a
 dropped report is not); record a craft lesson `tool_x_learning` → **L-n**; report `tool_x_report` /

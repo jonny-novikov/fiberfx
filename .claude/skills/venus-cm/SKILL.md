@@ -40,7 +40,7 @@ hand. Classify each claim MATCH / STALE / INVENTED / MISSING / DEFERRED; the run
 is MATCH or an explicit `[RECONCILE]`-DEFERRED. The claim types, by capability:
 
 - **backend** — every route in the spec → a real handler in `apps/<app>/src/routes/*.ts`; every response field →
-  the app's TypeBox schema (`schemas.ts`); the **secret-strip** (the `games` response omits `secret`/`keyboard`
+  the app's TypeBox schema (`schemas.ts`); the **secret-strip** (the `games` response omits `secret`/`cell_codes`
   — `gameCols`/`GameSummary` list only public columns); every env key → `loadEnv` (`env.ts`); the boot entries →
   `main.ts` (`start`) + `cluster.ts` (`runCluster`).
 - **frontend / mercury** — every `@mercury/*` import/prop → the **resolved** barrel export set + the live `.tsx`
@@ -48,7 +48,11 @@ is MATCH or an explicit `[RECONCILE]`-DEFERRED. The claim types, by capability:
   every composed call site → a real usage.
 - **elixir-coupled** — every `@codemojex/db` (Drizzle) column → the echo/ Ecto schema it mirrors
   (`codemojex.design.md` six-table model); every Valkey key → the `cm:<game>:*` keyspace. A drift is a STALE the
-  rung closes IN `@codemojex/db` — **never** by editing `echo/`.
+  rung closes IN `@codemojex/db` — **never** by editing `echo/`. **Verify the column against the REAL database**
+  (`information_schema.columns`) or the migration DDL, NEVER against typecheck: a Drizzle schema hand-modeled
+  "from observation" can typecheck + build green and still be pure fiction that 500s on every read (admin.1 — a
+  fictional `room_id`/`prize_usd` on `games`, `game_id`/`codes` on `guesses`). Typecheck proves internal TS
+  consistency; only the DB proves agreement with Postgres — a mirror is verified against the system it mirrors.
 - **Probe the real surface**, never assert from prose. A "no new dependency" claim is a **per-app** fact — read
   the app's `package.json` `deps`, never the root lockfile alone. NO-INVENT: no route, prop, column, token, or
   script asserted from the canon prose.
@@ -62,7 +66,10 @@ Deliverables `<rung>-D#` · Invariants `<rung>-INV#` · Definition of Done, **au
 `[implements]` · a comprehensive prompt), gated by the six quality gates (Voice · Structure · Traceability ·
 Fences · Links · Format — sweep them + `mcp__msh__specs` for links). Derive all three FROM the body. Each
 invariant is a **runnable check**: "the inject 401/200 pair holds" · "no `secret` key on the `/games/:id` body" ·
-"`pnpm --filter @codemojex/<app> typecheck` exits 0" · "the `@mercury/ui` barrel export set is unchanged".
+"`pnpm --filter @codemojex/<app> typecheck` exits 0" · "the `@mercury/ui` barrel export set is unchanged". **An
+invariant that names a column/field grounds that name in the real DDL** (the migration / `information_schema`),
+never the canon prose — the admin.1 INV2 named a non-existent `keyboard`; the real server-side secret columns are
+`secret` + `cell_codes`.
 
 ## 4 · Write-ready (survive the spawn)
 

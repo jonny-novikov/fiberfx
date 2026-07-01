@@ -84,21 +84,22 @@ at Bootstrap; the peer then loads the matching capability — **read** a bare-`.
 | **backend** | `admin`, a `dashboard` API, a package doing Postgres/Valkey I/O | **`cm-backend`** — Fastify · Drizzle (`@codemojex/db`) · Valkey (`iovalkey` :6390) · TypeBox · the **no-secret-on-wire** law | the `app.inject` suite · the secret-strip assertion · `buildServer(loadEnv()).ready()` boot-smoke (solo + clustered) |
 | **frontend / mercury** | `economy`, `game`, `dashboard` UI, a `game-tauri` web view | **`mercury-program`** + the role's **`venus-mercury`/`mars-mercury`** craft + the model-invoked **`frontend-design`** plugin (compose `@mercury/*`, token discipline) | the **barrel-diff** (resolved export set) on any `@mercury` touch · a no-raw-hex/token grep · the app's vitest |
 | **rust / tauri** | `game-tauri` (the `src-tauri` Rust host) | a **forward slot** — the Rust craft (the `echo_graft`/`graft-ship` cargo discipline: `--test-threads=1`, name the excluded feature-gated set); filled when a tauri rung is first worked | `cargo build` + `cargo test` in `apps/game-tauri/src-tauri` |
-| **elixir-coupled** | a node feature binding the echo/ engine's shared Postgres schema / `cm:<game>:*` keyspace | **read-only** grounding — reconcile `@codemojex/db` (Drizzle) against the echo/ Ecto schema (`codemojex.design.md`) + the keyspace; via `/codemojex-ship` + `echo/CLAUDE.md` | (echo/ is NOT edited — an echo/ change forks to `/codemojex-ship`) |
+| **elixir-coupled** | a node feature binding the echo/ engine's shared Postgres schema / `cm:<game>:*` keyspace | **read-only** grounding — reconcile `@codemojex/db` (Drizzle) against the echo/ Ecto schema (`codemojex.design.md`) + the keyspace; via `/codemojex-ship` + `echo/CLAUDE.md` | the `@codemojex/db` schema diffed against the live DB (`information_schema.columns`) / the migration DDL — never typecheck; run **schema-first** (checkpoint the corrected schema against the DB) THEN the consumers (routes · response schemas · tests), so a transcription error surfaces before the wiring (admin.1). echo/ is NOT edited — an echo/ change forks to `/codemojex-ship`. |
 
 ## The laws (the load-bearing properties — an invariant that asserts one is a runnable check)
 
 | Law | What it binds | Where |
 |---|---|---|
-| **No secret on the wire (backend)** | No data route answers unauthenticated, and no response body carries a server-side `secret` (or `keyboard`) — the read plane's TypeBox *response* schema lists only public columns, so `fast-json-stringify` drops the secret even if a query selected it. Proven by an `app.inject` response-key assertion, not by remembering to omit. | `cm-backend` · `admin.md` |
+| **No secret on the wire (backend)** | No data route answers unauthenticated, and no response body carries a server-side `secret` or `cell_codes` — the read plane's TypeBox *response* schema lists only public columns, so `fast-json-stringify` drops the secret even if a query selected it. Proven by an `app.inject` response-key assertion, not by remembering to omit. | `cm-backend` · `admin.md` |
 | **@mercury barrel-additive (coupled)** | When a rung additively touches `@mercury/ui`, every name exported from `mercury/packages/mercury-ui/src/index.ts` before the rung is still exported after it (additions OK; **removals/renames break the Mercury apps** → STOP, surface to the Operator). The barrel is `export *`, so prove it with the **resolved** export set, never a text-diff. | `mercury-program.md` §2 |
 | **Token discipline (frontend)** | A composed `@mercury` surface styles through enum props + `rgb(var(--token))`; a codemojex app **never** authors a private `.mx-*` recipe or a raw hex — a new token family is a `/mercury-ship` fork. | `mercury-program.md` §6 |
 | **Compose the mature foundation** | A codemojex frontend COMPOSES `@mercury/core` (formatters, `cx`, date) + `@mercury/ui` + `@mercury/effector`; it does not re-implement them. "Translate the prototype" borrows an app's *anatomy*, never its throwaway logic — dates flow THROUGH `@mercury/core` (`D-6`). | `mercury.design.md` |
+| **Verify a mirror against its source (elixir-coupled)** | `@codemojex/db`'s Drizzle schema MIRRORS the echo/ engine's Postgres — verify every column against the REAL database (`information_schema.columns`) or the migration DDL, **never against typecheck**. Typecheck proves internal TS consistency; only the DB proves agreement with Postgres, so a green-and-fictional schema builds clean yet 500s on every read (admin.1). A mirror is verified against the system it mirrors, not against itself. | § the capability router · `venus-cm` |
 | **The spec triad (aaw.specs-approach)** | Every rung carries a chaptered triad: `<rung>.md` (6 `##` sections — Goal · Rationale 5W · Scope · Deliverables `<rung>-D#` · Invariants `<rung>-INV#` · DoD) + `<rung>.stories.md` (Connextra US# · G/W/T · `encodes <rung>-INV#` · Coverage) + `<rung>.llms.md` (References · Requirements R# `[US:]` · Execution topology · Agent stories AS# `[implements]` · a comprehensive prompt). The six gates: Voice · Structure · Traceability · Fences · Links · Format. | `aaw.specs-approach.md` |
 
 ## The codemojex-node facts (NO-INVENT — ground each in a real file or a canon §)
 
-- **The workspace** — `mercury/codemojex/` = `@codemojex/node` (private pnpm workspace, `type: module`, engines
+- **The workspace** — `mercury/codemojex/` = `@codemojex/node` (a **member** of the `mercury/` pnpm workspace — NOT standalone: its `@echo/core`/`@echo/cluster` `workspace:*` deps live in `mercury/packages/`, so `pnpm install` runs the whole `mercury/` workspace + shares `mercury/pnpm-lock.yaml`; the glob is `codemojex/{packages,apps}/*`. `type: module`, engines
   `node ≥20`, root `typecheck` = `tsc -p tsconfig.json` over project references). Re-probe the app's
   `package.json` `scripts` for its real `build`/`test`/`dev` — never assert a script name.
 - **The apps** (`mercury/codemojex/apps/`): `@codemojex/admin` (a **Fastify** operator-API control plane over
@@ -112,13 +113,13 @@ at Bootstrap; the peer then loads the matching capability — **read** a bare-`.
 - **The couplings** — (1) **to `@mercury/*`**: the React apps consume `@mercury/core` + `@mercury/ui` +
   `@mercury/effector` **from source** (a vite alias + tsconfig `paths`); a cm-ship rung may ADDITIVELY extend
   core + fx (and additively `@mercury/ui`, barrel-held). (2) **to echo/**: `@codemojex/db` + `iovalkey` read the
-  **same** Postgres tables + `cm:<game>:*` Valkey keyspace the Elixir engine writes; the `secret` on `games` is
-  server-side and must be stripped at any node wire (the no-secret law).
+  **same** Postgres tables + `cm:<game>:*` Valkey keyspace the Elixir engine writes; the `secret` + `cell_codes` on `games` are
+  server-side and must be stripped at any node wire (the no-secret law). **Verified substrate (admin.1, against the real schema):** `games.secret` + `games.cell_codes` are the two server-side secret columns (both `text[]`); `games.room` is a denormalized, nullable `RoomId` string — NOT a `room_id` FK (the admin→rooms join is `eq(games.room, rooms.id)`); `guesses` = `game` · `player` · `emojis` · `points` · `at_ms`. Ground a column in these / the migration DDL, never the canon prose.
 
 ## The gate ladder (run from `mercury/codemojex/`, before reporting — NEVER a blind `pnpm -r`)
 
 ```bash
-pnpm install                                  # the workspace deps (this sub-workspace installs independently)
+pnpm install                                  # runs the WHOLE mercury/ workspace — codemojex is a MEMBER, not standalone (rewrites mercury/pnpm-lock.yaml)
 pnpm --filter @codemojex/<app> typecheck      # tsc clean for the rung's app(s)
 pnpm --filter @codemojex/<app> build          # the app builds (re-probe the real script)
 pnpm --filter @codemojex/<app> test           # the app's suite (the Fastify inject suite / vitest)

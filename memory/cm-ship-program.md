@@ -35,7 +35,6 @@ only dir-based skills (`venus-cm`/`mars-cm`/`*-mercury`) are `Skill`-loaded** (t
 not bare `.md`).
 
 **Slugs** = per-chapter `<chapter>.<n>` (`admin.1` · `economy.N` · `tauri.N` · `dashboard.N`), aaw scope
-`codemojex-<chapter>`; NEVER `cm.N` (the echo/ engine's). **First target = `admin.1`** (specced + six-gates-green,
-a backend rung). Also fixed a stale `mercury/codemojex-node/apps/{economy,api}` → real
+`codemojex-<chapter>`; NEVER `cm.N` (the echo/ engine's). **admin.1 SHIPPED 2026-07-01 (200362cd) — the inaugural run**, which grew from a backend auth rung into a full `@codemojex/db` read-model reconcile (the Drizzle schema was fiction-modeled "from observation" → verify columns against `information_schema` / the migration DDL, NEVER typecheck). **FLOOR CORRECTION: codemojex is a MEMBER of the `mercury/` pnpm workspace** (its `@echo/*` `workspace:*` deps live in `mercury/packages/`; `pnpm install` runs the whole mercury workspace + shares `mercury/pnpm-lock.yaml`) — cm-program's "installs independently" was WRONG, fixed. Apollo mentored the findings into venus-cm (verify-the-mirror + invariant-names-from-DDL) + mars-cm (reinforced: singleton test-lifecycle · escalate-infra+drift · live-proof-asserts) + cm-program (a new "verify a mirror against its source" law + substrate facts). Also fixed a stale `mercury/codemojex-node/apps/{economy,api}` → real
 `mercury/codemojex/apps/{admin,economy,game,game-tauri}` across the mercury skills/charters.
 [[codemojex-admin-program]] [[codemojex-program]] [[mercury-design-system]]
