@@ -3,7 +3,14 @@ import { useUnit } from "effector-react";
 import { Menubar, ScrollArea, cx } from "@mercury/ui";
 import type { MenubarMenu } from "@mercury/ui";
 import { setTheme } from "@mercury/effector";
-import { $health, gamesRequested, playersRequested, roomsRequested } from "@/api/client";
+import {
+  $health,
+  gamesRequested,
+  playerDeselected,
+  playersRequested,
+  roomDeselected,
+  roomsRequested,
+} from "@/api/client";
 import type { Health } from "@/api/client";
 import { GamesView } from "@/views/GamesView";
 import { PlayersView } from "@/views/PlayersView";
@@ -79,7 +86,12 @@ export function App() {
                 disabled={!n.enabled}
                 title={n.hint ? `Arrives in ${n.hint}` : undefined}
                 onClick={() => {
-                  if (n.enabled) setDesk(n.value);
+                  if (!n.enabled || n.value === desk) return;
+                  // Desk switch deselects (admin.5.2-D5) — a stale detail pane
+                  // never shows on the wrong desk.
+                  roomDeselected();
+                  playerDeselected();
+                  setDesk(n.value);
                 }}
               >
                 <span>{n.label}</span>

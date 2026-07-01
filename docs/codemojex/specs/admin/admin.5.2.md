@@ -54,7 +54,10 @@ this rung (rule-of-three). A shared `@mercury/core` master-detail hook (same def
   createEffect<string, RoomDetail>` calling `fetch(\`${base}/rooms/${id}\`, { headers: auth() })`; `roomSelected =
   createEvent<string>()` + `roomDeselected = createEvent()`; `$selectedRoomId =
   createStore<string | null>(null).on(roomSelected, (_s, id) => id).reset(roomDeselected)`; `$roomDetail =
-  createStore<RoomDetail | null>(null).on(fetchRoomDetailFx.doneData, (_s, d) => d).reset(roomDeselected)`;
+  createStore<RoomDetail | null>(null).reset(roomDeselected)`, filled by a **selection-filtered** `sample` off
+  `fetchRoomDetailFx.done` (`filter: (sel, { params }) => sel === params`, `fn` → `result`) so a late reply for
+  a superseded or cleared selection is **dropped** rather than overwriting the pane (the Director-verify
+  hardening — a keyed `createEffect` has no take-latest semantics, as-built);
   `sample({ clock: roomSelected, target: fetchRoomDetailFx })` — selecting a row sets the id AND fires the keyed
   fetch. The same trio for players (`fetchPlayerDetailFx` → `PlayerDetail`, `$selectedPlayerId`, `$playerDetail`,
   `playerSelected` / `playerDeselected`). `$health` is extended to react to both detail effects. The Bearer
@@ -118,19 +121,21 @@ this rung (rule-of-three). A shared `@mercury/core` master-detail hook (same def
   primitive). Exercised by the typecheck + build commands.
 
 ## Definition of Done
-- [ ] admin.5.2-D1 extends the client with the keyed room / player detail seams and the `$health` fan-in;
-  admin.5.2-INV1 + admin.5.2-INV4 pass (admin.5.2-US1).
-- [ ] admin.5.2-D2 adds `RoomDetail` / `PlayerDetail` (+ item shapes) with no secret field; admin.5.2-INV2 passes
+- [x] admin.5.2-D1 extends the client with the keyed room / player detail seams and the `$health` fan-in;
+  admin.5.2-INV1 + admin.5.2-INV4 pass (admin.5.2-US1). As-built: the detail stores fill through the
+  selection-filtered `sample` (the Director-verify hardening, folded into D1).
+- [x] admin.5.2-D2 adds `RoomDetail` / `PlayerDetail` (+ item shapes) with no secret field; admin.5.2-INV2 passes
   (admin.5.2-US2).
-- [ ] admin.5.2-D3 renders the rooms master-detail (select → the room's summary + games in a side pane) reading
-  `$roomDetail` via `useUnit`; admin.5.2-INV4 + admin.5.2-INV5 pass (admin.5.2-US3).
-- [ ] admin.5.2-D4 renders the players master-detail (select → the player's summary + guesses + ledger);
+- [x] admin.5.2-D3 renders the rooms master-detail (select → the room's summary + games in a side pane) reading
+  `$roomDetail` via `useUnit` — built + wired, the live read served-pending a standing admin service (the
+  admin.5 posture); admin.5.2-INV4 + admin.5.2-INV5 pass (admin.5.2-US3).
+- [x] admin.5.2-D4 renders the players master-detail (select → the player's summary + guesses + ledger);
   admin.5.2-INV2 + admin.5.2-INV5 pass (admin.5.2-US4).
-- [ ] admin.5.2-D5 lays out the list beside the side pane, empty / loading states hold, and a desk switch
+- [x] admin.5.2-D5 lays out the list beside the side pane, empty / loading states hold, and a desk switch
   deselects; admin.5.2-INV3 (barrel holds) passes (admin.5.2-US5).
-- [ ] admin.5.2-D6 + admin.5.2-INV6: `typecheck` exits 0, `build` produces a bundle, the barrel is unchanged, and
+- [x] admin.5.2-D6 + admin.5.2-INV6: `typecheck` exits 0, `build` produces a bundle, the barrel is unchanged, and
   the secret / `fetch`-in-view greps read 0 (admin.5.2-US6).
-- [ ] The six spec gates pass on this triad; the ledger records the close. The fork is **ruled** (D-6 → Arm C);
-  no open fork remains.
+- [x] The six spec gates pass on this triad; the ledger records the close (P-8). The fork is **ruled** (D-6 →
+  Arm C); no open fork remains.
 
 Stories: [`admin.5.2.stories.md`](./admin.5.2.stories.md) · Agent brief: [`admin.5.2.llms.md`](./admin.5.2.llms.md) · Index: [`admin.md`](./admin.md) · Approach: [`../../../aaw/aaw.specs-approach.md`](../../../aaw/aaw.specs-approach.md)

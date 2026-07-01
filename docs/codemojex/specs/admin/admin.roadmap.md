@@ -128,7 +128,18 @@ design system it composes is mature. Two shipped foundations carry it:
 - **Feedback.** Whether client-side search/paging over ≤200 rows is the right ceiling before a server-paged desk
   is wanted (the `/players` server `?q` exists, deliberately unused this rung).
 
-### admin.5.2 · master-detail (the side-panel detail desk) — SPECCED ✓ (RULED Arm C, BUILD-GRADE)
+### admin.5.2 · master-detail (the side-panel detail desk) — BUILT ✓ (gate green; live read served-pending a standing admin service)
+- **Built.** The keyed detail seam + two side panes at `mercury/codemojex/apps/dashboard/src/`:
+  `roomSelected`/`roomDeselected`/`fetchRoomDetailFx`/`$selectedRoomId`/`$roomDetail` + the identical players
+  trio in `api/client.ts` (one `auth()` path; `$health` fanned over all five effects), with the detail stores
+  filled through a **selection-filtered `sample`** off `.done` (`sel === params`) so a late reply for a
+  superseded or cleared selection is dropped — the Director-verify hardening (a keyed `createEffect` has no
+  take-latest). `RoomDetailPane` (status `Badge` + `DataList` summary + games as a nested `Table`, empty/loading
+  states) + `PlayerDetailPane` (`Stat` balances + `DataList` + guesses as `ListRow`s + the `unknown[]` ledger
+  rendered defensively) beside the narrowed lists in a `dsh-md*` two-region grid (stacks at the 860px
+  breakpoint); selection rides a `Column.render` `Button` cell (no Table row-click — the barrel untouched);
+  desk switch deselects. `typecheck` + `build` green (bundle 249 kB / gzip 81 kB); the secret / `fetch`-in-view
+  greps read 0. Via `/cm-ship` (Director + mars-cm Duo, two-pass: build → verify finding → harden).
 - **Ships.** The detail layer over the list desks, the ruled **Arm C (master-detail)** — a room's games and a
   player's guesses/ledger, read from the shipped `GET /rooms/:id` + `GET /players/:id` on a `$selectedId` + keyed
   `fetchDetailFx(id)` store seam, rendered in a **side pane** (`Card` + `ScrollArea`, composed locally — no new

@@ -134,7 +134,61 @@ admin.5.2` (master-detail, ruled Arm C — triad authored BUILD-GRADE) · admin.
 (ruled phased) · the prod `@fastify/static` same-origin serve (the standing `apps/admin` follow-up, deploy-
 gated). [[P-4]] [[P-5]] [[P-6]] [[D-6]] [[L-1]]
 
+### P-8
+
+admin.5.2 (master-detail — the side-panel detail desk, ruled Arm C) BUILT + HARDENED + gate GREEN via `/cm-ship`
+— a **Duo** (Director + mars-cm, TWO-PASS: build → a Director-verify finding → harden), the write-ready dispatch
+carrying the as-built admin.5.1 deltas the pre-build triad could not know (the `usePagedList` hook, the
+display-row/COLUMNS structure, the `REFRESH` map) plus two live probes (the `:id` shapes; the six pane components
+on disk). **Pass 1 built** (all under `mercury/codemojex/apps/dashboard/`): EDIT `src/types.ts` (`RoomGameItem` /
+`RoomDetail` / `GuessDetail` / `PlayerDetail`; `ledger: unknown[]`; `GuessDetail` = the spec's SUBSET of the wire
+`GuessSummary` — no `playerId`) · EDIT `src/api/client.ts` (the keyed detail seams + `$health` over five
+effects) · NEW `src/views/RoomDetailPane.tsx` (status `Badge` positive/info + `DataList` summary + games as a
+nested `Table` via `RoomGameRow`/`toGameRow`; empty/loading/games-empty states) · NEW
+`src/views/PlayerDetailPane.tsx` (`Stat` diamonds/clips/keys + `DataList` bonus/locked/telegram/created + guesses
+as `ListRow`s with a defensive `guessWhen` (`atMs` untyped → falls back to `insertedAt`) + the ledger as a
+defensive bounded `ledgerPreview` — no typed access to `unknown`) · EDIT `RoomsView.tsx`/`PlayersView.tsx` (a
+select `Column.render` `Button` cell — Table has NO row-click prop, the barrel fork avoided — + the `dsh-md`
+two-region wrap) · EDIT `src/App.tsx` (desk switch fires both deselects, early-return on the active desk) · EDIT
+`src/dashboard.css` (`dsh-md*` grid `minmax(0,1fr) | minmax(280px,360px)`, stacks in the existing 860px block;
+token-only). **Director verify: ONE finding** — a **stale-response race** on both keyed seams:
+`.on(fetchXDetailFx.doneData)` is last-write-wins, so (1) a slow room-A reply lands after room-B is selected and
+silently shows A's detail under B's selection (effector `pending` = `inFlight > 0` masks it only until A
+settles), and (2) a reply landing after deselect/desk-switch repopulates the reset store. **Pass 2 hardened**
+(one file): both detail stores now fill ONLY through a **selection-filtered `sample`** — `clock: fetchXDetailFx.
+done` (carries `params`), `source: $selectedXId`, `filter: (sel, {params}) => sel === params`, `fn → result` —
+`.reset` retained; a late reply for a superseded/cleared selection is dropped. Independent gates green twice
+(typecheck 0 · build 249.14 kB / gzip 80.91 · INV greps 0 · no-raw-hex 0); barrel held by authorship
+disjointness ([[P-4]]; the tree meanwhile carries concurrent FOREIGN work — `apps/game/*`, `apps/liveview-boot/*`,
+`mercury-effector` — attributed OUT per the pre-spawn baseline). Net-zero mutation kill on the NEW seam: `fn → params`
+(string) into `Store<RoomDetail | null>` → effector's branded error `fn result should extend target type
+{ fnResult: string; targetType: RoomDetail | null }` → reverted, green (craft note: the FIRST mutant run
+silently no-oped — the shell cwd had drifted to the jonnify root and pnpm walked the wrong workspace, erroring on
+`echo/deps/...`; a mutation verdict counts only when the gate DEMONSTRABLY RAN from `mercury/codemojex/`).
+Deviations (Director-verified sound): Badge open→positive else info (no `neutral` variant; omit-default is
+`negative` which would misrender) · duration as rounded seconds (the RoomsView `toRow` precedent) · deselect
+early-returns on the active desk (D5's literal "switching desks") · guesses as bare `ListRow`s · the `GuessDetail`
+subset. Spec folded: D1 + the llms sketch backward-reconciled to the filtered-sample shape; DoD [x]; roadmap →
+BUILT ✓; the `admin.md` ladder row repointed. Boundary held: `apps/dashboard/**` only; lockfile + all concurrent
+sibling work EXCLUDED. NEXT: `/cm-ship admin.5.3` (the live game path, node-only interim — triad being authored
+by venus-cm from the D-6 phased ruling; its keyed `$gameDetail` + POLL seam must reuse the [[L-2]] filtered-sample
+guard) · the prod `@fastify/static` serve (standing follow-up). [[P-6]] [[P-7]] [[D-6]] [[L-2]]
+
 ## {codemojex-admin-learnings} Learnings
+
+### L-2
+
+L — guard every KEYED detail/poll store with a selection-filtered `sample` (codemojex-node frontend craft). A
+keyed `createEffect` has NO take-latest semantics: `.on(fetchXFx.doneData)` is last-write-wins, so a slow reply
+for a superseded key silently overwrites the current one, and a reply landing after a reset repopulates the
+cleared store — while `pending` (`inFlight > 0`) masks the reorder only until the slow reply settles. The idiom:
+`$detail = createStore(null).reset(deselected)` filled ONLY via `sample({ clock: fx.done /* carries params */,
+source: $selectedId, filter: (sel, {params}) => sel === params, fn: (_s, {result}) => result, target: $detail })`.
+Found by the Director verify on admin.5.2 (both detail seams); binds every future keyed fetch — admin.5.3's
+polled `$gameDetail` FIRST (a poll multiplies in-flight replies, so the hazard is the common case there, not the
+edge). Corollary (process): a mutation verdict counts only when the gate DEMONSTRABLY RAN — the first admin.5.2
+mutant run silently no-oped because the shell cwd had drifted to the jonnify root and pnpm walked the wrong
+workspace; anchor every gate invocation with an explicit `cd mercury/codemojex`. [[P-8]]
 
 ### L-1
 

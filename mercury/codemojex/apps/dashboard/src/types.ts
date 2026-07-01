@@ -39,3 +39,35 @@ export interface PlayerSummary {
   keys: number;
   insertedAt: string; // ISO
 }
+
+// The detail shapes (admin.5.2-D2) — grounded in @codemojex/admin src/schemas.ts
+// (RoomDetail / RoomGameItem / PlayerDetail / GuessSummary). Every declared field
+// is a public read-plane column; no privileged field is declared. The ledger is
+// provisional server-side, so it stays unknown[] and is rendered defensively.
+export interface RoomGameItem {
+  id: string; // GAM branded id
+  status: string;
+  free: boolean;
+  prizePool: number | string; // decimal — untyped at the wire
+  endsMs: number | null;
+  insertedAt: string; // ISO
+}
+
+export interface RoomDetail {
+  room: RoomSummary;
+  games: RoomGameItem[];
+}
+
+export interface GuessDetail {
+  id: string; // GES branded id
+  gameId?: string;
+  points: number;
+  atMs?: number | null; // epoch ms — untyped at the wire
+  insertedAt: string; // ISO
+}
+
+export interface PlayerDetail {
+  player: PlayerSummary;
+  guesses: GuessDetail[];
+  ledger: unknown[];
+}

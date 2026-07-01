@@ -142,7 +142,16 @@ export const fetchRoomDetailFx = createEffect<string, RoomDetail>(async (id) => 
   return (await res.json()) as RoomDetail;
 });
 export const $selectedRoomId = createStore<string | null>(null).on(roomSelected, (_s, id) => id).reset(roomDeselected);
-export const $roomDetail = createStore<RoomDetail | null>(null).on(fetchRoomDetailFx.doneData, (_s, d) => d).reset(roomDeselected);
+// As-built (Director-verify hardening): the detail store fills ONLY when the reply
+// matches the CURRENT selection — a late reply for a superseded/cleared id is dropped.
+export const $roomDetail = createStore<RoomDetail | null>(null).reset(roomDeselected);
+sample({
+  clock: fetchRoomDetailFx.done,
+  source: $selectedRoomId,
+  filter: (sel, { params }) => sel === params,
+  fn: (_sel, { result }) => result,
+  target: $roomDetail,
+});
 sample({ clock: roomSelected, target: fetchRoomDetailFx });
 ```
 Select cell on the admin.5.1 `RoomsView` COLUMNS (no Table row-click — a render cell):
