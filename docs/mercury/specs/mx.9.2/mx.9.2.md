@@ -1,6 +1,7 @@
 # MX.9.2 · The derived registry + the shell — glob-built nav, tab stubs, the theme mechanism
 
-> **Status: 🔨 BUILD-READY (authored 2026-07-02 in the mx.9 split; NOT yet built).** The second sub-rung of
+> **Status: ✅ BUILT (gate-green 2026-07-02 via `/mercury-ship mx.9.2`; Duo+ — Director + Mars pass-1
+> clean, the harden pass collapsed; as-built record §7).** The second sub-rung of
 > the [`../mx.9/mx.9.md`](../mx.9/mx.9.md) SUB-EPIC — **hard-gates on [mx.9.1](../mx.9.1/mx.9.1.md)** (the
 > scaffold it builds inside). mx.9.2 lands the **engine's frame**: the DERIVED registry (two lazy
 > `import.meta.glob` calls over the real `@mercury/ui` tree — epic INV-6), the grouped sidebar + topbar, the
@@ -109,6 +110,33 @@ mx.9.3/mx.9.4. Adding a component folder to `@mercury/ui` makes it appear in the
 - **Unblocks:** mx.9.3 (fills the Stories stub — and first invokes the story loaders through the shim) and
   mx.9.4 (fills the Docs stub from the prompt loaders); mx.9.5 (chrome + acceptance over this shell).
 - **Touches:** `mercury/apps/showcase/src/**` only.
+
+## 7 · As-built record (2026-07-02)
+
+Built by the Duo+ formation (the architect leg collapsed — the triad was WRITE-READY, authored same-day
+lag-1; the Director's pre-spawn ground-truth reconcile returned all-MATCH). Pass-1 clean; the harden pass
+collapsed. As-built files: `src/registry.ts` (the brief §Topology shape transcribed) ·
+`src/shell/{Sidebar,Topbar,ComponentPage,Home}.tsx` · `src/showcase.css` · `src/App.tsx` (rewrite) ·
+`src/main.tsx` (boot line) · `src/vite-env.d.ts` (see below). Three flagged realizations, Director-accepted:
+
+1. **`src/vite-env.d.ts` NEW** — the scaffold's tsconfig pins `"types": ["react", "react-dom"]`, so
+   `import.meta.glob` is TS2339 without the canonical in-src `/// <reference types="vite/client" />`;
+   the app tsconfig is outside the `src/**` boundary, the in-src reference is not. Zero runtime surface.
+2. **`parse()` strict-safe realization** — the brief's literal fails strict indexed access
+   (`string | undefined`); realized behavior-identically (bind segments to locals, guard `undefined`).
+3. **`Home.tsx` wrapper `<main>` → `<section>`** — the shell's `App.tsx` owns the single `<main>`
+   landmark; the relocated sanity content is otherwise verbatim.
+
+Gate evidence: packages typecheck + the `@mercury/*`-scoped builds green (the raw `./packages/*` build
+still trips the PRE-EXISTING `@echo/fx` wasm-pack failure from HEAD — untouched, out of scope); showcase
+typecheck/build green; the 3-app gate green (`showcase · echomq · mobile`); every ladder grep clean with
+`--exclude-dir=node_modules`; 65-count parity derived (the number in the check, never the code). The S-1
+liveness probe ran **twice** — Mars (`foundations/__Probe__`) and the Director adversarially under an
+**unknown group segment** (`zz-probe/__DirProbe__`, exercising the appended-derived path): both
+present→deleted→absent with `packages/**` clean after. INV-5 held: zero `loadStories(`/`loadPrompt(` call
+sites; every story/prompt chunk code-split lazy, none statically imported by the entry (the dev-server
+network-panel observation remains the stated manual step). LAW-1a mutation spot-check: `REGISTRY` export
+renamed → TS2724 at the import site → reverted net-zero.
 
 > **Framing (propagate):** no gendered pronouns for agents; no perceptual or interior-state verbs; no
 > first-person narration. Each surface is a contract; acceptance is at the boundary.
