@@ -8,6 +8,6 @@ import { Button } from "../src/index";
 test("renders a Button with its label and the mx-btn class", () => {
   render(<Button>Go</Button>);
   const btn = screen.getByRole("button", { name: "Go" });
-  expect(btn).toBeInTheDocument();
-  expect(btn).toHaveClass("mx-btn");
+  expect(btn).not.toBeNull();
+  expect(btn.classList.contains("mx-btn")).toBe(true);
 });

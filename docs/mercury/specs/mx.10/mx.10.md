@@ -1,6 +1,6 @@
 # MX.10 · Workspace dependency reconciliation & the vite 7 lift (the pnpm catalog)
 
-> **Status: 📐 SOLID-FORWARD (specced 2026-07-01, NOT yet built).** A **cross-cutting toolchain rung** —
+> **Status: ✅ BUILT (gate-green 2026-07-02, `/mercury-ship mx.10`; as-built §8).** A **cross-cutting toolchain rung** —
 > orthogonal to the Movement III feature ladder (`mx.0`–`mx.9` build the design system; `mx.10` lifts the
 > *toolchain* beneath it). It makes the workspace's shared dev-dependency versions a **single-sourced
 > invariant** (a pnpm `catalog:`) and lifts the build toolchain from **vite 6 to vite 7**, converging
@@ -231,3 +231,50 @@ stage.
 > interior-state verbs ("sees" / "wants" / "feels" / "knows" / "decides") on a tool, package, or config; no
 > first-person narration. State each surface as a contract (precondition / postcondition / invariant) so
 > acceptance is at the boundary, not by re-reading the diff.
+
+## 8 · As-built (2026-07-02)
+
+**Shipped via `/mercury-ship mx.10`** — a **Duo** (Director + Mars two-pass; the Director absorbed the lag-1
+reconcile as stewardship, so no separate architect leg). The three shaping forks were pre-RULED; the grain forks
+(§7) were Operator-ruled at sharpen. Gate-green on this machine: **vite 7.3.6 / node v22.18.0**, `verify:mercury`
++ `pnpm --filter "./apps/*" build` + `sb:build` **exit 0**, INV-1..8 all pass — Director-independent re-run + a
+net-zero mutation proving both the S1 fix load-bearing (removing it → `TS2503`) and the INV-2 single-source gate
+(a reintroduced literal is caught).
+
+**The catalog (as-built).** `pnpm-workspace.yaml` carries the 7-entry `catalog:` (`typescript ~5.9.3` · `vite ^7`
+· `vitest ^4` · `react`/`react-dom ^19` · `jsdom ^26` · `@vitejs/plugin-react ^4.3.3`). Migrated manifests (each
+declared subset → `"catalog:"`, **dev/direct deps only, peer ranges untouched**): **8 packages** (`cluster · core
+· fx · mercury-core · mercury-effector · mercury-ui · phoenix · phoenix_live_view`) + **4 apps** (`echomq · mobile
+· showcase · storybook`) + the **root** = 13 manifests. `pnpm-lock.yaml` re-resolved; **no `codemojex/**` manifest
+touched** (INV-6); the `@mercury/ui` barrel **byte-identical** (INV-1); vitest dual-major closed to `4.1.9`
+(INV-4).
+
+**Reconcile deltas the ship corrected** (this triad predated mx.9.1/9.6): (1) **`apps/showcase` is in-scope**
+(born in mx.9.1 *after* this spec) — the ruled scope is `apps/*` = **4 apps**, not the "3" the body/`.llms.md`
+enumerated; showcase migrated. (2) The **vitest dual-major is 2 declarers** (`phoenix` + `phoenix_live_view` at
+`^4.0.16` vs root `^3.0.0`), not "four" (§0). (3) The **phoenix/phoenix_live_view working-tree entanglement is
+cleared** — the tree was clean there, so no by-concern split was needed (§6's entangled-tree note is moot as of
+ship).
+
+**Fork rulings (Operator, 2026-07-02).** **jest-dom → retired** (fold-in): the sole in-scope declarer (root
+devDep) removed, `vitest.setup.ts` deleted + its `setupFiles` wiring dropped from `vitest.config.ts`, and
+`Button.test.tsx`'s 2 matchers rewritten to plain vitest/DOM (`@testing-library/react` kept); residual lockfile
+refs trace only to `codemojex/apps/game` + a `storybook@10.4.6` transitive. **Fork A → the new vite-7
+`build.target` default** (no config sets it); the 4 pre-existing `es2024` pins (`mercury-ui · mercury-effector ·
+phoenix · phoenix_live_view`) kept untouched, so the default-change applies only to the 4 targetless apps. **Fork
+B → `@vitejs/plugin-react ^4.3.3`** (resolves to **4.7.0**, peer `…||^7`) — **no bump**. **Fork C → the
+pre-existing `@echo/fx` red** (`wasm-pack` local-env) **baselined**, unchanged pre↔post. **Fork D → `jsdom` +
+`@vitejs/plugin-react` included** in the catalog.
+
+**One lift-forced change (beyond manifests).** `@mercury/core` gained `@types/node ^22.18.0` + `"node"` in its
+tsconfig `types`: the vitest-4 move severed the ambient `NodeJS`-type leak that had silently satisfied
+`NodeJS.Timeout` in `src/internal/debounce.ts` (green at HEAD only by vitest-3's type-graph). INV-7 forbade the
+portable `src` fix (`ReturnType<typeof setTimeout>`), so the real dependency was declared instead. The barrel is
+unaffected.
+
+**Escalated separately (out of mx.10 scope, not folded).** (a) **15 pre-existing test failures** under the root
+vitest config (13 `phoenix_live_view` tests importing bare `phoenix_live_view/*` resolvable only under that
+package's own config + 2 `node:test`-runner files in `@echo/core`/`@echo/cluster` swept by the root glob) — red
+at HEAD *and* post-rung with an **identical failed-file set** (0 regressions); a root-config test-globbing
+concern. (b) An **`@types/node` version drift** (`^22.10.2` in `@echo/cluster`/`core`/`fx` vs `^22.18.0` in
+`phoenix`/`phoenix_live_view`/`mercury-core`) — an un-cataloged shared dev-dep, a catalog-widening candidate.
