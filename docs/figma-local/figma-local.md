@@ -11,7 +11,7 @@ Three components across two machines (verified on disk; full table in
 [figl.design.md](figl.design.md) §2):
 
 ```
-Mac (this repo)                         Windows Figma machine (192.168.3.120)
+Mac (this repo)                         Windows Figma machine (192.168.1.120)
   agent ──▶ mcp.js ──HTTP POST /request──▶ bridge-server.js ──WebSocket──▶ figma-plugin
             (stdio MCP)                     (:3001 / :3000, pure relay)      (inside Figma)
 ```

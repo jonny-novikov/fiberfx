@@ -2,8 +2,6 @@
 
 > _Where EchoMQ goes from a fast, fair, Valkey-native bus to covering Oban Pro's feature surface — built on the persistence layer already laid, with a risk mitigation named for every step. Supersedes the earlier roadmap; the operator dashboard is out of scope (a first-class Phoenix dashboard is already in alpha)._
 
-> _Reconciled 2026-07-01 against the [Movements ledger](emq.roadmap.md) (the Stream Tier whole at conformance 79, label `2.6.5`) and the BCS [direction appendix](../echo/bcs/appendixes/bcs.direction.md). Deltas: the gate-and-runway section ahead of the phases is new; Phase 4 gains shard partitioning and FLAME burst capacity; Phase 5's Relay dependency is met by shipped code; stale conformance counts corrected; the runway seams join the parked index._
-
 Closing the distance to Oban **Pro** is not a performance problem — that work is done
 — it is a **durability and coordination** problem. Pro's defining features (retained
 history, recording, cross-queue workflows, batches, relay, the Smart engine's global
@@ -283,19 +281,6 @@ Deadlines, structured/encrypted args, Dynamic configuration.
 | Encryption key management | codec is host-side (like `Backoff`/`Cancel`), keys via KMS, never serialized to the bus |
 | Dynamic config drift | config as audited, branded-id'd records in a Graft volume — durable and inspectable |
 
-### Phase 6 — Polyglot clients
-
-**Covers (Oban Pro):** Python support.
-
-**Approach — a structural advantage, not a gap.** EchoMQ's contract is the wire (the
-`emq:{q}:` keyspace and the atomic scripts), so the BEAM and Go are already first-class
-clients. Python parity is a **Python SDK** that follows the same keyspace grammar and
-passes the same contract — not a re-implementation of the engine.
-
-| Risk | Mitigation |
-|---|---|
-| SDK drifting from the wire contract | run the `EchoMQ.Conformance` suite (79 scenarios at `2.6.5`, climbing per rung) against the SDK (the Go-flyer-parity item, generalized) so parity is a tested property |
-
 ## Out of scope — the operator dashboard
 
 The earlier roadmap planned a Mercury-UI dashboard. **That is removed:** a first-class
@@ -353,10 +338,8 @@ its own statement, because the same handful of controls recur under every phase:
 | Deadlines | scheduled cancel                              | schedule · Cancel | 5 | planned |
 | Structured / encrypted args | pluggable host-side codec                     | (host) | 5 | planned |
 | Dynamic config | runtime registration in a Graft volume        | Repeat/Pump · Graft | 5 | planned |
-| Python support | Ship Go SDK instead on the wire contract      | Conformance | 6 | planned |
 | Worker verdicts (snooze / cancel) | consumer verdict switch onto `Jobs.delay/6` + terminal settle | Jobs · Consumer | runway (R3) | proposed |
 | Shard partitioning (multi-Valkey) | slot-routing pool over `Keyspace.slot/1`      | Keyspace · Connector | 4 | proposed |
-| Burst capacity (ephemeral machines) | FLAME pool of drain-to-stop consumers       | Consumer · R1 | 4 | proposed |
 | Web dashboard | — (Phoenix dashboard, alpha stage)            | — | — | **out of scope** |
 
 ## Non-goals
@@ -388,8 +371,7 @@ design doc; this is the parked index.
 
 ### The runway seams (from the reconciliation)
 
-| Seam | The fork | Arms (brief) | Venus recommends |
-|---|---|---|---|
+| Seam                        | The fork | Arms (brief) | Venus recommends |
+|-----------------------------|---|---|---|
 | **R-A · heartbeat default** | is the lease heartbeat opt-in or the loop's default | A1 opt-in `:auto_extend` · A2 default-on with an opt-out | **A1** — the library law: the shipped loop stays byte-for-byte until a deployment asks |
-| **R-B · FLAME pool ownership** | who owns the burst pool | B1 the application composes `FLAME` + `EchoMQ.Consumer` directly · B2 an `EchoMQ.Flame` helper ships in the bus | **B1** first — prove the composition in codemojex, lift a helper only once the shape repeats |
-| **R-C · replayer cadence** | the outbox owner's tick | C1 boot-only replay · C2 boot + a slow watermarked tick | **C2** — a quiet journal pays one read per tick, and a wedged committer is healed without an operator |
+| **R-B · replayer cadence**  | the outbox owner's tick | C1 boot-only replay · C2 boot + a slow watermarked tick | **C2** — a quiet journal pays one read per tick, and a wedged committer is healed without an operator |

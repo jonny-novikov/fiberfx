@@ -37,7 +37,7 @@
 //   PROPOSED get-node-tree (JSON_REST_V1 + fields projection, S-2 sibling) ·
 //            get-component-instances (getMainComponentAsync + overrides dedup, S-2)
 
-export const BRIDGE_URL = process.env.FIGMA_BRIDGE_URL || 'http://192.168.3.120:3001';
+export const BRIDGE_URL = process.env.FIGMA_BRIDGE_URL || 'http://192.168.1.120:3001';
 
 export const ACTION_SURFACE = {
   live: ['get-current-page', 'get-selection', 'get-all-pages', 'find-nodes', 'get-node-properties', 'export-node', 'get-batch-nodes', 'resolve-variables'],

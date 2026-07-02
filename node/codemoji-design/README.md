@@ -46,7 +46,7 @@ It doubles as a **reference implementation of the proposed figma-local MCP enhan
 
 ## Topology
 
-Mac (this toolkit) → HTTP `FIGMA_BRIDGE_URL` (default the Windows Figma machine `http://192.168.3.120:3001`) → bridge → Figma plugin. Image bytes flow bridge → toolkit → disk; they never pass through an agent's context.
+Mac (this toolkit) → HTTP `FIGMA_BRIDGE_URL` (default the Windows Figma machine `http://192.168.1.120:3001`) → bridge → Figma plugin. Image bytes flow bridge → toolkit → disk; they never pass through an agent's context.
 
 ## Usage
 

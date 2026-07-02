@@ -7,8 +7,8 @@
 # Sibling of dev-all.sh (the Mercury React apps): same contract — a static
 # member list, a fixed port each, a process-group trap, then `wait`. The
 # Codemojex family owns a port block that does NOT overlap the Mercury apps
-# (5173–5177): the api keeps 3000, and 5180+ is reserved for a future
-# Codemojex UI (e.g. the SP-2 AI app — see the commented line below).
+# (5173–5177): the admin api keeps 3000, and the UIs live at 5180+
+# (dashboard 5180 · economy 5181).
 #
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -17,13 +17,17 @@ cd "$(dirname "$0")/.."
 trap 'kill 0' EXIT INT TERM
 
 # --- Codemojex apps (add one line per new member) ---------------------------
-pnpm --filter codemojex-api dev &
-pnpm --filter @codemojex/economy exec vite --port 5180 --strictPort &
+# @codemojex/admin is the Fastify API SERVICE (tsx, PORT 3000 from its .env);
+# @codemojex/dashboard is the operator-console SPA whose Vite proxy reads it.
+pnpm --filter @codemojex/admin dev &
+pnpm --filter @codemojex/dashboard exec vite --port 5180 --strictPort &
+pnpm --filter @codemojex/economy exec vite --port 5181 --strictPort &
 
 echo ""
 echo "Codemojex apps:"
-echo "  api  → http://localhost:3000  (health: /api/health · docs: /docs)"
-echo "  economy → http://localhost:5180"
+echo "  admin api → http://localhost:3000  (health: /health)"
+echo "  dashboard → http://localhost:5180"
+echo "  economy   → http://localhost:5181"
 echo "(Ctrl-C to stop all · or run \`pnpm stop\` from another shell)"
 echo ""
 

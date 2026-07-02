@@ -24,7 +24,7 @@ Each step is tagged by locus. The Operator coordinates the two machines.
 
 1. `[WIN]` Bridge up: `pnpm bridge` running in `C:\dev\jonnify\mcp\figma-mcp`; Figma Desktop open with the
    "Figma MCP Bridge" plugin showing **Connected to bridge**.
-2. `[MAC]` Reachable + connected: `curl http://192.168.3.120:3001/health` →
+2. `[MAC]` Reachable + connected: `curl http://192.168.1.120:3001/health` →
    `{"status":"ok","connected":true,"hasDocument":true}`.
 3. `[WIN]` Toolchain: `pnpm install` done; `tsc` available (the `build-plugin` script is
    `cd figma-plugin && tsc`, output `code.js` per the plugin manifest `main`).
@@ -38,7 +38,7 @@ Each step is tagged by locus. The Operator coordinates the two machines.
 | build the plugin | `pnpm build-plugin` (≡ `cd figma-plugin && tsc` → `code.js`) | `[WIN]` |
 | reload the plugin | Figma → **Plugins → Development → Figma MCP Bridge** (re-run loads the new `code.js`); confirm "Connected to bridge" | `[FIGMA-manual]` |
 | restart the bridge | stop the `pnpm bridge` process, start it again | `[WIN]` |
-| health / capability check | `curl http://192.168.3.120:3001/health` | `[WIN]` or `[MAC]` |
+| health / capability check | `curl http://192.168.1.120:3001/health` | `[WIN]` or `[MAC]` |
 | sync the Mac client | update `/Users/jonny/dev/jonnify/mcp/figma-mcp/mcp.js`, then reconnect the MCP in Claude | `[MAC]` |
 | reconnect the MCP | `/mcp` reconnect in Claude Code (or `claude mcp remove/add` per `docs/MAC-CLIENT.md`) | `[MAC]` |
 

@@ -131,7 +131,7 @@ The screens here document the **boost class** on the **classic base**.
 
 ## Regenerating the assets
 
-From any host with the `figma-local` MCP wired (the Mac toolkit dials the same Windows bridge the rest of this package uses, default `FIGMA_BRIDGE_URL=http://192.168.3.120:3001`):
+From any host with the `figma-local` MCP wired (the Mac toolkit dials the same Windows bridge the rest of this package uses, default `FIGMA_BRIDGE_URL=http://192.168.1.120:3001`):
 
 ```text
 # Per-screen PNG:

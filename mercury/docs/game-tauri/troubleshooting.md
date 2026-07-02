@@ -40,6 +40,22 @@
   session; `/auth/:platform` is the handshake). Complete the in-app auth flow from the welcome
   page; the shell wraps the same flow the browser gets.
 
+## Phoenix dies mid-session: `Application codemojex exited: shutdown` after BLPOP timeouts
+
+- **Symptom:** `:4000` stops answering (curl `000`) while the `mix phx.server` process is still
+  alive (a zombie VM). The log shows cascading GenServer terminations on the EchoMQ wire —
+  `GenServer.call(..., {:pipeline, [["BLPOP", "emq:{cm-settle}:wake", "0.100"]]}, 2100)` /
+  `emq:{cm.bot.commands}:wake` — each `** (EXIT) time out`, then
+  `Application codemojex exited: shutdown`.
+- **Cause:** a > 2s stall (system sleep/pause, a Valkey hiccup, heavy concurrent load on the
+  shared `:6390`) blows the consumers' 2100 ms call timeout around a 100 ms BLPOP; both consumer
+  loops die at once and take the supervisor past restart intensity. Observed live 2026-07-02
+  02:39.
+- **Fix (dev):** kill the zombie (`pgrep -fl beam.smp` → `kill <pid>`), confirm
+  `valkey-cli -p 6390 ping` → `PONG`, and reboot Phoenix with the same command. **Engine note
+  (out of `/cm-ship` scope):** the BLPOP callers' call-timeout margin is an `echo/`-side
+  hardening candidate for a future `/codemojex-ship`/`/echo-mq-ship` rung.
+
 ## Phoenix warns `{:missing_token, "ECHO_BOT_HELLO_TOKEN"}` at boot
 
 - Benign for the dev loop: the echo_bot **polling updater** stays off. Welcome, lobby, game, and
