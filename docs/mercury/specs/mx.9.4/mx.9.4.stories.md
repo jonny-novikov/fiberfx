@@ -1,7 +1,8 @@
 # MX.9.4 · acceptance stories
 
-Given/When/Then for [`mx.9.4.md`](./mx.9.4.md) (the body wins on any disagreement). **SOLID-FORWARD** —
-re-sharpened at this rung's own ship. **Coverage:** K-1, K-3 → S-1; K-2, K-3 → S-2; K-4 → S-3; the gate →
+Given/When/Then for [`mx.9.4.md`](./mx.9.4.md) (the body wins on any disagreement). **WRITE-READY** —
+re-sharpened 2026-07-02 at this rung's ship (the construct inventory performed; the observables below
+name real contract lines). **Coverage:** K-1, K-3 → S-1; K-2, K-3 → S-2; K-4 → S-3; the gate →
 S-4. Epic traceability: S-1 realizes epic **S-6**; S-2 realizes epic **S-7**.
 
 ## S-1 · The contract is rendered, never re-authored (K-1, K-3 · epic S-6)
@@ -13,7 +14,12 @@ documentation can never fork from the source.*
 **when** it awaits the registry's `loadPrompt()` and feeds the raw contract to the compact renderer,
 **then** the full contract renders — headings, the Props table, fenced Examples code, lists, inline marks —
 content-corresponding to the live file, via React elements (no `dangerouslySetInnerHTML`, no markdown
-dependency — Fork E).
+dependency — Fork E). The named fidelity observables (the INV-4 inventory, real lines):
+an escaped-pipe cell renders literal pipes (`Button.prompt.md:11` → `"primary" | "secondary" | …`);
+a wrapped list item renders as ONE `<li>` (`Button.prompt.md:37–38` — never a stray paragraph);
+bold-around-code renders `<strong>` containing `<code>` (`Table.prompt.md:16`); `*italic*` renders
+`<em>` with no literal asterisks (`Button.prompt.md:41–42`); Table's SECOND 3-col table renders; a
+relative `.prompt.md` link renders as a non-navigating xref span (no dead `<a>`).
 **And** the negative proof: `find apps/showcase/src -name "*.md"` is empty and no in-app JSX carries a
 per-component API table or doc body (the app authors nothing a contract already owns).
 *(Proves INV-1 + INV-3 + INV-4.)*
@@ -26,10 +32,12 @@ from one trustworthy source.*
 **Given** a component whose contract carries the census-verified sections,
 **when** the four views present,
 **then** **API** = the `## Props` cut, **do/don't** = `## The enum language` + `## Notes`, **recipes** =
-`## Examples` — each a selection over the same fetched contract (one parse, four views).
-**And** for one of the real **9 contracts lacking `## The enum language`** (the 56/65 census,
-2026-07-02), the do/don't view renders `## Notes` plus an explicit absent-state for the enum section —
-empty, never invented.
+`## Examples` — each a selection over the same fetched contract (one parse, four views). The cut is
+exact-depth: `TabNav.prompt.md`'s `### TabNavItem` block (line 17) stays INSIDE its `## Props` cut,
+never terminates it.
+**And** for **selection/Switch** (one of the real 9 contracts lacking `## The enum language` — the
+56/65 census, re-confirmed 2026-07-02), the do/don't view renders `## Notes` plus an explicit
+absent-state for the enum section — empty, never invented.
 *(Proves INV-2.)*
 
 ## S-3 · The absent-contract and probe states are explicit (K-4)
@@ -49,8 +57,10 @@ folder is deleted after, `packages/**` clean.
 ships as pure app code over the existing loaders.*
 
 **Given** the built rung,
-**when** the ladder runs (packages unchanged · showcase typecheck/build · the 3-app gate · the
-consume-down + `dangerouslySetInnerHTML` + authored-docs greps),
+**when** the ladder runs (the root `@mercury/*`-scoped scripts `typecheck:mercury` / `build:mercury` —
+**never** `./packages/*`, which sweeps `@echo/fx` + the untracked `mercury-ds` — · showcase
+typecheck/build · `build:apps` · the consume-down + `dangerouslySetInnerHTML` + authored-docs greps,
+all with `--exclude-dir=node_modules`),
 **then** every step is green, `apps/showcase/package.json` is unchanged this rung, and the barrel-diff is
 empty (Director-run).
 *(Proves INV-3 + INV-5.)*

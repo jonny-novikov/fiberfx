@@ -1,5 +1,6 @@
 import { StoriesPanel } from "../lib/storyRender";
 import { GROUP_LABEL, type ShowcaseEntry } from "../registry";
+import { DocsPanel } from "./DocsPanel";
 
 type Tab = "stories" | "docs";
 
@@ -10,7 +11,8 @@ type ComponentPageProps = {
 };
 
 // Stories is live (mx.9.3): StoriesPanel lazy-loads ONLY the selected entry's
-// module (INV-5). Docs stays a stub — loadPrompt is not called until mx.9.4.
+// module (INV-5). Docs is live (mx.9.4): DocsPanel lazy-loads the selected
+// entry's contract and renders the four views over one raw string.
 export function ComponentPage({ entry, tab, onTab }: ComponentPageProps) {
   const label = (GROUP_LABEL as Record<string, string>)[entry.group] ?? entry.group;
   return (
@@ -43,7 +45,7 @@ export function ComponentPage({ entry, tab, onTab }: ComponentPageProps) {
       {tab === "stories" ? (
         <StoriesPanel entry={entry} />
       ) : (
-        <p className="showcase-stub">The contract surface lands at mx.9.4.</p>
+        <DocsPanel entry={entry} />
       )}
     </article>
   );
