@@ -1,6 +1,6 @@
 # Codemojex · Roadmap to the Complete Game
 
-Codemojex is the reference implementation for this course: the game whose running code proves the Branded Component System rather than describing it. At its core it is a member of the Mastermind family of deductive code-breaking games, and the architecture treats it as exactly that — a generic engine, with each room mode chosen as configuration on the same branded entities. The app in the repository today is a skeleton; this roadmap is the path from that skeleton to a complete game across chapter B7, six modules of three dives each, on the identity, bus, store, and floor the earlier chapters raised.
+Codemojex is the reference implementation of the Branded Component System: the game whose running code proves the architecture rather than describing it. At its core it is a member of the Mastermind family of deductive code-breaking games, and the architecture treats it as exactly that — a generic engine, with each room mode chosen as configuration on the same branded entities. The app in the repository is a running game — cm.1 through cm.7 shipped the two-mode core, the auth floor, the Golden Room tournament, the revenue ledger, and the KeyShop — and this roadmap is the record of that path plus the forward feature catalog, on the identity, bus, store, and floor the earlier chapters raised. The teaching arc over the built game ships as the standalone [`/codemojex` course](./specs/course/course.toc.md), nine chapters of three dives each; the `/bcs/codemojex` chapter remains the BCS course's B7 and doors into it.
 
 ## The game, and the family it belongs to
 
@@ -25,7 +25,7 @@ A new mode is a new set of policy values on the same entities, not new code. Thi
                                               LiveView admin. No per-game process.
         |
   EchoMQ (Valkey)          real-time, queues: per-player guess lanes to one scorer;
-                                              leaderboard ZSET; locks; tier claims.
+                                              leaderboard ZSET; locks.
                                               All derived and reconstructable.
         |
   EchoStore (ETS L1)       read-hot cache   : a game's secret and emoji set are
@@ -46,7 +46,6 @@ Money is real and a game carries a server-side secret, so both live on the Postg
 
 | Namespace | Entity | Role |
 |:---------:|--------|------|
-| `USR` | account | Telegram-bound identity; owns the wallet |
 | `SES` | session | a verified session minted from Telegram initData |
 | `PLR` | player | the game persona; names the guess lane |
 | `ROM` | room | a template carrying a mode and its policies |
@@ -65,11 +64,12 @@ Money is real and a game carries a server-side secret, so both live on the Postg
 | `SHR` | share token | a referral or share token, for attribution |
 | `AEV` | analytics event | an append-only, one-way observation |
 
-> This is the **forward** catalog. The **as-built** game uses nine of these brands —
-> `PLR`/`ROM`/`GAM`/`GES`/`EMS`/`TXN`/`JOB`/`NOT`/`CMD` — with one player entity (`PLR`); the account/persona
-> split (`USR`/`PLR`), `SES` sessions, `RMP` membership, the `BNK` bank, and the commerce/growth/analytics
-> brands land with their `cm.4+` systems. The as-built nine are the namespace table in
-> [`codemojex.design.md`](./codemojex.design.md).
+> This is the **full** catalog. The founding game used nine of these brands —
+> `PLR`/`ROM`/`GAM`/`GES`/`EMS`/`TXN`/`JOB`/`NOT`/`CMD` — with one player entity (`PLR`); their systems have
+> since landed `SES` sessions (cm.4), the `RVL` revenue ledger (cm.6), and the commerce
+> `PKG`/`ORD`/`OTX`/`WHK` (cm.7). Still forward: `RMP` membership, the `BNK` bank, `RSC`, and the
+> growth/analytics brands (`SHR`/`AEV`), landing with their `cm.8+` systems. The namespace table in
+> [`codemojex.design.md`](./codemojex.design.md) is the as-built record.
 
 ## Golden Rooms and the blind mode
 
@@ -111,12 +111,12 @@ The play path: a guess is validated, has locked positions overlaid, is charged, 
 - **B7.3.2 · Charged, then enqueued** — the wallet charges the currency path before the guess is accepted; the guess is enqueued as a branded job on the player's `PLR` lane.
 - **B7.3.3 · Fair lanes and the worker** — the bus rotates service across lanes so one player cannot starve the field; one consumer scores; live mode broadcasts the result, blind mode stores it and reveals nothing.
 
-### B7.4 · Scoring, Tiers, and Settlement
+### B7.4 · Scoring and Settlement
 
-The score: distance per position on the linear scale and the thirty tiers for live rooms, and a single batch settlement with a top-K payout for sealed rooms.
+The score: distance per position on the linear scale, and a single batch settlement with a top-K payout for sealed rooms.
 
 - **B7.4.1 · Distance and points** — distance is the absolute gap between a guessed position and the secret's; points run 100, 80, 60, 40, 20, 0, and an emoji not in the code scores zero.
-- **B7.4.2 · The total and the thirty tiers** — the six position points sum to a score out of 600; the uniform twenty-point gaps form thirty tiers, the live leaderboard's ladder.
+- **B7.4.2 · The total out of 600** — the six position points sum to a score out of 600; the leaderboard ranks the raw best total — no tiers, no bonus.
 - **B7.4.3 · Settlement strategies** — `live` closes on a perfect score or the timer; `sealed` runs one pass at close, scores every `GES` against the revealed secret, ranks players, and pays the top K from the bank, idempotently.
 
 ### B7.5 · The Economy and the Bank
@@ -141,16 +141,17 @@ Every module is grounded in the `codemojex` app in the repository: the rules in 
 
 ## Build order and status
 
-The app today is a running game on the real EchoMQ, EchoData, Ecto, and Phoenix interfaces; the six modules turn it into the complete, taught game with both modes. The order is B7.1 through B7.6, each module a landing and three dives, each page held to the A+ gates and relinked to its predecessor as it ships. The chapter landing is written; the modules follow. The feature catalog (the systems still to build) is below in [§ The feature catalog](#the-feature-catalog); the binding design and the open questions are in [`codemojex.design.md`](./codemojex.design.md).
+The app today is a running game on the real EchoMQ, EchoData, Ecto, and Phoenix interfaces. The teaching arc now ships as the **standalone `/codemojex` course** — nine chapters (C0–C8) of three dives each: the six modules above reconciled to the as-built engine and extended with the shipped auth floor (cm.4), the revenue ledger and the KeyShop (cm.6/cm.7), and a production chapter — canonized in [`specs/course/`](./specs/course/course.toc.md), each page held to the A+ gates. The `/bcs/codemojex` chapter landing remains the BCS course's B7 and doors into the standalone course. The feature catalog (the systems still to build) is below in [§ The feature catalog](#the-feature-catalog); the binding design and the open questions are in [`codemojex.design.md`](./codemojex.design.md).
 
 ## The engine build ladder (spec-driven rungs `cm.N`)
 
-> The section above (B7.1–B7.6) is the **course chapter** — the teaching arc over the built game. The
+> The section above (B7.1–B7.6) is the **course arc** — the teaching arc over the built game, canonized
+> reconciled + extended as the standalone course map (C0–C8) in
+> [`specs/course/course.toc.md`](./specs/course/course.toc.md). The
 > ladder below is the **build ladder** — the spec-driven rungs that construct the engine, authored under
 > `docs/codemojex/specs/`. The model the rungs build is canonized in [`codemojex.design.md`](./codemojex.design.md)
 > (the `GAM` game entity, the type/policy discriminator, linear-only scoring, and the blind/sealed Golden
-> mode); the deep design-phase record is archived at
-> [`specs/progress/codemojex-game-rename.game-model.design.md`](./specs/progress/codemojex-game-rename.game-model.design.md).
+> mode);
 > The slugs are `cm.N` (distinct from the course `B7.x`).
 
 A new game mode is configuration on the same branded entities, so the ladder builds the **settled core
@@ -174,14 +175,15 @@ schema-landing rung). cm.1 (the settled core) and cm.3 (the blind/sealed Golden 
 on one schema** through the `codemojex-game-rename` rung — the founding core landed the six-table
 model + the three brand re-bases (`RND`→`GAM`, `RMM`→`ROM`, `USR`→`PLR`) + classic mode, and the
 blind flow landed the commit-reveal + sealed top-K on the same `games` columns. The per-rung audit
-ledgers (and the rung's design-phase deliverable) live archived in `docs/codemojex/specs/progress/`.
+ledgers (and each rung's design-phase deliverable) were archived under `docs/codemojex/specs/progress/`
+through cm.7 and retired from the working tree in the docs reorg (`7ffe0e29`) — that history is never
+rewritten and remains in git; the settled spec triads under `specs/` are the living record.
 The process that ships a rung is the **Codemojex Program** ([`program/codemojex.program.md`](./program/codemojex.program.md)).
 
-> A note on the tier `[RECONCILE]`: B7.4.2 ("the uniform twenty-point gaps form thirty tiers, the live
-> leaderboard's ladder") and B7.3 ("tier claims") above still describe the **first-mover bonus-tier
-> mechanic the engine removes** (Operator-ruled: linear score only, no bonus tiers). These course lines
-> are a tracked reconcile owed — recorded here so the drift is not mistaken for the as-built engine,
-> which scores linearly with no tiers.
+> The tier `[RECONCILE]` is **closed**: the layering line and B7.4 above are now written to the
+> as-built linear-only score (Operator-ruled: linear score only — no tiers, no bonus), and the
+> reconciled, extended course map (C0–C8) is canonized in
+> [`specs/course/`](./specs/course/course.toc.md).
 
 ## The feature catalog
 
@@ -189,9 +191,10 @@ The features that compose the complete game, grouped by system. The Game system 
 engine; the classic live room, the Golden Room tournament, and the blind `golden`-type mode are modes of it, selected by policy — so reaching
 the whole game is a matter of building these features, not new identity types. The **engine core**
 (rooms/modes, the Mastermind engine, games + guesses, the blind Golden mode, the commit-reveal secret,
-the three-currency transactional wallet, the classic + blind API) is **SHIPPED** on the nine as-built
-brands; the systems below it marks 📋 are the **forward** `cm.6+` work (the auth floor — `cm.4` — has
-since shipped: verified `initData` → a shared `SES`-in-Valkey session, the first mutable `EchoStore.Table`).
+the three-currency transactional wallet, the classic + blind API) is **SHIPPED** on the as-built
+brands — as are the auth floor (`cm.4`: verified `initData` → a shared `SES`-in-Valkey session, the first
+mutable `EchoStore.Table`), the Golden Room tournament (`cm.5`), the revenue ledger (`cm.6`), and the
+KeyShop (`cm.7`); the systems the catalog below marks 📋 are the **forward** `cm.8+` work.
 
 > **Identity reconcile.** The as-built game re-based its single player entity to **`PLR`** (the
 > `codemojex-game-rename` rung retired `USR`). The forward identity split named below — account (`USR`) /
@@ -199,7 +202,7 @@ since shipped: verified `initData` → a shared `SES`-in-Valkey session, the fir
 > the `SES`/`RMP` systems; today one `PLR` is the account, the persona, and the wallet owner. The catalog
 > keeps the forward vocabulary so the target shape is on record.
 
-### Identity and access 📋
+### Identity and access ✅ (the `SES` session floor, cm.4) / 📋 (the `USR` account split)
 
 - Verify Telegram `initData` and mint a short-lived session (`SES`) bound to an account (`USR`).
 - Bind an account to a Telegram account id; one persona (`PLR`) per account to start.
@@ -243,13 +246,13 @@ since shipped: verified `initData` → a shared `SES`-in-Valkey session, the fir
 - An all-pay attempt economy: a per-attempt fee is sunk whether or not a player places.
 - 📋 An anonymized leaderboard: generated neutral names and avatars (lands with `RMP`).
 
-### The Golden Room tournament 📋 (cm.5)
+### The Golden Room tournament ✅ (cm.5)
 
 - A `classic`-typed game with the `golden` **marker** — a live tournament, NOT the blind type and not a boost class (the `gold_multiplier` boost is removed, `D-16`).
 - A **$1 buy-in** is membership for the game's life (a `buy_in` `TXN`, cached in ETS); a `:gathering` state holds the game until **ten paid members** gather, then the live timer starts.
 - Buy-ins **fund the prize pool** (the keystone `$1 × 10 = $10` guaranteed, break-even); per-guess fees are platform revenue.
 - At close the **top finishers split the pool proportionally** (`close_split` reusing `Economy.top_k_split`); every other member receives consolation clips (`max_score/10`).
-- A never-filled gather **voids and refunds the buy-ins** exactly once (`close_void`); a real sweep is wired (`close_if_expired` has no caller today).
+- A never-filled gather **voids and refunds the buy-ins** exactly once (`close_void`); the periodic sweep (`Codemojex.Sweep`) drives the timer-close and the never-fills void.
 
 ### Provably-fair secret (commit-reveal) ✅
 
@@ -258,19 +261,20 @@ since shipped: verified `initData` → a shared `SES`-in-Valkey session, the fir
 - At close, reveal the secret and the nonce, and expose them so a player can recompute the commitment and verify it.
 - Score settlement against the revealed secret; the commitment binds the server to the secret it fixed at open.
 
-### Economy and the bank ✅ (wallet) / 📋 (bank)
+### Economy and the bank ✅ (wallet + the `RVL` revenue ledger, cm.6) / 📋 (the `BNK` escrow + rake)
 
 - Three currencies: keys (paid rooms, bought with Stars), clips (free rooms, no value, excluded from the available balance), diamonds (prizes, convert to keys at ten to one).
 - A transactional wallet: a row lock, the non-negative check, a paired ledger row, all or nothing; the paid and free paths never cross.
+- The `RVL` revenue ledger (cm.6): the house platform-revenue account — signed deltas, multi-source/multi-currency, the keys-unit conservation property test.
 - 📋 A `BNK` escrow per game: the pool accrues from fees and pays out at settlement (today the pool lives on the game's own `prize_pool`).
 - 📋 A published platform rake; the remainder of the pool pays the board.
 - Settlement that is pure and idempotent, so a re-run pays identically.
 
-### Commerce 📋
+### Commerce ✅ (multi-rail pay-in, cm.7) / 📋 (cash-out, cm.8)
 
 - A package catalog (`PKG`): bundles of keys for Telegram Stars.
 - A purchase order (`ORD`) with state: created, pending, paid, fulfilled, failed, refunded.
-- A payment ledger (`OTX`) for Stars, kept separate from the currency ledger (`TXN`).
+- A payment ledger (`OTX`) per rail — Telegram Stars end-to-end, TON/USDT/RUB shaped — with `UNIQUE(rail, external_id)` the exactly-once gate, kept separate from the currency ledger (`TXN`).
 - Inbound webhooks (`WHK`): idempotent, processed once, driving `ORD` and `OTX`.
 - On paid, credit keys to the wallet as a `TXN`.
 

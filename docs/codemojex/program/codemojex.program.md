@@ -215,5 +215,7 @@ Run **from `echo/apps/codemojex`** — the gate is the codemojex app gate, **NEV
   pre-launch gap named in the design) · commerce (`PKG`/`ORD`/`OTX`/`WHK`) · growth (`SHR`) · analytics
   (`AEV`) · the LiveAdmin console. Each lands as its own `cm.N` rung — a new triad under `specs/` + a
   per-rung ledger under `specs/progress/`.
-- **The course chapter B7** (`/bcs/codemojex/**`, six modules) teaches the running game; the chapter
-  landing is written, the dives follow (the Operator authors the rendered HTML — not a code-rung target).
+- **The standalone `/codemojex` course** (canon `specs/course/`, nine chapters C0–C8 — the B7 arc
+  reconciled + extended) teaches the running game; the landing is built, the chapter stubs are shipped,
+  and per-chapter authoring follows. `/bcs/codemojex` remains the BCS course's B7 and doors into it
+  (the Operator authors the rendered HTML — not a code-rung target).

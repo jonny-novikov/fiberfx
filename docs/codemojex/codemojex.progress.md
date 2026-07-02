@@ -16,9 +16,10 @@ mint) retired. The **one pre-launch auth gap is closed**. The **monetization cor
 `Wallet.house_post`/`house_balance` (`2de57202`, the `BNK` bank's first slice); and the **KeyShop (cm.7)**
 — multi-rail key pay-in, Telegram Stars end-to-end, the `OTX (rail, external_id)` exactly-once gate that
 closed the double-mint-on-replay hazard, gross purchase revenue booked to the same ledger (`0acba290`,
-Apollo BUILD-GRADE). The **course chapter B7**
-([`codemojex.roadmap.md`](./codemojex.roadmap.md), six modules B7.1–B7.6 of three dives each) is
-**PLANNED** — the chapter landing is written; the dives follow. **Next on the build ladder:** **cm.8 —
+Apollo BUILD-GRADE). The **standalone `/codemojex` course**
+([`specs/course/`](./specs/course/course.toc.md), nine chapters C0–C8 of three dives each — the B7 arc
+reconciled + extended) is **SCAFFOLDED** — the landing is built, the nine chapter stubs are shipped,
+per-chapter authoring follows; the `/bcs/codemojex` chapter doors into it. **Next on the build ladder:** **cm.8 —
 cash-out / treasury** (withdrawals: diamonds → TON/USDT/RUB at floating rates, the negative-`delta` house
 debit cm.7 designs-for, KYC/AML + the 21-day hold; `cm-7` `D-2`), then the remaining
 `BNK`/`RMP`/growth/analytics systems in the [feature catalog](./codemojex.roadmap.md#the-feature-catalog).
@@ -49,7 +50,7 @@ Bus            ✅ real         EchoMQ on Valkey :6390 — fair lanes (guesses �
 Near-cache     ✅ real         EchoStore L1/ETS over L2/Valkey — the game + emoji set, coherence :none
 Floor          ✅ real         Postgres (Ecto) — players · transactions · rooms · games · guesses · emoji_sets
 Durable floor  ✅ optional     EchoStore.Graft committer — started only when :graft_volume is set
-Identity       ✅ real         14-byte branded ids — nine brands GAM/ROM/PLR/GES/EMS/TXN/JOB/NOT/CMD
+Identity       ✅ real         14-byte branded ids — GAM/ROM/PLR/GES/EMS/TXN/JOB/NOT/CMD + SES/RVL/PKG/ORD/OTX/WHK (cm.4–cm.7)
 Engine         ✅ real         the Mastermind engine — classic (live) + golden (blind/sealed), one linear score
 ```
 
@@ -61,26 +62,28 @@ Program** ([`program/codemojex.program.md`](./program/codemojex.program.md)).
 
 ---
 
-## Course chapter B7 — the complete game (PLANNED)
+## The course — /codemojex (SCAFFOLDED)
 
-The single ladder is [`codemojex.roadmap.md`](./codemojex.roadmap.md); the feature catalog is folded into
-it ([§ The feature catalog](./codemojex.roadmap.md#the-feature-catalog)). All six modules are PLANNED —
-the chapter landing is written and the dives follow, each a landing plus three dives held to the A+ gates.
+The course map is [`specs/course/course.toc.md`](./specs/course/course.toc.md); the fine-grained
+dashboard is [`specs/course/course.progress.md`](./specs/course/course.progress.md). The B7 arc is
+reconciled to the as-built engine (linear-only scoring; the shipped Golden Room) and extended with the
+shipped cm.4/cm.6/cm.7 systems and a production chapter. The single build ladder remains
+[`codemojex.roadmap.md`](./codemojex.roadmap.md) ([§ The feature catalog](./codemojex.roadmap.md#the-feature-catalog)).
 
 ```text
-B7 · the game as branded systems, taught on the running code
+/codemojex · nine chapters over the shipped engine (specs/course/course.toc.md)
 
-  B7.1  📋 PLANNED   the game as branded systems — ids are the keys · the four layers · the privacy boundary
-  B7.2  📋 PLANNED   rooms, modes, and the secret — room as template+mode · the emoji set · the secret + commitment
-  B7.3  📋 PLANNED   guesses on fair lanes — the guess + the lock · charged then enqueued · fair lanes + the worker
-  B7.4  📋 PLANNED   scoring + settlement — distance + linear points · the total out of 600 · settlement strategies
-  B7.5  📋 PLANNED   the economy and the bank — three currencies · the transactional wallet · the bank/pool/rake
-  B7.6  📋 PLANNED   the live surface on Phoenix — the JSON API · channels + PubSub · production on Fly
+  landing   ✅ SHIPPED   the course home, built A+ — the guess-row figure · the C0–C8 map · doors · CMX stamp
+  C0–C8     ✅ SHIPPED   as gated real-shell stubs — identity + thesis + dive gists; content authoring next
+            C0 overview · C1 branded systems · C2 rooms/modes/secret · C3 fair lanes · C4 scoring+settlement
+            C5 economy+bank · C6 ledger+KeyShop (cash-out forward) · C7 live surface · C8 production
+  27 dives  📋 PLANNED   per-chapter authoring rungs, briefed by specs/course/course.N.md
 ```
 
-> The course pages render under `/bcs/codemojex/**` (the BCS contract-sheet identity). The page
-> tree exists on disk; the rendered HTML is the Operator's to author and is **not** an edit target
-> of a code rung.
+> The course pages render under `/codemojex/**` (the CMX calibration of the contract-sheet identity —
+> Telegram-blue lead). The built `/bcs/codemojex` chapter landing remains the BCS course's B7 and
+> door-links into the standalone course. The rendered HTML is the Operator's to author and is **not**
+> an edit target of a code rung.
 
 ---
 
@@ -111,9 +114,9 @@ up/down + the fresh-schema reinit · **150/150** determinism · a live-boot smok
 entity; the secret never crosses the wire). **Apollo: BUILD-GRADE** — 6/6 mutation kill, defense-in-depth
 exactly-once.
 
-The rung's design-phase deliverable, the frozen audit ledger, the build brief, and the AAW registry are
-archived under [`specs/progress/`](./specs/progress/) (records-freeze — the ledger history is never
-rewritten). The settled spec triads are [`specs/cm.1.*`](./specs/cm.1.md) (the founding core) +
+The rung's design-phase deliverable, the frozen audit ledger, the build brief, and the AAW registry
+were archived under `specs/progress/` through cm.7 and retired from the working tree in the docs reorg
+(`7ffe0e29`) — records-freeze holds in git, where that history is never rewritten. The settled spec triads are [`specs/cm.1.*`](./specs/cm.1.md) (the founding core) +
 [`specs/cm.3.*`](./specs/cm.3.md) (the blind Golden flow) +
 [`specs/cm.4.*`](./specs/cm.4.md) (the auth floor — verified `initData` + the shared `SES` session).
 
@@ -130,8 +133,8 @@ exactly-once gate that closed the double-mint-on-replay hazard)**. The forward w
 the negative-`delta` house debit cm.7 designs-for, KYC/AML + the 21-day hold) · the rest of the `BNK` bank +
 rake · the `RMP` membership + the anonymized leaderboard · growth (`SHR`) · analytics (`AEV`) · the LiveAdmin
 console. Each
-lands as its own `cm.N` rung through the Codemojex Program — a new triad under `specs/` + a per-rung
-ledger under `specs/progress/`.
+lands as its own `cm.N` rung through the Codemojex Program — a new triad under `specs/` (the rung's
+ledger recorded with its triad; history in git).
 
 ---
 
