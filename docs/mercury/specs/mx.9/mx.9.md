@@ -12,7 +12,7 @@
 >
 > | Sub-rung | Scope | Epic K / INV focus | Stories | Grain | Risk / formation |
 > |---|---|---|---|---|---|
-> | **[mx.9.1](../mx.9.1/mx.9.1.md)** | The **spine** — the `apps/showcase` scaffold (the source alias + the `storybook/test` shim), a sanity page, the `dev:showcase` ADD, the apps-gate join (2→3) | K-1 + K-6 (wiring) · INV-1/2/3/9 | S-1, S-2, S-9, S-10 | **BUILD-READY** | NORMAL · Trio |
+> | **[mx.9.1](../mx.9.1/mx.9.1.md)** | The **spine** — the `apps/showcase` scaffold (the source alias + the `storybook/test` shim), a sanity page, the `dev:showcase` ADD, the apps-gate join (2→3) | K-1 + K-6 (wiring) · INV-1/2/3/9 | S-1, S-2, S-9, S-10 | **✅ BUILT 2026-07-02** | NORMAL · Duo+ (as-run) |
 > | **[mx.9.2](../mx.9.2/mx.9.2.md)** | The **derived registry + shell** — the two lazy globs, the grouped sidebar + topbar, the persisted route, Stories/Docs tab stubs, the theme-toggle mechanism | K-2 + K-5 (mechanism) · INV-4/6 | S-3, S-4, S-8 (mechanism) | **BUILD-READY** | NORMAL · Trio |
 > | **[mx.9.3](../mx.9.3/mx.9.3.md)** | The **live-stories surface** — the CSF interpreter (the bundle `StoryBlock` pattern) + the shim liveness proof | K-3 · INV-5 (render path) | S-5 | SOLID-FORWARD | ELEVATED · Trio + deepened verify |
 > | **[mx.9.4](../mx.9.4/mx.9.4.md)** | The **contract surface** — the compact markdown renderer; Docs / API / do-don't / recipes as cuts | K-4 · INV-5 | S-6, S-7 | SOLID-FORWARD | NORMAL · Trio |

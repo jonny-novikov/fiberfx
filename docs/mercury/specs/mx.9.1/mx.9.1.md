@@ -1,6 +1,6 @@
 # MX.9.1 · The showcase spine — the source-resolved scaffold + the workspace join
 
-> **Status: 🔨 BUILD-READY (authored 2026-07-02 in the mx.9 split; NOT yet built).** The first buildable
+> **Status: ✅ BUILT (gate-green 2026-07-02 via `/mercury-ship mx.9.1`; Duo+ — Director + Mars pass-1 clean, the harden pass collapsed; as-built record §7).** The first buildable
 > sub-rung of the [`../mx.9/mx.9.md`](../mx.9/mx.9.md) SUB-EPIC (the layered-engine split, Operator-ruled
 > 2026-07-02). mx.9.1 lands the **spine**: the `apps/showcase/` scaffold that resolves `@mercury/*` from
 > source, the app-local `storybook/test` shim wired into the vite alias, a sanity page proving alias + tokens,
@@ -80,7 +80,7 @@ gains only the `@mercury/showcase` importer block.
   the fallback is a `paths` entry pointing at **the shim itself** (keeping types and runtime aligned), noted
   in the brief — not silently mirrored from the Storybook host.
 - **INV-6 · Consume-down greps empty** (epic INV-7).
-  `grep -RnE "design-sync|DesignSync|@babel/standalone|window\.MercuryUI|_ds_bundle" apps/showcase` → empty.
+  `grep -RnE "design-sync|DesignSync|@babel/standalone|window\.MercuryUI|_ds_bundle" apps/showcase --exclude-dir=node_modules` → empty. *[RECONCILED 2026-07-02 at ship: `--exclude-dir=node_modules` added — post-install, pnpm SYMLINKS the workspace packages under `apps/showcase/node_modules/`, so the raw grep followed the links into `packages/mercury-ui/CLAUDE.md` prose that QUOTES the design-sync law (2 false hits; the sibling `apps/echomq` shows the identical pattern). App SOURCE is clean. The same correction applies to the epic INV-7 grep and the mx.9.2–9.5 ladders at their own re-sharpens.]*
 - **INV-7 · Scope + lockfile posture** (epic INV-9). The diff is exactly: `apps/showcase/**` (7 new files) +
   `mercury/package.json` (one added line) + `mercury/pnpm-lock.yaml` (the `@mercury/showcase` importer block;
   **no new external dependency versions** — Fork E RULED). The worktree lockfile is routinely dirty from
@@ -119,6 +119,42 @@ gains only the `@mercury/showcase` importer block.
   mx.9.3–9.5.
 - **Touches:** `mercury/apps/showcase/**` (new) · `mercury/package.json` (one line) · `mercury/pnpm-lock.yaml`
   (importer block). Out of pathspec: everything else, including the design seeds and `packages/**`.
+
+## 7 · As-built (2026-07-02, the ship record)
+
+**Verdict: BUILT, Director-verified clean — zero remediation findings; the Mars-2 harden pass collapsed.**
+Duo+ formation (Director + `mars-mx91` on the `mars-mercury` skill, pass-1 only; the architect leg was
+discharged at the 2026-07-02 split — the brief carried every file byte-exact and built as written, zero
+usage adjustments, zero mismatch re-probes).
+
+- **The gate (independent Director re-run, all from `mercury/`):** `pnpm typecheck:mercury` 0 ·
+  `pnpm build:mercury` 0 · `pnpm --filter @mercury/showcase typecheck` 0 · `build` 0 (→
+  `apps/showcase/dist/`, index CSS ≈ 87.6 kB — the full stylesheet via the barrel side-effect import) ·
+  `pnpm --filter "./apps/*" --filter "!@mercury/storybook" build` 0 with **Scope: exactly 3** (`showcase ·
+  echomq · mobile` — the 2→3 join, no script edit). *(The scoped `typecheck:mercury`/`build:mercury` root
+  scripts stand in for the brief's two `./packages/*` lines, which false-red on the out-of-boundary
+  `@echo/fx`; the standing gate note.)*
+- **Mirrors:** the three `@mercury/*` alias lines diff-IDENTICAL to `apps/echomq/vite.config.ts`;
+  `tsconfig.json` diff-IDENTICAL to echomq's. The shim exports exactly 6 names.
+- **INV-1:** `packages/**` untouched; the barrel diff vs HEAD = 0 lines (byte-identical).
+- **INV-2 evidence:** dev-smoke served on `:5176` (strictPort) BEFORE any package build this session; the
+  vite-transformed `/src/App.tsx` rewrites `@mercury/ui` → `/@fs/…/packages/mercury-ui/src/index.ts`
+  (source, not dist); `packages/mercury-core/dist` was ABSENT throughout — core provably resolved from
+  source. Server killed; `:5176` re-verified free.
+- **INV-5:** typecheck green with NO `storybook/test` tsconfig `paths` entry (as predicted — `tsc` does not
+  traverse `import.meta.glob` targets; nothing imports the specifier yet).
+- **INV-7 / the lockfile:** `pnpm install` exit 0 — "21 workspace projects" (was 20); resolved 579, reused
+  404, **downloaded 0, added 0 external packages** (importer-block-only; Fork E held). **The rung COMMIT
+  excludes `pnpm-lock.yaml`:** the worktree lockfile carried a ±588-line uncommitted sibling-program delta
+  the whole run, and one file cannot be split per concern — the importer block regenerates
+  deterministically on `pnpm install`, and the lockfile lands with the sibling program's commit
+  (surfaced to the Operator at ship).
+- **LAW-1a mutation spot-check (net-zero):** the `@mercury/ui` alias pointed at a nonexistent file →
+  `pnpm --filter @mercury/showcase build` FAILED (rollup resolution, exit 1) → restored byte-exact
+  (`cmp` clean) → rebuild exit 0. The source-resolution gate is load-bearing.
+- **Reconcile folded:** the INV-6 consume-down grep gained `--exclude-dir=node_modules` (the pnpm-symlink
+  false-positive; see the INV-6 note). The aaw `agent_register` NOT_INITIALIZED failure is expected — a
+  Duo+ rung stands up no aaw team.
 
 > **Framing (propagate):** no gendered pronouns for agents; no perceptual or interior-state verbs; no
 > first-person narration. Each surface is a contract (precondition / postcondition / invariant); acceptance is
