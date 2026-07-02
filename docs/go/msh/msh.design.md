@@ -1,5 +1,9 @@
 # msh — the design (the as-built source of truth)
 
+> **SUPERSEDED (2026-07-02)** — the forward msh program lives at [`docs/msh/`](../../msh/msh.design.md).
+> This tree remains the frozen reverse-mode as-built record of the shipped Phase-1 toolchain (code citations
+> stay valid). Do not expand.
+
 > A REVERSE-MODE specification: the code in [`go/msh/`](../../../go/msh) is canonical and this document is
 > derived from it ([the reverse playbook](../../aaw/aaw.reverse.md) — the code wins on every surface fact). Every
 > surface cited below is verified at its `file:line` in the tree as of 2026-06-18; where this document and the

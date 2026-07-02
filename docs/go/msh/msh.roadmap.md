@@ -1,5 +1,9 @@
 # msh — the delivery roadmap (reverse-mode: as-built ladder + the harden plan)
 
+> **SUPERSEDED (2026-07-02)** — the forward msh program lives at [`docs/msh/`](../../msh/msh.roadmap.md).
+> This tree remains the frozen reverse-mode as-built record of the shipped Phase-1 toolchain (code citations
+> stay valid). Do not expand.
+
 > A REVERSE-MODE roadmap: the toolchain in [`go/msh/`](../../../go/msh) is built and shipped; this ladder cuts
 > the as-built system into rungs for specification, names what is proven vs. what is deferred, and records the
 > one open design fork. The code is canonical ([the reverse playbook](../../aaw/aaw.reverse.md)). The binding
