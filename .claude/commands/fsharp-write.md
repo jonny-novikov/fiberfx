@@ -2,7 +2,7 @@
 description: fsharp-write — fan out fsharp-expert subagents to author an F# In Depth chapter's pages (chapter landing, module hubs, dives) in parallel, then relink the landing map + adversarially gate + sync the TOC
 argument-hint: <chapter-slug> <module-slug>[:dive1,dive2,dive3] [<module-slug>[:dives] …]  (e.g. language values bindings functions)  ·  chapter slugs history|language|for-csharp|for-elixir|algorithms|devops
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /fsharp-write — parallel page authoring for the "F# In Depth" course

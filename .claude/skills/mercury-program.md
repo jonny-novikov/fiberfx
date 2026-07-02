@@ -148,7 +148,7 @@ gate proves the build is undisturbed plus the contract-coverage + no-extractor-f
   -- <paths>`; never `git add -A`, never a bare commit) — and **only when the Operator asks**. The Operator
   pre-stages out-of-band, so the tree is routinely entangled with sibling programs: re-verify `git diff
   --cached --name-only` is purely Mercury before committing, and split an entangled tree into one scoped commit
-  per concern. The message ends with the `Co-Authored-By: Claude Opus 4.8` trailer. Do not push unless asked.
+  per concern. The message ends with the `Co-Authored-By: Claude Fable 5` trailer. Do not push unless asked.
 - **The boundary.** The diff stays inside `mercury/packages/*` (+ the `mercury/apps/*/vite.config.ts` aliases a
   package rung moves) + the co-located contracts + the rung's `docs/mercury/`. A change reaching an
   OUT-of-bounds dir is a diff no one can review — STOP and re-scope.

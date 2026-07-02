@@ -2,7 +2,7 @@
 description: echo-mq-reconcile — the engine that (re)builds an "EchoMQ, In Depth" course chapter to the THREE-PILLAR target design. Wipes the chapter's old off-target internals and rebuilds it fresh from a persistent <chapter>.prompt.md, fanned out one echo-mq-expert per module. Grounded in real code (echo/apps/echo_mq + echo_wire + echo_cache) where it exists and the design canon (emq.roadmap.md §stream-tier + emq3.specs.md) where it doesn't. Four disciplines — as-shipped (no versions), extract-and-annotate code (two-beat Lua, no file:line), the [RECONCILE] md shadow, no-invent. Dark-editorial (no re-skin); never the frozen echo/apps/echomq tree; never git.
 argument-hint: <chapter> (overview · protocol · queue · bus · cache · proof)  ·  <chapter>/<module>  ·  <chapter>/<module>/<dive>  ·  empty (next per the resume point)
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /echo-mq-reconcile — (re)build a chapter to the three-pillar target

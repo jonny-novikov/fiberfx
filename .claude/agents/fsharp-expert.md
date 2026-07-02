@@ -21,7 +21,7 @@ description: >-
   the /echomq course (echo-mq-expert), the /course/agile-agent-workflow course (agile-expert), other
   jonnify sections, or generic documents.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*, mcp__msh__*
-model: opus
+model: fable
 ---
 
 # F# Expert — author of the jonnify "F# In Depth" course

@@ -2,7 +2,7 @@
 description: spec-write — senior-author a chapter's spec system (the index + roadmap + an exemplar rung triad), then fan out spec-author subagents (general-purpose fallback) to author the remaining rung triads in parallel, adversarially gate against specs.approach.md, and sync the chapter status. The spec-system sibling of /redis-write and /agile-write.
 argument-hint: <chapter-dir-or-slug> [<rungN> …]  (e.g. `docs/elixir/redlock`  ·  `phoenix f6.10,f6.11`  ·  a new chapter topic to design)
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /spec-write — senior-author-then-fan-out for the Portal spec triads

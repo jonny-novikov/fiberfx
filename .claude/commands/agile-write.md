@@ -2,7 +2,7 @@
 description: agile-write — fan out agile-expert subagents to author a chapter's modules (hub + dives) in parallel, then relink + adversarially gate + sync the four living views
 argument-hint: <chapter-slug> <module-slug>[:dive1,dive2,dive3] [<module-slug>[:dives] …]  (e.g. decomposition acceptance splitting value-ladder)
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /agile-write — parallel module authoring for the Agile Agent Workflow course

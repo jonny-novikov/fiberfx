@@ -2,7 +2,7 @@
 description: reconcile — bidirectional spec↔code ground-truth differ; catches spec-vs-code drift before/after a build rung
 argument-hint: A rung id (e.g. f6.2) or a spec path; append "post" for the as-built→spec direction, "apply" to write corrections
 allowed-tools: Read, Grep, Glob, Bash, Edit, Write, TaskCreate, TaskUpdate, TaskList, mcp__aaw__*
-model: opus
+model: fable
 ---
 
 # /reconcile — spec ↔ code ground-truth differ

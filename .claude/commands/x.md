@@ -2,12 +2,12 @@
 description: eXecute — maximum-rigor task mode (thinking + alternatives + decisions + LAW-1/2/3 enforcement)
 argument-hint: Task description OR existing task ID (TSK...) to continue
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch, AskUserQuestion, NotebookEdit, TaskCreate, TaskUpdate, TaskList, TaskGet, TaskStop, TaskOutput, SendMessage, TeamCreate, mcp__aaw__*, mcp__ide__*
-model: opus
+model: fable
 ---
 
 # X-MODE — eXtreme Rigor, Pragmatic Approach
 
-**Directive.** Maximum rigor. CLAUDE_LAWS (LAW-1 multi-agent, LAW-2 Opus, LAW-3 framing) are inviolable — see `CLAUDE.md`. This file is the operational manual; it does NOT redefine the laws.
+**Directive.** Maximum rigor. CLAUDE_LAWS (LAW-1 multi-agent, LAW-2 Fable, LAW-3 framing) are inviolable — see `CLAUDE.md`. This file is the operational manual; it does NOT redefine the laws.
 
 This file is loaded into context on every `/x` invocation — every line costs budget. Defer to source-of-truth files; don't duplicate.
 
@@ -31,7 +31,7 @@ Inspect `$ARGUMENTS` and pick exactly one mode:
 
 ## 2. Phase budget — rationing, not capacity ceiling
 
-Actual envelope on `opus`: **1M input** · **128K output per turn** · **60K thinking per block** · `CLAUDE_CODE_EFFORT_LEVEL=max`. Phase shares are a discipline directive across the whole task (often spanning many turns), not a per-turn cap. Do not self-throttle below the envelope when quality demands more room.
+Actual envelope on `fable`: **1M input** · **128K output per turn** · **60K thinking per block** · `CLAUDE_CODE_EFFORT_LEVEL=max`. Phase shares are a discipline directive across the whole task (often spanning many turns), not a per-turn cap. Do not self-throttle below the envelope when quality demands more room.
 
 | Phase | Share | ≈Tokens | Focus | Exit signal |
 |---|---|---|---|---|
@@ -103,19 +103,19 @@ Name the pipeline in T-n traces — gives the audit trail shared vocabulary acro
 
 ## 5. aaw spawn protocol — Flat-L2 AAW team (default for multi-stream work) [RECONCILE]
 
-Canonical topology in `docs/aaw/aaw.framework.md`: Director L1 + 4 peer L2. All Opus.
+Canonical topology in `docs/aaw/aaw.framework.md`: Director L1 + 4 peer L2. All Fable.
 
 ```
 L0 Human
 L1 Director  — coordinates; does NOT implement / grade / architect
-L2 peers (flat, all opus):
+L2 peers (flat, all fable):
    ├── Venus  [Architect]                — authors specs
    ├── Mars   [Implementor + Remediator] — writes code; owns REMEDIATE loop (MAX=3)
    ├── Apollo [Evaluator + Docs-Maintainer] — grades output; reconciles docs atomically (charter §11)
    └── Pluto  [Relay]                    — operates EchoMQ queues; runs language tooling
 ```
 
-> **LAW-1 (inviolable, see CLAUDE.md).** Each registered identity MUST be backed by a real spawned subagent — a separate execution context, not role-play. In this Claude Code build the spawn tool is **`Agent`** (with `team_name`, `subagent_type`, `name`, `model: "opus"`, `prompt`). The legacy `Task` name in older docs refers to this same tool.
+> **LAW-1 (inviolable, see CLAUDE.md).** Each registered identity MUST be backed by a real spawned subagent — a separate execution context, not role-play. In this Claude Code build the spawn tool is **`Agent`** (with `team_name`, `subagent_type`, `name`, `model: "fable"`, `prompt`). The legacy `Task` name in older docs refers to this same tool.
 
 Bootstrap sequence:
 
@@ -130,7 +130,7 @@ Bootstrap sequence:
        team_name: "<team>",
        name: "<peer>",
        subagent_type: "venus", # or mars, apollo 
-       model: "opus",
+       model: "fable",
        prompt: "<Template-B prompt; see §7.LAW-3.1>"
      )
    Each spawned subagent, from its OWN context, calls:

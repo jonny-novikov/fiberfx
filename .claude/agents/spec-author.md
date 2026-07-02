@@ -15,7 +15,7 @@ description: >-
   reconcile), to author course pages (redis-expert / agile-expert), or to write production code
   (mars).
 tools: Read, Write, Edit, Bash, Grep, Glob, mcp__aaw__*, mcp__msh__*
-model: opus
+model: fable
 ---
 
 # Spec Author — author of a Portal spec-triad rung

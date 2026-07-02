@@ -2,7 +2,7 @@
 description: bcs-reconcile — the CROSS-COURSE engine that brings chapters of BOTH BCS consumer courses to the new Branded Component System direction in one run. Takes mixed chapter tokens — R<N> = a /redis-patterns chapter, E<N> = an /echomq pillar — and reconciles each to the new manuscript docs/echo/bcs/bcs.N.md via the bcs-writer calibration overlay (the five deltas: figure source → bcs.N.md · EchoCache → EchoStore · Exchange → codemojex · the persistence floor + the /echo-persistence door · the refined branded-id canon), while each course keeps its OWN identity (redis re-skins to contract-sheet; echomq stays dark-editorial). Routes each token to its per-course expert + craft skill, fans out one expert per module, adversarially gates with the BCS scrubs, relinks, syncs, reports. Never invents; never a .out; never the retired content/bcsN.* path; never git.
 argument-hint: one or more chapter tokens — R<N> (redis, e.g. R3 R4) · E<N> (echomq, e.g. E3) · a course section name (queues · bus) · <course>/<chapter>/<module> for one module. e.g. /bcs-reconcile R3 R4 E3
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /bcs-reconcile — bring the consumer courses to the new BCS direction (one cross-course run)

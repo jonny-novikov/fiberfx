@@ -2,7 +2,7 @@
 description: mesh-write — fan out mesh-expert subagents to author "EchoMesh, In Depth" pages (the M0 overview / a chapter landing + its three dives) in parallel, then relink the course landing + adversarially gate + sync the TOC
 argument-hint: <chapter>  [<dive1> <dive2> <dive3>]   (e.g. overview the-impossible the-menu the-mesh  ·  impossible safety-and-liveness the-proof the-menu-not-the-wall)  ·  chapters: overview impossible best-effort-availability best-effort-consistency trading segmenting stack transparent future (or m0…m8) · landing = the course landing
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /mesh-write — parallel page authoring for "EchoMesh, In Depth"

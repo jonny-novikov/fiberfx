@@ -2,7 +2,7 @@
 description: redis-write — fan out redis-expert subagents to author a redis-patterns chapter's pages (landing, module hubs, dives, workshop) in parallel, then build/relink the manifest pages + adversarially gate + sync the TOC
 argument-hint: <chapter-slug> <module-slug>[:dive1,dive2,dive3] [<module-slug>[:dives] …]  (e.g. caching cache-aside write-through cache-stampede-prevention)  ·  or `overview` for the R0 home + landing + dives
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /redis-write — parallel page authoring for the "Redis Patterns Applied" course

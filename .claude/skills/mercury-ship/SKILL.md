@@ -309,7 +309,7 @@ the Operator pre-stages out-of-band). The rung commit is the rung's **measured s
 `mercury/packages/mercury-ui/src/components/**/<Name>.prompt.md` + the rung's `docs/mercury/` triad/reconcile +
 the `docs/mercury/mercury.{roadmap,progress,design}.md` fold. **When the tree is entangled** (a sibling-program
 edit, staged infra), commit those as **separate scoped commits per concern** so the Mercury commit stays a
-faithful record of exactly the rung. The message ends with the `Co-Authored-By: Claude Opus 4.8` trailer. **Do
+faithful record of exactly the rung. The message ends with the `Co-Authored-By: Claude Fable 5` trailer. **Do
 not push unless asked.** **Record fold:** flip the rung's status in `docs/mercury/mercury.roadmap.md` (+
 `mercury.progress.md`), backward-reconcile the rung `.md` to the green as-built surface, and surface the next
 frontier.

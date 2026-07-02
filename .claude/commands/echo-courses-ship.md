@@ -11,7 +11,7 @@ description: >-
   ec.2 pipeline". Do NOT use /echo-mq-ship (that pre-loads the Valkey/conformance/branded-id context), the
   *-course-writer skills, or generic documents.
 argument-hint: <rung> (ec.1 … ec.6)  ·  empty (the next unshipped rung per the roadmap)
-model: opus
+model: fable
 ---
 
 # /echo-courses-ship — ship an echo-courses rung via the supervised lead-team

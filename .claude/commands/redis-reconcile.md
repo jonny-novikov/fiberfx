@@ -2,7 +2,7 @@
 description: redis-reconcile — the one-shot engine that reconciles a whole "Redis Patterns Applied" chapter to the TARGET DESIGN in a single run: the BCS contract-sheet identity (redis-red accent), codemojex exemplar consumer, grounding in the real as-built echo data layer (echo/apps/echo_mq · echo_store · echo_wire · echo/apps/codemojex — never a .out transcript), ZERO BullMQ, Valkey the only engine. Fans out redis-expert reconcilers per module, then adversarially gates + relinks + syncs the living views. Reconcile to fit; never invent.
 argument-hint: <chapter> · B<N> · R<N> (whole chapter, e.g. /redis-reconcile B1) · <chapter>/<module> · <chapter>/<module>/<dive> (one page)
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /redis-reconcile — reconcile a chapter to the target design (one run)

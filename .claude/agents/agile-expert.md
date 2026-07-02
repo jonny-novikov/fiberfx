@@ -11,7 +11,7 @@ description: >-
   NOT use for the /elixir course (that is elixir-technical-writer), other jonnify sections, or
   generic documents.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*, mcp__msh__*
-model: opus
+model: fable
 ---
 
 # Agile Expert — author of the jonnify "Agile Agent Workflow" course

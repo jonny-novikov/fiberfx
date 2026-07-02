@@ -2,7 +2,7 @@
 description: echo-mq-write — greenfield authoring for the "EchoMQ, In Depth" course. Fan out echo-mq-expert subagents to author a NEW chapter's pages (landing, module hubs, dives, workshop) in parallel from a persistent <chapter>.prompt.md, then build/relink the manifest pages + adversarially gate + sync the views. The greenfield sibling of /echo-mq-reconcile (which wipes + rebuilds an existing chapter); both obey the same four disciplines. Dark-editorial; one shipped system, three pillars; grounded in echo/apps/echo_mq + the design canon.
 argument-hint: <chapter-slug> <module-slug>[:dive1,dive2,dive3] [<module-slug>…]  (chapters: overview · protocol · queue · bus · cache · proof)
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /echo-mq-write — greenfield parallel authoring for the "EchoMQ, In Depth" course

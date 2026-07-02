@@ -2,7 +2,7 @@
 description: bcs-author — the CROSS-COURSE engine that authors NEW pages of either BCS consumer course (/redis-patterns or /echomq) born in the new Branded Component System direction. Like /bcs-reconcile it routes per chapter (R<N> = redis, E<N> = echomq) and loads the bcs-writer calibration overlay (the five deltas: bcs.N.md figure source · EchoStore · codemojex · the persistence floor + the /echo-persistence door · the refined branded-id canon) composed on the per-course craft skill (redis-course-writer / echo-mq-writer), but it AUTHORS greenfield pages from the spec rather than reconciling existing ones. Fans out one per-course expert per module, builds the manifest pages (orchestrator-only), adversarially gates with the BCS scrubs, syncs the TOC. Author only from the spec + the manuscript; never invent; never a .out; never the retired content/bcsN.* path; never git.
 argument-hint: <course> <chapter> <module-slug>[:dive1,dive2,dive3] …  — course is redis|echomq (or inferred from R<N>/E<N>). e.g. /bcs-author echomq bus events-log time-travel archive  ·  /bcs-author R5 streams-events stream-add consumer-groups
 allowed-tools: Agent, Read, Write, Edit, Bash, Glob, Grep, Skill, AskUserQuestion
-model: opus
+model: fable
 ---
 
 # /bcs-author — author new consumer-course pages, born in the new BCS direction

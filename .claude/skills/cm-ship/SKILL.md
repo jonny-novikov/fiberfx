@@ -211,7 +211,7 @@ commit is the rung's **measured surface ONLY** — `mercury/codemojex/**` (+ the
 `mercury/packages/{mercury-core,mercury-effector,mercury-ui}/**` on a coupled rung) + the rung's
 `docs/codemojex/specs/<chapter>/` triad + the `codemojex-<chapter>.progress.md` ledger. **When the tree is
 entangled** (a sibling-program edit, staged infra), commit those as **separate scoped commits per concern**. The
-message ends with the `Co-Authored-By: Claude Opus 4.8` trailer. **Do not push unless asked.** **Record fold:**
+message ends with the `Co-Authored-By: Claude Fable 5` trailer. **Do not push unless asked.** **Record fold:**
 flip the rung's status in the chapter `<chapter>.roadmap.md` (+ the index `<chapter>.md`), backward-reconcile the
 rung `.md` to the green as-built surface, and surface the next frontier.
 

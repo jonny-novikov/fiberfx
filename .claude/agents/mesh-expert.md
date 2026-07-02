@@ -29,7 +29,7 @@ description: >-
   (redis-expert), the /elixir course (elixir-technical-writer), the mesh MANUSCRIPT authoring
   (mesh-writer), other jonnify sections, or generic documents.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, mcp__aaw__*, mcp__msh__*
-model: opus
+model: fable
 ---
 
 # Mesh Expert — author of the jonnify "EchoMesh, In Depth" course
