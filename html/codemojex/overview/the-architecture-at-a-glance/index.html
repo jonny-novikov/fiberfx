@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codemojex C0.3 — The architecture at a glance · jonnify</title>
+<meta name="description" content="Codemojex course, dive C0.3 — the architecture at a glance: four layers, each owning its tier — the thin Phoenix surface behind privacy-safe views, the Codemojex facade and its domain systems, the EchoMQ bus on Valkey carrying guesses on fair lanes, and the storage floor where money and the secret live.">
+<style>
+/* ============ The CMX identity — the contract sheet, calibrated ============
+   The /bcs contract-sheet basis carried into the Codemojex course:
+   warm paper and mono-forward kept; the house lead is Telegram blue
+   (--c-lead, links and chrome are one blue); gold is reserved for the
+   Golden Room's money elements; teal carries diamonds/settlement and
+   the doors. Not the dark-editorial system of the sibling courses. */
+:root{
+  --c-paper:#f6f3ec;
+  --c-card:#fffefa;
+  --c-ink:#22282b;
+  --c-dim:#68705f;
+  --c-line:#d9d2bf;
+  --c-lead:#1c70ac;    /* house lead — telegram blue, AA on paper */
+  --c-gold:#9a6b08;    /* the golden room — buy-in · pool · payout */
+  --c-teal:#1f7a5e;    /* diamonds · settlement · the doors */
+  --c-lead-tint:#dfeaf3;
+  --c-gold-tint:#f1e8d0;
+  --c-teal-tint:#d7ece4;
+  --c-term-bg:#171c1e;
+  --c-term-fg:#cfdacc;
+  --c-term-dim:#7e8c80;
+  --c-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--c-paper);color:var(--c-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--c-lead);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--c-lead)}
+a:focus-visible{outline:2px solid var(--c-lead);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--c-line);background:var(--c-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--c-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--c-lead)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--c-dim);background:var(--c-paper);border:1px solid var(--c-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--c-dim)}
+.route-tag a:hover{color:var(--c-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--c-line);margin:0 1px}
+.route-tag .rcur{color:var(--c-lead);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--c-ink)}
+
+/* ---------- the 3/11 rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--c-teal-tint);box-shadow:inset 0 0 0 1px var(--c-teal)}
+.idrule i:nth-child(-n+3){background:var(--c-lead-tint);box-shadow:inset 0 0 0 1px var(--c-lead)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--c-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--c-lead);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--c-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:62ch;color:var(--c-ink)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--c-lead);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--c-lead)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--c-dim);max-width:70ch;margin-bottom:8px}
+
+/* ---------- the mode-as-policy selector (the C0 framing interactive) ---------- */
+.msel{margin:26px 0 4px;background:var(--c-card);border:1px solid var(--c-line);border-radius:var(--rad);padding:18px 18px 16px}
+.msel .segbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.segbar button{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--c-dim);background:var(--c-paper);border:1px solid var(--c-line);border-radius:var(--rad);padding:7px 13px;cursor:pointer}
+.segbar button:hover{color:var(--c-ink);border-color:var(--c-lead)}
+.segbar button[aria-pressed="true"]{color:var(--c-card);background:var(--c-lead);border-color:var(--c-lead)}
+.segbar button:focus-visible{outline:2px solid var(--c-lead);outline-offset:2px}
+.mxfig{width:100%;height:auto;display:block}
+.mxfig .col{font:700 12px var(--mono);fill:var(--c-dim);text-anchor:middle}
+.mxfig .rowlab{font:700 12.5px var(--mono);fill:var(--c-ink);text-anchor:end}
+.mxfig .cell{fill:var(--c-paper);stroke:var(--c-line);stroke-width:1.2}
+.mxfig .cval{font:600 12.5px var(--mono);fill:var(--c-ink);text-anchor:middle}
+.mxfig .invcell{fill:var(--c-teal-tint);stroke:var(--c-teal)}
+.mxfig .mrow.on .cell{stroke:var(--c-lead);stroke-width:2.4}
+.mxfig .mrow.on .invcell{stroke:var(--c-teal);stroke-width:2.4}
+.js .mxfig .mrow{opacity:.48;transition:opacity .15s}
+.js .mxfig .mrow.on{opacity:1}
+.mxcap{font-family:var(--mono);font-size:12.5px;color:var(--c-dim);margin-top:2px}
+.readout{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--c-ink);background:var(--c-paper);border-left:3px solid var(--c-lead);border-radius:0 var(--rad) var(--rad) 0;padding:11px 14px;margin-top:14px;min-height:3.4em}
+.readout b{color:var(--c-lead)}
+.readout .g{color:var(--c-teal);font-weight:700}
+
+/* ---------- the module / chapter cards ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--c-card);border:1px solid var(--c-line);border-radius:var(--rad);padding:18px;color:var(--c-ink)}
+a.pcard{border-color:var(--c-lead)}
+a.pcard:hover{border-bottom-color:var(--c-lead);box-shadow:0 1px 0 var(--c-lead)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--c-lead);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.88rem;color:var(--c-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--c-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--c-lead);color:var(--c-card)}
+.chip.soon{background:var(--c-paper);border:1px solid var(--c-line);color:var(--c-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--c-dim);max-width:80ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--c-card);border:1px solid var(--c-line);border-left:3px solid var(--c-teal);border-radius:var(--rad);padding:18px;color:var(--c-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--c-teal)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--c-teal);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--c-dim)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--c-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--c-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--c-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--c-line);background:var(--c-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--c-ink);font-size:15px}
+.foot-logo .bdot{color:var(--c-lead)}
+.foot-tag{font-size:.86rem;color:var(--c-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--c-ink);padding:2px 0}
+.foot-links span{color:var(--c-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--c-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--c-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--c-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--c-dim);cursor:pointer;border:1px dashed var(--c-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--c-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--c-lead)}
+.stamp:focus-visible{outline:2px solid var(--c-lead);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--c-term-bg);color:var(--c-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--c-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">&#183;</span>codemojex</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/codemojex">codemojex</a><span class="rsep">/</span><a href="/codemojex/overview">overview</a><span class="rsep">/</span><span class="rcur">the-architecture-at-a-glance</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#layers">Layers</a>
+      <a href="#journey">Journey</a>
+      <a href="#floor">The floor</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">Codemojex &#183; dive C0.3</p>
+      <h1>The architecture &#8212; <span class="hns">four layers</span>, one glance.</h1>
+      <p class="lede">Codemojex is four layers, and the layering is the architecture. Requests enter at a thin
+      <b>Phoenix surface</b> behind privacy-safe views; the <b><code>Codemojex</code> facade</b> delegates into the
+      domain systems; durable work travels on the <b>EchoMQ bus</b> over Valkey, on lanes named by branded ids; and
+      state rests on a three-tier <b>storage floor</b> &#8212; Postgres the system of record, Valkey the derived
+      real-time state, EchoStore the immutable near-cache. Money and the secret live on the floor. One glance holds
+      the whole game.</p>
+      <p class="heronote">Hover or select a layer. The readout names what the layer owns and the real modules that own it.</p>
+
+      <figure class="msel" aria-labelledby="stackcap">
+        <div class="segbar" role="group" aria-label="Choose a layer of the stack">
+          <button type="button" data-layer="surface" aria-pressed="true">Surface</button>
+          <button type="button" data-layer="facade" aria-pressed="false">Facade &amp; systems</button>
+          <button type="button" data-layer="bus" aria-pressed="false">Bus</button>
+          <button type="button" data-layer="floor" aria-pressed="false">Floor</button>
+        </div>
+        <svg class="mxfig" viewBox="0 0 880 324" role="img" aria-label="Four stacked layers, top to bottom: the Phoenix surface, the Codemojex facade and domain systems, the EchoMQ bus on Valkey, and the three-tier storage floor. Arrows flow downward; the floor band is teal — money and the secret rest there.">
+          <g class="mrow on" data-layer="surface">
+            <text class="rowlab" x="138" y="49">1 &#183; surface</text>
+            <rect class="cell" x="150" y="18" width="700" height="52" rx="4"></rect>
+            <text class="cval" x="270" y="49">CodemojexWeb</text>
+            <text class="cval" x="500" y="49">JSON API &#183; Channels</text>
+            <text class="cval" x="730" y="49">privacy-safe views</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="500" y1="72" x2="500" y2="90" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M495 88 L505 88 L500 96 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-layer="facade">
+            <text class="rowlab" x="138" y="131">2 &#183; facade</text>
+            <rect class="cell" x="150" y="100" width="700" height="52" rx="4"></rect>
+            <text class="cval" x="270" y="131">Codemojex</text>
+            <text class="cval" x="500" y="131">Guesses &#183; Rooms &#183; Wallet</text>
+            <text class="cval" x="730" y="131">ScoreWorker &#183; Settle</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="500" y1="154" x2="500" y2="172" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M495 170 L505 170 L500 178 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-layer="bus">
+            <text class="rowlab" x="138" y="213">3 &#183; bus</text>
+            <rect class="cell" x="150" y="182" width="700" height="52" rx="4"></rect>
+            <text class="cval" x="270" y="213">EchoMQ.Lanes</text>
+            <text class="cval" x="500" y="213">"cm" &#8212; lane PLR</text>
+            <text class="cval" x="730" y="213">"cm-settle" &#8212; lane GAM</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="500" y1="236" x2="500" y2="254" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M495 252 L505 252 L500 260 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-layer="floor">
+            <text class="rowlab" x="138" y="295">4 &#183; floor</text>
+            <rect class="cell invcell" x="150" y="264" width="700" height="52" rx="4"></rect>
+            <text class="cval" x="270" y="295">Postgres &#8212; record</text>
+            <text class="cval" x="500" y="295">Valkey &#8212; real-time</text>
+            <text class="cval" x="730" y="295">EchoStore &#8212; near-cache</text>
+          </g>
+        </svg>
+        <figcaption class="mxcap" id="stackcap">Four layers, each owning its tier; the teal band is the floor &#8212; money and
+        the secret rest there, and the surface never selects them. Source: <code>lib/codemojex/game.ex</code> and the design
+        &#167;The architecture at a glance.</figcaption>
+        <p class="readout" id="stackout" aria-live="polite"><b>The surface</b> &#8212; <code>codemojex_web/*</code>: the JSON API,
+        the room channel, and the LiveView lobby, all reading through <code>Codemojex.View</code> &#8212; no secret, no
+        others' guesses. The surface holds no game state and never scores.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="sentence">
+      <div class="sech"><span class="sno">&#167;1</span><h2>One sentence holds the game</h2><span class="ssrc">game.ex &#183; the facade moduledoc</span></div>
+      <p class="lede" style="margin-bottom:18px">The facade module's own documentation is the architecture in one sentence.
+      Read it once as prose, then once as a map &#8212; every clause is a layer of the stack above.</p>
+      <figure style="margin:0 0 18px">
+        <blockquote class="readout" style="min-height:0">Codemojex on the bus: a six-emoji code-breaking competition whose
+        entities are branded components persisted in Postgres, whose guesses are jobs on per-player lanes scored by a
+        single authority, whose three currencies mutate atomically in the database through a wallet with a transaction
+        ledger, whose rooms template their games, and whose diamond prize pools settle through a second queue
+        (winner-take-all for a classic game, a sealed top-K split for a golden game).</blockquote>
+        <figcaption class="mxcap">The <code>Codemojex</code> moduledoc, <code>lib/codemojex/game.ex</code> &#8212; quoted verbatim.</figcaption>
+      </figure>
+      <p style="max-width:72ch;margin-bottom:12px">&#8220;Branded components persisted in Postgres&#8221; is the floor.
+      &#8220;Jobs on per-player lanes scored by a single authority&#8221; is the bus and its consumers. &#8220;A wallet
+      with a transaction ledger&#8221; is a domain system behind the facade. And the moduledoc closes where the page
+      ends: &#8220;Startup is <code>Codemojex.Application</code>'s job &#8212; the Repo, PubSub, the EchoMQ bus and
+      consumers, and the Phoenix endpoint come up there.&#8221;</p>
+    </section>
+
+    <section id="layers">
+      <div class="sech"><span class="sno">&#167;2</span><h2>Layer by layer</h2><span class="ssrc">surface &#8594; facade &#8594; bus &#8594; floor</span></div>
+      <p style="max-width:72ch;margin-bottom:14px"><b>Layer 1 &#8212; the surface.</b> <code>codemojex_web/*</code>: the JSON
+      API, the room channel, and the LiveView lobby. Every read goes through <code>Codemojex.View</code>, whose moduledoc
+      opens with the invariant: &#8220;nothing here returns the secret, and nothing returns another player's
+      guesses.&#8221; The facade marks its view delegates the same way &#8212; &#8220;views (privacy-preserving: no
+      secret, no others' guesses).&#8221;</p>
+      <p style="max-width:72ch;margin-bottom:14px"><b>Layer 2 &#8212; the facade and the systems.</b> The
+      <code>Codemojex</code> module is a thin facade delegating into small domain systems, each owning one concern:
+      <code>Codemojex.Guesses</code> (the play API), <code>Codemojex.Rooms</code> (templates and lifecycle),
+      <code>Codemojex.Wallet</code> (the currencies, atomically in Postgres), <code>Codemojex.Scoring</code> (the pure
+      linear engine), <code>Codemojex.Board</code> (the competitive state), <code>Codemojex.Settle</code> (the payout
+      job). <code>Codemojex.Guesses.submit/3</code> validates a six-emoji guess against the game's keyboard, overlays the
+      player's locks (<code>Codemojex.Locks.merge/3</code>), charges the room's currency through the wallet &#8212; and
+      then hands the guess off. The host never scores; the consumer does.</p>
+      <p style="max-width:72ch;margin-bottom:14px"><b>Layer 3 &#8212; the bus.</b> <code>submit/3</code> mints a branded
+      <code>JOB</code> (<code>EchoData.BrandedId.generate!("JOB")</code>) and enqueues it &#8212;
+      <code>Lanes.enqueue(Bus.conn(), @queue, player, job, payload)</code>, queue <code>"cm"</code>. The lane is named by
+      the player's <code>PLR</code>, &#8220;so the bus rotates service across players and one keyboard masher cannot
+      starve the field.&#8221; <code>Codemojex.ScoreWorker</code> is the single scoring authority:
+      <code>EchoMQ.Consumer</code> drains the queue through <code>Lanes.claim</code>, the player id arriving as the lane
+      group. Settlement is a second queue, <code>"cm-settle"</code>, whose lane is the game's <code>GAM</code> &#8212;
+      &#8220;the move-then-settle split is the Exchange pattern: the guess queue competes, the settle queue pays&#8221;
+      (<code>Codemojex.Settle</code>). Two more lanes complete the picture: notifications on <code>"cm.notify"</code> and
+      inbound bot commands, each keyed by chat and drained by its own consumer.</p>
+      <p style="max-width:72ch;margin-bottom:14px"><b>Layer 4 &#8212; the floor.</b> Three tiers, each holding the data
+      that fits it. Postgres is the system of record &#8212; <code>Codemojex.Store.game/1</code> reads it, and players,
+      transactions, rooms, games (secret included, server-side), emoji sets, and guesses rest there. Valkey holds the
+      derived real-time state &#8212; the per-game leaderboard sorted set <code>Codemojex.Board</code> writes, the attempt
+      counters, and the bus itself. EchoStore is the immutable near-cache &#8212; <code>Codemojex.Cache.fetch_game/1</code>
+      over the tables <code>Codemojex.Tables</code> declares (<code>:cm_games</code>, <code>:cm_emojisets</code>), an L1
+      <code>:ets</code> hit in the caller's process with the shared Valkey as L2. A game's secret is immutable for the
+      game's life, so coherence is <code>:none</code> and the cache never goes stale.</p>
+      <p style="max-width:72ch"><b>The tree stands the floor up first.</b> <code>Codemojex.Application</code> starts the
+      layers in dependency order: &#8220;the relational system of record (<code>Repo</code>) and <code>PubSub</code>
+      first; then the EchoMQ bus (<code>Bus</code>, the shared Valkey connector); then the EchoStore near-cache tier
+      (<code>Tables</code>&#8201;&#8230;); then the consumers &#8212; the scoring authority, the settlement worker, the
+      notification worker, and the bot-command worker&#8201;&#8230;; then the Phoenix endpoint.&#8221;</p>
+      <p class="booknote">Grounding &#8212; <code>game.ex</code> (the facade, <code>Guesses</code>, <code>ScoreWorker</code>,
+      <code>Settle</code>) &#183; <code>store.ex</code> (<code>Store</code>, <code>Bus</code>, <code>Cache</code>) &#183;
+      <code>board.ex</code> &#183; <code>view.ex</code> &#183; <code>application.ex</code> &#183; the design &#167;The
+      architecture at a glance.</p>
+    </section>
+
+    <section id="journey">
+      <div class="sech"><span class="sno">&#167;3</span><h2>A guess's journey</h2><span class="ssrc">submit &#8594; scored</span></div>
+      <p class="lede" style="margin-bottom:18px">One entity crossing all four layers, top to floor and back. Step the six
+      stations: a guess leaves the facade as a <code>JOB</code> on the player's lane, is claimed by the single scoring
+      authority, touches every storage tier, and returns to the surface as a <code>scored</code> event.</p>
+
+      <figure class="msel" aria-labelledby="jrncap">
+        <div class="segbar" role="group" aria-label="Step the six stations of a guess">
+          <button type="button" data-step="s1" aria-pressed="true">Submit</button>
+          <button type="button" data-step="s2" aria-pressed="false">Enqueue</button>
+          <button type="button" data-step="s3" aria-pressed="false">Claim</button>
+          <button type="button" data-step="s4" aria-pressed="false">Score</button>
+          <button type="button" data-step="s5" aria-pressed="false">Record</button>
+          <button type="button" data-step="s6" aria-pressed="false">Announce</button>
+        </div>
+        <svg class="mxfig" viewBox="0 0 880 176" role="img" aria-label="A guess's journey, left to right across six stations: submit on the facade, enqueue as a JOB on the player's lane, claim by the score worker, score against the cached secret, record on the Valkey board, announce as a scored event. Each station is tagged with the layer it runs on.">
+          <g class="mrow on" data-step="s1">
+            <text class="col" x="84" y="60">1 &#183; submit</text>
+            <rect class="cell" x="24" y="74" width="120" height="48" rx="4"></rect>
+            <text class="cval" x="84" y="102">submit/3</text>
+            <text class="col" x="84" y="146">layer 2</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="146" y1="98" x2="160" y2="98" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M158 93 L158 103 L166 98 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-step="s2">
+            <text class="col" x="226" y="60">2 &#183; enqueue</text>
+            <rect class="cell" x="166" y="74" width="120" height="48" rx="4"></rect>
+            <text class="cval" x="226" y="102">JOB &#183; lane PLR</text>
+            <text class="col" x="226" y="146">layer 3</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="288" y1="98" x2="302" y2="98" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M300 93 L300 103 L308 98 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-step="s3">
+            <text class="col" x="368" y="60">3 &#183; claim</text>
+            <rect class="cell" x="308" y="74" width="120" height="48" rx="4"></rect>
+            <text class="cval" x="368" y="102">Lanes.claim</text>
+            <text class="col" x="368" y="146">layer 3</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="430" y1="98" x2="444" y2="98" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M442 93 L442 103 L450 98 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-step="s4">
+            <text class="col" x="510" y="60">4 &#183; score</text>
+            <rect class="cell" x="450" y="74" width="120" height="48" rx="4"></rect>
+            <text class="cval" x="510" y="102">score &#8594; GES</text>
+            <text class="col" x="510" y="146">layer 4</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="572" y1="98" x2="586" y2="98" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M584 93 L584 103 L592 98 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-step="s5">
+            <text class="col" x="652" y="60">5 &#183; record</text>
+            <rect class="cell" x="592" y="74" width="120" height="48" rx="4"></rect>
+            <text class="cval" x="652" y="102">Board.record</text>
+            <text class="col" x="652" y="146">layer 4</text>
+          </g>
+          <g aria-hidden="true">
+            <line x1="714" y1="98" x2="728" y2="98" style="stroke:var(--c-dim);stroke-width:1.4"></line>
+            <path d="M726 93 L726 103 L734 98 Z" style="fill:var(--c-dim)"></path>
+          </g>
+          <g class="mrow" data-step="s6">
+            <text class="col" x="794" y="60">6 &#183; announce</text>
+            <rect class="cell" x="734" y="74" width="120" height="48" rx="4"></rect>
+            <text class="cval" x="794" y="102">scored event</text>
+            <text class="col" x="794" y="146">layer 1</text>
+          </g>
+        </svg>
+        <figcaption class="mxcap" id="jrncap">The layer tags under the stations trace the descent and return: facade
+        &#8594; bus &#8594; floor &#8594; surface. For a golden game the sixth hop is suppressed &#8212; the score is
+        sealed until reveal (the blind contract). Source: <code>Codemojex.Guesses</code> and
+        <code>Codemojex.ScoreWorker</code>, <code>lib/codemojex/game.ex</code>.</figcaption>
+        <p class="readout" id="jrnout" aria-live="polite"><b>Submit</b> &#8212; <code>Codemojex.Guesses.submit(game, player,
+        emojis)</code> reads the game's mutable state from the system of record (<code>Store.game/1</code>), validates the
+        six emoji against the keyboard, overlays locks (<code>Locks.merge/3</code>), and charges the wallet
+        (<code>Wallet.charge_guess/3</code>). Layer 2 work &#8212; the host never scores.</p>
+      </figure>
+
+      <p style="max-width:72ch;margin-top:18px">The path is asymmetric on purpose. The submit side runs on the caller and
+      touches only the system of record and the wallet; the scoring side runs on the consumer and is the only reader of
+      the secret &#8212; &#8220;the game's mutable state is read from the system of record; the cache is trusted only for
+      the immutable secret on the scoring path&#8221; (<code>submit/3</code>'s doc). A re-delivered guess re-scores to the
+      same number, because the engine is pure; a guess for an unknown game answers <code>:ok</code> &#8212; a drop, never
+      a retry loop.</p>
+      <p class="booknote">Acceptance &#8212; &#8220;a guess submitted on the lane is scored and reaches the
+      leaderboard&#8221;: <code>stories/rooms-and-games.stories.md</code>, generated from the as-built BDD suite.</p>
+    </section>
+
+    <section id="floor">
+      <div class="sech"><span class="sno">&#167;4</span><h2>Money and the secret</h2><span class="ssrc">the floor &#183; privacy.stories.md</span></div>
+      <p style="max-width:72ch;margin-bottom:14px">The floor is where the two sensitive things rest, and the layers above
+      are shaped so neither travels. The secret is a Postgres column read through the near-cache on the scoring path
+      only; no view returns it &#8212; &#8220;the game view never carries the secret&#8221; is a generated acceptance
+      scenario, not a promise. Money is relational: the three currencies &#8220;mutate atomically in the database through
+      a wallet with a transaction ledger,&#8221; and the diamond prize <span class="g">pools</span> settle through the
+      second queue, not through the surface.</p>
+      <p style="max-width:72ch">What crosses the layers is identities and messages about them &#8212; a <code>GAM</code>,
+      a <code>PLR</code>, a <code>JOB</code>, a <code>GES</code>, and a <code>scored</code> event carrying a name and a
+      percentage. That is the branded-component law applied: the boundaries are real, and the same code runs whether the
+      systems share a node or not.</p>
+      <p class="booknote">Acceptance &#8212; <code>stories/privacy.stories.md</code>: &#8220;the game view never carries
+      the secret&#8221; &#183; &#8220;a player's history shows only their own attempts&#8221; &#183; &#8220;the
+      leaderboard exposes scores, never guess content.&#8221;</p>
+    </section>
+
+    <section id="refs">
+      <div class="sech"><span class="sno">&#167;5</span><h2>References</h2><span class="ssrc">sources &#183; related</span></div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying-abstraction" rel="noopener">Kreps &#8212; <em>The Log</em></a><span class="rs">the bus as the ordered log work is dropped onto and drained from.</span></li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf" rel="noopener">Helland &#8212; <em>Life Beyond Distributed Transactions</em></a><span class="rs">entities behind boundaries and the privacy seam the views keep.</span></li>
+          <li><a href="https://www.erlang.org/doc/apps/stdlib/supervisor.html" rel="noopener">Erlang/OTP &#8212; <em>supervisor</em></a><span class="rs">the dependency-ordered tree that stands the four layers up.</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/codemojex/overview/the-engine-and-its-policies">C0.2 &#8212; <em>The engine and its policies</em></a><span class="rs">the previous dive: one engine, modes as policy.</span></li>
+          <li><a href="/codemojex/branded-systems">C1 &#8212; <em>The Game as Branded Systems</em></a><span class="rs">the identity law that threads the four layers, next.</span></li>
+          <li><a href="/echomq">EchoMQ &#8212; <em>the bus</em></a><span class="rs">the queue, lane, and event protocol layer 3 runs on.</span></li>
+          <li><a href="/bcs">BCS &#8212; <em>the architecture law</em></a><span class="rs">systems own state; identities and messages cross boundaries.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/codemojex/overview/the-engine-and-its-policies"><span class="pk">prev</span>&#8592; C0.2 &#183; The engine and its policies</a>
+      <a class="pgx" href="/codemojex/branded-systems"><span class="pk">next</span>C1 &#183; The Game as Branded Systems &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Codemojex — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">&#183;</span>codemojex</span>
+        <p class="foot-tag">Codemojex &#8212; the real-money emoji Mastermind on the Branded Component System, taught on the running code.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/codemojex">Start &#183; the landing</a>
+        <a href="/codemojex/overview">C0 &#183; Overview</a>
+        <a href="/codemojex/branded-systems">C1 &#183; The Game as Branded Systems</a>
+        <a href="/codemojex/rooms-and-modes">C2 &#183; Rooms, Modes, and the Secret</a>
+        <a href="/codemojex/guesses-on-fair-lanes">C3 &#183; Guesses on Fair Lanes</a>
+        <a href="/codemojex/scoring-and-settlement">C4 &#183; Scoring and Settlement</a>
+        <a href="/codemojex/the-economy">C5 &#183; The Economy and the Bank</a>
+        <a href="/codemojex/commerce">C6 &#183; The Revenue Ledger and the KeyShop</a>
+        <a href="/codemojex/the-live-surface">C7 &#183; The Live Surface on Phoenix</a>
+        <a href="/codemojex/production">C8 &#183; Production Deployment</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/codemojex">Codemojex &#8212; this course</a>
+        <a href="/bcs">BCS &#8212; the architecture law</a>
+        <a href="/echomq">EchoMQ &#8212; the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/mesh">EchoMesh, In Depth</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">CMX0OSPBCH11HQ</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+  var LAYERS = {
+    surface: {
+      html: '<b>The surface</b> &#8212; <code>codemojex_web/*</code>: the JSON API, the room channel, and the LiveView lobby, all reading through <code>Codemojex.View</code> &#8212; no secret, no others\' guesses. The surface holds no game state and never scores.'
+    },
+    facade: {
+      html: '<b>The facade and the systems</b> &#8212; <code>Codemojex</code> delegates into the domain systems: <code>Codemojex.Guesses</code> validates, charges, and enqueues; <code>Codemojex.ScoreWorker</code> is the single scoring authority; <code>Codemojex.Settle</code> pays. The host never scores; the consumer does.'
+    },
+    bus: {
+      html: '<b>The bus</b> &#8212; <code>EchoMQ.Lanes</code> on Valkey. Queue <code>"cm"</code> carries guesses, one lane per player (<code>PLR</code>); queue <code>"cm-settle"</code> carries payouts, one lane per game (<code>GAM</code>). The bus rotates service across lanes &#8212; one keyboard masher cannot starve the field.'
+    },
+    floor: {
+      html: '<b>The floor</b> &#8212; Postgres the system of record (<code>Codemojex.Store</code>); Valkey the derived real-time state (the board sorted set, the counters, L2); EchoStore the immutable near-cache (<code>:cm_games</code>, <code>:cm_emojisets</code>, coherence <code>:none</code>). Money and the secret rest here &#8212; the <span class="g">diamond pools</span> settle below the surface, and the secret is read only on the scoring path.'
+    }
+  };
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('.segbar button[data-layer]'));
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.mxfig .mrow[data-layer]'));
+  var out = document.getElementById('stackout');
+  function select(layer) {
+    if (!LAYERS[layer]) return;
+    buttons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-layer') === layer ? 'true' : 'false'); });
+    rows.forEach(function (r) { r.classList.toggle('on', r.getAttribute('data-layer') === layer); });
+    if (out) out.innerHTML = LAYERS[layer].html;
+  }
+  buttons.forEach(function (b) {
+    var m = b.getAttribute('data-layer');
+    b.addEventListener('click', function () { select(m); });
+    b.addEventListener('mouseenter', function () { select(m); });
+  });
+  rows.forEach(function (r) {
+    var m = r.getAttribute('data-layer');
+    r.addEventListener('mouseenter', function () { select(m); });
+    r.addEventListener('click', function () { select(m); });
+  });
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+  var STEPS = {
+    s1: {
+      html: '<b>Submit</b> &#8212; <code>Codemojex.Guesses.submit(game, player, emojis)</code> reads the game\'s mutable state from the system of record (<code>Store.game/1</code>), validates the six emoji against the keyboard, overlays locks (<code>Locks.merge/3</code>), and charges the wallet (<code>Wallet.charge_guess/3</code>). Layer 2 work &#8212; the host never scores.'
+    },
+    s2: {
+      html: '<b>Enqueue</b> &#8212; a fresh branded <code>JOB</code> (<code>EchoData.BrandedId.generate!("JOB")</code>), then <code>Lanes.enqueue(Bus.conn(), @queue, player, job, payload)</code> on queue <code>"cm"</code>. The lane is named by the player\'s <code>PLR</code> &#8212; the bus rotates service across players, and one keyboard masher cannot starve the field.'
+    },
+    s3: {
+      html: '<b>Claim</b> &#8212; <code>EchoMQ.Consumer</code> drains queue <code>"cm"</code> through <code>Lanes.claim</code>; the player id arrives as the lane group. <code>Codemojex.ScoreWorker.handle/1</code> is the single scoring authority &#8212; nothing else scores.'
+    },
+    s4: {
+      html: '<b>Score</b> &#8212; the secret is read through the near-cache (<code>Cache.fetch_game/1</code> &#8212; the immutable secret only), scored by the pure engine (<code>Scoring.score/2</code>); a <code>GES</code> guess is written to Postgres and the attempt counted (<code>Cmd.incr("cm:" &lt;&gt; game &lt;&gt; ":attempts")</code>).'
+    },
+    s5: {
+      html: '<b>Record</b> &#8212; <code>Board.record(game, player, total)</code> folds the best linear total onto the game\'s Valkey sorted set and returns the board rank. The raw linear best is the sole rank.'
+    },
+    s6: {
+      html: '<b>Announce</b> &#8212; a <code>scored</code> event on the bus (<code>EchoMQ.Events</code>) and a <code>:scored</code> broadcast on <code>Phoenix.PubSub</code>, topic <code>"game:" &lt;&gt; game</code> &#8212; the player\'s name, percentage, and effective score; no secret, no guess content. A golden game suppresses this hop entirely: the score is <span class="g">sealed</span> until reveal.'
+    }
+  };
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('.segbar button[data-step]'));
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.mxfig .mrow[data-step]'));
+  var out = document.getElementById('jrnout');
+  function select(step) {
+    if (!STEPS[step]) return;
+    buttons.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-step') === step ? 'true' : 'false'); });
+    rows.forEach(function (r) { r.classList.toggle('on', r.getAttribute('data-step') === step); });
+    if (out) out.innerHTML = STEPS[step].html;
+  }
+  buttons.forEach(function (b) {
+    var m = b.getAttribute('data-step');
+    b.addEventListener('click', function () { select(m); });
+    b.addEventListener('mouseenter', function () { select(m); });
+  });
+  rows.forEach(function (r) {
+    var m = r.getAttribute('data-step');
+    r.addEventListener('mouseenter', function () { select(m); });
+    r.addEventListener('click', function () { select(m); });
+  });
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+  var B62="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", EPOCH=1704067200000n;
+  function b62(s){var n=0n;for(var i=0;i<s.length;i++){var d=B62.indexOf(s.charAt(i));if(d<0)return null;n=n*62n+BigInt(d);}return n;}
+  function p2(x){return (x<10?'0':'')+x;}
+  function dec(id){if(!id||id.length!==14)return null;var ns=id.slice(0,3),s=b62(id.slice(3));if(s===null)return null;var ts=s>>22n,nd=(s>>12n)&0x3FFn,sq=s&0xFFFn,d=new Date(Number(ts)+Number(EPOCH));return {ns:ns,snow:s.toString(),node:nd.toString(),seq:sq.toString(),ts:d.getUTCFullYear()+'-'+p2(d.getUTCMonth()+1)+'-'+p2(d.getUTCDate())+' '+p2(d.getUTCHours())+':'+p2(d.getUTCMinutes())+':'+p2(d.getUTCSeconds())+' UTC'};}
+  var stamp=document.getElementById('stamp'), idEl=document.getElementById('stampId');
+  if(stamp&&idEl){var info=dec(idEl.textContent.trim());if(info){var put=function(s,t){var e=document.getElementById(s);if(e)e.textContent=t;};put('st-ns',info.ns);put('st-snow',info.snow);put('st-node',info.node);put('st-seq',info.seq);put('st-ts',info.ts);}
+    var tog=function(){var o=stamp.classList.toggle('open');stamp.setAttribute('aria-expanded',o?'true':'false');};
+    stamp.addEventListener('click',tog);stamp.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();tog();}});}
+})();
+</script>
+
+</body>
+</html>

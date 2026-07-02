@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codemojex C0.2 — The engine and its policies · jonnify</title>
+<meta name="description" content="Codemojex course, dive C0.2 — The engine and its policies: a generic Mastermind engine where a game carries a type and the four policies the type selects — feedback, scoring, settlement, economy. The policies_for/2 fork quoted verbatim, the snapshot onto the one games table, and do_close/2 dispatching on the settlement value.">
+<style>
+/* ============ The CMX identity — the contract sheet, calibrated ============
+   The /bcs contract-sheet basis carried into the Codemojex course:
+   warm paper and mono-forward kept; the house lead is Telegram blue
+   (--c-lead, links and chrome are one blue); gold is reserved for the
+   Golden Room's money elements; teal carries diamonds/settlement and
+   the doors. Not the dark-editorial system of the sibling courses. */
+:root{
+  --c-paper:#f6f3ec;
+  --c-card:#fffefa;
+  --c-ink:#22282b;
+  --c-dim:#68705f;
+  --c-line:#d9d2bf;
+  --c-lead:#1c70ac;    /* house lead — telegram blue, AA on paper */
+  --c-gold:#9a6b08;    /* the golden room — buy-in · pool · payout */
+  --c-teal:#1f7a5e;    /* diamonds · settlement · the doors */
+  --c-lead-tint:#dfeaf3;
+  --c-gold-tint:#f1e8d0;
+  --c-teal-tint:#d7ece4;
+  --c-term-bg:#171c1e;
+  --c-term-fg:#cfdacc;
+  --c-term-dim:#7e8c80;
+  --c-term-ok:#9fd6a8;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rad:6px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--c-paper);color:var(--c-ink);font:17px/1.65 var(--sans)}
+.wrap{max-width:1080px;margin:0 auto;padding:0 22px}
+a{color:var(--c-lead);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--c-lead)}
+a:focus-visible{outline:2px solid var(--c-lead);outline-offset:2px}
+code{font-family:var(--mono);font-size:.92em;background:#ecf0e9;padding:.08em .3em;border-radius:3px}
+
+/* ---------- header ---------- */
+.top{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--c-line);background:var(--c-card)}
+[id]{scroll-margin-top:84px}
+.top .wrap{display:flex;align-items:center;gap:18px;min-height:58px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
+.brand{font-family:var(--mono);font-weight:700;font-size:15px;color:var(--c-ink);letter-spacing:.02em}
+.brand .bdot{color:var(--c-lead)}
+.route-tag{font-family:var(--mono);font-size:13px;color:var(--c-dim);background:var(--c-paper);border:1px solid var(--c-line);border-radius:var(--rad);padding:3px 9px}
+.route-tag a{color:var(--c-dim)}
+.route-tag a:hover{color:var(--c-ink);border-bottom-color:transparent}
+.route-tag .rsep{color:var(--c-line);margin:0 1px}
+.route-tag .rcur{color:var(--c-lead);font-weight:700}
+.topnav{margin-left:auto;display:flex;gap:14px;flex-wrap:wrap}
+.topnav a{font-family:var(--mono);font-size:12.5px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.06em}
+.topnav a:hover{color:var(--c-ink)}
+
+/* ---------- the 3/11 rule device ---------- */
+.idrule{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;margin:0 0 6px}
+.idrule i{height:4px;border-radius:2px;background:var(--c-teal-tint);box-shadow:inset 0 0 0 1px var(--c-teal)}
+.idrule i:nth-child(-n+3){background:var(--c-lead-tint);box-shadow:inset 0 0 0 1px var(--c-lead)}
+
+/* ---------- sections ---------- */
+section{padding:46px 0 10px}
+.sech{display:flex;align-items:baseline;gap:14px;border-bottom:1px solid var(--c-line);padding-bottom:10px;margin-bottom:24px}
+.sech .sno{font-family:var(--mono);font-size:13px;color:var(--c-lead);font-weight:700}
+.sech h2{font-family:var(--mono);font-size:clamp(1.15rem, 1rem + 0.8vw, 1.5rem);letter-spacing:.01em;text-transform:uppercase}
+.sech .ssrc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--c-dim)}
+.lede{font-size:clamp(1.02rem, 0.95rem + 0.5vw, 1.2rem);max-width:62ch;color:var(--c-ink)}
+
+/* ---------- hero ---------- */
+.hero{padding:56px 0 30px}
+.kicker{font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:var(--c-lead);text-transform:uppercase;margin-bottom:14px}
+.hero h1{font-family:var(--mono);font-weight:700;letter-spacing:-.01em;line-height:1.12;font-size:clamp(1.9rem, 1.3rem + 3vw, 3.3rem);margin-bottom:18px}
+.hero h1 .hns{color:var(--c-lead)}
+.hero .lede{margin-bottom:14px}
+.hero .lede b{font-weight:650}
+.heronote{font-family:var(--mono);font-size:13px;color:var(--c-dim);max-width:70ch;margin-bottom:8px}
+
+/* ---------- the mode-as-policy selector (the C0 framing interactive) ---------- */
+.msel{margin:26px 0 4px;background:var(--c-card);border:1px solid var(--c-line);border-radius:var(--rad);padding:18px 18px 16px}
+.msel .segbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.segbar button{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--c-dim);background:var(--c-paper);border:1px solid var(--c-line);border-radius:var(--rad);padding:7px 13px;cursor:pointer}
+.segbar button:hover{color:var(--c-ink);border-color:var(--c-lead)}
+.segbar button[aria-pressed="true"]{color:var(--c-card);background:var(--c-lead);border-color:var(--c-lead)}
+.segbar button:focus-visible{outline:2px solid var(--c-lead);outline-offset:2px}
+.mxfig{width:100%;height:auto;display:block}
+.mxfig .col{font:700 12px var(--mono);fill:var(--c-dim);text-anchor:middle}
+.mxfig .rowlab{font:700 12.5px var(--mono);fill:var(--c-ink);text-anchor:end}
+.mxfig .cell{fill:var(--c-paper);stroke:var(--c-line);stroke-width:1.2}
+.mxfig .cval{font:600 12.5px var(--mono);fill:var(--c-ink);text-anchor:middle}
+.mxfig .invcell{fill:var(--c-teal-tint);stroke:var(--c-teal)}
+.mxfig .mrow.on .cell{stroke:var(--c-lead);stroke-width:2.4}
+.mxfig .mrow.on .invcell{stroke:var(--c-teal);stroke-width:2.4}
+.js .mxfig .mrow{opacity:.48;transition:opacity .15s}
+.js .mxfig .mrow.on{opacity:1}
+.mxcap{font-family:var(--mono);font-size:12.5px;color:var(--c-dim);margin-top:2px}
+.readout{font-family:var(--mono);font-size:13px;line-height:1.6;color:var(--c-ink);background:var(--c-paper);border-left:3px solid var(--c-lead);border-radius:0 var(--rad) var(--rad) 0;padding:11px 14px;margin-top:14px;min-height:3.4em}
+.readout b{color:var(--c-lead)}
+.readout .g{color:var(--c-teal);font-weight:700}
+
+/* ---------- the module / chapter cards ---------- */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pcard{display:block;background:var(--c-card);border:1px solid var(--c-line);border-radius:var(--rad);padding:18px;color:var(--c-ink)}
+a.pcard{border-color:var(--c-lead)}
+a.pcard:hover{border-bottom-color:var(--c-lead);box-shadow:0 1px 0 var(--c-lead)}
+.pcard .bid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--c-lead);letter-spacing:.08em}
+.pcard h3{font-family:var(--mono);font-size:1rem;line-height:1.4;margin:6px 0 8px}
+.pcard p{font-size:.88rem;color:var(--c-dim)}
+.pcard .meta{display:flex;gap:10px;align-items:center;margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--c-dim)}
+.chip{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:3px;padding:1px 7px}
+.chip.now{background:var(--c-lead);color:var(--c-card)}
+.chip.soon{background:var(--c-paper);border:1px solid var(--c-line);color:var(--c-dim)}
+.booknote{margin-top:18px;font-family:var(--mono);font-size:13px;color:var(--c-dim);max-width:80ch}
+
+/* ---------- doors ---------- */
+.doors{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.door{background:var(--c-card);border:1px solid var(--c-line);border-left:3px solid var(--c-teal);border-radius:var(--rad);padding:18px;color:var(--c-ink)}
+.door:hover{border-bottom-color:transparent;box-shadow:0 1px 0 var(--c-teal)}
+.door .dr{font-family:var(--mono);font-size:12.5px;color:var(--c-teal);font-weight:700}
+.door h3{font-family:var(--mono);font-size:1rem;margin:6px 0 8px}
+.door p{font-size:.88rem;color:var(--c-dim)}
+
+/* ---------- references ---------- */
+.refs{columns:2;column-gap:36px}
+.refs li{break-inside:avoid;margin-bottom:10px;font-size:.92rem}
+.refs .rs{font-family:var(--mono);font-size:12px;color:var(--c-dim);display:block}
+.refs ul{list-style:none}
+.refgrp{font-family:var(--mono);font-size:12.5px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.08em;margin:14px 0 10px}
+
+/* ---------- pager ---------- */
+.pager{display:flex;gap:16px;justify-content:space-between;border-top:1px solid var(--c-line);margin-top:50px;padding:26px 0 8px}
+.pager .pgx{font-family:var(--mono);font-size:13.5px}
+.pager .pgx .pk{display:block;font-size:11.5px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.pager span.pgx{color:var(--c-dim)}
+.pager a.pgx{text-align:right}
+
+/* ---------- footer ---------- */
+.site-foot{margin-top:46px;border-top:1px solid var(--c-line);background:var(--c-card)}
+.foot-nav{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:28px;padding:34px 0 26px}
+.foot-logo{font-family:var(--mono);font-weight:700;color:var(--c-ink);font-size:15px}
+.foot-logo .bdot{color:var(--c-lead)}
+.foot-tag{font-size:.86rem;color:var(--c-dim);margin-top:8px;max-width:38ch}
+.foot-h{font-family:var(--mono);font-size:12px;color:var(--c-dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.foot-links a,.foot-links span{display:block;font-family:var(--mono);font-size:13px;color:var(--c-ink);padding:2px 0}
+.foot-links span{color:var(--c-dim)}
+.foot-links span i{font-style:normal;font-size:10.5px;border:1px solid var(--c-line);border-radius:3px;padding:0 5px;margin-left:7px;letter-spacing:.06em;text-transform:uppercase}
+.foot-bar{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--c-line);padding:14px 0 16px;flex-wrap:wrap}
+.foot-cc{font-family:var(--mono);font-size:12.5px;color:var(--c-dim)}
+.stamp{position:relative;font-family:var(--mono);font-size:12.5px;color:var(--c-dim);cursor:pointer;border:1px dashed var(--c-line);border-radius:var(--rad);padding:5px 11px}
+.stamp .id{color:var(--c-ink);font-weight:700}
+.stamp .id::first-letter{color:var(--c-lead)}
+.stamp:focus-visible{outline:2px solid var(--c-lead);outline-offset:2px}
+.stamp .panel{display:none;position:absolute;right:0;bottom:calc(100% + 8px);background:var(--c-term-bg);color:var(--c-term-fg);border-radius:var(--rad);padding:12px 14px;min-width:300px;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;text-align:left;z-index:5}
+.stamp .panel dt{color:var(--c-term-dim)}
+.stamp.open .panel{display:grid}
+
+/* ---------- frozen transcripts ---------- */
+.frozen{background:var(--c-term-bg);border-radius:var(--rad);overflow:hidden;margin-bottom:18px;border:1px solid #0d1112}
+.frozen figcaption{display:flex;gap:12px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--c-term-dim);padding:9px 14px;border-bottom:1px solid #242b2d}
+.frozen figcaption .tag{margin-left:auto;color:var(--c-term-bg);background:var(--c-term-dim);border-radius:3px;padding:1px 7px;font-weight:700;letter-spacing:.08em}
+.frozen pre{padding:14px 16px;overflow-x:auto;font:13px/1.7 var(--mono);color:var(--c-term-fg)}
+.frozen pre b{color:var(--c-term-ok);font-weight:700}
+.frozen pre .fd{color:var(--c-term-dim)}
+
+/* ---------- dive additions (this page's figures + prose) ---------- */
+.prose p{max-width:74ch;margin:0 0 14px}
+.seglab{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--c-dim);align-self:center;min-width:78px}
+.mxfig .fhead{font:700 12px var(--mono);fill:var(--c-ink);text-anchor:start}
+.mxfig .csm{font:600 10.5px var(--mono);fill:var(--c-dim);text-anchor:middle}
+.mxfig .cse{font:600 10.5px var(--mono);fill:var(--c-dim);text-anchor:end}
+.mxfig .edge{fill:none;stroke:var(--c-line);stroke-width:1.6}
+.mxfig .mrow.on .edge{stroke:var(--c-lead);stroke-width:2.4}
+
+/* ---------- responsive + motion ---------- */
+@media (max-width:880px){
+  .pgrid,.doors{grid-template-columns:1fr 1fr}
+  .foot-nav{grid-template-columns:1fr 1fr}
+}
+@media (max-width:600px){
+  .pgrid,.doors{grid-template-columns:1fr}
+  .refs{columns:1}
+  .foot-nav{grid-template-columns:1fr}
+  .topnav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *{transition:none}
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <span class="brand">jonnify<span class="bdot">&#183;</span>codemojex</span>
+    <span class="route-tag"><span class="rsep">/</span><a href="/codemojex">codemojex</a><span class="rsep">/</span><a href="/codemojex/overview">overview</a><span class="rsep">/</span><span class="rcur">the-engine-and-its-policies</span></span>
+    <nav class="topnav" aria-label="Page sections">
+      <a href="#fork">The fork</a>
+      <a href="#snapshot">The snapshot</a>
+      <a href="#close">The close</a>
+      <a href="#refs">References</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <section class="hero">
+      <p class="kicker">Codemojex &#183; dive C0.2</p>
+      <h1>One engine &#8212; <span class="hns">the modes are policy</span>.</h1>
+      <p class="lede">The Game system is a generic Mastermind engine. A game &#8212; a branded <code>GAM</code> &#8212;
+      carries a <b>type</b> and the four policies the type selects &#8212; <code>feedback</code>, <code>scoring</code>,
+      <code>settlement</code>, <code>economy</code> &#8212; and the secret, the guess, and the distance math are one
+      code path shared by every type. This dive quotes the fork that assigns the four values, follows them onto the
+      game&#8217;s own row, and then shows the close path dispatching on one of them at settlement.</p>
+      <p class="heronote">Set the two inputs the fork receives &#8212; the room&#8217;s <b>type</b> and its <b>golden</b>
+      marker. Four input combinations land on three clauses; the <b>scoring</b> cell never moves.</p>
+
+      <figure class="msel" id="forkfig" aria-labelledby="forkcap">
+        <div class="segbar" role="group" aria-label="The room's type" style="margin-bottom:8px">
+          <span class="seglab">type:</span>
+          <button type="button" data-k="type" data-v="classic" aria-pressed="true">"classic"</button>
+          <button type="button" data-k="type" data-v="golden" aria-pressed="false">"golden"</button>
+        </div>
+        <div class="segbar" role="group" aria-label="The room's golden marker">
+          <span class="seglab">golden:</span>
+          <button type="button" data-k="golden" data-v="false" aria-pressed="true">false</button>
+          <button type="button" data-k="golden" data-v="true" aria-pressed="false">true</button>
+        </div>
+        <svg class="mxfig" viewBox="0 0 880 214" role="img" aria-label="The three clauses of policies_for/2 as rows. Each clause head maps to four policy cells: feedback, scoring, settlement, economy. The teal scoring cell reads linear in every clause.">
+          <text class="col" x="348" y="22">feedback</text>
+          <text class="col" x="498" y="22">scoring</text>
+          <text class="col" x="648" y="22">settlement</text>
+          <text class="col" x="798" y="22">economy</text>
+
+          <g class="mrow" data-clause="golden">
+            <text class="fhead" x="16" y="68">policies_for("golden", _golden)</text>
+            <rect class="cell" x="280" y="40" width="136" height="46" rx="4"></rect><text class="cval" x="348" y="68">none</text>
+            <rect class="cell invcell" x="430" y="40" width="136" height="46" rx="4"></rect><text class="cval" x="498" y="68">linear</text>
+            <rect class="cell" x="580" y="40" width="136" height="46" rx="4"></rect><text class="cval" x="648" y="68">sealed</text>
+            <rect class="cell" x="730" y="40" width="136" height="46" rx="4"></rect><text class="cval" x="798" y="68">winner_take_all</text>
+          </g>
+          <g class="mrow" data-clause="tournament">
+            <text class="fhead" x="16" y="124">policies_for(_classic, true)</text>
+            <rect class="cell" x="280" y="96" width="136" height="46" rx="4"></rect><text class="cval" x="348" y="124">score</text>
+            <rect class="cell invcell" x="430" y="96" width="136" height="46" rx="4"></rect><text class="cval" x="498" y="124">linear</text>
+            <rect class="cell" x="580" y="96" width="136" height="46" rx="4"></rect><text class="cval" x="648" y="124">live_split</text>
+            <rect class="cell" x="730" y="96" width="136" height="46" rx="4"></rect><text class="cval" x="798" y="124">proportional</text>
+          </g>
+          <g class="mrow on" data-clause="ordinary">
+            <text class="fhead" x="16" y="180">policies_for(_classic, _ordinary)</text>
+            <rect class="cell" x="280" y="152" width="136" height="46" rx="4"></rect><text class="cval" x="348" y="180">score</text>
+            <rect class="cell invcell" x="430" y="152" width="136" height="46" rx="4"></rect><text class="cval" x="498" y="180">linear</text>
+            <rect class="cell" x="580" y="152" width="136" height="46" rx="4"></rect><text class="cval" x="648" y="180">live</text>
+            <rect class="cell" x="730" y="152" width="136" height="46" rx="4"></rect><text class="cval" x="798" y="180">winner_take_all</text>
+          </g>
+        </svg>
+        <figcaption class="mxcap" id="forkcap">Four <code>(type, golden)</code> inputs, three clauses &#8212; the first clause&#8217;s
+        <code>_golden</code> wildcard folds two combinations into one. The teal <code>scoring</code> cell reads <code>linear</code> in
+        every clause. Source: <code>Codemojex.Rooms.policies_for/2</code>.</figcaption>
+        <p class="readout" id="forkout" aria-live="polite" style="min-height:6.2em"><b>policies_for("classic", false)</b> matches <code>policies_for(_classic, _ordinary)</code><br>%{feedback: "score", <span class="g">scoring: "linear"</span>, settlement: "live", economy: "winner_take_all"}<br>The third clause is the floor: an ordinary classic game &#8212; live per-guess feedback, winner-take-all pool.</p>
+      </figure>
+    </section>
+
+    <div class="idrule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+    <section id="fork">
+      <div class="sech"><span class="sno">&#167;1</span><h2>The fork, verbatim</h2><span class="ssrc">rooms.ex &#183; policies_for/2</span></div>
+      <p class="lede" style="margin-bottom:22px">Three function clauses assign every policy the engine runs.
+      <code>Codemojex.Rooms.policies_for/2</code> is a pure lookup from <code>(type, golden)</code> to the four policy
+      values &#8212; pattern-matched in clause order, derived in code, never stored on the room.</p>
+
+      <figure class="frozen">
+        <figcaption>lib/codemojex/rooms.ex &#183; the (type, golden)&#8594;policy lookup, with its clause comments<span class="tag">verbatim</span></figcaption>
+        <pre><span class="fd"># The (type, golden)&#8594;policy lookup: the four policies are a pure function of the
+# type and the tournament marker, derived in code and snapshotted onto the game (a
+# game stays self-describing for settlement and replay).
+#
+#   * type "golden"            &#8594; blind/sealed top-K (the commit-reveal mode), any flag;
+#   * type "classic", golden   &#8594; the live top-K tournament (cm.5 R6: live_split /
+#                                proportional &#8212; "proportional" LABELS top_k_split,
+#                                a rank-weighted split, not Economy.proportional/2);
+#   * type "classic", ordinary &#8594; live winner-take-all.</span>
+defp policies_for("golden", _golden),
+  do: %{feedback: "none", <b>scoring: "linear"</b>, settlement: "sealed", economy: "winner_take_all"}
+
+defp policies_for(_classic, true),
+  do: %{feedback: "score", <b>scoring: "linear"</b>, settlement: "live_split", economy: "proportional"}
+
+defp policies_for(_classic, _ordinary),
+  do: %{feedback: "score", <b>scoring: "linear"</b>, settlement: "live", economy: "winner_take_all"}</pre>
+      </figure>
+
+      <div class="prose">
+        <p>Clause order carries the semantics. The first clause matches on the type alone &#8212; the
+        <code>_golden</code> wildcard discards the marker, so <code>type: "golden"</code> reaches the blind, sealed
+        mode whatever the flag reads. The second clause requires the marker: <code>policies_for(_classic, true)</code>
+        is the Golden Room, a live top-K tournament on the classic base. The third clause is the floor &#8212; an
+        ordinary classic game, live feedback and a winner-take-all pool.</p>
+        <p>The comment above the room map in <code>create_room/3</code> pins the distinction: <code>golden: true</code>
+        is a tournament marker, orthogonal to the type &#8212; a Golden Room is <code>type: "classic"</code> and fans
+        out live; the blind mode is reached only by an explicit <code>type: "golden"</code>.</p>
+        <p>One label carries its own gloss. In the second clause, <code>"proportional"</code> labels
+        <code>top_k_split</code> &#8212; a rank-weighted split over the pool &#8212; not
+        <code>Economy.proportional/2</code>, a different function. The fork&#8217;s own comment records this.</p>
+        <p>And one value never moves: <code>scoring: "linear"</code> appears in all three clauses. The distance math
+        &#8212; <code>100 - 20&#183;d</code> per position, summing to 600 for a perfect crack &#8212; is the one path
+        every mode shares. The fork moves only what a guess reveals, when settlement runs, and how the pool pays.</p>
+      </div>
+      <p class="booknote">Grounding &#8212; <code>Codemojex.Rooms.policies_for/2</code> and its clause comments in
+      <code>lib/codemojex/rooms.ex</code>; the frame is the design&#8217;s &#167;The engine &#8212; a generic Mastermind,
+      the modes are policy.</p>
+    </section>
+
+    <section id="snapshot">
+      <div class="sech"><span class="sno">&#167;2</span><h2>Snapshotted onto the game</h2><span class="ssrc">start_game/3 &#183; schemas/game.ex</span></div>
+      <p class="lede" style="margin-bottom:22px">The fork&#8217;s result does not stay in code. When the first player
+      joins a waiting room and opens its game &#8212; the first scenario of <code>rooms-and-games.stories.md</code>
+      &#8212; <code>start_game/3</code> mints the <code>GAM</code> and copies the type and all four policy values onto
+      the game map. In the code&#8217;s own words, a game stays self-describing for settlement and replay.</p>
+
+      <figure class="frozen">
+        <figcaption>lib/codemojex/rooms.ex &#183; start_game/3 &#8212; the policy snapshot (elided)<span class="tag">verbatim</span></figcaption>
+        <pre>defp start_game(room_id, room, player) do
+  case Cache.fetch_set(room.emojiset) do
+    %EmojiSet{} = set -&gt;
+      gid = EchoData.BrandedId.generate!("GAM")
+      now = System.system_time(:millisecond)
+      type = Map.get(room, :type, "classic")
+      golden = Map.get(room, :golden, false)
+      <b>policy = policies_for(type, golden)</b>
+      <span class="fd">&#8230;</span>
+      cell_codes = snapshot_cells(set, Map.get(room, :cell_count))
+      secret = EmojiSet.secret_from(cell_codes)
+
+      game =
+        %{
+          room: room_id,
+          emojiset: set.id,
+          <b>type: type,
+          feedback: policy.feedback,
+          scoring: policy.scoring,
+          settlement: policy.settlement,
+          economy: policy.economy,</b>
+          secret: secret,
+          <span class="fd">&#8230;</span></pre>
+      </figure>
+
+      <div class="prose">
+        <p>The map row lands in one table. <code>Codemojex.Schemas.Game</code> declares <code>schema "games"</code>
+        &#8212; one table for every mode, with the discriminator and the four policies as plain columns:
+        <code>field :type, :string, default: "classic"</code> &#183; <code>field :feedback, :string, default:
+        "score"</code> &#183; <code>field :scoring, :string, default: "linear"</code> &#183; <code>field :settlement,
+        :string, default: "live"</code> &#183; <code>field :economy, :string, default: "winner_take_all"</code>. The
+        schema&#8217;s own comment names the shape: the engine discriminator + the four policies the type selects
+        (snapshotted from the room at start).</p>
+        <p>One table, not a table per type, because in BCS the brand is the type. The 14-byte <code>GAM</code> id is
+        the one value that crosses every boundary &#8212; the Postgres row, the near-cache entry, the bus message, the
+        channel topic. A per-type table would fork that one identity; the discriminator keeps one entity whose
+        behaviour is data.</p>
+        <p>The snapshot also protects a game in flight. The comment beside the golden props reads: Golden Rooms props
+        are snapshotted, so a game in flight is unaffected by a later edit to its room. The split weights carry the
+        same note &#8212; a game settles by the split it was created under.</p>
+      </div>
+      <p class="booknote">Grounding &#8212; <code>start_game/3</code> in <code>lib/codemojex/rooms.ex</code>;
+      <code>schema "games"</code> in <code>lib/codemojex/schemas/game.ex</code>; the scenario &#8220;the first player to
+      join a waiting room opens its game&#8221; in <code>stories/rooms-and-games.stories.md</code>.</p>
+    </section>
+
+    <section id="close">
+      <div class="sech"><span class="sno">&#167;3</span><h2>The close reads the snapshot</h2><span class="ssrc">rooms.ex &#183; do_close/2</span></div>
+      <p class="lede" style="margin-bottom:22px">A close can arrive hours after the start &#8212; on a perfect crack or
+      an expired timer &#8212; and the policy travels with the row. <code>close_game/1</code> takes the exactly-once
+      lock (one <code>SET cm:&lt;game&gt;:closed NX</code> on the wire) and hands the game map to
+      <code>do_close/2</code>, which dispatches on the settlement value alone.</p>
+
+      <figure class="frozen">
+        <figcaption>lib/codemojex/rooms.ex &#183; do_close/2 &#8212; the settlement dispatch<span class="tag">verbatim</span></figcaption>
+        <pre>defp do_close(game, r) do
+  case Map.get(r, :settlement, "live") do
+    <b>"sealed"</b> -&gt; close_sealed(game, r)
+    <b>"live_split"</b> -&gt; close_split(game, r)
+    <b>_</b> -&gt; close_live(game, r)
+  end
+end</pre>
+      </figure>
+
+      <p class="heronote">Pick the settlement value the game snapshotted at start &#8212; or the absent case &#8212;
+      and follow the branch it selects.</p>
+
+      <figure class="msel" id="closefig" aria-labelledby="closecap">
+        <div class="segbar" role="group" aria-label="The game's snapshotted settlement value">
+          <span class="seglab">settlement:</span>
+          <button type="button" data-v="live" aria-pressed="true">"live"</button>
+          <button type="button" data-v="live_split" aria-pressed="false">"live_split"</button>
+          <button type="button" data-v="sealed" aria-pressed="false">"sealed"</button>
+          <button type="button" data-v="absent" aria-pressed="false">absent</button>
+        </div>
+        <svg class="mxfig" viewBox="0 0 880 240" role="img" aria-label="do_close dispatching on the settlement value: sealed reaches close_sealed, live_split reaches close_split, anything else reaches close_live.">
+          <rect class="cell invcell" x="16" y="88" width="252" height="68" rx="4"></rect>
+          <text class="cval" x="142" y="116">do_close(game, r)</text>
+          <text class="csm" x="142" y="138">case Map.get(r, :settlement, "live")</text>
+
+          <g class="mrow" data-s="sealed">
+            <path class="edge" d="M268 112 C 400 112, 440 42, 600 42"></path>
+            <text class="cse" x="592" y="34">"sealed" -&gt;</text>
+            <rect class="cell" x="600" y="16" width="220" height="52" rx="4"></rect>
+            <text class="cval" x="710" y="46">close_sealed(game, r)</text>
+          </g>
+          <g class="mrow" data-s="live_split">
+            <path class="edge" d="M268 122 C 400 122, 440 120, 600 120"></path>
+            <text class="cse" x="592" y="112">"live_split" -&gt;</text>
+            <rect class="cell" x="600" y="94" width="220" height="52" rx="4"></rect>
+            <text class="cval" x="710" y="124">close_split(game, r)</text>
+          </g>
+          <g class="mrow on" data-s="live">
+            <path class="edge" d="M268 132 C 400 132, 440 198, 600 198"></path>
+            <text class="cse" x="592" y="190">_ -&gt;</text>
+            <rect class="cell" x="600" y="172" width="220" height="52" rx="4"></rect>
+            <text class="cval" x="710" y="202">close_live(game, r)</text>
+          </g>
+        </svg>
+        <figcaption class="mxcap" id="closecap">The policy value chosen at start &#8212; not a conditional on the type
+        at close &#8212; selects the payout path. <code>Map.get(r, :settlement, "live")</code> reads the game&#8217;s
+        own snapshot; a map without the key closes live.</figcaption>
+        <p class="readout" id="closeout" aria-live="polite" style="min-height:5.6em"><b>"live"</b> &#8594; <code>close_live/2</code>. <code>Board.top(game, 10)</code> ranks the board; <code>Economy.winner_take_all(pool, board)</code> pays the whole <span class="g">pool</span> to the max-score player; <code>Wallet.deposit_prize</code> books the diamonds; the room returns to waiting.</p>
+      </figure>
+
+      <div class="prose">
+        <p>All three branches end the same way: the game is written back settled and the room returns to waiting for
+        its next game. The difference is the pay. <code>close_live</code> ranks the board and pays the whole pool to
+        the max-score player through <code>Economy.winner_take_all</code>. <code>close_split</code> reads the board
+        wide enough to cover every member, drains the pool to the top-K by the split weights through
+        <code>Economy.top_k_split</code>, and grants every other member <code>div(score, 10)</code> consolation clips
+        in one <code>Wallet.distribute_pool</code> transaction &#8212; no reveal phase. <code>close_sealed</code> first
+        exposes the secret and nonce (status <code>:revealing</code>), then pays the top-K and broadcasts one fat
+        <code>revealed</code> event carrying the secret, the nonce, the commitment, the final board, and the
+        payouts.</p>
+        <p>The dispatch reads <code>r</code> &#8212; the game&#8217;s own map &#8212; not the room. The policy value
+        chosen at start selects the behaviour at close. The three closes in depth are C4&#8217;s territory:
+        <a href="/codemojex/scoring-and-settlement">Scoring and Settlement</a>.</p>
+      </div>
+      <p class="booknote">Grounding &#8212; <code>do_close/2</code>, <code>close_live/2</code>, <code>close_split/2</code>,
+      <code>close_sealed/2</code> in <code>lib/codemojex/rooms.ex</code>.</p>
+    </section>
+
+    <section id="new-mode">
+      <div class="sech"><span class="sno">&#167;4</span><h2>What a new mode costs</h2><span class="ssrc">design &#183; &#167;The engine</span></div>
+      <div class="prose">
+        <p class="lede" style="max-width:62ch;margin-bottom:14px">The design&#8217;s claim, and the shipped history
+        behind it: a radical variant is a new set of policy values on the same entities, not new code.</p>
+        <p>The Golden Room tournament arrived exactly this way (cm.5) &#8212; a third settlement value,
+        <code>live_split</code>, with its economy label <code>proportional</code>, on the same <code>GAM</code>, the
+        same <code>games</code> table, the same linear scoring, the same secret path. No new table, no new branded
+        namespace, no second engine.</p>
+        <p>Four <code>(type, golden)</code> combinations land on three clauses today; a new mode is a new clause
+        returning a new map of the same four keys. Modes thread the course rather than owning a chapter: the secret
+        and its commitment are <a href="/codemojex/rooms-and-modes">C2</a>, the three closes in depth are
+        <a href="/codemojex/scoring-and-settlement">C4</a>, the buy-in-funded pool is
+        <a href="/codemojex/the-economy">C5</a>.</p>
+      </div>
+    </section>
+
+    <section id="refs">
+      <div class="sech"><span class="sno">&#167;5</span><h2>References</h2><span class="ssrc">sources &#183; related</span></div>
+      <div class="refs">
+        <p class="refgrp">Sources</p>
+        <ul>
+          <li><a href="https://en.wikipedia.org/wiki/Mastermind_(board_game)" rel="noopener">Mastermind &#8212; <em>the board game</em></a><span class="rs">the family the engine generalizes: a code space and a feedback function; everything else is policy.</span></li>
+          <li><a href="https://ics.uci.edu/~cs223/papers/cidr07p15.pdf" rel="noopener">Helland &#8212; <em>Life Beyond Distributed Transactions</em></a><span class="rs">entities behind boundaries: one identity crossing every tier, the discipline behind the one games table.</span></li>
+          <li><a href="https://arxiv.org/abs/1607.04597" rel="noopener">arXiv 1607.04597 &#8212; <em>the feedback function and minimax code-breaking</em></a><span class="rs">the deductive structure the linear distance scoring sits in.</span></li>
+        </ul>
+        <p class="refgrp">Related</p>
+        <ul>
+          <li><a href="/codemojex/overview">C0 &#8212; <em>Overview</em></a><span class="rs">the chapter this dive belongs to; the mode selector it deepens.</span></li>
+          <li><a href="/codemojex/overview/the-game-and-the-family">C0.1 &#8212; <em>The game and the family</em></a><span class="rs">the family and the feedback function.</span></li>
+          <li><a href="/codemojex/overview/the-architecture-at-a-glance">C0.3 &#8212; <em>The architecture at a glance</em></a><span class="rs">the four layers the engine sits in.</span></li>
+          <li><a href="/codemojex/scoring-and-settlement">C4 &#8212; <em>Scoring and Settlement</em></a><span class="rs">the three closes in depth.</span></li>
+          <li><a href="/bcs">BCS &#8212; <em>the architecture law</em></a><span class="rs">the identity law: the brand is the type.</span></li>
+        </ul>
+      </div>
+    </section>
+
+    <nav class="pager" aria-label="Course pager">
+      <a class="pgx" href="/codemojex/overview/the-game-and-the-family"><span class="pk">prev</span>&#8592; C0.1 &#183; The game and the family</a>
+      <a class="pgx" href="/codemojex/overview/the-architecture-at-a-glance"><span class="pk">next</span>C0.3 &#183; The architecture at a glance &#8594;</a>
+    </nav>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <nav class="foot-nav" aria-label="Codemojex — course navigation">
+      <div class="foot-brand">
+        <span class="foot-logo">jonnify<span class="bdot">&#183;</span>codemojex</span>
+        <p class="foot-tag">Codemojex &#8212; the real-money emoji Mastermind on the Branded Component System, taught on the running code.</p>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">Chapters</p>
+        <a href="/codemojex">Start &#183; the landing</a>
+        <a href="/codemojex/overview">C0 &#183; Overview</a>
+        <a href="/codemojex/branded-systems">C1 &#183; The Game as Branded Systems</a>
+        <a href="/codemojex/rooms-and-modes">C2 &#183; Rooms, Modes, and the Secret</a>
+        <a href="/codemojex/guesses-on-fair-lanes">C3 &#183; Guesses on Fair Lanes</a>
+        <a href="/codemojex/scoring-and-settlement">C4 &#183; Scoring and Settlement</a>
+        <a href="/codemojex/the-economy">C5 &#183; The Economy and the Bank</a>
+        <a href="/codemojex/commerce">C6 &#183; The Revenue Ledger and the KeyShop</a>
+        <a href="/codemojex/the-live-surface">C7 &#183; The Live Surface on Phoenix</a>
+        <a href="/codemojex/production">C8 &#183; Production Deployment</a>
+      </div>
+      <div class="foot-links">
+        <p class="foot-h">The courses</p>
+        <a href="/codemojex">Codemojex &#8212; this course</a>
+        <a href="/bcs">BCS &#8212; the architecture law</a>
+        <a href="/echomq">EchoMQ &#8212; the protocol</a>
+        <a href="/redis-patterns">Redis Patterns Applied</a>
+        <a href="/mesh">EchoMesh, In Depth</a>
+      </div>
+    </nav>
+    <div class="foot-bar">
+      <p class="foot-cc">&copy; jonnify</p>
+      <div class="stamp" id="stamp" role="button" tabindex="0" aria-expanded="false" aria-label="Build stamp — activate to decode">
+        build <span class="id" id="stampId">CMX0OSPBCH11HP</span>
+        <dl class="panel">
+          <dt>namespace</dt><dd id="st-ns">&mdash;</dd>
+          <dt>snowflake</dt><dd id="st-snow">&mdash;</dd>
+          <dt>node</dt><dd id="st-node">&mdash;</dd>
+          <dt>seq</dt><dd id="st-seq">&mdash;</dd>
+          <dt>timestamp</dt><dd id="st-ts">&mdash;</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+  var HEADS = {
+    golden: 'policies_for("golden", _golden)',
+    tournament: 'policies_for(_classic, true)',
+    ordinary: 'policies_for(_classic, _ordinary)'
+  };
+  var MAPS = {
+    golden: '%{feedback: "none", <span class="g">scoring: "linear"</span>, settlement: "sealed", economy: "winner_take_all"}',
+    tournament: '%{feedback: "score", <span class="g">scoring: "linear"</span>, settlement: "live_split", economy: "proportional"}',
+    ordinary: '%{feedback: "score", <span class="g">scoring: "linear"</span>, settlement: "live", economy: "winner_take_all"}'
+  };
+  var NOTES = {
+    golden_true: 'Still the first clause &#8212; the _golden wildcard discards the marker, so the flag changes nothing here. The blind mode is reached only by the explicit type.',
+    golden_false: 'The first clause matches on the type alone &#8212; the _golden wildcard discards the marker. Blind: no per-guess signal; the reveal and the sealed top-K split arrive at close.',
+    tournament: 'The second clause requires the marker: the Golden Room, a live top-K tournament on the classic base. "proportional" labels the rank-weighted top_k_split.',
+    ordinary: 'The third clause is the floor: an ordinary classic game &#8212; live per-guess feedback, winner-take-all pool.'
+  };
+  var REP = { golden: ["golden", "false"], tournament: ["classic", "true"], ordinary: ["classic", "false"] };
+  var cur = { type: "classic", golden: "false" };
+  var fig = document.getElementById('forkfig');
+  if (!fig) return;
+  var buttons = Array.prototype.slice.call(fig.querySelectorAll('.segbar button[data-k]'));
+  var rows = Array.prototype.slice.call(fig.querySelectorAll('.mxfig .mrow'));
+  var out = document.getElementById('forkout');
+  function clauseFor(type, golden) {
+    if (type === "golden") return "golden";
+    return golden === "true" ? "tournament" : "ordinary";
+  }
+  function render() {
+    var c = clauseFor(cur.type, cur.golden);
+    buttons.forEach(function (b) {
+      b.setAttribute('aria-pressed', cur[b.getAttribute('data-k')] === b.getAttribute('data-v') ? 'true' : 'false');
+    });
+    rows.forEach(function (r) { r.classList.toggle('on', r.getAttribute('data-clause') === c); });
+    var note = c === "golden" ? NOTES[cur.golden === "true" ? 'golden_true' : 'golden_false'] : NOTES[c];
+    if (out) out.innerHTML = '<b>policies_for("' + cur.type + '", ' + cur.golden + ')</b> matches <code>' + HEADS[c] + '</code><br>' + MAPS[c] + '<br>' + note;
+  }
+  buttons.forEach(function (b) {
+    function pick() { cur[b.getAttribute('data-k')] = b.getAttribute('data-v'); render(); }
+    b.addEventListener('click', pick);
+    b.addEventListener('mouseenter', pick);
+  });
+  rows.forEach(function (r) {
+    function pick() {
+      var rep = REP[r.getAttribute('data-clause')];
+      if (!rep) return;
+      cur.type = rep[0];
+      cur.golden = rep[1];
+      render();
+    }
+    r.addEventListener('click', pick);
+    r.addEventListener('mouseenter', pick);
+  });
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+  var READ = {
+    live: '<b>"live"</b> &#8594; <code>close_live/2</code>. <code>Board.top(game, 10)</code> ranks the board; <code>Economy.winner_take_all(pool, board)</code> pays the whole <span class="g">pool</span> to the max-score player; <code>Wallet.deposit_prize</code> books the diamonds; the room returns to waiting.',
+    live_split: '<b>"live_split"</b> &#8594; <code>close_split/2</code>. The board is read wide enough to cover every member; <code>Economy.top_k_split(pool, board, split)</code> drains the whole <span class="g">pool</span> to the top-K by the split weights; every other member takes <code>div(score, 10)</code> consolation clips; <code>Wallet.distribute_pool</code> books it in one transaction. No reveal phase.',
+    sealed: '<b>"sealed"</b> &#8594; <code>close_sealed/2</code>. The game enters <code>:revealing</code> &#8212; the secret and nonce are exposed; <code>Board.top(game, top_k)</code> ranks; <code>Economy.top_k_split</code> pays the top-K; one fat <code>revealed</code> event carries the secret, nonce, commitment, board, and payouts.',
+    absent: '<b>settlement absent</b> &#8594; <code>Map.get(r, :settlement, "live")</code> returns the default <code>"live"</code>, and the wildcard arm <code>_</code> runs <code>close_live/2</code> &#8212; a game map without the key closes live.'
+  };
+  var fig = document.getElementById('closefig');
+  if (!fig) return;
+  var buttons = Array.prototype.slice.call(fig.querySelectorAll('.segbar button[data-v]'));
+  var rows = Array.prototype.slice.call(fig.querySelectorAll('.mxfig .mrow'));
+  var out = document.getElementById('closeout');
+  function branchFor(v) {
+    if (v === "sealed") return "sealed";
+    if (v === "live_split") return "live_split";
+    return "live";
+  }
+  function select(v) {
+    var b = branchFor(v === "absent" ? "live" : v);
+    buttons.forEach(function (x) { x.setAttribute('aria-pressed', x.getAttribute('data-v') === v ? 'true' : 'false'); });
+    rows.forEach(function (r) { r.classList.toggle('on', r.getAttribute('data-s') === b); });
+    if (out) out.innerHTML = READ[v];
+  }
+  buttons.forEach(function (b) {
+    var v = b.getAttribute('data-v');
+    b.addEventListener('click', function () { select(v); });
+    b.addEventListener('mouseenter', function () { select(v); });
+  });
+  rows.forEach(function (r) {
+    var v = r.getAttribute('data-s');
+    function pick() { select(v); }
+    r.addEventListener('click', pick);
+    r.addEventListener('mouseenter', pick);
+  });
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+  document.documentElement.classList.add('js');
+  var B62="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", EPOCH=1704067200000n;
+  function b62(s){var n=0n;for(var i=0;i<s.length;i++){var d=B62.indexOf(s.charAt(i));if(d<0)return null;n=n*62n+BigInt(d);}return n;}
+  function p2(x){return (x<10?'0':'')+x;}
+  function dec(id){if(!id||id.length!==14)return null;var ns=id.slice(0,3),s=b62(id.slice(3));if(s===null)return null;var ts=s>>22n,nd=(s>>12n)&0x3FFn,sq=s&0xFFFn,d=new Date(Number(ts)+Number(EPOCH));return {ns:ns,snow:s.toString(),node:nd.toString(),seq:sq.toString(),ts:d.getUTCFullYear()+'-'+p2(d.getUTCMonth()+1)+'-'+p2(d.getUTCDate())+' '+p2(d.getUTCHours())+':'+p2(d.getUTCMinutes())+':'+p2(d.getUTCSeconds())+' UTC'};}
+  var stamp=document.getElementById('stamp'), idEl=document.getElementById('stampId');
+  if(stamp&&idEl){var info=dec(idEl.textContent.trim());if(info){var put=function(s,t){var e=document.getElementById(s);if(e)e.textContent=t;};put('st-ns',info.ns);put('st-snow',info.snow);put('st-node',info.node);put('st-seq',info.seq);put('st-ts',info.ts);}
+    var tog=function(){var o=stamp.classList.toggle('open');stamp.setAttribute('aria-expanded',o?'true':'false');};
+    stamp.addEventListener('click',tog);stamp.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();tog();}});}
+})();
+</script>
+
+</body>
+</html>
