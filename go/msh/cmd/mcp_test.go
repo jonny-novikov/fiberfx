@@ -229,3 +229,52 @@ func TestSpecsToolOverStreamableHTTP(t *testing.T) {
 		t.Errorf("specs should skip external URLs, but flagged one as a target:\n%s", out)
 	}
 }
+
+// TestToolCountPin pins the MCP tool surface at exactly these 8 tools, so a
+// tool addition or loss is a visible test diff, never a drift — a later rung
+// that registers a tool moves this pin in the same change (additive-minor).
+func TestToolCountPin(t *testing.T) {
+	srv := buildMCPServer(testCorpusRoot(t))
+	ts := httptest.NewServer(mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return srv }, nil))
+	defer ts.Close()
+
+	ctx := context.Background()
+	client := mcp.NewClient(&mcp.Implementation{Name: "msh-test", Version: "test"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: ts.URL}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer session.Close(ctx)
+
+	lt, err := session.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	want := map[string]bool{
+		"memory_scan":    true,
+		"memory_graph":   true,
+		"memory_stale":   true,
+		"memory_audit":   true,
+		"memory_project": true,
+		"mint":           true,
+		"specs":          true,
+		"history_search": true,
+	}
+	if len(lt.Tools) != len(want) {
+		names := make([]string, 0, len(lt.Tools))
+		for _, tl := range lt.Tools {
+			names = append(names, tl.Name)
+		}
+		t.Errorf("tool count pin: want exactly %d, got %d: %v", len(want), len(lt.Tools), names)
+	}
+	for _, tl := range lt.Tools {
+		if !want[tl.Name] {
+			t.Errorf("unpinned tool %q registered", tl.Name)
+		}
+		delete(want, tl.Name)
+	}
+	for name := range want {
+		t.Errorf("pinned tool %q not registered", name)
+	}
+}

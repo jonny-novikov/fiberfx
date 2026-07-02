@@ -29,18 +29,20 @@ type Project struct {
 	State   ProjectState `json:"state,omitempty"`
 }
 
-// MemoryConfig is the parsed .msh-memory.json: the corpus root plus the active
-// project context. Source is the path it was loaded from (excluded from JSON).
+// MemoryConfig is the parsed .msh-memory.json: the corpus root, the optional
+// docs tree (schema v1.1), plus the active project context. Source is the path
+// it was loaded from (excluded from JSON).
 type MemoryConfig struct {
-	Root    string  `json:"root,omitempty"`
-	Project Project `json:"project,omitempty"`
+	Root     string  `json:"root,omitempty"`
+	DocsRoot string  `json:"docs_root,omitempty"`
+	Project  Project `json:"project,omitempty"`
 
 	Source string `json:"-"`
 }
 
 // LoadMemoryConfig walks up from startDir (cwd when "") looking for
 // .msh-memory.json and parses it. Returns (nil, nil) when none is found. A
-// relative `root` is resolved against the file's own directory.
+// relative `root` or `docs_root` is resolved against the file's own directory.
 func LoadMemoryConfig(startDir string) (*MemoryConfig, error) {
 	dir := startDir
 	if dir == "" {
@@ -60,6 +62,9 @@ func LoadMemoryConfig(startDir string) (*MemoryConfig, error) {
 			mc.Source = path
 			if mc.Root != "" && !filepath.IsAbs(mc.Root) {
 				mc.Root = filepath.Join(dir, mc.Root)
+			}
+			if mc.DocsRoot != "" && !filepath.IsAbs(mc.DocsRoot) {
+				mc.DocsRoot = filepath.Join(dir, mc.DocsRoot)
 			}
 			return &mc, nil
 		}
@@ -94,6 +99,7 @@ func renderProject(mc *MemoryConfig, format string) (string, error) {
 		fmt.Fprintf(&b, "rung:    %s\n", orDash(mc.Project.State.CurrentRung))
 		fmt.Fprintf(&b, "roadmap: %s\n", orDash(mc.Project.Roadmap))
 		fmt.Fprintf(&b, "root:    %s\n", orDash(mc.Root))
+		fmt.Fprintf(&b, "docs:    %s\n", orDash(mc.DocsRoot))
 		fmt.Fprintf(&b, "config:  %s\n", orDash(mc.Source))
 		return b.String(), nil
 	case "json":
@@ -121,8 +127,8 @@ func newProjectCmd(cfg *rootConfig) *cobra.Command {
 	var format string
 	cmd := &cobra.Command{
 		Use:          "project",
-		Short:        "Show the active project context from .msh-memory.json (name/code/roadmap/rung/root).",
-		Long:         "Reads the nearest .msh-memory.json (walk-up from cwd) and prints the active program's name, code, roadmap, status, current rung, and the resolved corpus root.",
+		Short:        "Show the active project context from .msh-memory.json (name/code/roadmap/rung/root/docs_root).",
+		Long:         "Reads the nearest .msh-memory.json (walk-up from cwd) and prints the active program's name, code, roadmap, status, current rung, the resolved corpus root, and the optional docs_root (anchor v1.1).",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(_ *cobra.Command, _ []string) error {

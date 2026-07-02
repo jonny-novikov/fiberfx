@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/jonny-novikov/msh/memory/internal/config"
 )
 
 type rootConfig struct {
@@ -55,7 +57,7 @@ func newRootCmd(cfg rootConfig) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&flags.LogLevel, "log-level", "info", "Log level: debug|info|warn|error")
 	cmd.PersistentFlags().StringVar(&flags.LogFormat, "log-format", "text", "Log format: json|text")
 	cmd.PersistentFlags().StringVar(&flags.Root, "root", "", "Memory root path (default: walk-up from cwd looking for MEMORY.md)")
-	cmd.PersistentFlags().StringVar(&flags.Config, "config", "", "Path to msh.memory.yaml (default: <root>/msh.memory.yaml or <root>/.msh-memory.yaml)")
+	cmd.PersistentFlags().StringVar(&flags.Config, "config", "", "Path to .msh-memory.yaml (default: <root>/.msh-memory.yaml)")
 
 	cmd.AddCommand(newScanCmd(&cfg, flags))
 	cmd.AddCommand(newGraphCmd(&cfg, flags))
@@ -84,7 +86,7 @@ func New(use, short string, stdout, stderr io.Writer) *cobra.Command {
 
 // ResolveRoot exposes the memory-root resolution used by the CLI: an explicit
 // path if given, otherwise a walk-up from the cwd looking for a memory marker
-// (MEMORY.md / msh.memory.yaml). Hosts use it to seed the MCP server's root.
+// (MEMORY.md / .msh-memory.yaml). Hosts use it to seed the MCP server's root.
 func ResolveRoot(explicit string) (string, error) {
 	return resolveRoot(explicit)
 }
@@ -164,11 +166,10 @@ func hasMemoryMarker(dir string) bool {
 	if _, err := os.Stat(filepath.Join(dir, "MEMORY.md")); err == nil {
 		return true
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".msh.memory.yaml")); err == nil {
-		return true
-	}
-	if _, err := os.Stat(filepath.Join(dir, "msh.memory.yaml")); err == nil {
-		return true
+	for _, name := range config.MarkerNames() {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return true
+		}
 	}
 	return false
 }

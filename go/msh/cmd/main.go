@@ -184,11 +184,11 @@ func buildMCPServer(root string) *mcp.Server {
 type (
 	auditArgs struct {
 		Root   string `json:"root,omitempty" jsonschema:"override the memory root for this call"`
-		Config string `json:"config,omitempty" jsonschema:"path to msh.memory.yaml (default: <root>/msh.memory.yaml)"`
+		Config string `json:"config,omitempty" jsonschema:"path to .msh-memory.yaml (default: <root>/.msh-memory.yaml)"`
 	}
 	staleArgs struct {
 		Root     string `json:"root,omitempty" jsonschema:"override the memory root for this call"`
-		Config   string `json:"config,omitempty" jsonschema:"path to msh.memory.yaml"`
+		Config   string `json:"config,omitempty" jsonschema:"path to .msh-memory.yaml"`
 		Rules    string `json:"rules,omitempty" jsonschema:"comma-separated rule names, or 'all' (default)"`
 		Severity string `json:"severity,omitempty" jsonschema:"minimum severity: error | warn (default) | info"`
 		Format   string `json:"format,omitempty" jsonschema:"ndjson (default) | pretty"`
@@ -257,7 +257,7 @@ func registerMemoryTools(s *mcp.Server, root string) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "memory_project",
-		Description: "Return the active project context from .msh-memory.json: name, code, roadmap, status, current_rung, and the resolved memory root — orients an agent to what is being developed.",
+		Description: "Return the active project context from .msh-memory.json: name, code, roadmap, status, current_rung, the resolved memory root, and the optional docs_root (anchor v1.1) — orients an agent to what is being developed.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in projectArgs) (*mcp.CallToolResult, any, error) {
 		out, err := command.ProjectInfo(in.Format)
 		if err != nil {

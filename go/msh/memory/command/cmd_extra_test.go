@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +58,110 @@ func TestGraphFormatInvalid(t *testing.T) {
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error for unknown graph format")
 	}
+}
+
+func TestHasMemoryMarkerNames(t *testing.T) {
+	// The probe set is {MEMORY.md} ∪ the shared config-marker list (msh2.1 §3):
+	// the canonical spelling plus the legacy deprecation window.
+	cases := []struct {
+		file string
+		want bool
+	}{
+		{"MEMORY.md", true},
+		{".msh-memory.yaml", true},
+		{"msh-memory.yaml", true},
+		{".msh.memory.yaml", true},
+		{"msh.memory.yaml", true},
+		{"unrelated.yaml", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.file, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte("x"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got := hasMemoryMarker(dir); got != tc.want {
+				t.Errorf("hasMemoryMarker(dir with %s) = %v, want %v", tc.file, got, tc.want)
+			}
+		})
+	}
+	if hasMemoryMarker(t.TempDir()) {
+		t.Error("hasMemoryMarker(empty dir) = true, want false")
+	}
+}
+
+func TestResolveRootAnchorFromNestedDir(t *testing.T) {
+	// Regression: the anchor still wins from a nested cwd — resolution order
+	// unchanged (--root → anchor → marker walk-up → typed error).
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "mem"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(root, "a", "b", "c")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".msh-memory.json"), []byte(`{"root":"mem"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(nested)
+	got, err := resolveRoot("")
+	if err != nil {
+		t.Fatalf("resolveRoot: %v", err)
+	}
+	if want := filepath.Join(root, "mem"); !samePath(t, got, want) {
+		t.Errorf("resolved root = %q want %q", got, want)
+	}
+}
+
+func TestResolveRootCanonicalMarkerFromNestedDir(t *testing.T) {
+	// A directory holding only .msh-memory.yaml is a root marker, found by the
+	// walk-up from three levels below.
+	root := t.TempDir()
+	nested := filepath.Join(root, "x", "y", "z")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".msh-memory.yaml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(nested)
+	got, err := resolveRoot("")
+	if err != nil {
+		t.Fatalf("resolveRoot: %v", err)
+	}
+	if !samePath(t, got, root) {
+		t.Errorf("resolved root = %q want %q", got, root)
+	}
+}
+
+func TestResolveRootNoMarkerTypedError(t *testing.T) {
+	// No anchor and no marker anywhere up the tree → the typed usage error,
+	// unchanged.
+	t.Chdir(t.TempDir())
+	_, err := resolveRoot("")
+	if err == nil {
+		t.Fatal("expected the typed usage error, got nil")
+	}
+	var ee *exitError
+	if !errors.As(err, &ee) || ee.code != exitUsage {
+		t.Errorf("expected an exitUsage exitError, got %v", err)
+	}
+}
+
+// samePath compares two paths after resolving symlinks — macOS t.TempDir
+// returns /var/... while os.Getwd canonicalizes to /private/var/....
+func samePath(t *testing.T, a, b string) bool {
+	t.Helper()
+	ra, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		t.Fatalf("eval %q: %v", a, err)
+	}
+	rb, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		t.Fatalf("eval %q: %v", b, err)
+	}
+	return ra == rb
 }
 
 func TestGraphOutToFile(t *testing.T) {

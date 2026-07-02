@@ -55,3 +55,15 @@ RULED: Operator, 2026-07-02 (gate round 2; the staged arm). v1 packs carry origi
 ### D-12 — F8 ruled: M4 is server-data-first
 
 RULED: Operator, 2026-07-02 (gate round 2). The single aaw routing authority is SERVED: aaw grows routing/formation query tools (additive fold toward the specced mcp7 set, selftest tool-count re-pinned), sequenced tools-then-docs; docs/aaw is then rewritten short and mcp-tools-forward as pointers to the served table; the exit gate is measurable — the restatement census reaches one. The steward arm's priced sweep survives inside the movement: the five ship skills + the CLAUDE.md pointers are swept to cite the one authority, and the two byte-identical mcp progress files + the stranded D-7/D-8 x-mode corrections are folded in the docs rung. M4 stays roadmap text only in this run (D-1); the go/aaw + docs/aaw fences are re-ruled at M4-open. CHOSEN-AGAINST: docs-first with the server untouched (its One-authority objection is answered by making the served table THE authority and the docs its pointers).
+
+## {msh-genesis-learnings} Learnings
+
+### L-1 — msh2.1 craft findings (recorded at the Director gate)
+
+(1) PRE-EXISTING gofmt debt, untouched by the rung, named per do-no-harm: memory/internal/linkx/extractor_test.go · memory/internal/stale/context.go · memory/internal/stale/rules.go fail `gofmt -l` from HEAD — a separate scoped concern for the Operator, never folded into a rung commit. (2) UNTRACKED pre-existing feature files in the island: go/msh/cmd/history.go + history_test.go (history_search, shipped 2026-06-30) have never been committed — a blanket `git add go/msh` would silently sweep another concern into the rung commit; the rung pathspec must name its exact files. (3) The new walk-up tests use t.Chdir (Go ≥1.24; module go 1.25.0) — fine here, a floor to remember when touching toolchains. (4) The 0.36s full-audit baseline (lens A measurement) stands recorded for the msh2.4 latency gate.
+
+## {msh-genesis-complete} Complete
+
+### Z-1 — msh-genesis complete: the program founded + msh2.1 shipped
+
+M0: docs/msh founded (grounding pack → lens pair A/B → synthesis → rulings D-1..D-12 → design + roadmap + references + progress + program manual + specs README; docs/go/msh superseded by banner) — committed 18c34942 + 7cd4af54; `msh specs msh` clean. msh2.1: anchor integrity built by Mars-1 to the Venus-A triad — ONE shared marker list (canonical `.msh-memory.yaml`, 3 legacy spellings silent-windowed, old literals grep-proven gone from the call sites), anchor v1.1 additive `docs_root` resolved inside LoadMemoryConfig, docstrings synced, tool count pinned at 8; gates: build/vet green, 77 fresh test runs 0 fail, gofmt clean on touched files, Director 3-probe (live nested walk-up · legacy-marker root resolution · docs_root round-trip) green, mcpd hot-swap live (msh pid 70076), MCP-transport memory_project smoke green. The rung commit follows this entry (LAW-4).

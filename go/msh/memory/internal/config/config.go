@@ -30,6 +30,20 @@ type SimilarityConfig struct {
 	DefaultTopK      int     `yaml:"default_top_k"`
 }
 
+// MarkerNames is the single authority for the config-marker filenames:
+// canonical first, then the legacy spellings kept resolving through a silent
+// deprecation window, in the fixed resolution order (first hit wins). Both the
+// root-marker walk-up probe and Resolve consume this list — nowhere else may
+// spell these names.
+func MarkerNames() []string {
+	return []string{
+		".msh-memory.yaml",
+		"msh-memory.yaml",
+		".msh.memory.yaml",
+		"msh.memory.yaml",
+	}
+}
+
 func Resolve(explicitPath, root string) (*Config, string, error) {
 	if explicitPath != "" {
 		cfg, err := loadFile(explicitPath)
@@ -38,11 +52,8 @@ func Resolve(explicitPath, root string) (*Config, string, error) {
 		}
 		return cfg, explicitPath, nil
 	}
-	candidates := []string{
-		filepath.Join(root, "msh-memory.yaml"),
-		filepath.Join(root, ".msh-memory.yaml"),
-	}
-	for _, c := range candidates {
+	for _, name := range MarkerNames() {
+		c := filepath.Join(root, name)
 		cfg, err := loadFile(c)
 		if err == nil {
 			return cfg, c, nil
