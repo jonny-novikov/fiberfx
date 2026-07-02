@@ -1,6 +1,7 @@
 ---
 name: courses-memory
 description: "Memory index for course writing html/[elixir,redis-patterns,echomq,bcs,art,mesh]"
+project: courses
 metadata: 
   node_type: memory
   type: project

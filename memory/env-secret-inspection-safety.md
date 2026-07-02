@@ -1,6 +1,7 @@
 ---
 name: env-secret-inspection-safety
 description: How to inspect/transform .env secret files WITHOUT leaking values into the transcript — key-only listing + file→file transforms (leaked twice before this rule)
+project: aaw
 metadata: 
   node_type: memory
   type: feedback

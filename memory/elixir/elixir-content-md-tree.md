@@ -1,6 +1,7 @@
 ---
 name: elixir-content-md-tree
 description: docs/elixir/content/ is a per-route markdown source-of-record for all 204 /elixir pages; how it was built and must be regenerated
+project: elixir
 metadata: 
   node_type: memory
   type: project

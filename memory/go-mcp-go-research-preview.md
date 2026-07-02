@@ -1,6 +1,7 @@
 ---
 name: go-mcp-go-research-preview
 description: "go/mcp-go = the Research Preview of the OFFICIAL MCP Go SDK (NOT mark3labs/mcp-go); first-party fork, FREE TO MODIFY (Operator D-5); aaw+msh consume it via replace ../mcp-go."
+project: go
 metadata:
   node_type: memory
   type: reference

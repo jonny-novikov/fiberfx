@@ -1,6 +1,7 @@
 ---
 name: echo-static-server
 description: "go/echo-static = a SECOND in-VCS Echo v5 server that serves the repo html/ tree RAW byte-for-byte (parity), distinct from echo-courses' catalog rebuild; serves the new /echo-persistence course; port :1330"
+project: echo-courses
 metadata: 
   node_type: memory
   type: project

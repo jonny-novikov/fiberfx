@@ -1,6 +1,7 @@
 ---
 name: user-commits-elixir-batches
 description: "The user commits elixir course work himself, out-of-band, batch by batch — so the working tree goes clean unexpectedly"
+project: elixir
 metadata: 
   node_type: memory
   type: feedback

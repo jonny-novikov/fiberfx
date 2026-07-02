@@ -1,6 +1,7 @@
 ---
 name: spawn-resilience-effective-messaging
 description: "Agent-tool subagents die to ECONNRESET on long read-heavy single-shot runs (the main loop survives; files written survive, the final report is lost) — the fix is the write-ready dispatch: pre-ground the brief, short waves, write-first/heartbeat, recover-from-tree. Calibrated into x.md §5 LAW-1b + the venus/mars/apollo charters + mercury-ship; Apollo mentors it forward."
+project: aaw
 metadata:
   node_type: memory
   type: feedback

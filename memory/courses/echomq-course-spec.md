@@ -1,6 +1,7 @@
 ---
 name: echomq-course-spec
 description: "/echomq course = 'EchoMQ, In Depth' — 2026-06-15 RE-PIVOT to ONE shipped system, THREE PILLARS (Queue/Bus/Cache) + Overview/Protocol/Proof, Elixir-canonical, as-shipped (NO versions), [RECONCILE] md shadow, persistent [chapter].prompt.md fan-out; infra rewritten (echo-mq-writer / echo-mq-expert / echo-mq-reconcile); Overview+Protocol+QUEUE SHIPPED = 45/91 pages ([RECONCILE]=0 on the Queue), now built via the new shell-assembler tool docs/echo_mq/course/tool/build_page.py; NEXT = Bus/Cache/Proof; the old E0–E8 two-movements model is RETIRED (read the top banner; the rest is build history)"
+project: courses
 metadata: 
   node_type: memory
   type: project

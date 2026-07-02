@@ -1,6 +1,7 @@
 ---
 name: fsharp-course
 description: "/fsharp \"F# In Depth\" — C0+C1+C2+C4 COMPLETE; C3 for-elixir 3/9; C4 Algorithms 12/12 (every dive an EchoMQ-in-F# block grounded in the NEW echo_fs port); C0–C5 (50 mods); dark-editorial+violet; /fsharp-write + fsharp-expert; resume = C3.04–09 then C5 DevOps (ibbs)"
+project: courses
 metadata: 
   node_type: memory
   type: project

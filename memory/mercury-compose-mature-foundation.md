@@ -1,6 +1,7 @@
 ---
 name: mercury-compose-mature-foundation
 description: "Mercury component imports must COMPOSE its mature owned foundation (core formatters + internal/date-time machinery + reusable composables), not port the bundle prototype's throwaway logic — and frame forks on the maturity/reuse axis"
+project: mercury
 metadata: 
   node_type: memory
   type: feedback

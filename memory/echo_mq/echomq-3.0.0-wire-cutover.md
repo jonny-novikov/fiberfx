@@ -1,6 +1,7 @@
 ---
 name: echomq-3-0-0-wire-cutover
 description: "echomq:3.0.0 wire bump + codemojex PROD deploy on echo-valkey — DEPLOYED 2026-06-26; codemojex→echo-valkey wiring (per-client inet6 tuple); prod-build gotchas (no :kernel compile config · Dockerfile COPY must mirror mix.exs deps · umbrella releases: block); fly-valkey.sh"
+project: echo_mq
 metadata:
   node_type: memory
   type: project

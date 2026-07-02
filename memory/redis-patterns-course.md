@@ -1,6 +1,7 @@
 ---
 name: redis-patterns-course
 description: "/redis-patterns course — spec system + staged build; R0+R1+R2 COMPLETE; EchoMQ grounding = iconic Elixir echo/apps/echomq + door to the real /echomq course (never Go-port-as-EchoMQ / 'built next')"
+project: courses
 metadata: 
   node_type: memory
   type: project

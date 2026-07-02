@@ -1,6 +1,7 @@
 ---
 name: codemojex-telegram-bot-and-grouped-enqueue
 description: "codemojex Telegram bot wiring (webhook vs polling, @codemoji_bot) + the echo_mq grouped-enqueue contract a consumer MUST use (Lanes.enqueue branded-group + JOB id; plain Jobs.enqueue/schedule is NOT claimed by the grouped consumer) — the notification/command layer was broken against the live bus until fixed"
+project: echo_mq
 metadata: 
   node_type: memory
   type: project

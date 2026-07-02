@@ -1,6 +1,7 @@
 ---
 name: apollo-mentoring-loop
 description: "Apollo's expanded role in the echo/Portal F6 loop — .operator.md writer + Venus/Mars mentor; the propose-only channel + aim-by-peer rule"
+project: aaw
 metadata: 
   node_type: memory
   type: project

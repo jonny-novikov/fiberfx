@@ -1,6 +1,7 @@
 ---
 name: aaw-mcp-server-ladder
 description: "go/aaw MCP server build ladder (docs/aaw/mcp): MCP1 single-writer store SHIPPED 7972859f; tiered-formation calibration (settled/standard/full); mcp2 next = standard tier; live server runs pre-rung binary until Operator restart"
+project: aaw
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: echo-store-rename
 description: "echo_cache → echo_store rename (2026-06-18, code-complete): app :echo_store v2.0.0, modules EchoStore.*; keyspace UNCHANGED (ecc:, no ecs:); EchoCache.Shadow RETIRED; new EchoStore.Graft.* CubDB/Tigris engine; decision doc docs/echo_mq/store/design/store.design.md; docs/echo_mq reconciled link-clean (msh specs → 0) + rename-complete; course docs + some memory notes still say echo_cache pending their own reconciles"
+project: echo_mq
 metadata: 
   node_type: memory
   type: project

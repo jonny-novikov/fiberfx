@@ -1,6 +1,7 @@
 ---
 name: ewr-wire-program
 description: "EchoWire client-core (docs/echo_mq/wire/, prefix ewr.) — valkey-go client ported onto the owned wire, additive; MOVEMENT I SHIPPED+committed (ewr.1.1 Pipe · 1.2 Cmd/Command builder · 1.3 Result classifier); NEXT RUN = wire it onto the Codemoji Game as the first consumer"
+project: echo_mq
 metadata: 
   node_type: memory
   type: project

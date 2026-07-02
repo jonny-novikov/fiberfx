@@ -1,6 +1,7 @@
 ---
 name: ewr-bench-roadmap
 description: "The bench-derived EchoMQ wire-version ladder (docs/echo_mq/wire/ewr4.roadmap.md, Rungs 1-6 → echomq:2.5.0..3.0.0) — DISTINCT from the ewr.1.x EchoWire client-core; client floor + native expiry SHIPPED Solo; the SHIP-SUBSTANCE-ADDITIVELY-DEFER-THE-CUTOVER pattern (the antidote to the fence-pollution saga)"
+project: echo_mq
 metadata: 
   node_type: memory
   type: project

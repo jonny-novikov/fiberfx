@@ -1,6 +1,7 @@
 ---
 name: mcp-e2e-figure-validator
 description: mcp/e2e = headless Playwright validator for static-figure display flaws (SVG label-overflow / edge-overlap / text-outside-viewBox) — how to run + its one caveat
+project: courses
 metadata: 
   node_type: memory
   type: reference

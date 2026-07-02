@@ -1,6 +1,7 @@
 ---
 name: echo-courses-program
 description: go/echo-courses = new Echo v5 server rebuilding the jonnify.fly.dev/courses site from a catalog; Echo vendored at go/echo via replace (GOWORK=off); ec.1–ec.6 COMPLETE (ec.6 docs-only cutover runbook; production cutover Operator-pending)
+project: echo-courses
 metadata: 
   node_type: memory
   type: project

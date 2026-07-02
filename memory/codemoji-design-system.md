@@ -1,6 +1,7 @@
 ---
 name: codemoji-design-system
 description: "node/codemoji-design is now a Storybook design system (accent orange/blue/green + gold theming) emitting Tailwind v4 tokens; app import documented, not yet wired; design-system SPECS live in docs/codemojex-tma/design/ (cmd.* ladder)"
+project: codemojex
 metadata: 
   node_type: memory
   type: project

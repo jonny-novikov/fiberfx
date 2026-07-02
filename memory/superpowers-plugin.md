@@ -1,6 +1,7 @@
 ---
 name: superpowers-plugin
 description: obra/superpowers skills plugin enabled at PROJECT scope for jonnify; integration doc + the conflicts where CLAUDE.md wins
+project: aaw
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: codemojex-admin-program
 description: "codemojex admin = a Fastify operator-API control plane (@codemojex/admin, mercury/codemojex/apps/admin) — NOT a Mercury frontend; spec chapter docs/codemojex/specs/admin authored to aaw.specs-approach.md; admin.1 = the gated read foundation (bearer ADMIN_TOKEN)"
+project: codemojex
 metadata: 
   node_type: memory
   type: project

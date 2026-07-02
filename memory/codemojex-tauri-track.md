@@ -1,6 +1,7 @@
 ---
 name: codemojex-tauri-track
 description: codemojex Tauri desktop-shell track (cmt.N) — native shell wrapping the Phoenix game; ships /cm-ship; cmt.1–3 + cmt.4.1 shipped; Classic-first re-sequence (cmt.4.2 BoardScreen next, golden→cmt.5); hot-loading HMR entry landed
+project: codemojex
 metadata: 
   node_type: memory
   type: project

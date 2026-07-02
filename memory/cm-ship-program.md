@@ -1,6 +1,7 @@
 ---
 name: cm-ship-program
 description: "/cm-ship = AAW-light ship harness for mercury-side codemojex-node (mercury/codemojex/, the @codemojex/* Node/TS workspace); Mirror-Mercury team (cm-program floor + venus-cm/mars-cm + cm-backend capability); scope-negotiated boundary + lazy-loaded capability router; DISTINCT from /codemojex-ship (echo/ Elixir engine, cm.N)"
+project: codemojex
 metadata: 
   node_type: memory
   type: project

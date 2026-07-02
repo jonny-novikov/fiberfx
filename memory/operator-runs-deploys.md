@@ -1,6 +1,7 @@
 ---
 name: operator-runs-deploys
 description: "NEVER run `fly deploy` (or any deploy) — the Operator always runs deploys themselves; ask/hand off"
+project: aaw
 metadata: 
   node_type: memory
   type: feedback

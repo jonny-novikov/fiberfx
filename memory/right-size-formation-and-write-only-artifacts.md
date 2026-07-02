@@ -1,6 +1,7 @@
 ---
 name: right-size-formation-and-write-only-artifacts
 description: "Process economy (Operator-demanded) — right-size the lead-team to the change (Director triages at bootstrap; trivial → 1 builder, not the full team), and treat generated build artifacts as WRITE-ONLY (never Read/grep-lines/git-diff a bundle); CANONICALIZED on-disk for all AAW agents at docs/AAW_DEVELOPMENT.md (the pragmatic-delivery charter)"
+project: aaw
 metadata: 
   node_type: memory
   type: feedback

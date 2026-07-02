@@ -1,6 +1,7 @@
 ---
 name: aaw-mcp-server-v2
 description: "aaw MCP server v2: design pair CANON (D-11), 8-rung ladder mcp1-mcp8 (mcp1+mcp2 SHIPPED, mcp3 BUILD-GRADE, mcp4 specced, mcp5 PROMOTED to Reconcile tool; D-13 TRIAD LAW; resume=mcp3 build), ledger RENAMED aaw.mcp.progress.md w/ slug-symlink shim (D-14 cutover seam), dashboard specs/mcp.progress.md, corrections D-7/D-8/D-10/D-11/D-13/D-14"
+project: aaw
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: course-nav-prose-no-redundant-status
 description: "In /elixir nav prose don't announce completion/status (\"chapter is complete\", \"all built\", \"every chapter is live\") — the module cards' pills already show it"
+project: elixir
 metadata: 
   node_type: memory
   type: feedback

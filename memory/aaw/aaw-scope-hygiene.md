@@ -1,6 +1,7 @@
 ---
 name: aaw-scope-hygiene
 description: "How to remove stale teams/scopes from aaw's .aaw/scopes.json — there is NO delete tool; the sanctioned path is an out-of-band file edit (read-through index), stale = the scope's own ledger file is gone"
+project: aaw
 metadata: 
   node_type: memory
   type: project

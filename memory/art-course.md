@@ -1,6 +1,7 @@
 ---
 name: art-course
 description: "The /art \"The Art of BCS\" course — infra reframed to CAP-restructured TOC (A9=EchoMesh in Depth); A0+A1 built (8 pages, A+); senior continuation of /bcs"
+project: echo
 metadata: 
   node_type: memory
   type: project

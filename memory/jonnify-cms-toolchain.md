@@ -1,6 +1,7 @@
 ---
 name: jonnify-cms-toolchain
 description: The Go Cobra content toolchain (apps/jonnify-cms) that audits/gates the /elixir course; not in CLAUDE.md
+project: elixir
 metadata: 
   node_type: memory
   type: project

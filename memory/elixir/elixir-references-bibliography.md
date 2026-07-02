@@ -1,6 +1,7 @@
 ---
 name: elixir-references-bibliography
 description: "How the /elixir per-module reference bibliography is generated (REFS dict -> kb md -> page insert), the stale-source bug class the cms gates can't catch, and the deterministic repair pattern"
+project: elixir
 metadata:
   node_type: memory
   type: project

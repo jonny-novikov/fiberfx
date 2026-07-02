@@ -1,6 +1,7 @@
 ---
 name: bcs-family-tooling
 description: The bcs-* cross-course calibration family (bcs-writer skill + /bcs-reconcile + /bcs-author + guide) that re-grounds /redis-patterns and /echomq in the new docs/echo/bcs/bcs.N.md manuscript
+project: echo
 metadata: 
   node_type: memory
   type: project

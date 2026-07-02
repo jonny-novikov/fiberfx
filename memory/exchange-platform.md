@@ -1,6 +1,7 @@
 ---
 name: exchange-platform
 description: "The Exchange Platform — the REAL-code implementation of the BCS B8 trading capstone, in echo/apps/exchange (Exchange.* modules); specced under docs/exchange/ (RENAMED from docs/trading/ 2026-06-13, system docs exchange*.md, rung quads keep the `trd` codename); built rung-by-rung via the trd.1–8 ladder through x-mode Flat-L2; trd.1.1 (the Gateway MVP) + trd.2.1 (the pure matching core — Exchange.OrderBook + Exchange.Decider) SHIPPED; TRD.9 (investex — the BEAM-native Tinkoff Invest client, echo/apps/investex, full parity 10 services/72 RPCs) chapter quad SPECCED (0aab3766); TRD.9.1 (the transport spine) SHIPPED a107586a via x-mode Flat-L2 + Apollo (HIGH risk; Apollo BLOCKED a false-green G6, remediated 1 loop, re-verified BUILD-GRADE); next TRD.9.2 (the read services) OR TRD.2.2 (the Book)"
+project: exchange
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: codemojex-livereact-render
 description: "codemojex three-tier render (LiveView lobby + edge React board) shipped; /lobby redirect = auth gate not a bug; dev gotchas (.env not auto-loaded, check_origin, bot token); node/codemojex-e2e Playwright harness"
+project: codemojex
 metadata: 
   node_type: memory
   type: project

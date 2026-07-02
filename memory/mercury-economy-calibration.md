@@ -1,6 +1,7 @@
 ---
 name: mercury-economy-calibration
 description: mercury/codemojex-node/apps/economy = Vite/React/Effector revenue-model calibration console (port 5180); the model formula + the workspace build gotchas
+project: mercury
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: jonnify-gitignore-repo-wide-trap
 description: jonnify root .gitignore has BARE unanchored rules — `.gitignore` (~line 180) AND `bin/` (line 56) — each ignoring that name repo-wide; nested files of those names work locally but never commit. Verify w/ git check-ignore; fix via a ROOT negation
+project: aaw
 metadata:
   node_type: memory
   type: project

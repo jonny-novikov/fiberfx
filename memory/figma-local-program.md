@@ -1,6 +1,7 @@
 ---
 name: figma-local-program
 description: "figma-local MCP enhancement program — design ruled (docs/figma-local), deploys on the Windows Figma machine NOT the Mac; toolkit node/codemoji-design"
+project: figma-local
 metadata: 
   node_type: memory
   type: project

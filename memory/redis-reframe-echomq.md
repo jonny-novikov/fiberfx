@@ -1,6 +1,7 @@
 ---
 name: redis-reframe-echomq
 description: "The /redis-patterns course REFRAME: re-prefixed rungs (specs/reframe-echomq/) → BCS contract-sheet identity (redis-red), grounded in the REAL echo/apps code (echo_mq/echo_store/echo_wire) with **codemojex** (echo/apps/codemojex — a Telegram emoji-guessing game) the worked consumer (was Exchange Platform; re-homed 2026-06-23 when echo/apps/exchange was deleted + echo_cache→echo_store renamed), ZERO BullMQ, Valkey-only, no .out files. B0/R0 fully reconciled (10pp) + the 4 meta-files + the contract reground + a NEW one-shot /redis-reconcile command (B<N>→R<N>); B1/R1 caching (29pp) + B2/R2 coordination (22pp) RECONCILED (all PASS A+); B2 lesson = the v1-vs-v2 trap (echo/apps/echomq FROZEN v1 + a deleted Go port were cited as grounding — real-but-wrong, scrub LockManager|EchoMQ.Keys|Scripts|moveToActive|cluster.go to 0); resume = /redis-reconcile B3 (R3 queues)"
+project: courses
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: director-attribution-in-entangled-tree
 description: "FEEDBACK — in the entangled jonnify tree, `git diff` vs HEAD shows the NET delta from ALL concurrent sources, not the spawned builder's edits; attribute against the builder's pre-spawn baseline"
+project: aaw
 metadata: 
   node_type: memory
   type: feedback

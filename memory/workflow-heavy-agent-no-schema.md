@@ -1,6 +1,7 @@
 ---
 name: workflow-heavy-agent-no-schema
 description: "a long-running edit/build Workflow agent given a large required-field schema can finish WITHOUT calling StructuredOutput → the whole workflow aborts; give edit-heavy agents no schema (prose), reserve small schemas for short read-only passes; the build survives in the tree so recover by resuming from the next stage"
+project: aaw
 metadata: 
   node_type: memory
   type: feedback

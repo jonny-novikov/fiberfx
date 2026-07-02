@@ -1,6 +1,7 @@
 ---
 name: echomq-umbrella-app
 description: "apps/echomq is REMOVED — its surface was rewritten fresh into echo_mq under the v2 laws, then deleted. Tombstone of the former 5th umbrella app."
+project: echo_mq
 metadata:
   node_type: memory
   type: project

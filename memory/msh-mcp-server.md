@@ -1,6 +1,7 @@
 ---
 name: msh-mcp-server
 description: "go/msh = the self-contained 'msh' Go module: CLI (memory/mint/specs/history) + MCP server serving mcp__msh__{memory_audit,memory_stale,memory_graph,memory_scan,memory_project,mint,specs,history_search} over streamable-HTTP :8899 (registered in .mcp.json); specs=stale-md-link checker over a docs tree; history_search=newest-first Operator-request finder over ~/.claude/projects/<slug> session transcripts; .msh-memory.json is the project anchor (root + project context, auto-resolved); FORWARD program = docs/msh (msh2.N ladder)"
+project: msh
 metadata: 
   node_type: memory
   type: project

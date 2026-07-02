@@ -1,6 +1,7 @@
 ---
 name: codemojex-tma-edge
 description: "codemojex-tma edge front-end (@codemojex/edge React game island + vendored Phoenix client) — its layout, test infra, and the non-obvious TS/bundle gotchas"
+project: codemojex
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: msh-program
 description: "docs/msh = the FORWARD msh program (hot-context engine + prompt builder for Claude agents over memory/ + docs/ + transcripts): genesis FOUNDED + msh2.1 SHIPPED 2026-07-02 (commits 18c34942 genesis · 7cd4af54 supersede banners · ff504aee msh2.1); rulings D-1..D-12 on the msh-genesis ledger; ladder msh2.2..msh2.10 (M1 substrate · M2 engine · M3 docs joins · M4 aaw authority); NEXT = msh2.2 frontmatter v2 + fenced backfill"
+project: msh
 metadata:
   node_type: memory
   type: project

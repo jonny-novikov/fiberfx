@@ -1,6 +1,7 @@
 ---
 name: bcs-course
 description: "The /bcs \"Branded Component System\" course — spec system at docs/echo/bcs/, OWN contract-sheet identity (not dark-editorial), BCS stamp namespace, full-links-PASS rule; B0+B1+B2 BUILT; B3 (landing+B3.1–B3.3, 13pp), B4 (landing+B4.1–B4.4, 17pp; B4.5 BLOCKED), B8 (landing+B8.1, 5pp — CAPSTONE grounded in docs/exchange/ DESIGN corpus (renamed from docs/trading 2026-06-13; trd.1.1 Gateway now REAL code — see [[exchange-platform]]), PROPOSED, two-layer grounding BCS.8-INV2) all IN PROGRESS; content-map=bcs.content-map.md; resume = /bcs-write trading log-and-ledger strategies OR bus fair-lanes"
+project: echo
 metadata: 
   node_type: memory
   type: project

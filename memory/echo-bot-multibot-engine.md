@@ -1,6 +1,7 @@
 ---
 name: echo-bot-multibot-engine
 description: F10/bot chapter reframed — echo_bot is a standalone first-party multibot engine in the echo umbrella
+project: echo
 metadata: 
   node_type: memory
   type: project

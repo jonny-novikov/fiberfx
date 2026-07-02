@@ -1,6 +1,7 @@
 ---
 name: mcpd-controller
 description: "go/mcpd = the Go cobra+bubbletea controller for the aaw+msh MCP servers (bin/, start/stop/restart, make mcp, safe hot-swap)"
+project: mcpd
 metadata: 
   node_type: memory
   type: project

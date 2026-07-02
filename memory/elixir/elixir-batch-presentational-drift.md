@@ -1,6 +1,7 @@
 ---
 name: elixir-batch-presentational-drift
 description: "Newly-built elixir module batches diverge from the established page template in gate-invisible presentational ways (breadcrumb route-tag, tile/card clickability, status pills) — audit each new batch against a known-good sibling"
+project: elixir
 metadata: 
   node_type: memory
   type: project

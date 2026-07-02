@@ -1,6 +1,7 @@
 ---
 name: echo-graft-fork
 description: "echo_graft = from-scratch Rust durability tier seeded from Graft (NO upstream compat); work tree echo/apps/echo_graft, reference github.local/graft (idea source only); eg.1 carve + eg.2 remote-fence + eg.3 branded-id/change-feed SHIPPED; eg.4 SHIPPED (echo_graft_backend + byte-frozen echo_graft_proto + EchoStore.GraftBackend coexist peer; compositional proof, Operator D-7=A); eg.5 SHIPPED 2026-06-22 (low-latency write tier + the FIRST live Rust↔Valkey binding, Apollo BUILD-GRADE, HIGH) — Fjall group-commit buffer + per-call async/sync + live echo_graft_backend on Valkey :6390 (crit-7 3/0) + UF-1 cap wired + UF-2 not_found closed; native EchoStore.Graft.* untouched (COEXIST); program calibrated v3.0 = Topology router (L2 Duo/Trio/Squad); eg.6 next (cross-compile+CI+per-workload shootout)"
+project: echo_graft
 metadata: 
   node_type: memory
   type: project

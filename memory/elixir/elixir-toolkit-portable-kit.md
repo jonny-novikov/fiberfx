@@ -1,6 +1,7 @@
 ---
 name: elixir-toolkit-portable-kit
 description: "docs/elixir/toolkit/ is a PORTABLE re-upload authoring kit (zip→fresh Claude session), NOT the live course; its content/ fragments + build_page.py manifest drift from live and are re-synced deterministically FROM the live pages"
+project: elixir
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: aaw-memory
 description: "aaw MCP server | memory index"
+project: aaw
 metadata: 
   node_type: memory
   type: project

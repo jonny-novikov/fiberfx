@@ -1,6 +1,7 @@
 ---
 name: echo-mq-stories-generator
 description: echo_mq BDD self-documenting tests → mix echo_mq.stories generates docs/echo_mq/stories/ feature catalogue
+project: echo_mq
 metadata: 
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: aaw-mcp-design-phase
 description: aaw MCP server v2 Design Phase COMPLETE 2026-06-11 — design+roadmap pair awaiting Operator approval; formation locks D-7/D-8; build entry = MCP-1
+project: aaw
 metadata: 
   node_type: memory
   type: project

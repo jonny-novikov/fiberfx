@@ -1,6 +1,7 @@
 ---
 name: cms-content-store-parity
 description: "jonnify-cms gained a SQLite (modernc, CGO-free) content-store page builder + Go byte-parity test proving it recomposes the 204 published /elixir pages byte-identically; overrides spec 90's progress-only SQLite scope"
+project: elixir
 metadata: 
   node_type: memory
   type: project

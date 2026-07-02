@@ -1,6 +1,7 @@
 ---
 name: elixir-course-update-pipeline
 description: How an elixir-progress.md change drives a course update — the monitor (watcher) + update (workflow) split and the exact run sequence
+project: elixir
 metadata: 
   node_type: memory
   type: project

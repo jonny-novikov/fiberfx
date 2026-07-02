@@ -1,6 +1,7 @@
 ---
 name: agile-course-canonical-route
 description: /course/agile-agent-workflow route + the 3-level A<chapter>.<module>.<subpage> structure (chapter→module→subpage, ≥3 subpages, "dives into" like elixir); home page is the route manifest
+project: courses
 metadata:
   node_type: memory
   originSessionId: 73b81fc7-ffef-4d6d-ac38-349cafb4dda9

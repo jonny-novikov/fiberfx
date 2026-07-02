@@ -1,6 +1,7 @@
 ---
 name: elixir-content-fanout-drift
 description: "Content-authoring fan-out agents reliably invent/redefine the established Portal API even when told 'reuse exactly'; the cms gates can't catch it; the 3-part guard that does"
+project: elixir
 metadata:
   node_type: memory
   type: feedback

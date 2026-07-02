@@ -1,6 +1,7 @@
 ---
 name: go-workspace-active-dev
 description: "go/ = the local agent OS in active dev: aaw (task-mgmt :8905, aligned to docs/aaw/aaw.framework.md) + msh (memory :8899, 7 tools) toward fully-fledged; go/go.work over the agent-infra 4; specs at docs/go/."
+project: go
 metadata:
   node_type: memory
   type: project

@@ -1,6 +1,7 @@
 ---
 name: reorg-link-rebase-verification
 description: "Craft lesson on verifying relative-link re-bases after a docs folder reorg — a \"0 broken\" claim is only as good as the checker's coverage"
+project: echo_mq
 metadata: 
   node_type: memory
   type: feedback

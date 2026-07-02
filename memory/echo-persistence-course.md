@@ -1,6 +1,7 @@
 ---
 name: echo-persistence-course
 description: "/echo-persistence course = raw-served html/ + docs/ mirror, NO authoring skill (/bcs-author doesn't cover it); author natively by copying an existing module's design system"
+project: courses
 metadata: 
   node_type: memory
   type: reference

@@ -1,6 +1,7 @@
 ---
 name: director-commits-every-rung
 description: "As Director, commit the rung's files every rung — a rung is not done until committed (standing Operator ask; overrides the \"commit only when asked\" default for rung work); commit SOLO with NO Co-Authored-By trailer"
+project: aaw
 metadata: 
   node_type: memory
   type: feedback

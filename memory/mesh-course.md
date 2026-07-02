@@ -1,6 +1,7 @@
 ---
 name: mesh-course
 description: "The /mesh \"EchoMesh, In Depth\" course — mesh-* toolkit (agent/skill/command) + .htabs hover-tab component + M0–M8 built (37 pages A+, COMPLETE); senior successor to /art's EchoMesh chapters"
+project: echo
 metadata: 
   node_type: memory
   type: project

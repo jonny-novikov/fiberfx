@@ -1,6 +1,7 @@
 ---
 name: elixir-hero-svg-fanout
 description: "Reusable workflow that adds an interactive concept hero SVG to each module hub of an elixir chapter, per-chapter accent, build→adversarial-verify"
+project: elixir
 metadata: 
   node_type: memory
   type: project
