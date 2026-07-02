@@ -5,7 +5,7 @@ Connect Claude Code on a Mac to the Figma MCP bridge running on the Windows host
 ## Topology
 
 ```
-Mac (Claude Code)           Windows PC (192.168.3.120)
+Mac (Claude Code)           Windows PC (192.168.1.120)
 ┌────────────────┐          ┌──────────────────────────┐
 │ figma-local    │  HTTP    │ bridge-server.js         │
 │   mcp.js       │ ───────► │   :3001 (HTTP API)       │
@@ -32,7 +32,7 @@ The Mac only talks to the bridge's HTTP API on `:3001`. The Figma Desktop plugin
 ## 1. Verify reachability from the Mac
 
 ```bash
-curl http://192.168.3.120:3001/health
+curl http://192.168.1.120:3001/health
 # expect: {"status":"ok","connected":true,"hasDocument":true}
 ```
 
@@ -51,7 +51,7 @@ pnpm install
 If you don't have a git remote, `scp` is enough:
 
 ```bash
-scp -r <pc-user>@192.168.3.120:/c/dev/figma-mcp/{mcp.js,package.json,pnpm-lock.yaml} ~/figma-mcp/
+scp -r <pc-user>@192.168.1.120:/c/dev/figma-mcp/{mcp.js,package.json,pnpm-lock.yaml} ~/figma-mcp/
 cd ~/figma-mcp && pnpm install
 ```
 
@@ -59,7 +59,7 @@ cd ~/figma-mcp && pnpm install
 
 ```bash
 claude mcp add -s user figma-local \
-  -e FIGMA_BRIDGE_URL=http://192.168.3.120:3001 \
+  -e FIGMA_BRIDGE_URL=http://192.168.1.120:3001 \
   -- node ~/figma-mcp/mcp.js
 ```
 
@@ -108,5 +108,5 @@ Remove-NetFirewallRule -DisplayName 'Figma MCP Bridge (HTTP 3001)'
 | `curl` from Mac times out | Firewall rule missing or Mac not in `192.168.3.0/24` | Verify rule with `Get-NetFirewallRule -DisplayName 'Figma MCP Bridge*'`; check Mac IP with `ipconfig getifaddr en0` |
 | `curl` returns `"connected":false` | Plugin not running in Figma | In Figma: Plugins → Development → Figma MCP Bridge |
 | MCP shows `Failed to connect` in `claude mcp list` | Node/path/permissions | Run `node ~/figma-mcp/mcp.js` directly — it should exit cleanly (stdio closes) |
-| Tool calls hang | Bridge process died | `curl http://192.168.3.120:3001/health` from PC; restart `pnpm bridge` |
-| Wrong `BRIDGE_URL` baked in | Env var not picked up | Re-add the MCP: `claude mcp remove figma-local && claude mcp add -s user figma-local -e FIGMA_BRIDGE_URL=http://192.168.3.120:3001 -- node ~/figma-mcp/mcp.js` |
+| Tool calls hang | Bridge process died | `curl http://192.168.1.120:3001/health` from PC; restart `pnpm bridge` |
+| Wrong `BRIDGE_URL` baked in | Env var not picked up | Re-add the MCP: `claude mcp remove figma-local && claude mcp add -s user figma-local -e FIGMA_BRIDGE_URL=http://192.168.1.120:3001 -- node ~/figma-mcp/mcp.js` |

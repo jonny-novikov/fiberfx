@@ -26,7 +26,7 @@
 Three processes, two machines, one live document:
 
 ```
-[Mac]                              [Windows — 192.168.3.120]
+[Mac]                              [Windows — 192.168.1.120]
 mcp.js  ──HTTP POST /request──▶  bridge-server.js  ──WS :3000──▶  ui.html  ──postMessage──▶  code.js
 (stdio MCP server,                (:3001 HTTP / :3000 WS,           (plugin iframe,            (plugin main thread,
  12 tools, this repo) ◀─{result}─  pure relay, 30 s timeout,         holds the socket)          the figma.* API)

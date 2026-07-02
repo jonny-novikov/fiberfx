@@ -9,7 +9,7 @@ The two halves are independent installs that meet over the LAN:
 
 | Machine | Runs | Install §|
 |---|---|---|
-| **Windows** (`192.168.3.120`) | `bridge-server.js` + the Figma plugin (`code.js` / `ui.html`) | [§A](#a-windows-the-bridge--the-plugin) |
+| **Windows** (`192.168.1.120`) | `bridge-server.js` + the Figma plugin (`code.js` / `ui.html`) | [§A](#a-windows-the-bridge--the-plugin) |
 | **Mac** (this repo) | `mcp.js` (the stdio MCP) + `figure.js` | [§B](#b-mac-the-mcp-client) |
 
 > **Windows checkout path.** This guide uses `C:\dev\jonnify\mcp\figma-mcp` (the canon
@@ -101,7 +101,7 @@ For a **standalone** Mac (no full repo), copy the client set and install:
 
 ```bash
 mkdir -p ~/figma-mcp
-scp <win-user>@192.168.3.120:/c/dev/jonnify/mcp/figma-mcp/{mcp.js,figure.js,package.json,pnpm-lock.yaml} ~/figma-mcp/
+scp <win-user>@192.168.1.120:/c/dev/jonnify/mcp/figma-mcp/{mcp.js,figure.js,package.json,pnpm-lock.yaml} ~/figma-mcp/
 cd ~/figma-mcp && pnpm install
 ```
 
@@ -112,7 +112,7 @@ cd ~/figma-mcp && pnpm install
 
 ```bash
 claude mcp add -s user figma-local \
-  -e FIGMA_BRIDGE_URL=http://192.168.3.120:3001 \
+  -e FIGMA_BRIDGE_URL=http://192.168.1.120:3001 \
   -- node /Users/jonny/dev/jonnify/mcp/figma-mcp/mcp.js
 ```
 
@@ -132,7 +132,7 @@ Open a **new** Claude Code session for the tools to load.
 From the Mac, with the bridge up and the plugin running in Figma:
 
 ```bash
-curl http://192.168.3.120:3001/health
+curl http://192.168.1.120:3001/health
 # expect: {"status":"ok","connected":true,"hasDocument":true,"backedActions":[ … ]}
 ```
 

@@ -54,7 +54,7 @@ There is **no CI** on the deploy box, so verification is manual and the handshak
 
 1. **Reachability** — `[MAC]` or `[WIN]`:
    ```bash
-   curl http://192.168.3.120:3001/health
+   curl http://192.168.1.120:3001/health
    # {"status":"ok","connected":true,"hasDocument":true,"backedActions":[ … ]}
    ```
 2. **Handshake** — from a Claude session: `check-bridge-status` →

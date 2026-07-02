@@ -5,7 +5,7 @@
 > Codemoji design from Figma. Do **not** use them for any other jonnify work.
 >
 > **What it is.** A local stdio MCP → an unauthenticated LAN bridge on the Windows Figma machine
-> (`FIGMA_BRIDGE_URL`, default `http://192.168.3.120:3001`) → the live Figma desktop session. No API
+> (`FIGMA_BRIDGE_URL`, default `http://192.168.1.120:3001`) → the live Figma desktop session. No API
 > key; it reads whatever is open in Figma. **Install / change / ship it:** [`figma-local/`](figma-local/)
 > (setup · update · deploy). **Design canon:** the repo-root [`docs/figma-local/`](../../docs/figma-local/).
 

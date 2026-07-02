@@ -37,7 +37,7 @@ Three processes, two transports, one live document:
 
 - Request/response is correlated by a monotonic `requestId`; the bridge times out at **30s**.
 - The plugin **main thread cannot open sockets** — `ui.html` holds the WebSocket and shuttles frames via `postMessage` (reconnects every 3s on close).
-- `FIGMA_BRIDGE_URL` (default `http://192.168.3.120:3001`) is set in the MCP registration (`~/.claude.json`, server `figma-local`). The Mac reaches the Windows box over the LAN; **no auth** (a standing Operator-accepted risk — figl seam S-1).
+- `FIGMA_BRIDGE_URL` (default `http://192.168.1.120:3001`) is set in the MCP registration (`~/.claude.json`, server `figma-local`). The Mac reaches the Windows box over the LAN; **no auth** (a standing Operator-accepted risk — figl seam S-1).
 - Pre-flight every session: `check-bridge-status` → expect `{status:"ok", connected:true, hasDocument:true}`. `connected:false` = plugin not running; a failed call = bridge down. **Neither is fixable from the Mac.**
 
 ## The deploy discipline (load-bearing — get this wrong and the plugin silently lies)
