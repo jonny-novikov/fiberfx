@@ -6,7 +6,7 @@ const SWATCHES = ["--bg-brand", "--bg-brand-subtle", "--fg-on-brand", "--indigo-
 // value import keeps the barrel — and with it the stylesheet — in the graph.
 export function Home() {
   return (
-    <section style={{ padding: 24, maxWidth: 720, margin: "0 auto" }}>
+    <section className="showcase-home">
       <h1>@mercury/showcase — the spine</h1>
       <p>
         Source-resolved via the workspace alias; the stylesheet arrives through the barrel. The registry,
@@ -19,7 +19,8 @@ export function Home() {
         {SWATCHES.map((token) => (
           <div
             key={token}
-            style={{ background: `rgb(var(${token}))`, padding: 8, marginTop: 8 }}
+            className="showcase-home-swatch"
+            style={{ background: `rgb(var(${token}))` }}
           >
             <code>{token}</code>
           </div>

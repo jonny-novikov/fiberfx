@@ -1,7 +1,7 @@
 # MX.9.5 · acceptance stories
 
-Given/When/Then for [`mx.9.5.md`](./mx.9.5.md) (the body wins on any disagreement). **SOLID-FORWARD** —
-re-sharpened at this rung's own ship. **Coverage:** K-1 → S-1; K-2 → S-2; K-3, K-4 → S-3. Epic
+Given/When/Then for [`mx.9.5.md`](./mx.9.5.md) (the body wins on any disagreement). **BUILD-GRADE** —
+re-sharpened at ship 2026-07-02 (ruling folded — body §7). **Coverage:** K-1 → S-1; K-2 → S-2; K-3, K-4 → S-3. Epic
 traceability: S-2 realizes epic **S-8** (in full); S-3 re-runs epic **S-9 + S-10** and closes the epic.
 
 ## S-1 · The chrome reads as a designed product — through tokens only (K-1)
@@ -15,7 +15,8 @@ docs shell — Fork C Arm C, read at this ship),
 **then** the shell's type, spacing, surfaces, and borders resolve through the token families and the three
 font roles (`rgb(var(--token))`; the ramp; `--font-*`), **no raw hex appears**
 (`grep -rnE "#[0-9a-fA-F]{3,8}\b" apps/showcase/src` → empty), and no seed file is copied into the tree.
-**And** if the look demands a token family the system lacks, the rung STOPS on that piece and surfaces the
+**And** the ship ruling (2026-07-02, body §7) records the census outcome — Arm A, F1–F4 declined, no fork
+opened; if a RESIDUAL need beyond that ruled scope appears, the rung STOPS on that piece and surfaces the
 fork — the skin ships within the existing vocabulary otherwise.
 *(Proves INV-1.)*
 
