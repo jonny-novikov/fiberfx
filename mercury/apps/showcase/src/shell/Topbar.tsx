@@ -1,17 +1,16 @@
-import { Button } from "@mercury/ui";
-
 type TopbarProps = {
+  crumb: string;
   theme: "light" | "dark";
   onToggleTheme: () => void;
 };
 
-export function Topbar({ theme, onToggleTheme }: TopbarProps) {
+export function Topbar({ crumb, theme, onToggleTheme }: TopbarProps) {
   return (
     <header className="showcase-topbar">
-      <h1 className="showcase-title">Mercury Showcase</h1>
-      <Button variant="outline" size="sm" onClick={onToggleTheme}>
+      <span className="showcase-crumb">{crumb}</span>
+      <button type="button" className="showcase-tb-btn" onClick={onToggleTheme}>
         {theme === "dark" ? "Light theme" : "Dark theme"}
-      </Button>
+      </button>
     </header>
   );
 }

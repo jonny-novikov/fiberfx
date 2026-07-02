@@ -18,9 +18,9 @@ export function ComponentPage({ entry, tab, onTab }: ComponentPageProps) {
   return (
     <article className="showcase-page">
       <header className="showcase-page-header">
-        <h2>
-          {label} · {entry.name}
-        </h2>
+        <p className="showcase-eyebrow">{label}</p>
+        <h2 className="showcase-ptitle">{entry.name}</h2>
+        <p className="showcase-lede">Live stories and the hand-authored contract.</p>
       </header>
       <div className="showcase-tabs" role="tablist" aria-label="component surfaces">
         <button

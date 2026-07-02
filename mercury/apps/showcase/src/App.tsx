@@ -31,6 +31,10 @@ function findEntry(route: Route): ShowcaseEntry | null {
   return group?.entries.find((entry) => entry.name === route.name) ?? null;
 }
 
+function groupLabel(key: string): string {
+  return REGISTRY.find((g) => g.key === key)?.label ?? key;
+}
+
 function applyThemeClass(theme: Theme) {
   document.documentElement.classList.remove("light-theme", "dark-theme");
   document.documentElement.classList.add(theme === "dark" ? "dark-theme" : "light-theme");
@@ -56,20 +60,22 @@ export function App() {
 
   // a persisted route naming an entry the tree no longer carries degrades to Home
   const entry = route === null ? null : findEntry(route);
+  const crumb =
+    route !== null && entry !== null ? `${groupLabel(route.group)} · ${entry.name}` : "Overview";
 
   return (
     <div className="showcase-layout">
-      <Topbar theme={theme} onToggleTheme={toggleTheme} />
-      <div className="showcase-body">
-        <Sidebar
-          active={route}
-          onSelect={(group, name) => setRoute({ group, name, tab: "stories" })}
-        />
-        <main className="showcase-main">
+      <Sidebar
+        active={route}
+        onSelect={(group, name) => setRoute({ group, name, tab: "stories" })}
+      />
+      <div className="showcase-main">
+        <Topbar crumb={crumb} theme={theme} onToggleTheme={toggleTheme} />
+        <main className="showcase-scroll">
           {route !== null && entry !== null ? (
             <ComponentPage entry={entry} tab={route.tab} onTab={(tab) => setRoute({ ...route, tab })} />
           ) : (
-            <Home />
+            <Home onSelect={(group, name) => setRoute({ group, name, tab: "stories" })} />
           )}
         </main>
       </div>

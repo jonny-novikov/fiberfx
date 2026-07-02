@@ -8,6 +8,13 @@ type SidebarProps = {
 export function Sidebar({ active, onSelect }: SidebarProps) {
   return (
     <aside className="showcase-sidebar">
+      <div className="showcase-brand">
+        <span className="showcase-brand-mark" aria-hidden="true" />
+        <div className="showcase-brand-text">
+          <span className="showcase-brand-name">mercury</span>
+          <span className="showcase-brand-ver">Design system · v2.4</span>
+        </div>
+      </div>
       <nav className="showcase-nav" aria-label="components">
         {REGISTRY.map((group) => (
           <section key={group.key} className="showcase-nav-group">
@@ -24,6 +31,7 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
                       aria-current={isActive ? "page" : undefined}
                       onClick={() => onSelect(entry.group, entry.name)}
                     >
+                      <span className="dot" aria-hidden="true" />
                       {entry.name}
                     </button>
                   </li>
