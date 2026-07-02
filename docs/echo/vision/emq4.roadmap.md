@@ -1,0 +1,395 @@
+# Roadmap — to Oban Pro parity { id="echo_mq-roadmap-oban-pro" }
+
+> _Where EchoMQ goes from a fast, fair, Valkey-native bus to covering Oban Pro's feature surface — built on the persistence layer already laid, with a risk mitigation named for every step. Supersedes the earlier roadmap; the operator dashboard is out of scope (a first-class Phoenix dashboard is already in alpha)._
+
+> _Reconciled 2026-07-01 against the [Movements ledger](emq.roadmap.md) (the Stream Tier whole at conformance 79, label `2.6.5`) and the BCS [direction appendix](../echo/bcs/appendixes/bcs.direction.md). Deltas: the gate-and-runway section ahead of the phases is new; Phase 4 gains shard partitioning and FLAME burst capacity; Phase 5's Relay dependency is met by shipped code; stale conformance counts corrected; the runway seams join the parked index._
+
+Closing the distance to Oban **Pro** is not a performance problem — that work is done
+— it is a **durability and coordination** problem. Pro's defining features (retained
+history, recording, cross-queue workflows, batches, relay, the Smart engine's global
+limits) all assume a store that remembers. EchoMQ's bus deliberately does not (decision
+**D-2**: the bus stays volatile). The roadmap is therefore the story of building the
+remembering *beside* the bus — which the persistence layer already begins — and then
+spending it on Pro parity, one risk-managed phase at a time.
+
+## The foundation already in place
+
+Two bodies of work are shipped or in the tree; the parity phases stand on them.
+
+### Performance
+
+The v1→v3 migration replaced a nine-key lineage admission with
+`EchoMQ.Jobs.enqueue/4`: a two-key atomic Lua script that fails the kind law first,
+refuses a duplicate (`EXISTS → 0`, so producer retries are safe), writes the row, and
+`ZADD`s into a score-0 `pending` set that preserves mint order. Throughput rides the
+pipelined `EchoMQ.Connector`, the round-robin `EchoMQ.Pool`, and `enqueue_many/3`. The
+contract is pinned by `EchoMQ.Conformance` (79 scenarios at rung label `2.6.5` — the [Movements ledger](emq.roadmap.md) tracks the climb) and the BDD story catalogue.
+
+### The persistent layer
+
+This is the part that unlocks Pro parity, and the part that carries the risk. Its
+master design decision is the risk control:
+
+> **D-2 — the bus stays volatile.** Durability is never added *inside* the bus (which
+> would tax the hot path); it lives at the two cheap, true edges and in a separate
+> strongly-consistent tier.
+
+```mermaid
+flowchart LR
+    subgraph hot["Hot path — volatile, fast (D-2)"]
+      BUS["EchoMQ bus on Valkey<br/>pending · active · schedule · dead"]
+    end
+    subgraph edge["Durability at the edges"]
+      J["EchoStore.Journal<br/>per-group SQLite outbox<br/>intents + applied"]
+    end
+    subgraph tier["Strongly-consistent tier"]
+      G["EchoStore.Graft<br/>VolumeServer (single-writer OCC)<br/>CubDB snapshots → Tigris S3"]
+    end
+    J -.record intent → enqueue → mark.-> BUS
+    BUS -.commit notices (Sync).-> G
+    G -.segments off the write path (Streamer).-> T["Tigris S3"]
+```
+
+- **`EchoStore.Journal` — the transactional outbox.** One SQLite file per group, one
+  owner process. The `intents` table is the outbox: record the intent, enqueue on the
+  bus, mark it enqueued; every crash window between those steps is covered by `replay/2`
+  plus machinery that already exists — the bus deduplicates a re-enqueued `JOB` id, and
+  newer-wins makes a re-applied version harmless. The `applied` table is the lane's
+  memory of the last version applied per name; it survives the node, the cache, and the
+  bus. Compaction is *coverage, not acknowledgment* — the hot path pays no per-intent
+  completion write.
+- **`EchoStore.Graft` — native-BEAM, strongly-consistent, page-based replication.** No
+  foreign engine. `Graft.VolumeServer` is one single-writer process per volume — its
+  mailbox *is* the global write lock, so commits serialize by construction, no lock
+  primitive. Reads never touch the writer (lock-free ETS L1 or CubDB zero-cost
+  snapshots). Commits are OCC: a `base_lsn` plus a staged page set, validated-or-aborted.
+  `Graft.Streamer` ships deduplicated segments to Tigris S3 **off the write path**, so
+  commit latency stays local; `Graft.Sync` carries low-latency commit notices over the
+  bus while the bytes travel via Tigris. Volumes, segments, and commits are branded
+  `VOL`/`SEG`/`CMT` ids.
+
+The insight that makes the rest of this roadmap safe: **history and recording become a
+choice with a storage cost, not a default tax**, because the bus stays volatile and the
+durable tier is off the hot path.
+
+## The gate and the runway — before the phases
+
+The parity phases land on a wire the program has not yet ratified, and three of their
+prerequisites are verbs the bus already ships without a loop that spends them. This
+section is the reconciliation with the BCS
+[direction appendix](../echo/bcs/appendixes/bcs.direction.md): one gate, three runway
+rungs in order, and two structural moves that proceed in parallel because they touch no
+script.
+
+**The gate — ratify `echomq:3.0.0`.** The Stream Tier is whole (emq3.1–emq3.6,
+conformance 79, label `2.6.5`) and the [Movements ledger](emq.roadmap.md) records the
+deferred cutover as declarable. Declare it ahead of Phase 1, so every phase below lands
+on a declared wire — and so Phase 5's Relay stands on shipped code rather than a plan.
+
+**The runway rungs (proposed, in this order).**
+
+- **R1 — the consumer heartbeats its lease.** `Jobs.extend_lock/5` and
+  `extend_locks/4` are shipped, token-fenced, and server-clocked; no consumer loop calls
+  them, so a handler that outruns `lease_ms` is reaped mid-flight and re-delivered. The
+  rung runs the handler under a monitored task and beats `extend_lock` at half the lease
+  until the verdict lands, opt-in (`:auto_extend`) so the shipped loop stays
+  byte-for-byte. R1 is what makes Phase 5's Deadlines trustworthy on long handlers and
+  Phase 4's FLAME burst safe on scale-to-zero machines.
+- **R2 — the outbox gets its owner.** `EchoStore.Journal.replay/2` covers every crash
+  window only when called, and nothing in a supervision tree calls it. A per-journal
+  replayer child — replay at boot, then a slow watermarked tick — ships the ownership
+  shape Phase 2's committer (seam P2-C, arm C1) needs, with the recovery half landed
+  early on shipped verbs only. Phase 2 then arrives at a tree that already owns its
+  outbox.
+- **R3 — the verdict vocabulary widens.** The consumer speaks `:ok` or
+  `{:error, reason}`, while Oban **core** — not Pro — speaks `{:snooze, period}` and
+  `{:cancel, reason}`. Both targets exist on this bus: `{:snooze, ms}` maps to the
+  shipped, token-fenced `Jobs.delay/6`; `{:discard, reason}` maps to a terminal settle;
+  the worker-side `EchoMQ.Cancel` token stays the cooperative in-flight primitive. This
+  is core parity the matrix below was missing, and it rides R1 so a snoozed long handler
+  cannot be reaped before it answers.
+
+**In parallel, off the wire.** Two structural moves can proceed throughout, because they
+move modules and governance, not contracts. Lift the live Graft engine into the reserved
+`echo_graft` application — Phases 1, 3, and 5 all deepen Graft usage, so the lift is
+cheapest before them, and the umbrella stops printing the placeholder warning on every
+invocation. And route every brand this roadmap mints — `WFL`, `BAT`, and the Phase 2
+intent brand — through `EchoData.Namespace` under the registry split (the
+[namespaces appendix](../echo/bcs/appendixes/bcs.namespaces.md)), so the platform's
+three-letter space stays curated while the phases grow it.
+
+## The parity phases
+
+Each phase names the Oban Pro feature it covers, the EchoMQ mechanism (grounded in the
+foundation above), the risks, and the mitigations. **All phases below are planned** —
+the foundation is built; these features are not yet.
+
+### Phase 1 — Durable history & recording
+
+**Covers (Oban Pro):** Recording; and Oban core's signature retained-job-history.
+
+**Approach.** Oban retains every job row in Postgres, so history is a property of the
+store and every deployment pays for it. EchoMQ keeps the bus volatile and lands a
+completed-job record — terminal state, result, timings — in a **Graft volume** keyed by
+the `JOB` id, as an opt-in retention tier. Recording (capturing a job's output for
+inspection) writes to the same volume. Browsing history is a CubDB snapshot read;
+aggregate metrics read the volume, not the bus.
+
+| Risk | Mitigation |
+|---|---|
+| Write-path latency from persisting every completion | Streamer ships off the write path; the completion still settles on the volatile bus, the record lands async (D-2) |
+| Unbounded storage growth | retention TTL + Graft segment compaction; the morgue still bounds dead jobs separately |
+| Data integrity / partial writes | single-writer OCC + CubDB immutable B-tree; the Journal's `applied` memory makes a replayed completion idempotent |
+| Migrating the completion path | the v1→v3 template — a semantic change ledger, a dual path, machine-checkable returns, and conformance as the gate |
+| Forcing the cost on everyone | opt-in (the library law: no auto-start); a deployment that wants Oban-style history turns it on |
+
+### Phase 2 — Transactional-enqueue parity
+
+**Covers (Oban):** enqueue in the same transaction as your business data — Oban's single
+strongest property.
+
+**Approach — push forward `echo_data` and `echo_store` (the ruled direction).** The headline
+is **not literal Oban parity** but a **BCS-native transactional-enqueue** whose boundary
+lives *inside the owned stack*, with **no Postgres or Ecto dependency**. The forward-push
+moves the transactional boundary from *the app's Postgres transaction* to *a single-writer
+commit inside `echo_store`*: the durable substrate that holds the business write also holds
+the enqueue intent, and one atomic write carries both. `echo_data` earns a branded **intent**
+identity (the outbox entry as a BCS entity); `echo_store` earns the atomic
+**data-write-plus-intent** API plus an owner-started **committer** that drains the outbox to
+`EchoMQ.Jobs.enqueue` / `Lanes.enqueue` at-least-once. The bus is unchanged in contract — the
+committer's idempotency is the shipped `EXISTS → 0` dedup, mint-ordered `JOB` ids, the
+score-0 `pending` set, and newer-wins. The guarantee is Oban's outbox guarantee with the
+owned substrate under it instead of Postgres.
+
+The full design — the reframe, one ADR per decision, the four surfaced forks (the substrate;
+the intent brand; the committer's shape; the Postgres adapter's fate), and the per-app build
+carve — is `specs/emq4/emq4.phase2.design.md` (not yet in the tree at this revision). Four
+Operator decisions are surfaced there and parked here as named seams (§Seams below).
+
+**The Postgres `Journal` adapter — chosen-against, kept on the record.** The literal-parity
+arm (a Postgres adapter so the `intents` write rides the app's own `Repo.transaction/1`) is
+steelmanned in full and **chosen-against** by the steer: it serves only a Postgres-resident
+consumer and adds the SQL dependency the owned stack exists to avoid. Its best case (every
+Oban shop, data already in Postgres) is preserved as a **deferred seam** for a future
+Postgres-resident consumer — see the design's Fork D.
+
+| Risk | Mitigation                                                                                                                             |
+|---|----------------------------------------------------------------------------------------------------------------------------------------|
+| Two writes (business datum + enqueue intent) cannot be one atomic write | the boundary is **one single-writer `echo_store` commit** carrying both (the Journal owner's SQLite txn, or a Graft volume commit — design Fork A); delivery is then at-least-once + idempotent, which the bus already assumes |
+| The committer is a new moving part | idempotent drain (bus `EXISTS → 0` dedup); the `applied`-style memory; restart-safe via `replay/2` — all shipped in `EchoStore.Journal`; the committer is owner-started + opt-in (design Fork C) |
+| Ordering of drained intents | mint-ordered branded ids (`JOB`, and the intent brand) + the score-0 `pending` set preserve order through the drain                     |
+| Default complexity | the whole tier is opt-in (the library law: no `mod:` auto-start); the chosen-against Postgres adapter stays a deferred seam, not a default |
+| Coupling the consumer to the bus | the owner-started committer decouples the atomic business write from bus availability — a bus outage delays delivery, never blocks the write (design Fork C, the recommended arm) |
+
+### Phase 3 — Workflows, batches, chains
+
+**Covers (Oban Pro):** Workflows (arbitrary-dependency DAGs, fan-out/fan-in, nested
+sub-workflows, cumulative context); Batches (progress across nodes + callbacks); Chains
+(strict sequential).
+
+**Approach and the hard truth.** EchoMQ's atomicity is **single-slot**: a queue's keys
+hashtag to one Valkey slot, and the atomic `@enqueue_flow` lands a whole *single-queue*
+flow on that slot (this is the shipped `EchoMQ.Flows`, emq.3.1). **A cross-queue DAG
+breaks the single-slot guarantee** — no Lua script can span two slots atomically. So
+cross-queue Workflows are a different mechanism, not a bigger Flow:
+
+- the DAG and the **cumulative context** live in a Graft volume keyed by a `WFL` id —
+  durable and strongly consistent, with the single-writer serializing context updates;
+- same-queue sub-DAGs keep the atomic fast path (`Flows`);
+- cross-queue edges advance as a **saga**: the Journal records the edge-satisfied intent,
+  enqueues the downstream on its queue, marks it — crash-safe by replay, not by 2PC.
+
+Batches are a `BAT`-keyed progress counter (atomic Valkey ops) plus the events stream
+for the completion callback; chains are a degenerate workflow (ship first, lowest risk).
+
+| Risk | Mitigation |
+|---|---|
+| Loss of cross-queue atomicity | saga with idempotent, reversible steps; the Journal makes each edge transition crash-safe via replay |
+| Orphaned children / partial failure | compensation steps registered per edge; `Flows.ignored_failures/3` for tolerated children; the version fence detects stale advances |
+| Cumulative-context contention | single-writer OCC per `WFL` volume serializes updates; readers use lock-free snapshots |
+| Batch progress hot-key across nodes | atomic Valkey counters on a single slot per batch; the sliding-window/leaderboard pattern is already a conformance story |
+| Nesting depth / complexity | nested workflows are sub-volumes referenced by `WFL` id; depth is data, not recursion on the hot path |
+
+### Phase 4 — Smart-engine parity
+
+**Covers (Oban Pro):** global concurrency, global rate limiting, queue partitioning,
+burst mode, auto-insert batching.
+
+**Approach — EchoMQ's home turf.** This is where a Valkey-native bus has the structural
+advantage over a SQL queue. Per-group lanes already give **constructed fairness and
+per-group concurrency for free** (the rotating ring; `Lanes.limit/4`). The rest is
+Valkey's strength:
+
+- **partitioning** — lanes *are* partitions: a queue split by group, each with its own
+  `limit/4`;
+- **global concurrency** — extend the `Metrics` read-and-refuse rate-gate to a
+  cluster-wide atomic counter;
+- **global rate limiting** — a Valkey-resident token bucket / sliding-window log
+  (atomic Lua — exactly what Redis-class stores do best);
+- **burst** — let a group exceed its limit while the global counter has headroom,
+  gated by that same atomic counter so it cannot overshoot;
+- **auto-insert batching** — `Pool` + `enqueue_many/3` + pipelining;
+- **shard partitioning (multi-Valkey, from the reconciliation)** — `EchoMQ.Keyspace.slot/1`
+  already computes a key's cluster slot client-side (CRC16 over the hashtag, a known
+  vector), and no script crosses a slot; a slot-routing pool above the single-owner
+  connector dispatches each queue's traffic to its shard, so partitioning across Valkey
+  nodes becomes a deployment decision the keyspace already encodes — the Lua inventory
+  and the conformance suite carry over unchanged;
+- **burst capacity (FLAME, from the reconciliation)** — the consumer loop is lib-only,
+  parks on a wake key, and drains to a clean stop: the shape a short-lived machine
+  wants. A FLAME pool that boots consumers for a hot queue and idles them to zero pairs
+  machine-level burst with the group-level burst above. Requires R1 (the lease
+  heartbeat) so a runner reaped by its own scale-to-zero policy never strands a lease
+  past its handler.
+
+| Risk | Mitigation |
+|---|---|
+| Distributed rate-limit correctness (races, skew) | atomic Lua limiters on a single slot per limiter key; no read-modify-write across the wire |
+| Counter hot-keys | per-slot limiter keys under the `{q}` hashtag; the version fence for cross-queue aggregates |
+| Burst starving steady tenants | the rotating ring already prevents starvation; burst is bounded by the global atomic counter |
+| Sliding-window memory | a capped sorted-set window (the leaderboard story), trimmed on each admission |
+| Cross-shard global counters under partitioning | a declared home slot per global limiter key; per-queue keys stay on their own slot by the `{q}` hashtag |
+| A FLAME runner reaped mid-job | R1's lease heartbeat plus the drain-to-stop settle points; the reap-and-redeliver law already bounds the loss |
+
+### Phase 5 — The Pro extension surface
+
+**Covers (Oban Pro):** Relay (insert + await across nodes), Hooks, Decorator, Signals,
+Deadlines, structured/encrypted args, Dynamic configuration.
+
+**Approach.** Each is a thin layer over a shipped primitive:
+
+- **Relay** — a correlation id plus awaiting the `completed` event for that `JOB` id,
+  with a timeout. Depends on a durable, replayable event stream — **met by the shipped
+  Stream Tier** (emq3.1–emq3.6): `EchoMQ.StreamConsumer` drains its own PEL on restart
+  and reclaims dead peers via `XAUTOCLAIM`, so a late awaiter catches up rather than
+  misses the event.
+- **Hooks** — before/after/on-failure callbacks in the consumer loop, which already
+  converts a raising handler to a typed retry.
+- **Decorator** — a macro that turns a plain function into an enqueue plus a registered
+  handler.
+- **Signals** — generalize the cooperative `EchoMQ.Cancel` token to arbitrary
+  `{:emq_signal, ref, term}` messages to a running handler.
+- **Deadlines** — a deadline is a *scheduled cancel*: schedule the cooperative cancel at
+  `T`; the handler stops itself at its next safe point.
+- **Structured / encrypted args** — a pluggable payload codec above the wire
+  (validation; at-rest encryption), keys held in a KMS and never on the wire.
+- **Dynamic configuration** — extend `Repeat`/`Pump` runtime registration to queues,
+  limits, and cron at runtime, with config stored as branded records in a Graft volume.
+
+| Risk | Mitigation |
+|---|---|
+| Relay await blocks / loses an event | the shipped Stream Tier (PEL drain + `XAUTOCLAIM`) + timeout + idempotent re-await |
+| Signal term encoding across runtimes | BEAM-term path for BEAM↔BEAM, JSON for BEAM↔Go — the existing payload discipline |
+| Encryption key management | codec is host-side (like `Backoff`/`Cancel`), keys via KMS, never serialized to the bus |
+| Dynamic config drift | config as audited, branded-id'd records in a Graft volume — durable and inspectable |
+
+### Phase 6 — Polyglot clients
+
+**Covers (Oban Pro):** Python support.
+
+**Approach — a structural advantage, not a gap.** EchoMQ's contract is the wire (the
+`emq:{q}:` keyspace and the atomic scripts), so the BEAM and Go are already first-class
+clients. Python parity is a **Python SDK** that follows the same keyspace grammar and
+passes the same contract — not a re-implementation of the engine.
+
+| Risk | Mitigation |
+|---|---|
+| SDK drifting from the wire contract | run the `EchoMQ.Conformance` suite (79 scenarios at `2.6.5`, climbing per rung) against the SDK (the Go-flyer-parity item, generalized) so parity is a tested property |
+
+## Out of scope — the operator dashboard
+
+The earlier roadmap planned a Mercury-UI dashboard. **That is removed:** a first-class
+Phoenix dashboard is already in alpha. EchoMQ's responsibility is only to expose the
+data it consumes — the `EchoMQ.Metrics` read plane, the `EchoMQ.Events` lifecycle
+stream, and the `EchoMQ.Meter` `[:emq, …]` telemetry — and to keep those stable. No UI
+ships from this roadmap.
+
+## Cross-cutting risk mitigations
+
+The user's emphasis — "there must be risk mitigations to get to the point" — deserves
+its own statement, because the same handful of controls recur under every phase:
+
+- **The volatile-bus stance (D-2) is the master control.** Persistence never touches
+   the hot path; the bus stays fast, durability is async and edge-based. Every phase
+   above respects it.
+- **Idempotency everywhere.** At-least-once delivery + dedup (`EXISTS → 0`) +
+   newer-wins means replay is *always* safe. This is what lets the Journal and Graft
+   recover crash windows without two-phase commit.
+- **Strong consistency where it matters.** Graft's single-writer OCC and CubDB
+   immutable snapshots give serial commits with no lock primitive — durable state is
+   never half-written.
+- **Off-path durability.** The Streamer ships to Tigris off the write path; commit
+   latency stays local. Persistence buys safety, not slowness.
+- **Migration discipline (the v1→v3 precedent).** Every change to a script or the
+   completion path ships with a semantic change ledger, a positional alignment, a
+   machine-checkable return, a unified diff, and conformance as the gate — never a
+   silent cutover.
+- **Reversibility and opt-in (the library law).** Every plane is owner-started, no
+   `mod:` auto-start, so a deployment adopts the persistence tier and each Pro-parity
+   feature incrementally and can back out.
+- **NO-INVENT for the build; surfaced forks for genuine decisions.** Where a real
+   choice remains (the Graft storage substrate is one such surfaced fork), it goes to
+   the Operator as argued arms, not a default — so the roadmap never smuggles a decision.
+
+## The parity matrix
+
+| Oban Pro feature | EchoMQ mechanism                              | Builds on | Phase | Status |
+|---|-----------------------------------------------|---|---|---|
+| Retained job history | completion records in a Graft volume (opt-in) | Graft | 1 | planned |
+| Recording (output) | same `JOB`-keyed Graft volume                 | Graft | 1 | planned |
+| Transactional enqueue | single-writer `echo_store` commit (datum + intent) + committer; Postgres adapter chosen-against (deferred seam) | Journal · Graft · `echo_data` intent id | 2 | planned (design landed) |
+| Workflows (cross-queue DAG) | `WFL` volume + saga over the version fence    | Flows · Graft · Journal | 3 | planned |
+| Batches | `BAT` counter + events callback               | Flows · events | 3 | planned |
+| Chains | degenerate workflow                           | Flows | 3 | planned |
+| Global concurrency | cluster-wide atomic counter (rate-gate)       | Metrics | 4 | planned |
+| Global rate limiting | Valkey token bucket / sliding window          | keyspace · lanes | 4 | planned |
+| Queue partitioning | lanes as partitions                           | Lanes | 4 | partial (lanes shipped) |
+| Burst mode | headroom-gated overage                        | Lanes · Metrics | 4 | planned |
+| Auto-insert batching | `Pool` + `enqueue_many/3`                     | Pool | 4 | partial (primitives shipped) |
+| Relay (insert + await) | correlation id + event await                  | Stream Tier (shipped) | 5 | planned |
+| Hooks | consumer-loop callbacks                       | Consumer | 5 | planned |
+| Decorator | enqueue-from-function macro                   | Jobs | 5 | planned |
+| Signals | generalized cooperative token                 | Cancel | 5 | planned |
+| Deadlines | scheduled cancel                              | schedule · Cancel | 5 | planned |
+| Structured / encrypted args | pluggable host-side codec                     | (host) | 5 | planned |
+| Dynamic config | runtime registration in a Graft volume        | Repeat/Pump · Graft | 5 | planned |
+| Python support | Ship Go SDK instead on the wire contract      | Conformance | 6 | planned |
+| Worker verdicts (snooze / cancel) | consumer verdict switch onto `Jobs.delay/6` + terminal settle | Jobs · Consumer | runway (R3) | proposed |
+| Shard partitioning (multi-Valkey) | slot-routing pool over `Keyspace.slot/1`      | Keyspace · Connector | 4 | proposed |
+| Burst capacity (ephemeral machines) | FLAME pool of drain-to-stop consumers       | Consumer · R1 | 4 | proposed |
+| Web dashboard | — (Phoenix dashboard, alpha stage)            | — | — | **out of scope** |
+
+## Non-goals
+
+- **Becoming a SQL queue.** Phase 2's transactional enqueue is **BCS-native** — a
+  single-writer `echo_store` commit, no Postgres or Ecto dependency (the ruled direction).
+  The Postgres `Journal` adapter that would give *literal* parity for Postgres-resident apps
+  is **chosen-against** and parked as a deferred seam (§Seams · the Phase 2 decisions); the
+  bus stays volatile by D-2 either way.
+- **Shipping a UI.** The dashboard is handled elsewhere (alpha); this roadmap only keeps
+  its data sources stable.
+- **Rebuilding Graft's substrate per feature.** History, recording, workflow context,
+  and dynamic config all share one durable tier rather than each inventing storage.
+
+## Seams & open decisions
+
+A surfaced fork the Operator defers is recorded here as a named seam (the architect's
+approach — Venus surfaces, the Operator rules). The arms are argued in full in each phase's
+design doc; this is the parked index.
+
+### The Phase 2 decisions (`specs/emq4/emq4.phase2.design.md` §7 — the design doc is not yet in the tree at this revision)
+
+| Seam | The fork | Arms (brief) | Venus recommends |
+|---|---|---|---|
+| **P2-A · substrate** | where the transactional boundary lives | A1 SQLite `Journal` outbox · A2 a `Graft` volume (single-writer OCC) · A3 both | **A1** — its atomic write is already shipped + drilled (`record_many/2` + `applied`/`replay`/`compact`) |
+| **P2-B · intent brand** | what identity the outbox intent earns | B1 a new `OBX` brand (intent ⟂ job) · B2 reuse the `JOB` id (intent ≡ job) | **B1** — keeps Phase 3's one-trigger-many-jobs fan-out unforeclosed, one small pure module |
+| **P2-C · committer** | the committer's shape and ownership | C1 owner-started opt-in `GenServer` (async drain) · C2 inline at `intend` (sync) | **C1** — preserves the outbox's decoupling; a bus outage delays delivery, never blocks the write |
+| **P2-D · Postgres adapter** | the chosen-against parity arm's fate | D1 deferred seam (parked) · D2 removed from the roadmap | **D1** — preserves a large-audience option (every Oban shop) at the cost of one seam line |
+
+### The runway seams (from the reconciliation)
+
+| Seam | The fork | Arms (brief) | Venus recommends |
+|---|---|---|---|
+| **R-A · heartbeat default** | is the lease heartbeat opt-in or the loop's default | A1 opt-in `:auto_extend` · A2 default-on with an opt-out | **A1** — the library law: the shipped loop stays byte-for-byte until a deployment asks |
+| **R-B · FLAME pool ownership** | who owns the burst pool | B1 the application composes `FLAME` + `EchoMQ.Consumer` directly · B2 an `EchoMQ.Flame` helper ships in the bus | **B1** first — prove the composition in codemojex, lift a helper only once the shape repeats |
+| **R-C · replayer cadence** | the outbox owner's tick | C1 boot-only replay · C2 boot + a slow watermarked tick | **C2** — a quiet journal pays one read per tick, and a wedged committer is healed without an operator |

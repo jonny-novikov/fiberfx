@@ -1,0 +1,80 @@
+# BCS · The Direction — the Bus at 3.0, the Floor Lifted, the Registry Split
+
+The system this series describes is no longer a plan; it compiles, boots, proves its identity contract, and plays a real game through the async pipeline on a fresh bench. The sentence that survives this appendix: **the substrate is whole, so the direction is no longer "build the bus" — it is to ratify the bus at 3.0, spend its own shipped verbs on the three seams the source still leaves open, partition by the placement the identity already carries, and lift the floor into the application name held for it.** This appendix consolidates a full exploration of the committed tree — the nine chapters from the [TOC](../bcs.toc.md), the [roadmap ledger](../../../echo_mq/emq.roadmap.md), and the source under `echo/apps/{echo_data, echo_mq, echo_store}` — into a development direction for BCS, for Graft, and above all for the EchoMQ Bus.
+
+## Scope and method
+
+Read: the B0–B8 chapters, the namespace and identity appendixes, `bcs.research.md`, the EchoMQ roadmap and its shipped-rung ledger, and the source of every module this appendix names. Run: the full bench bootstrap on Elixir 1.18.4 (OTP 25), Valkey 9.1.0 built on jemalloc 5.3.0 at `:6390`, and PostgreSQL 16 — `mix deps.get`, a whole-umbrella `mix compile`, five Ecto migrations, the boot smoke, and the end-to-end game; the transcript figures live in [`direction-bench.out`](../evidence/direction-bench.out). Cited from committed docs rather than re-measured: the conformance counts and rung labels, which are the roadmap's own ledger. Externally verified this session: the FLAME pattern, the upstream Graft engine, and Oban's worker verdict contract. Everything proposed below is marked as proposed; no proposed surface is written as if it shipped.
+
+## The system as proven
+
+The bench run is the ground truth this direction stands on. The umbrella fetches 28 packages and compiles 33 applications end to end — `echo_data`, `echo_wire`, `echo_mq` (33 files), `echo_store` (32), `echo_bot`, `codemojex` (59) — on a one-vCPU sandbox. Boot proves the identity contract before anything trusts a name: every namespace mints and parses at fourteen bytes, and the scoring authority answers a perfect round at 600 of 600. The end-to-end game then exercises the whole law in one motion: a room and a player are created as branded rows in Postgres, a guess submission charges one clip (100 to 99) and enqueues a branded `JOB` on the player's lane in one seam, the parked consumer wakes, claims fairly, scores, writes the `GES` and the Board, and the leaderboard reads back — `E2E OK`.
+
+```text
+deps now: 28 packages (mix exit 0)
+compiled apps: 33 in _build/dev/lib
+migrations applied: 5
+Scoring.score perfect: %{max: 600, percentage: 100, total: 600}
+player balance after play: clips: 99  (seeded 100)
+E2E OK
+```
+
+That is the posture the direction inherits: not a system to finish, but a proven substrate to extend without breaking what the conformance suite already holds.
+
+## Where the bus stands
+
+The [roadmap](../../echo_mq/emq.roadmap.md) records the position precisely. Movement I — the rewritten core: scheduler and retry, the parity floor, the flow family — closed at conformance 52. Movement II's depth families closed on top of it: groups at 61, batches at 73 under the rung label `2.5.2`. The Stream Tier, re-sequenced ahead of the remaining 2.x families by an Operator ruling, then shipped whole — writer, reader law with its polyglot seam, retention as policy, the archive fold into the Graft floor, and time-travel with hydration — closing at conformance 79 under label `2.6.5`. The ledger's own conclusion is the direction's first sentence: the `echomq:3.0.0` cutover, deliberately deferred while the tier was partial, is now declarable.
+
+Three families remain parked behind it as the 2.x runway: emq.6 lifecycle controls, emq.7 the cache deepened, emq.8 the proof stack. They are deferred, not deleted, and the near rungs below are the natural first residents of that runway — each one spends verbs the bus already ships.
+
+## The bus, near: three rungs read out of the source
+
+The exploration's sharpest finding is that the next three improvements are already half-built: in each case the *verb* exists and is conformance-gated, and what is missing is the *loop* or the *owner* that spends it. That makes them small, additive rungs in the established discipline — the byte-frozen scripts untouched, the new behavior opt-in, a probe per rung.
+
+**Rung one — the consumer heartbeats the lease it holds.** `EchoMQ.Jobs` ships `extend_lock/5` and `extend_locks/4`: token-fenced, server-clock lease extension, the `EMQSTALE` refusal on a mismatched token. No consumer calls them. `EchoMQ.Consumer` and `EchoMQ.BatchConsumer` run the handler inline between claim and settle, so a handler that outruns `lease_ms` (default 30 s) is reaped mid-flight and re-delivered — legal under at-least-once, wasteful under load, and avoidable with verbs already on the wire. The proposed rung runs the handler under a monitored task and beats `extend_lock` at half the lease until the verdict lands, opt-in (`:auto_extend`) so the shipped loop stays byte-for-byte. The lease law does not change; the loop finally spends it.
+
+**Rung two — the outbox gets an owner.** `EchoStore.Journal` is the transactional outbox of B6's write path: record the intent, enqueue on a lane, mark enqueued, with `replay/2` re-enqueuing every uncovered intent and the bus deduplicating what it still holds. The law says every crash window is covered by replay — but replay is a call, and nothing in the supervision tree makes it. There is no Journal replayer child; coverage is a property of whoever remembers to invoke it. The proposed rung is a small supervised replayer per journal: `replay/2` once at boot and on a slow tick thereafter, watermarked by the journal's own applied memory so a quiet system pays one read per tick. The outbox law becomes a running property of the tree rather than an operational habit.
+
+**Rung three — the handler verdicts widen onto shipped verbs.** The consumer contract is `:ok` or `{:error, reason}` — success or retry-with-backoff, nothing else. The Postgres prior art the bus chapter already cites is wider: Oban's `perform/1` speaks `{:snooze, period}` (reschedule without spending the retry budget) and `{:cancel, reason}` (settle and stop retrying). Both targets exist on this bus today: `Jobs.delay/6` is the token-fenced reschedule, and the failed settle is one arm of `Jobs.retry`'s machinery. The proposed rung teaches the consumer's verdict switch two new returns — `{:snooze, ms}` mapping to `delay`, `{:discard, reason}` mapping to a terminal settle — with the worker-side `EchoMQ.Cancel` token unchanged as the cooperative in-flight primitive. No new script, no new key: a wider vocabulary over the same state machine.
+
+## The bus, structural: placement, ephemeral cores, one signal plane
+
+**The partitioned connector the keyspace already promises.** Every EchoMQ key is born braced — `emq:{queue}:` — so a queue's whole keyspace occupies one hash slot, and `EchoMQ.Keyspace.slot/1` computes that slot client-side, CRC16 over the hashtag against a known vector, with the docstring stating the intent outright: so the connector can route and partition without a server round trip. The connector itself is deliberately single-endpoint — one authenticated, pipelined, fenced socket per lane. The structural rung, proposed, is a slot-routing pool above it: a router that holds one connector lane per shard and dispatches each queue's traffic by `slot/1`. Because no script crosses a slot, the Lua inventory and the conformance suite carry over unchanged; partitioning becomes a deployment decision the identity already encodes. This is the same move the article on the store made for `ecc:{table}:` keys, applied to the bus that taught it.
+
+**FLAME machines as ephemeral consumers.** The consumer loop is lib-only, owns a private connector lane, parks on a wake key, and drains to a clean stop — exactly the shape a short-lived machine wants. The FLAME pattern boots a copy of the whole application on a fresh machine and hands it a function; on Fly the runner is up in roughly three seconds, pooled, scaled to zero when idle. The proposed composition is direct: a FLAME pool whose function starts an `EchoMQ.Consumer` (or `BatchConsumer`) against the queue, drains until the lane quiets, and lets the runner idle down — burst capacity for scoring storms and settlement sweeps without a resident fleet. The lease-heartbeat rung above is the prerequisite that makes long work safe on a machine that might be reaped by its own scale-to-zero policy.
+
+**One signal plane.** The exploration kept finding the bus in load-bearing places that are not job queues: coherence rides a broadcast lane and a job lane; Graft's `Sync` sends commit notices over the connector while the bytes travel through Tigris; trimmed streams fold into the floor and hydrate back. The direction is to name this role rather than let it accrete: EchoMQ is the umbrella's signal plane — queue, stream, broadcast, and notice — and every new tier plugs into it by identity and message, never by a private channel. The 3.0 ratification is the right moment to write that sentence into the design canon, because the cutover is precisely the declaration that the wire contract underneath all four uses is stable.
+
+## Graft: the floor's direction
+
+The persistence floor is a native-BEAM build of the upstream Graft idea — lazy, partial, strongly consistent, page-based replication on object storage — with the volume as a single-writer process, CubDB's append-only tree beneath it, the streamer shipping segments and conditional commit objects to Tigris, and the commit-LSN as the replica's cursor. Three moves follow from what is already true in the tree.
+
+**Lift the engine into its name.** `echo_graft` exists as a reserved, empty application directory — and the umbrella says so on every invocation, warning that the path has no `mix.exs`. The engine it is reserved for is live and split across `echo_data` (the `VOL`/`SEG`/`CMT` segment types) and `echo_store` (the volume server, store, reader, streamer, sync, archive). The lift is mechanical because the module names were chosen for it from the start; the payoff is a floor that deploys without the cache when a surface wants durability alone, and an umbrella that boots without a placeholder warning.
+
+**Replicas as a read surface.** The lazy reader spins up on decoupled metadata, pulls only the pages a read touches, and reads at a snapshot with serializable isolation — the upstream engine's stated property set, rebuilt here on CubDB snapshots. With commit notices already on the bus and the commit-LSN already the cursor, a read replica for dashboards and analytics is composition, not construction: subscribe to notices, advance the cursor, serve reads at the last commit. The stream archive makes the same surface historical — `read_window` and `read_since` shipped with hydration, so a stream's past is queryable beside its live tail from the same floor.
+
+**The portable twin.** B5 records the ported pair — a Rust `echo_graft` on Fjall with OpenDAL as the remote seam — for hosts that do not run the BEAM. The direction is to hold the two engines to one contract the way the identity contract already binds five runtimes: one vector set for segment layout and commit objects, so a BEAM writer and a Rust reader agree about the bytes in the bucket. That is the identity playbook — conformance by shared vectors, engine as deployment detail — applied one layer down.
+
+## BCS: the identity direction
+
+The identity contract is the one part of the system every tier already trusts at boot, so its direction is measured in small, spent-not-widened moves.
+
+**The registry split, adopted platform-wide.** The namespace appendix specifies the two-space policy — a curated three-letter platform registry beside an open four-letter developer space, with a total classifier and the observability triad `LOG`, `TRC`, `COR` as the worked example — and measures the fourth letter as free on every substrate in play: the same ETS word bucket, the same Valkey size class, zero bytes on disk where the snowflake is the key and the namespace is the table. The direction is adoption: route every new platform kind through `EchoData.Namespace` as the single decision record, and hold the four-letter space for the applications the platform now provably supports. The specification-first stance of that appendix — namespaces, components, boundaries declared, artifacts derived — is the BCS answer to schema drift, and it should govern the next system the umbrella grows.
+
+**Placement is the partition key.** The contract's four properties — typed, ordered, placed, conformant — were argued in B0 as answers to how bare handles fail. The partitioned connector above is the first structural surface to *spend* the third property: `hash32` locates a row from the identity alone, the same for every holder, asserted at boot against the vectors. The direction is to keep placement's contract status ahead of its uses — any new tier that shards, routes, or caches by identity derives its function from the one `hash32`, never a second hash — so that the wire, the cache ring, and the connector pool can never disagree about where a name lives.
+
+**The contract across the edge.** The conformance story already binds the BEAM's native and pure paths and the polyglot runtimes; the TypeScript surface in the monorepo's `mercury` tree carries the same codec with its routing hash held parity-pending against the canonical vector until reconciled. The direction is the boring, correct one: no client-side surface graduates from parity-pending by inspection — only by the vector file, the same way the server proves itself at boot.
+
+## The order of work
+
+Stated as a sequence rather than a backlog, because each step de-risks the next. Ratify `echomq:3.0.0` first — the tier is whole and the ledger says the deferral condition is met — so every rung after it lands on a declared wire. Spend the three near rungs next, heartbeat before verdicts, because `{:snooze, ms}` on a long handler is only trustworthy once the lease outlives the handler; give the outbox its owner in the same movement, since it touches no wire surface at all. Then the slot-routing pool, which turns the keyspace's standing promise into deployment freedom, and on top of it the FLAME consumer pool, which needs both the heartbeat and, in anger, more than one shard to be worth bursting onto. The Graft lift can proceed in parallel throughout — it moves modules, not contracts — and the registry split governs every namespace minted along the way.
+
+## Boundaries
+
+This appendix measures nothing new: its figures are the bench transcript in the committed `direction-bench.out` and the conformance counts quoted from the roadmap's own ledger, on the versions named in scope — a different allocator, engine line, or core count changes the numbers and not the argument. Every rung named under "near" and "structural" is proposed, not shipped; the source readings behind them (the unused extension verbs, the unowned replay, the two-verdict switch, the single-endpoint connector beneath a slot-aware keyspace) are checked against the tree at `0c0fd19` and will drift as the tree does. The order of work is a judgment, not a dependency proof, and the Operator's fork rulings supersede it the way the roadmap records they always have.
+
+## References
+
+- FLAME — Rethinking Serverless with FLAME (the pattern; runner boot on a fresh machine, pooling, scale-to-zero): `https://fly.io/blog/rethinking-serverless-with-flame/`
+- Oban — Oban.Worker (the verdict contract: ok, error, cancel, snooze; snooze preserves the retry budget): `https://hexdocs.pm/oban/Oban.Worker.html`
+- orbitinghail — Graft (lazy, partial, strongly consistent replication; instant replicas on decoupled metadata; serializable snapshot isolation): `https://github.com/orbitinghail/graft`
