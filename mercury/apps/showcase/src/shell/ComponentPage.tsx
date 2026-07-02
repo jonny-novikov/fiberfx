@@ -1,3 +1,4 @@
+import { StoriesPanel } from "../lib/storyRender";
 import { GROUP_LABEL, type ShowcaseEntry } from "../registry";
 
 type Tab = "stories" | "docs";
@@ -8,7 +9,8 @@ type ComponentPageProps = {
   onTab: (tab: Tab) => void;
 };
 
-// Stub panels only this rung: neither loadStories nor loadPrompt is called (INV-5).
+// Stories is live (mx.9.3): StoriesPanel lazy-loads ONLY the selected entry's
+// module (INV-5). Docs stays a stub — loadPrompt is not called until mx.9.4.
 export function ComponentPage({ entry, tab, onTab }: ComponentPageProps) {
   const label = (GROUP_LABEL as Record<string, string>)[entry.group] ?? entry.group;
   return (
@@ -39,7 +41,7 @@ export function ComponentPage({ entry, tab, onTab }: ComponentPageProps) {
         </button>
       </div>
       {tab === "stories" ? (
-        <p className="showcase-stub">The live stories surface lands at mx.9.3.</p>
+        <StoriesPanel entry={entry} />
       ) : (
         <p className="showcase-stub">The contract surface lands at mx.9.4.</p>
       )}
