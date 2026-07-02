@@ -12,7 +12,7 @@ import (
 
 func PrettyScan(w io.Writer, nodes []*graph.Node) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := fmt.Fprintln(tw, "PATH\tTYPE\tSTATUS\tSIZE\tNAME"); err != nil {
+	if _, err := fmt.Fprintln(tw, "PATH\tTYPE\tSTATUS\tPROJECT\tSIZE\tNAME"); err != nil {
 		return err
 	}
 	for _, n := range nodes {
@@ -20,7 +20,7 @@ func PrettyScan(w io.Writer, nodes []*graph.Node) error {
 		if len(name) > 60 {
 			name = name[:57] + "..."
 		}
-		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", n.Path, n.Type, n.Status, n.SizeBytes, name); err != nil {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n", n.Path, n.Type, n.Status, n.Project, n.SizeBytes, name); err != nil {
 			return err
 		}
 	}

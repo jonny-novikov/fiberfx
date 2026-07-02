@@ -27,6 +27,8 @@ type Node struct {
 	Description      string   `json:"description,omitempty"`
 	OriginSessionID  string   `json:"originSessionId,omitempty"`
 	Status           Status   `json:"status"`
+	Project          string   `json:"project,omitempty"`
+	ReviewAfter      string   `json:"review_after,omitempty"`
 	SizeBytes        int64    `json:"size_bytes"`
 	HasFrontmatter   bool     `json:"has_frontmatter"`
 	FrontmatterError string   `json:"frontmatter_error,omitempty"`

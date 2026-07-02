@@ -23,7 +23,7 @@ func TestAuditAgainstSyntheticCorpus(t *testing.T) {
 	}
 
 	cfg := config.Defaults()
-	findings := stale.Run(g, cfg, src, []string{"all"})
+	findings := stale.Run(g, cfg, src, []string{"all"}, fixedRef)
 
 	expectFinding(t, findings, stale.RuleDeadTarget, "feedback_dead.md", stale.SeverityError)
 	expectFinding(t, findings, stale.RuleBrokenAnchor, "feedback_anchor.md", stale.SeverityWarn)
@@ -43,7 +43,7 @@ func TestSyntheticCorpusMemoryReferenceWhitelisted(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := config.Defaults()
-	findings := stale.Run(g, cfg, src, []string{stale.RuleDeletedPath})
+	findings := stale.Run(g, cfg, src, []string{stale.RuleDeletedPath}, fixedRef)
 	for _, f := range findings {
 		if f.File == "MEMORY.md" && f.Severity == stale.SeverityError {
 			t.Errorf("MEMORY.md apps/mcp reference should not be ERROR (deletion-context whitelisted)")

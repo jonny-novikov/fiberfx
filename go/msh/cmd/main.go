@@ -192,6 +192,7 @@ type (
 		Rules    string `json:"rules,omitempty" jsonschema:"comma-separated rule names, or 'all' (default)"`
 		Severity string `json:"severity,omitempty" jsonschema:"minimum severity: error | warn (default) | info"`
 		Format   string `json:"format,omitempty" jsonschema:"ndjson (default) | pretty"`
+		Project  string `json:"project,omitempty" jsonschema:"keep only findings whose file's effective project matches (post-filter; rules still run over the full corpus)"`
 	}
 	graphArgs struct {
 		Root            string `json:"root,omitempty" jsonschema:"override the memory root for this call"`
@@ -199,8 +200,9 @@ type (
 		IncludeExternal bool   `json:"include_external,omitempty" jsonschema:"include external_rel edges"`
 	}
 	scanArgs struct {
-		Root   string `json:"root,omitempty" jsonschema:"override the memory root for this call"`
-		Format string `json:"format,omitempty" jsonschema:"ndjson (default) | pretty"`
+		Root    string `json:"root,omitempty" jsonschema:"override the memory root for this call"`
+		Format  string `json:"format,omitempty" jsonschema:"ndjson (default) | pretty"`
+		Project string `json:"project,omitempty" jsonschema:"filter notes to one project (declared top-level project:, else first path segment of a nested note)"`
 	}
 	projectArgs struct {
 		Format string `json:"format,omitempty" jsonschema:"text (default) | json"`
@@ -224,9 +226,9 @@ func registerMemoryTools(s *mcp.Server, root string) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "memory_stale",
-		Description: "Run stale-detection rules and return findings (dead targets, broken anchors, orphans, removed tools, stale external links).",
+		Description: "Run stale-detection rules and return findings (dead targets, broken anchors, orphans, removed tools, stale external links, due review_after dates via REVIEW-DUE); optional project filter keeps one project's findings.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in staleArgs) (*mcp.CallToolResult, any, error) {
-		out, err := command.Stale(rootOr(root, in.Root), in.Config, in.Rules, in.Severity, in.Format)
+		out, err := command.Stale(rootOr(root, in.Root), in.Config, in.Rules, in.Severity, in.Format, in.Project)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -246,9 +248,9 @@ func registerMemoryTools(s *mcp.Server, root string) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "memory_scan",
-		Description: "Walk the memory corpus and return per-note metadata (frontmatter name/type/description, size, hash).",
+		Description: "Walk the memory corpus and return per-note metadata (frontmatter name/type/description, project, status, review_after, size, hash); optional project filter scopes the rows to one project.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in scanArgs) (*mcp.CallToolResult, any, error) {
-		out, err := command.Scan(rootOr(root, in.Root), in.Format)
+		out, err := command.Scan(rootOr(root, in.Root), in.Format, in.Project)
 		if err != nil {
 			return nil, nil, err
 		}

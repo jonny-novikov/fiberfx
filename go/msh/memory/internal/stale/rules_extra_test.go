@@ -41,7 +41,7 @@ func TestRunUnknownRuleNamesIgnored(t *testing.T) {
 	g := graph.New("/root")
 	src := newFake()
 	cfg := config.Defaults()
-	got := Run(g, cfg, src, []string{"NOT-A-RULE", "ALSO-NOT"})
+	got := Run(g, cfg, src, []string{"NOT-A-RULE", "ALSO-NOT"}, testRef)
 	if len(got) != 0 {
 		t.Errorf("expected 0 findings, got %d", len(got))
 	}
@@ -53,7 +53,7 @@ func TestRunDefaultsToAllWhenEmpty(t *testing.T) {
 	src := newFake()
 	src.bodies["feedback_orphan.md"] = []byte("body\n")
 	cfg := config.Defaults()
-	got := Run(g, cfg, src, []string{})
+	got := Run(g, cfg, src, []string{}, testRef)
 	hasOrphan := false
 	for _, f := range got {
 		if f.Rule == RuleOrphan {

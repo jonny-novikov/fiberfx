@@ -53,13 +53,42 @@ func loadCorpus(root string) (*graph.Graph, *corpusSource, error) {
 			node.Description = fmRes.Frontmatter.Description
 			node.OriginSessionID = fmRes.Frontmatter.OriginSessionID
 			node.Type = classifyType(fmRes.Frontmatter.Type, fe.RelPath)
+			node.Project = normalizeProject(fmRes.Frontmatter.Project)
+			node.ReviewAfter = strings.TrimSpace(fmRes.Frontmatter.ReviewAfter)
 			if fmRes.ParseError != "" {
 				node.FrontmatterError = fmRes.ParseError
 			}
 		} else {
 			node.Type = classifyType("", fe.RelPath)
 		}
-		if isSupersededByText(body, fmRes.BodyOffset) {
+		// effective_project (msh2.2 §3.3), computed once at load — the one
+		// authority every surface reads: the declared top-level project: wins;
+		// else a nested note scopes to its first path segment; else unscoped.
+		if node.Project == "" {
+			if parts := strings.SplitN(fe.RelPath, "/", 2); len(parts) == 2 {
+				node.Project = normalizeProject(parts[0])
+			}
+		}
+		// status precedence (msh2.2 §3.4): a present + valid declared status:
+		// IS the status and the body sniff is skipped; an invalid value records
+		// a FrontmatterError and degrades loudly to the sniff; an absent key
+		// keeps the sniff fallback byte-unchanged.
+		statusDeclared := false
+		if fmRes.Has {
+			if raw := strings.TrimSpace(fmRes.Frontmatter.Status); raw != "" {
+				switch graph.Status(strings.ToLower(raw)) {
+				case graph.StatusActive:
+					node.Status = graph.StatusActive
+					statusDeclared = true
+				case graph.StatusSuperseded:
+					node.Status = graph.StatusSuperseded
+					statusDeclared = true
+				default:
+					node.FrontmatterError = fmt.Sprintf("invalid status %q: want active|superseded", raw)
+				}
+			}
+		}
+		if !statusDeclared && isSupersededByText(body, fmRes.BodyOffset) {
 			node.Status = graph.StatusSuperseded
 		}
 		if err := g.AddNode(node); err != nil {

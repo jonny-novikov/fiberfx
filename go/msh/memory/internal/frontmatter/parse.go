@@ -12,6 +12,12 @@ type Frontmatter struct {
 	Description     string `yaml:"description"`
 	Type            string `yaml:"type"`
 	OriginSessionID string `yaml:"originSessionId"`
+	// The msh2.2 contract keys (spec §3.1): read TOP-LEVEL ONLY — never
+	// coalesced from the nested metadata: block. A v2 key spelled under
+	// metadata: is not read; the degrade order (spec §3.3) governs the note.
+	Project     string `yaml:"project"`
+	Status      string `yaml:"status"`
+	ReviewAfter string `yaml:"review_after"`
 }
 
 // metaBlock is the nested `metadata:` block the memory corpus uses. The corpus
@@ -32,6 +38,9 @@ type rawFrontmatter struct {
 	Description     string    `yaml:"description"`
 	Type            string    `yaml:"type"`
 	OriginSessionID string    `yaml:"originSessionId"`
+	Project         string    `yaml:"project"`
+	Status          string    `yaml:"status"`
+	ReviewAfter     string    `yaml:"review_after"`
 	Metadata        metaBlock `yaml:"metadata"`
 }
 
@@ -76,6 +85,11 @@ func Parse(content []byte) Result {
 		Description:     raw.Description,
 		Type:            coalesce(raw.Type, raw.Metadata.Type),
 		OriginSessionID: coalesce(raw.OriginSessionID, raw.Metadata.OriginSessionID),
+		// v2 contract keys: top-level only, no coalesce (msh2.2 §3.1) — the
+		// nested convention exists to serve legacy keys; the new keys have none.
+		Project:     raw.Project,
+		Status:      raw.Status,
+		ReviewAfter: raw.ReviewAfter,
 	}
 	return Result{
 		Has:         true,

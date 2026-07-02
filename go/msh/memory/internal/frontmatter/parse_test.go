@@ -127,3 +127,59 @@ body
 		t.Errorf("top-level type should win over metadata.type: got %q", r.Frontmatter.Type)
 	}
 }
+
+func TestParseV2KeysTopLevel(t *testing.T) {
+	body := []byte(`---
+name: v2-sample
+description: carries the msh2.2 contract keys
+project: mercury
+status: superseded
+review_after: 2026-08-01
+---
+body
+`)
+	r := Parse(body)
+	if !r.Has {
+		t.Fatal("expected Has=true")
+	}
+	if r.ParseError != "" {
+		t.Fatalf("unexpected parse error: %s", r.ParseError)
+	}
+	if r.Frontmatter.Project != "mercury" {
+		t.Errorf("Project=%q want mercury", r.Frontmatter.Project)
+	}
+	if r.Frontmatter.Status != "superseded" {
+		t.Errorf("Status=%q want superseded", r.Frontmatter.Status)
+	}
+	if r.Frontmatter.ReviewAfter != "2026-08-01" {
+		t.Errorf("ReviewAfter=%q want 2026-08-01", r.Frontmatter.ReviewAfter)
+	}
+}
+
+func TestParseV2KeysNestedMetadataIgnored(t *testing.T) {
+	// The v2 contract keys are TOP-LEVEL ONLY (msh2.2 §3.1): spelled under
+	// metadata: they are not read — no coalesce for project/status/review_after.
+	body := []byte(`---
+name: nested-v2
+description: v2 keys hidden under metadata
+metadata:
+  project: mercury
+  status: superseded
+  review_after: 2026-08-01
+---
+body
+`)
+	r := Parse(body)
+	if !r.Has {
+		t.Fatal("expected Has=true")
+	}
+	if r.Frontmatter.Project != "" {
+		t.Errorf("nested metadata.project must be ignored, got %q", r.Frontmatter.Project)
+	}
+	if r.Frontmatter.Status != "" {
+		t.Errorf("nested metadata.status must be ignored, got %q", r.Frontmatter.Status)
+	}
+	if r.Frontmatter.ReviewAfter != "" {
+		t.Errorf("nested metadata.review_after must be ignored, got %q", r.Frontmatter.ReviewAfter)
+	}
+}

@@ -3,6 +3,7 @@ package stale
 import (
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jonny-novikov/msh/memory/internal/config"
 	"github.com/jonny-novikov/msh/memory/internal/graph"
@@ -15,21 +16,25 @@ type Source interface {
 }
 
 type Rule struct {
-	Name string
+	Name  string
 	Apply func(g *graph.Graph, cfg *config.Config, src Source) Findings
 }
 
 const (
-	RuleDeadTarget    = "DEAD-TARGET"
-	RuleDeletedPath   = "DELETED-PATH"
-	RuleRemovedTool   = "REMOVED-TOOL"
-	RuleBrokenAnchor  = "BROKEN-ANCHOR"
-	RuleOrphan        = "ORPHAN"
+	RuleDeadTarget     = "DEAD-TARGET"
+	RuleDeletedPath    = "DELETED-PATH"
+	RuleRemovedTool    = "REMOVED-TOOL"
+	RuleBrokenAnchor   = "BROKEN-ANCHOR"
+	RuleOrphan         = "ORPHAN"
 	RuleSupersedeCycle = "SUPERSEDE-CYCLE"
-	RuleStaleExternal = "STALE-EXTERNAL"
+	RuleStaleExternal  = "STALE-EXTERNAL"
+	RuleReviewDue      = "REVIEW-DUE"
 )
 
-func AllRules() []Rule {
+// AllRules returns the rule registry. ref is the injected REVIEW-DUE reference
+// date (msh2.2 §3.5, design §4.3): no rule reads the wall clock — the seven
+// link/path rules ignore ref, and the review-due entry closes over it.
+func AllRules(ref time.Time) []Rule {
 	return []Rule{
 		{Name: RuleDeadTarget, Apply: ruleDeadTarget},
 		{Name: RuleDeletedPath, Apply: ruleDeletedPath},
@@ -38,11 +43,18 @@ func AllRules() []Rule {
 		{Name: RuleOrphan, Apply: ruleOrphan},
 		{Name: RuleSupersedeCycle, Apply: ruleSupersedeCycle},
 		{Name: RuleStaleExternal, Apply: ruleStaleExternal},
+		{Name: RuleReviewDue, Apply: func(g *graph.Graph, cfg *config.Config, src Source) Findings {
+			return ruleReviewDue(g, cfg, src, ref)
+		}},
 	}
 }
 
-func Run(g *graph.Graph, cfg *config.Config, src Source, names []string) Findings {
-	rules := AllRules()
+// Run applies the selected rules over the full graph. ref is the REVIEW-DUE
+// reference date — production callers pass the current UTC day, computed once
+// per invocation; tests and goldens inject a fixed date (same corpus + same
+// query + same ref → byte-identical findings, msh2.2 §3.5).
+func Run(g *graph.Graph, cfg *config.Config, src Source, names []string, ref time.Time) Findings {
+	rules := AllRules(ref)
 	var selected []Rule
 	if len(names) == 0 || (len(names) == 1 && strings.EqualFold(names[0], "all")) {
 		selected = rules

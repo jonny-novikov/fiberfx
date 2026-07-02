@@ -30,7 +30,7 @@ func newAuditCmd(cfg *rootConfig, flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return &exitError{code: exitGeneric, err: err}
 			}
-			findings := stale.Run(g, conf, src, []string{"all"})
+			findings := stale.Run(g, conf, src, []string{"all"}, utcToday())
 			if err := render.PrettyAuditSummary(cfg.Stdout, findings.Counts(), g.NodeCount()); err != nil {
 				return err
 			}
@@ -41,8 +41,11 @@ func newAuditCmd(cfg *rootConfig, flags *globalFlags) *cobra.Command {
 			if !emitExitCode {
 				return nil
 			}
-			if countByRule(findings, stale.RuleDeadTarget) > 0 {
-				return &exitError{code: exitGeneric, err: errAuditFailed{message: "audit found DEAD-TARGET findings"}}
+			// Exit on ANY error-severity finding — aligned to the Long contract
+			// above (msh2.2 D6): DEAD-TARGET stays covered, and an invalid
+			// review_after now fails the gate alike.
+			if counts[stale.SeverityError] > 0 {
+				return &exitError{code: exitGeneric, err: errAuditFailed{message: "audit found error-severity findings"}}
 			}
 			if maxWarn >= 0 && counts[stale.SeverityWarn] > maxWarn {
 				return &exitError{code: exitGeneric, err: errAuditFailed{message: "audit warn count exceeds --max-warn threshold"}}
@@ -60,13 +63,3 @@ type errAuditFailed struct {
 }
 
 func (e errAuditFailed) Error() string { return e.message }
-
-func countByRule(findings stale.Findings, rule string) int {
-	count := 0
-	for _, f := range findings {
-		if f.Rule == rule {
-			count++
-		}
-	}
-	return count
-}

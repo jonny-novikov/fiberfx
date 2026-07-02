@@ -306,7 +306,7 @@ func TestRunDeduplicatesAndSorts(t *testing.T) {
 	src.bodies["feedback_orphan.md"] = []byte("body\n")
 	cfg := config.Defaults()
 
-	got := Run(g, cfg, src, []string{"all"})
+	got := Run(g, cfg, src, []string{"all"}, testRef)
 	for i := 1; i < len(got); i++ {
 		if got[i-1].File > got[i].File {
 			t.Errorf("findings not sorted: %s before %s", got[i-1].File, got[i].File)
@@ -321,7 +321,7 @@ func TestRunSelectsByName(t *testing.T) {
 	src.bodies["feedback_orphan.md"] = []byte("body\n")
 	cfg := config.Defaults()
 
-	got := Run(g, cfg, src, []string{"ORPHAN"})
+	got := Run(g, cfg, src, []string{"ORPHAN"}, testRef)
 	for _, f := range got {
 		if f.Rule != RuleOrphan {
 			t.Errorf("unexpected rule: %s", f.Rule)
