@@ -11,23 +11,23 @@ contract is [`course.roadmap.md`](course.roadmap.md), the dashboard is
 [`course.progress.md`](course.progress.md), the landing manuscript is
 [`course.landing.md`](course.landing.md).
 
-## C0 — Overview — [`course.0.md`](course.0.md) · `/codemojex/overview`
+## C0 — Overview — [`course.0.md`](course.0.md) · `/codemojex/overview` · ✓ **built** (hub + 3 dives)
 
 > The game in one paragraph, the Mastermind family it belongs to, the engine whose modes are policy,
 > and the four-layer architecture at a glance.
 
-- [C0.1 · The game and the family](course.0.md#c01--the-game-and-the-family)
-- [C0.2 · The engine and its policies](course.0.md#c02--the-engine-and-its-policies)
-- [C0.3 · The architecture at a glance](course.0.md#c03--the-architecture-at-a-glance)
+- ✓ [C0.1 · The game and the family](/codemojex/overview/the-game-and-the-family) — [brief](course.0.md#c01--the-game-and-the-family)
+- ✓ [C0.2 · The engine and its policies](/codemojex/overview/the-engine-and-its-policies) — [brief](course.0.md#c02--the-engine-and-its-policies)
+- ✓ [C0.3 · The architecture at a glance](/codemojex/overview/the-architecture-at-a-glance) — [brief](course.0.md#c03--the-architecture-at-a-glance)
 
-## C1 — The Game as Branded Systems — [`course.1.md`](course.1.md) · `/codemojex/branded-systems`
+## C1 — The Game as Branded Systems — [`course.1.md`](course.1.md) · `/codemojex/branded-systems` · ✓ **built** (hub + 3 dives)
 
 > Fifteen branded namespaces are the primary keys; four layers each own their tier; the privacy
 > boundary is structural — no player-facing view ever selects the secret.
 
-- [C1.1 · Branded ids are the keys](course.1.md#c11--branded-ids-are-the-keys)
-- [C1.2 · The four layers](course.1.md#c12--the-four-layers)
-- [C1.3 · The privacy boundary](course.1.md#c13--the-privacy-boundary)
+- ✓ [C1.1 · Branded ids are the keys](/codemojex/branded-systems/branded-ids-are-the-keys) — [brief](course.1.md#c11--branded-ids-are-the-keys)
+- ✓ [C1.2 · The four layers](/codemojex/branded-systems/the-four-layers) — [brief](course.1.md#c12--the-four-layers)
+- ✓ [C1.3 · The privacy boundary](/codemojex/branded-systems/the-privacy-boundary) — [brief](course.1.md#c13--the-privacy-boundary)
 
 ## C2 — Rooms, Modes, and the Secret — [`course.2.md`](course.2.md) · `/codemojex/rooms-and-modes`
 
@@ -103,5 +103,6 @@ contract is [`course.roadmap.md`](course.roadmap.md), the dashboard is
 
 ## Tally
 
-Nine chapters, C0–C8 · 27 dives · the landing **built**, the nine chapters **stubbed** (gated real
-shells), the dives **planned** — the fine-grained state is [`course.progress.md`](course.progress.md).
+Nine chapters, C0–C8 · 27 dives · the landing and **C0–C1 complete** (each a hub + its three
+dives, A+), the remaining seven chapters **stubbed** (gated real shells), their 21 dives
+**planned** — the fine-grained state is [`course.progress.md`](course.progress.md).
