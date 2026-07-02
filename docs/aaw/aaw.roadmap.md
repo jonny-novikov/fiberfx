@@ -57,7 +57,7 @@ M1 = AAW1–AAW3 · M2 = AAW4.
 
 ## Seams & open decisions
 
-- **LAW-2 revision** — four authoring charters now pin `opus` and lead-team
+- **LAW-2 revision** — four authoring charters now pin `fable` and lead-team
   peers spawn as general-purpose with charter-via-prompt. Recorded as a dated divergence note in
   [aaw.rules.md](aaw.rules.md); the rewording is the Operator's.
 - **The course-home Sources block** (`html/agile-agent-workflow/index.html`) is the registry's canonical

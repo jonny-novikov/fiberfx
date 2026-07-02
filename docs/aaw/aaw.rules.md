@@ -100,10 +100,10 @@ Defined in `.claude/commands/x.md` and the operator guides; quoted verbatim wher
   context, not role-play."
 - **LAW-1a.** "Once the team is spawned, the Director MUST NOT call `Edit` / `Write` on implementation
   files."
-- **LAW-2.** "All peers run on opus." *Dated divergence note (2026-06-10):* four authoring charters now pin
-  `model: opus`, and the lead-team path spawns general-purpose peers with the charter applied via prompt —
-  the law's intent (one consistent, strongest-available model per peer) stands; its letter names a specific
-  model and awaits Operator revision.
+- **LAW-2.** "All peers run on fable." *Dated divergence note (2026-06-10):* four authoring charters now pin
+  `model: fable`, and the lead-team path spawns general-purpose peers with the charter applied via prompt —
+  the law's intent (one consistent, strongest-available model per peer) stands. *Operator revision (2026-07-02):*
+  the law's letter now names `fable` (Fable 5), reconciling it with the charters.
 - **LAW-3.** Emitted prose — prompts, comments, specs — carries no gendered pronouns for agents, no
   perceptual or interior-state verbs applied to software, no first-person narration, and propagates this rule
   to every downstream prompt.

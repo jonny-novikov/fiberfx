@@ -114,7 +114,7 @@ and specs; one game, two formations; a reverse run composes both) · The events:
 pipeline gates; the lag-1 reconcile as an executable gate with [RECONCILE] deferral markers; md-first
 checkpointing; concurrency asymmetry with the under-contention failures; concurrent-wave siblings not
 cross-linked; standing runtime state lives in the Operator session or the deploy; pathspec commit rules) · The
-LAWS: LAW-2 - all perrs runs opus model and the lead-team spawns specialized true Team Agents joining team peers with the charter applied via
+LAWS: LAW-2 - all perrs runs fable model and the lead-team spawns specialized true Team Agents joining team peers with the charter applied via
 prompt, the law's intent stands and awaits Operator revision; state LAW-3 and the FAKE-N / V-SOLO family; a
 paraphrased rule is not quote-marked) · The gates (a check counts only if it RUNS, with the tier-climb
 corollary; the verifier reproduces the gate and audits its own harness; the anti-rubber-stamp verdict charter;
